@@ -1,4 +1,9 @@
-<p align="center"><img src="assets/brand/glitchless/logo/png/glitchless-lockup-light.png" width="300" alt="Glitchless"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/glitchless/logo/png/glitchless-lockup-dark.png">
+    <img src="assets/brand/glitchless/logo/png/glitchless-lockup-light.png" width="300" alt="Glitchless">
+  </picture>
+</p>
 
 # Glitchless
 
@@ -11,17 +16,9 @@ Glitchless shows you how your game plays for real players, and gives your coding
 
 It's open source and runs anywhere: one Node server with a file store on a laptop, or Lambda and DynamoDB in your own AWS account. It's anonymous by default ([what it sends](packages/sdk/PRIVACY.md)), and it can pass the same data on to Datadog or any OpenTelemetry backend.
 
-```
- ┌────────── your game ───────────┐         ┌───── Glitchless server ─────┐         ┌─── optional ────┐
- │ Three.js: glitchless  │ batches │ intake → store              │ export  │ Datadog, or any │
- │ Godot 4.5+: addons/glitchless  │────────▶│ analytics + findings        │────────▶│ OpenTelemetry   │
- │  • in-game overlay (` key)     │         │ dashboard                   │         │ backend         │
- │  • WebMCP tool server ◀──┐     │         │ laptop: files · AWS: Lambda │         └─────────────────┘
- └──────────────────────────┼─────┘         └──────────────▲──────────────┘
-                            │ live tools (WebMCP)          │ production data (Glitchless MCP)
-                            └ Claude Code · Codex · Cursor ┘
-                             any coding agent: triage → fix → measure → ship
-```
+<p align="center">
+  <img src="assets/brand/glitchless/diagram/glitchless-architecture.png" width="900" alt="Your game, with the Glitchless SDK, sends play sessions to Glitchless (dashboard and findings), which can export to Datadog or OpenTelemetry. Your coding agent reads player data from Glitchless over MCP and drives the running game over WebMCP.">
+</p>
 
 ![The Glitchless dashboard: frame time by release, and findings ranked worst first](docs/screenshots/overview.png)
 

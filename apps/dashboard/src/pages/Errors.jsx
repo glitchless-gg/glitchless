@@ -119,7 +119,7 @@ function IssueDrawer({ issue, onClose, service, ts }) {
         </div>
         <div>
           <div className="wt" style={{ marginBottom: 6 }}>
-            🤖 Fix it with your coding agent
+            Fix it with your coding agent
           </div>
           <CodeBlock code={prompt} />
         </div>

@@ -115,7 +115,7 @@ function describe(e) {
     case 'hitch':
       return [`Hitch ${fmtMs(e.duration_ms, 0)}`, `${(e.causes || []).join(', ')} · ${Object.entries(e.ctx || {}).map(([k, v]) => `${k} ${fmtNum(v)}`).join(' · ')}`];
     case 'custom':
-      return e.name === 'annotation' ? [`🤖 ${e.attrs?.note}`, 'agent annotation'] : [e.name, Object.entries(e.attrs || {}).map(([k, v]) => `${k}=${v}`).join(' ')];
+      return e.name === 'annotation' ? [`Agent: ${e.attrs?.note}`, 'agent annotation'] : [e.name, Object.entries(e.attrs || {}).map(([k, v]) => `${k}=${v}`).join(' ')];
     case 'load':
       return e.ttff_ms != null ? [`First frame`, `${e.ttff_ms}ms after navigation`] : [`First input`, `${e.ttp_ms}ms`];
     case 'session_end':
@@ -189,7 +189,7 @@ export function SessionDetail({ route }) {
   const markers = [
     ...(t ? [{ ts: t, label: '▶', color: '#14213d' }] : []),
     ...data.timeline.filter((e) => e.type === 'error').slice(0, 5).map((e) => ({ ts: e.ts, label: 'error', color: '#ff6b57' })),
-    ...(s.annotations || []).map((a) => ({ ts: a.ts, label: '🤖', color: '#3d8cf5' })),
+    ...(s.annotations || []).map((a) => ({ ts: a.ts, label: 'agent', color: '#3d8cf5' })),
   ];
 
   return (

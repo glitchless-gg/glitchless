@@ -18,6 +18,7 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
 1. Get the Glitchless agent kit, outside this project so it never gets committed:
    git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
    If that folder already exists, run `git -C ~/.glitchless pull` instead.
+   If the intake URL in step 2 starts with http://localhost, start a local Glitchless server and leave it running: in ~/.glitchless run `npm install && npm run build`, then `npm run server` in the background. It's ready when {{INTAKE_URL}}/v1/health answers, and the dashboard is at the same address.
 
 2. Work out the engine, then read the guide for it and follow it for this game:
    - a web game (Three.js, React Three Fiber or plain WebGL): ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md

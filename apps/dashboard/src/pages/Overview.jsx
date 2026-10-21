@@ -101,7 +101,7 @@ export function Overview() {
 }
 
 export function IssuesTable({ issues, onClick, selected }) {
-  if (!issues?.length) return <div className="empty">No errors in this time range. 🎉</div>;
+  if (!issues?.length) return <div className="empty">No errors in this time range.</div>;
   return (
     <div className="tablewrap">
       <table className="dt">

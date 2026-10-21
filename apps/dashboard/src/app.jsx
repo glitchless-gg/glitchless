@@ -139,7 +139,7 @@ export function App({ shell: custom = {} }) {
                 {!list.length && <option value="">{shell.servicesEmpty}</option>}
                 {list.map((s) => (
                   <option key={s.service} value={s.service}>
-                    🎮 {s.service}
+                    {s.service}
                   </option>
                 ))}
               </select>

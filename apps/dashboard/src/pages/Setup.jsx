@@ -53,9 +53,9 @@ glitchless.captureMap('level-1', { axis: 'xy', bounds: { min: [0, -5], max: [200
           Omit <code>intake</code> and Glitchless runs as an in-game overlay + WebMCP tool server only. Nothing leaves the browser.
         </div>
       </Widget>
-      <Widget span={12} title="Engines" sub="✅ works today; the others are next, on the same telemetry model">
+      <Widget span={12} title="Engines" sub="the same telemetry model across engines">
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {['three.js ✅', 'React Three Fiber ✅ (via three.js)', 'Godot 4.5+ ✅', 'Babylon.js', 'PlayCanvas', 'Phaser / Pixi (2D)'].map((e) => (
+          {['three.js · supported', 'React Three Fiber · supported', 'Godot 4.5+ · supported', 'Babylon.js · next', 'PlayCanvas · next', 'Phaser / Pixi (2D) · next'].map((e) => (
             <span key={e} className="tag" style={{ fontSize: 12, padding: '3px 8px' }}>
               {e}
             </span>
