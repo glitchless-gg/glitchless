@@ -1,18 +1,27 @@
 {
   "name": "glitchless-mcp",
-  "version": "0.1.0",
-  "description": "Glitchless MCP server: lets any coding agent (Claude Code, Codex, Cursor and others) read your game's player telemetry and ranked findings, and run playtest bots.",
+  "version": "0.1.1",
+  "mcpName": "io.github.glitchless-gg/glitchless",
+  "description": "Game observability MCP server: lets coding agents (Claude Code, Codex, Cursor and others) read your game's player telemetry and ranked findings, and run playtest bots.",
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
-    "gamedev",
+    "game-observability",
     "observability",
+    "gamedev",
+    "game-development",
+    "threejs",
+    "godot",
+    "performance",
+    "playtesting",
+    "ai-agents",
     "coding-agent",
-    "claude",
+    "claude-code",
     "codex",
     "cursor"
   ],
-  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/mcp#readme",
+  "homepage": "https://www.glitchless.gg",
   "bugs": {
     "url": "https://github.com/glitchless-gg/glitchless/issues"
   },

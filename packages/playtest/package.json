@@ -1,17 +1,23 @@
 {
   "name": "glitchless-playtest",
-  "version": "0.1.0",
-  "description": "Playtest every change: autoplay bots play your web game on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
+  "version": "0.1.1",
+  "description": "Playtest bots for game observability: autoplay bots play your web game on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
   "keywords": [
-    "gamedev",
+    "playtesting",
     "playtest",
+    "game-observability",
+    "gamedev",
+    "game-development",
     "bots",
+    "automated-testing",
     "performance",
-    "regression",
+    "regression-testing",
     "playwright",
-    "threejs"
+    "threejs",
+    "web-games",
+    "mcp"
   ],
-  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/playtest#readme",
+  "homepage": "https://www.glitchless.gg",
   "bugs": {
     "url": "https://github.com/glitchless-gg/glitchless/issues"
   },

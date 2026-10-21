@@ -1,18 +1,28 @@
 {
   "name": "glitchless",
-  "version": "0.1.0",
-  "description": "Glitchless browser SDK — frame-time, hitch, error and gameplay telemetry for web games, with an in-game overlay and WebMCP tools for coding agents.",
+  "version": "0.1.1",
+  "description": "Game observability SDK for Three.js and web games: frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
   "keywords": [
-    "gamedev",
-    "threejs",
-    "webgl",
+    "game-observability",
     "observability",
+    "gamedev",
+    "game-development",
+    "game-analytics",
+    "threejs",
+    "three.js",
+    "webgl",
+    "web-games",
     "performance",
     "frame-time",
+    "fps",
+    "stutter",
     "telemetry",
-    "webmcp"
+    "crash-reporting",
+    "error-tracking",
+    "webmcp",
+    "mcp"
   ],
-  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk#readme",
+  "homepage": "https://www.glitchless.gg",
   "bugs": {
     "url": "https://github.com/glitchless-gg/glitchless/issues"
   },

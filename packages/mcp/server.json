@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.glitchless-gg/glitchless",
+  "title": "Glitchless",
+  "description": "Game observability for coding agents: stutter, crashes, where players quit, and playtest bots.",
+  "websiteUrl": "https://www.glitchless.gg",
+  "repository": {
+    "url": "https://github.com/glitchless-gg/glitchless",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "glitchless-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "GLITCHLESS_URL",
+          "description": "Your Glitchless server",
+          "format": "string",
+          "isRequired": false,
+          "default": "http://localhost:7777"
+        },
+        {
+          "name": "GLITCHLESS_API_KEY",
+          "description": "A secret read key (gl_sk_...), if the server needs one",
+          "format": "string",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "GLITCHLESS_SERVICE",
+          "description": "The game to use when a tool call doesn't name one",
+          "format": "string",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

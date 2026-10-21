@@ -5,7 +5,7 @@ import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 
-export const SDK_VERSION = '0.1.0';
+export const SDK_VERSION = '0.1.1';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)
