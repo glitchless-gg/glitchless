@@ -14,7 +14,18 @@
 //     For every other /v1/ route except /v1/health. Scopes: 'read' (queries and the live tail) and
 //     'delete' (DELETE /v1/data).
 //
-// Both may be async. To refuse, throw (or reject with) AuthError(status, message): 401 for a missing
+// Two optional hooks let a host put limits on intake (the hosted service uses them for its plans):
+//
+//   admitIntake(writer, events) → { events, dropped?, reason? }
+//     After a batch is parsed and before it's stored. Return the events to keep (all, some or none) and,
+//     if any were dropped, how many and why. Dropped events are not stored, shown live or exported, and
+//     the client still gets 202 with { accepted, dropped, reason }, so it doesn't send them again.
+//   recordIntake(writer, events)
+//     After the kept events are stored, before the 202 goes out. A failure is logged, not returned.
+//
+// `writer` is what resolveIngest returned, so it can carry anything those hooks need.
+//
+// All may be async. To refuse, throw (or reject with) AuthError(status, message): 401 for a missing
 // or unknown credential, 403 for a known one that isn't allowed. The resolved projectId is the only
 // tenancy boundary: events are stamped with it and stored under it, and queries only ever read it.
 // Client-sent fields such as `service` pick data within a project, never across projects.

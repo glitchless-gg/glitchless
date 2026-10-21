@@ -283,7 +283,7 @@ test('records Firehose could not partition (its error output) are compacted like
   const s = lakeSim({ start: T0 });
   try {
     const [one] = gameSessions({ start: T0 + 60_000, spanMs: 60_000, sessions: 1, seed: 9 });
-    const lines = toRecords('proj_b', 'pro', one, T0 + 30 * MINUTE);
+    const lines = toRecords('proj_b', 'indie', one, T0 + 30 * MINUTE);
     const body =
       lines
         .map((l) => JSON.stringify({ attemptsMade: 1, arrivalTimestamp: T0, errorCode: 'DynamicPartitioning.ActivePartitionsLimitExceeded', rawData: Buffer.from(l).toString('base64') }))
@@ -299,7 +299,7 @@ test('records Firehose could not partition (its error output) are compacted like
     );
     assert.equal(ctx.sessions.size, 1);
     assert.deepStrictEqual(overview(ctx), overview(raw));
-    assert.ok((await s.bucket.list('events/plan=pro/project=proj_b/')).length, 'compacted under its plan');
+    assert.ok((await s.bucket.list('events/plan=indie/project=proj_b/')).length, 'compacted under its plan');
   } finally {
     s.close();
   }

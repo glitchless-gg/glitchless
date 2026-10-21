@@ -48,7 +48,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
     try {
       if (p === '/v1/health') {
-        return json(res, 200, { ok: true, store: store.kind, uptime_s: Math.round((Date.now() - counters.startedAt) / 1000), received: counters.received, exporters: forwarder?.status?.() ?? [] });
+        return json(res, 200, { ok: true, store: store.kind, runtime: `${process.platform}-${process.arch}`, uptime_s: Math.round((Date.now() - counters.startedAt) / 1000), received: counters.received, exporters: forwarder?.status?.() ?? [] });
       }
 
       if (p === '/v1/intake' && req.method === 'POST') {
@@ -60,11 +60,17 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           return json(res, 429, { error: 'rate limit exceeded' });
         }
         const body = decodeBody(await readBody(req));
-        const events = normalize(parsePayload(body, { projectId: writer.projectId }));
-        await store.put(writer.projectId, events, writer);
-        counters.received += events.length;
-        clearCache(writer.projectId);
-        json(res, 202, { accepted: events.length });
+        const parsed = normalize(parsePayload(body, { projectId: writer.projectId }));
+        const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
+        const events = admitted.events;
+        if (events.length) {
+          await store.put(writer.projectId, events, writer);
+          counters.received += events.length;
+          clearCache(writer.projectId);
+          if (auth.recordIntake) await Promise.resolve(auth.recordIntake(writer, events)).catch((err) => logger.warn('[intake] record', err.message));
+        }
+        json(res, 202, { accepted: events.length, ...(admitted.dropped ? { dropped: admitted.dropped, reason: admitted.reason } : {}) });
+        if (!events.length) return;
         broadcast(writer.projectId, events);
         forwarder?.forward(events).catch((err) => logger.warn('[export]', err.message));
         return;

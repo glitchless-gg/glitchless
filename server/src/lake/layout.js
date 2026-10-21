@@ -29,9 +29,9 @@ export const MINUTE = 60_000;
 export const HOUR = 3_600_000;
 export const DAY = 86_400_000;
 
-// Retention per plan, in days: events, session files and summaries expire after this. Placeholder plan
-// names until the hosted plans are set; a project without a plan is on `free`.
-export const PLAN_RETENTION_DAYS = { free: 14, pro: 90, studio: 400 };
+// Retention per plan, in days: events, session files and summaries expire after this. The plans are
+// the hosted service's Free, Indie and Studio; a project without a plan is on `free`.
+export const PLAN_RETENTION_DAYS = { free: 14, indie: 90, studio: 400 };
 export const DEFAULT_PLAN = 'free';
 export const RAW_RETENTION_DAYS = 3;
 export const RAW_ERRORS_RETENTION_DAYS = 14;
