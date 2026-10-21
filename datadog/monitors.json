@@ -1,0 +1,56 @@
+[
+  {
+    "name": "[Glitchless] {{service.name}} p95 frame time over 33ms",
+    "type": "query alert",
+    "query": "percentile(last_10m):p95:glitchless.frame.time{service:zoomies} by {version} > 33.4",
+    "message": "p95 frame time for {{service.name}} {{version.name}} is {{value}}ms (budget 16.7ms) \u2014 players are seeing visible stutter.\n\nTriage with your coding agent: `glitchless_triage` (Glitchless MCP) or open the Glitchless Performance page.",
+    "options": {
+      "thresholds": {
+        "critical": 33.4,
+        "warning": 25
+      },
+      "notify_no_data": false,
+      "include_tags": true,
+      "require_full_window": false
+    },
+    "tags": [
+      "source:glitchless",
+      "service:zoomies"
+    ]
+  },
+  {
+    "name": "[Glitchless] {{service.name}} new error spike",
+    "type": "query alert",
+    "query": "sum(last_15m):sum:glitchless.errors{service:zoomies} by {version}.as_count() > 50",
+    "message": "{{value}} game errors in 15 minutes on {{version.name}}. Check Error Tracking (source:glitchless) \u2014 Glitchless breadcrumbs show the gameplay right before each error.",
+    "options": {
+      "thresholds": {
+        "critical": 50,
+        "warning": 20
+      },
+      "notify_no_data": false,
+      "include_tags": true
+    },
+    "tags": [
+      "source:glitchless",
+      "service:zoomies"
+    ]
+  },
+  {
+    "name": "[Glitchless] {{service.name}} geometry count climbing (GPU leak)",
+    "type": "query alert",
+    "query": "max(last_15m):max:glitchless.memory.geometries{service:zoomies} by {version} > 2000",
+    "message": "Renderer geometry count passed {{value}} on {{version.name}} \u2014 geometries are created but never disposed. Low-end GPUs will lose the WebGL context.",
+    "options": {
+      "thresholds": {
+        "critical": 2000,
+        "warning": 1200
+      },
+      "notify_no_data": false
+    },
+    "tags": [
+      "source:glitchless",
+      "service:zoomies"
+    ]
+  }
+]

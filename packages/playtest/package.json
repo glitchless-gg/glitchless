@@ -1,0 +1,51 @@
+{
+  "name": "glitchless-playtest",
+  "version": "0.1.0",
+  "description": "Playtest every change: autoplay bots play your web game on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
+  "keywords": [
+    "gamedev",
+    "playtest",
+    "bots",
+    "performance",
+    "regression",
+    "playwright",
+    "threejs"
+  ],
+  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/playtest#readme",
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless.git",
+    "directory": "packages/playtest"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "bin": {
+    "glitchless-playtest": "./bin/glitchless-playtest.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "glitchless-mcp",
+  "version": "0.1.0",
+  "description": "Glitchless MCP server: lets any coding agent (Claude Code, Codex, Cursor and others) read your game's player telemetry and ranked findings, and run playtest bots.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "gamedev",
+    "observability",
+    "coding-agent",
+    "claude",
+    "codex",
+    "cursor"
+  ],
+  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless.git",
+    "directory": "packages/mcp"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "bin": {
+    "glitchless-mcp": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bundle": "esbuild src/index.js --bundle --platform=node --format=esm --target=node20 --external:playwright --outfile=../../plugin/glitchless/mcp/glitchless-mcp.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.6.7",
+    "glitchless-playtest": "^0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

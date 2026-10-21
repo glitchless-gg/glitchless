@@ -1,0 +1,280 @@
+// Per-session state: what every query needs to know about one session, folded from its events.
+//
+// The state is mergeable: folding a session's events in two parts and merging the two states gives the
+// same state as folding all of them in order. So the raw path (indexSessions over the events of a range)
+// and a store that keeps one state per session and minute (or hour) and merges the ones inside a range
+// give identical sessions. Fields that depend on event order ("the last session_start", "the first frame
+// window with geometries") keep the timestamp they were set at, and level/death events are kept as a list
+// (`marks`) so the rage-quit state machine runs over them in order after merging.
+//
+// finalizeSession() then derives the fields the queries read (levels, attempts, last_fail, duration_s,
+// rage_quit, crashed, p50/p95…), the same fields and values indexSessions always produced.
+
+import { Sketch } from '../../packages/sdk/src/sketch.js';
+import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, MINUTE } from './rollups.js';
+
+// 'script' is a Godot GDScript runtime error: the function stops part way, like an uncaught JS exception.
+export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script']);
+const UNHANDLED_KINDS = new Set(['js', 'promise', 'script']);
+const RAGE_QUIT_WINDOW_MS = 20_000;
+const NODE_COUNTS = ['nodes', 'orphan_nodes'];
+
+// Level and death events, in order: { ts, k: kind, level, cause, x, y, z, d: duration_s } (objects, so a
+// missing field stays missing through JSON).
+export const MARK = { start: 0, complete: 1, fail: 2, death: 3 };
+const MARK_OF = { level_start: MARK.start, level_complete: MARK.complete, level_fail: MARK.fail, death: MARK.death };
+
+export function newSession(e) {
+  return {
+    session_id: e.session_id,
+    player_id: e.player_id,
+    service: e.service,
+    env: e.env,
+    version: e.version,
+    sdk: e.sdk ?? null,
+    idAt: e.ts, // ts of the event the identity fields above came from (the session's first)
+    idOrder: e.__order ?? null, // its arrival order, when a store knows it (orders sessions on ties)
+    first_ts: e.ts,
+    last_ts: e.ts,
+    startAt: null, // last session_start: ts, device, session_type
+    device: null,
+    session_type: 'user',
+    endAt: null, // last session_end: ts, end_reason (set with it)
+    marks: [],
+    errors: 0,
+    fatal_errors: 0,
+    last_unhandled: null,
+    ctxAt: null, // last webgl context loss or restore
+    context_lost: false,
+    rage_inputs: 0,
+    annotations: [],
+    hitches: 0,
+    frozen: 0,
+    frames: 0,
+    cell: newCell(), // this session's frame windows, for device breakdowns and its own p50/p95
+    geo: null, // { first, firstAt, last, lastAt, max }
+    nodes: {}, // { [key]: { first, firstAt, last, lastAt } }
+    ttffAt: null,
+    ttff: null,
+    ttpAt: null,
+    ttp: null,
+    fwLevels: new Set(), // levels this session sent frame windows on (null for menus)
+    minutes: new Set(), // minutes with any event, for players per time bucket
+  };
+}
+
+export function addToSession(s, e) {
+  if (e.ts < s.first_ts) s.first_ts = e.ts;
+  if (e.ts > s.last_ts) s.last_ts = e.ts;
+  s.minutes.add(minuteOf(e.ts));
+  switch (e.type) {
+    case 'session_start':
+      s.startAt = e.ts;
+      s.device = e.device || null;
+      s.session_type = e.session_type || 'user';
+      break;
+    case 'session_end':
+      s.endAt = e.ts;
+      s.end_reason = e.reason;
+      break;
+    case 'level_start':
+    case 'level_complete':
+    case 'level_fail':
+      s.marks.push({ ts: e.ts, k: MARK_OF[e.type], level: e.level, cause: e.cause, d: e.duration_s });
+      break;
+    case 'death':
+      s.marks.push({ ts: e.ts, k: MARK.death, level: e.level, cause: e.cause, x: e.x, y: e.y, z: e.z });
+      break;
+    case 'error':
+      s.errors++;
+      if (FATAL_KINDS.has(e.kind)) s.fatal_errors++;
+      if (e.kind === 'webgl_context_lost') setContext(s, e.ts, true);
+      if (UNHANDLED_KINDS.has(e.kind)) s.last_unhandled = e.ts;
+      break;
+    case 'custom':
+      if (e.name === 'webgl_context_restored') setContext(s, e.ts, false);
+      if (e.name === 'rage_input') s.rage_inputs++;
+      if (e.name === 'annotation') s.annotations.push({ ts: e.ts, note: e.attrs?.note });
+      break;
+    case 'frame_window':
+      addEvent(s.cell, e);
+      s.frames += e.frames || 0;
+      s.hitches += e.hitches || 0;
+      s.frozen += e.frozen || 0;
+      s.fwLevels.add(e.level);
+      if (e.geometries != null) {
+        if (!s.geo) s.geo = { first: e.geometries, firstAt: e.ts, last: e.geometries, lastAt: e.ts, max: Math.max(0, e.geometries) };
+        else {
+          s.geo.last = e.geometries;
+          s.geo.lastAt = e.ts;
+          s.geo.max = Math.max(s.geo.max, e.geometries);
+        }
+      }
+      // The Godot SDK sends scene-tree counts instead of three.js geometries.
+      for (const k of NODE_COUNTS) {
+        if (!isNum(e[k])) continue;
+        const n = (s.nodes[k] ||= { first: e[k], firstAt: e.ts });
+        n.last = e[k];
+        n.lastAt = e.ts;
+      }
+      break;
+    case 'load':
+      if (e.ttff_ms != null) [s.ttffAt, s.ttff] = [e.ts, e.ttff_ms];
+      if (e.ttp_ms != null) [s.ttpAt, s.ttp] = [e.ts, e.ttp_ms];
+      break;
+  }
+  return s;
+}
+
+function setContext(s, ts, lost) {
+  s.ctxAt = ts;
+  s.context_lost = lost;
+}
+
+// Merge `b` into `a`. Where both set an order-dependent field, the later timestamp wins, and on a tie
+// `b` (merge later states as `b`: they hold events that arrived later).
+export function mergeSession(a, b) {
+  if (b.idAt < a.idAt) for (const k of ['session_id', 'player_id', 'service', 'env', 'version', 'sdk', 'idAt', 'idOrder']) a[k] = b[k];
+  if (b.first_ts < a.first_ts) a.first_ts = b.first_ts;
+  if (b.last_ts > a.last_ts) a.last_ts = b.last_ts;
+  if (b.startAt != null && (a.startAt == null || b.startAt >= a.startAt)) {
+    a.startAt = b.startAt;
+    a.device = b.device;
+    a.session_type = b.session_type;
+  }
+  if (b.endAt != null && (a.endAt == null || b.endAt >= a.endAt)) {
+    a.endAt = b.endAt;
+    a.end_reason = b.end_reason;
+  }
+  a.marks = mergeByTs(a.marks, b.marks, (m) => m.ts);
+  a.errors += b.errors;
+  a.fatal_errors += b.fatal_errors;
+  if (b.last_unhandled != null && (a.last_unhandled == null || b.last_unhandled > a.last_unhandled)) a.last_unhandled = b.last_unhandled;
+  if (b.ctxAt != null && (a.ctxAt == null || b.ctxAt >= a.ctxAt)) setContext(a, b.ctxAt, b.context_lost);
+  a.rage_inputs += b.rage_inputs;
+  a.annotations = mergeByTs(a.annotations, b.annotations, (x) => x.ts);
+  a.hitches += b.hitches;
+  a.frozen += b.frozen;
+  a.frames += b.frames;
+  mergeCell(a.cell, b.cell);
+  if (b.geo) {
+    if (!a.geo) a.geo = { ...b.geo };
+    else {
+      if (b.geo.firstAt < a.geo.firstAt) [a.geo.first, a.geo.firstAt] = [b.geo.first, b.geo.firstAt];
+      if (b.geo.lastAt >= a.geo.lastAt) [a.geo.last, a.geo.lastAt] = [b.geo.last, b.geo.lastAt];
+      a.geo.max = Math.max(a.geo.max, b.geo.max);
+    }
+  }
+  for (const [k, n] of Object.entries(b.nodes)) {
+    const m = a.nodes[k];
+    if (!m) a.nodes[k] = { ...n };
+    else {
+      if (n.firstAt < m.firstAt) [m.first, m.firstAt] = [n.first, n.firstAt];
+      if (n.lastAt >= m.lastAt) [m.last, m.lastAt] = [n.last, n.lastAt];
+    }
+  }
+  if (b.ttffAt != null && (a.ttffAt == null || b.ttffAt >= a.ttffAt)) [a.ttffAt, a.ttff] = [b.ttffAt, b.ttff];
+  if (b.ttpAt != null && (a.ttpAt == null || b.ttpAt >= a.ttpAt)) [a.ttpAt, a.ttp] = [b.ttpAt, b.ttp];
+  for (const l of b.fwLevels) a.fwLevels.add(l);
+  for (const m of b.minutes) a.minutes.add(m);
+  return a;
+}
+
+// Derive what the queries read. Safe to call once per state; merge before finalizing.
+export function finalizeSession(s) {
+  s.start = s.startAt;
+  s.end = s.endAt;
+  s.ended = s.endAt != null;
+  s.levels = new Set();
+  s.completed = new Set();
+  s.attempts = {};
+  s.level_loads = 0;
+  s.completes = 0;
+  s.fails = 0;
+  s.deaths = 0;
+  s.last_fail = null;
+  for (const { ts, k: kind, level, cause, x, y, z } of s.marks) {
+    if (kind === MARK.start) {
+      s.levels.add(level);
+      s.attempts[level] = (s.attempts[level] || 0) + 1;
+      s.level_loads++;
+      s.last_fail = null;
+    } else if (kind === MARK.complete) {
+      s.completed.add(level);
+      s.completes++;
+      s.last_fail = null;
+    } else if (kind === MARK.fail) {
+      s.fails++;
+      s.last_fail = { ts, level, cause, x: s.last_fail?.x, y: s.last_fail?.y, z: s.last_fail?.z };
+    } else {
+      s.deaths++;
+      s.last_fail = { ts, level, cause, x, y, z };
+    }
+  }
+  s.sketch = s.cell.ft;
+  s.geo_first = s.geo ? s.geo.first : null;
+  s.geo_last = s.geo ? s.geo.last : null;
+  s.geo_max = s.geo ? s.geo.max : null;
+  s.node_counts = Object.fromEntries(Object.entries(s.nodes).map(([k, n]) => [k, { first: n.first, last: n.last }]));
+  const start = s.start ?? s.first_ts;
+  const end = s.end ?? s.last_ts;
+  s.duration_s = Math.max(0, (end - start) / 1000);
+  s.rage_quit = !!(s.ended && s.last_fail && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
+  s.rage = s.rage_quit ? s.last_fail : null;
+  // Game-aware crash: the run actually broke — context lost for good, a frozen frame,
+  // or an unhandled error right before the session ended.
+  s.crashed = s.context_lost || s.frozen > 0 || !!(s.last_unhandled && s.ended && end - s.last_unhandled <= 10_000);
+  s.p95 = s.sketch.quantile(0.95);
+  s.p50 = s.sketch.quantile(0.5);
+  return s;
+}
+
+// Fold events into one state per session (keyed by session_id), in the order given.
+export function foldSessions(events, into = new Map()) {
+  for (const e of events) {
+    let s = into.get(e.session_id);
+    if (!s) into.set(e.session_id, (s = newSession(e)));
+    addToSession(s, e);
+  }
+  return into;
+}
+
+// Storage form: plain JSON, sets as arrays, minutes as offsets from the first one.
+export function sessionToJSON(s) {
+  const { cell, fwLevels, minutes, ...rest } = s;
+  const mins = [...minutes].sort((x, y) => x - y);
+  return { ...rest, cell: cellToJSON(cell), fwLevels: [...fwLevels], m0: mins[0] ?? null, mins: mins.map((m) => (m - mins[0]) / MINUTE) };
+}
+
+export function sessionFromJSON(o) {
+  const { cell, fwLevels, m0, mins, ...rest } = o;
+  return {
+    ...rest,
+    marks: o.marks || [],
+    annotations: o.annotations || [],
+    nodes: o.nodes || {},
+    cell: cellFromJSON(cell),
+    fwLevels: new Set(fwLevels),
+    minutes: new Set((mins || []).map((d) => m0 + d * MINUTE)),
+  };
+}
+
+// Merge two lists already sorted by `key`, keeping `a` first on ties.
+function mergeByTs(a, b, key) {
+  if (!b.length) return a;
+  if (!a.length) return b.slice();
+  if (key(a[a.length - 1]) <= key(b[0])) return a.concat(b);
+  const out = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) out.push(key(b[j]) < key(a[i]) ? b[j++] : a[i++]);
+  while (i < a.length) out.push(a[i++]);
+  while (j < b.length) out.push(b[j++]);
+  return out;
+}
+
+function isNum(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+export { Sketch };

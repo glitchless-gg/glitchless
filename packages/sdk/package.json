@@ -1,0 +1,45 @@
+{
+  "name": "glitchless",
+  "version": "0.1.0",
+  "description": "Glitchless browser SDK — frame-time, hitch, error and gameplay telemetry for web games, with an in-game overlay and WebMCP tools for coding agents.",
+  "keywords": [
+    "gamedev",
+    "threejs",
+    "webgl",
+    "observability",
+    "performance",
+    "frame-time",
+    "telemetry",
+    "webmcp"
+  ],
+  "homepage": "https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk#readme",
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless.git",
+    "directory": "packages/sdk"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./three": "./src/three.js",
+    "./sketch": "./src/sketch.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "PRIVACY.md"
+  ],
+  "scripts": {
+    "build": "esbuild src/global.js --bundle --minify --format=iife --sourcemap --outfile=dist/glitchless.js && esbuild src/index.js --bundle --minify --format=esm --outfile=dist/glitchless.esm.js",
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

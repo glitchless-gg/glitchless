@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "glitchless": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/glitchless-mcp.mjs"],
+      "env": {
+        "GLITCHLESS_URL": "${GLITCHLESS_URL:-http://localhost:7777}",
+        "GLITCHLESS_API_KEY": "${GLITCHLESS_API_KEY:-}"
+      }
+    },
+    "webmcp": {
+      "command": "npx",
+      "args": ["-y", "@jason.today/webmcp@latest", "--mcp"]
+    }
+  }
+}

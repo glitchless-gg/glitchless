@@ -1,0 +1,12 @@
+{
+  "name": "glitchless",
+  "owner": { "name": "Glitchless" },
+  "metadata": { "description": "Observability for vibe-coded games" },
+  "plugins": [
+    {
+      "name": "glitchless",
+      "source": "./plugin/glitchless",
+      "description": "Instrument web games with Glitchless and let Claude triage and fix performance, stability and design problems from real player telemetry."
+    }
+  ]
+}

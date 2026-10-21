@@ -1,0 +1,302 @@
+{
+  "title": "Glitchless \u00b7 Game Health",
+  "description": "Frame time, hitches, stability and player flow for games instrumented with Glitchless (forwarded by the Glitchless server).",
+  "layout_type": "ordered",
+  "template_variables": [
+    {
+      "name": "service",
+      "prefix": "service",
+      "available_values": [],
+      "default": "zoomies"
+    },
+    {
+      "name": "env",
+      "prefix": "env",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "version",
+      "prefix": "version",
+      "available_values": [],
+      "default": "*"
+    },
+    {
+      "name": "level",
+      "prefix": "level",
+      "available_values": [],
+      "default": "*"
+    }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "## \ud83d\udc36 Glitchless\nTelemetry from the Glitchless SDK, forwarded server-side: `glitchless.frame.time` is a **distribution** (percentiles across all players), gauges/counts are tagged `service, env, version, level, gpu_tier, browser, session_type`. Gameplay events and errors arrive as logs (`source:glitchless`); errors land in Error Tracking.",
+        "background_color": "purple",
+        "font_size": "14",
+        "text_align": "left",
+        "show_tick": false,
+        "has_padding": true
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "p95 frame time (ms)",
+        "requests": [
+          {
+            "q": "p95:glitchless.frame.time{$service,$env,$version,$level}",
+            "aggregator": "avg",
+            "conditional_formats": [
+              {
+                "comparator": "<=",
+                "value": 19,
+                "palette": "white_on_green"
+              },
+              {
+                "comparator": "<=",
+                "value": 33.4,
+                "palette": "white_on_yellow"
+              },
+              {
+                "comparator": ">",
+                "value": 33.4,
+                "palette": "white_on_red"
+              }
+            ]
+          }
+        ],
+        "precision": 1,
+        "autoscale": false,
+        "custom_unit": "ms"
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "Sessions",
+        "requests": [
+          {
+            "q": "sum:glitchless.sessions{$service,$env,$version}.as_count()",
+            "aggregator": "sum"
+          }
+        ],
+        "precision": 0
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "Errors",
+        "requests": [
+          {
+            "q": "sum:glitchless.errors{$service,$env,$version}.as_count()",
+            "aggregator": "sum",
+            "conditional_formats": [
+              {
+                "comparator": ">",
+                "value": 0,
+                "palette": "white_on_red"
+              },
+              {
+                "comparator": "<=",
+                "value": 0,
+                "palette": "white_on_green"
+              }
+            ]
+          }
+        ],
+        "precision": 0
+      }
+    },
+    {
+      "definition": {
+        "type": "query_value",
+        "title": "Hitches (>50ms)",
+        "requests": [
+          {
+            "q": "sum:glitchless.frame.hitches{$service,$env,$version,$level}.as_count()",
+            "aggregator": "sum"
+          }
+        ],
+        "precision": 0
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Frame time percentiles by version",
+        "show_legend": true,
+        "requests": [
+          {
+            "q": "p50:glitchless.frame.time{$service,$env,$level} by {version}",
+            "display_type": "line",
+            "style": {
+              "palette": "cool",
+              "line_type": "dashed"
+            }
+          },
+          {
+            "q": "p95:glitchless.frame.time{$service,$env,$level} by {version}",
+            "display_type": "line",
+            "style": {
+              "palette": "purple",
+              "line_width": "thick"
+            }
+          }
+        ],
+        "markers": [
+          {
+            "value": "y = 16.7",
+            "display_type": "ok dashed",
+            "label": "60fps budget"
+          },
+          {
+            "value": "y = 33.4",
+            "display_type": "error dashed",
+            "label": "jank"
+          }
+        ],
+        "events": [
+          {
+            "q": "source:glitchless $service"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "toplist",
+        "title": "p95 frame time by level",
+        "requests": [
+          {
+            "q": "top(p95:glitchless.frame.time{$service,$env,$version} by {level}, 10, 'mean', 'desc')"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "toplist",
+        "title": "p95 frame time by GPU tier",
+        "requests": [
+          {
+            "q": "top(p95:glitchless.frame.time{$service,$env,$version} by {gpu_tier}, 10, 'mean', 'desc')"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Draw calls & particles (game context)",
+        "show_legend": true,
+        "requests": [
+          {
+            "q": "avg:glitchless.render.draw_calls{$service,$env,$version} by {level}",
+            "display_type": "line"
+          },
+          {
+            "q": "avg:glitchless.context.particles{$service,$env,$version} by {level}",
+            "display_type": "bars",
+            "style": {
+              "palette": "warm"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Renderer geometries (leak watch)",
+        "show_legend": true,
+        "requests": [
+          {
+            "q": "max:glitchless.memory.geometries{$service,$env} by {version}",
+            "display_type": "line",
+            "style": {
+              "palette": "orange"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Deaths by level & cause",
+        "show_legend": true,
+        "requests": [
+          {
+            "q": "sum:glitchless.deaths{$service,$env,$version} by {level,cause}.as_count()",
+            "display_type": "bars"
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Level funnel",
+        "show_legend": true,
+        "requests": [
+          {
+            "q": "sum:glitchless.level.starts{$service,$env,$version} by {level}.as_count()",
+            "display_type": "bars",
+            "style": {
+              "palette": "cool"
+            }
+          },
+          {
+            "q": "sum:glitchless.level.completes{$service,$env,$version} by {level}.as_count()",
+            "display_type": "bars",
+            "style": {
+              "palette": "purple"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "definition": {
+        "type": "log_stream",
+        "title": "Game errors",
+        "query": "source:glitchless status:error $service $version",
+        "columns": [
+          "host",
+          "service",
+          "@error.message",
+          "@game.level"
+        ],
+        "message_display": "expanded-md",
+        "show_date_column": true,
+        "show_message_column": true,
+        "sort": {
+          "column": "time",
+          "order": "desc"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "log_stream",
+        "title": "Gameplay events",
+        "query": "source:glitchless -status:error $service $version",
+        "columns": [
+          "@game.event",
+          "@game.level",
+          "@cause"
+        ],
+        "message_display": "inline",
+        "show_date_column": true,
+        "show_message_column": true,
+        "sort": {
+          "column": "time",
+          "order": "desc"
+        }
+      }
+    }
+  ]
+}

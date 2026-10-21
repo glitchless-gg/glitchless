@@ -1,0 +1,77 @@
+# Example: playtest every pull request with Glitchless.
+# Copy to .github/workflows/playtest.yml. It builds the game from the base branch and from the
+# pull request, has the autoplay bots play both on the same runner, and posts the comparison on
+# the PR. A regression fails the check.
+#
+# Hosted runners have no GPU, so the browser renders in software and absolute frame times are
+# slow. Base and PR still run on the same machine, and draw calls, render CPU, errors and crashes
+# compare reliably. For trustworthy frame-time numbers, use a self-hosted runner with a GPU.
+
+name: Glitchless playtest
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  playtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          path: pr
+
+      - name: Check out the base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: |
+          (cd pr && npm ci)
+          (cd base && npm ci)
+          (cd pr && npx playwright install --with-deps chromium)
+
+      - name: Build both versions of the game
+        run: |
+          (cd pr && npm run build -w glitchless && npm run build -w zoomies)
+          (cd base && npm run build -w glitchless && npm run build -w zoomies)
+
+      - name: Start Glitchless and serve both builds
+        env:
+          GLITCHLESS_DATA_DIR: ${{ runner.temp }}/glitchless-data
+          GLITCHLESS_DATADOG: 'off'
+        run: |
+          (cd pr && node server/src/local.js > ${{ runner.temp }}/server.log 2>&1 &)
+          (cd pr/apps/zoomies && npx vite preview --port 5173 --strictPort > /dev/null 2>&1 &)
+          (cd base/apps/zoomies && npx vite preview --port 5174 --strictPort > /dev/null 2>&1 &)
+          npx wait-on http://localhost:7777/v1/health http://localhost:5173 http://localhost:5174
+
+      - name: Playtest the base branch and the pull request
+        id: playtest
+        working-directory: pr
+        run: |
+          set +e
+          npm run -s playtest -- --channel chromium --baseline-url http://localhost:5174/ --game http://localhost:5173/ > ${{ runner.temp }}/playtest.md
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          cat ${{ runner.temp }}/playtest.md
+
+      - name: Post the report on the pull request
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ${{ runner.temp }}/playtest.md
+
+      - name: Fail on a regression
+        if: steps.playtest.outputs.exit != '0'
+        run: exit 1

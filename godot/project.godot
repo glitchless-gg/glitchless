@@ -1,0 +1,28 @@
+; A tiny game that uses the Glitchless addon, for trying it and for the tests in test/.
+
+config_version=5
+
+[application]
+
+config/name="Glitchless Godot Demo"
+config/version="0.1.0"
+run/main_scene="res://demo/demo.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+
+[autoload]
+
+Glitchless="*res://addons/glitchless/glitchless.gd"
+
+[debug]
+
+settings/gdscript/always_track_call_stacks=true
+
+[display]
+
+window/size/viewport_width=540
+window/size/viewport_height=960
+
+[rendering]
+
+renderer/rendering_method="mobile"
+textures/vram_compression/import_etc2_astc=true
