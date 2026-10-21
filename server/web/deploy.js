@@ -252,4 +252,4 @@ try {
   log(`health check failed (may still be warming up): ${err.message}`);
 }
 console.log(`\n🐶 Glitchless is live on Lambda Web Functions\n   dashboard  ${url}\n   game       ${url}/play/\n   read key   ${state.apiKey}   (dashboard + MCP: x-glitchless-api-key)\n   state      ${path.relative(ROOT, STATE_FILE)}\n`);
-console.log(`   claude mcp add glitchless-aws -e GLITCHLESS_URL=${url} -e GLITCHLESS_API_KEY=${state.apiKey} -- node packages/mcp/src/index.js`);
+console.log(`   claude mcp add glitchless-aws -e GLITCHLESS_URL=${url} -e GLITCHLESS_API_KEY=${state.apiKey} -- npx -y glitchless-mcp`);

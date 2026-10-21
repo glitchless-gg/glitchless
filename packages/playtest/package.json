@@ -27,7 +27,7 @@
     ".": "./src/index.js"
   },
   "bin": {
-    "glitchless-playtest": "./bin/glitchless-playtest.js"
+    "glitchless-playtest": "bin/glitchless-playtest.js"
   },
   "files": [
     "bin",

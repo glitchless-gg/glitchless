@@ -57,6 +57,10 @@ Datadog forwarding switches on automatically when `DD_API_KEY` (or `DATADOG_KEY`
 
 ### Add it to your game
 
+```bash
+npm install glitchless
+```
+
 ```js
 import * as THREE from 'three';
 import { Glitchless, instrumentThree } from 'glitchless';
@@ -78,22 +82,22 @@ For a Godot game, copy [`godot/addons/glitchless`](godot/addons/glitchless) into
 
 ```bash
 # production telemetry + ranked findings
-claude mcp add glitchless -e GLITCHLESS_URL=http://localhost:7777 -- node packages/mcp/src/index.js
+claude mcp add glitchless -e GLITCHLESS_URL=http://localhost:7777 -- npx -y glitchless-mcp
 # the live game as a tool server (WebMCP); ask Claude for a token, paste it into the WebMCP widget
 claude mcp add webmcp -- npx -y @jason.today/webmcp@latest --mcp
 # or both at once, plus the skills
-/plugin marketplace add ./
+/plugin marketplace add glitchless-gg/glitchless
 /plugin install glitchless@glitchless
 ```
 
 ## Playtest every change
 
-Vibe-coded games rarely have tests. Their autoplay bots can stand in: `glitchless-playtest` plays fixed-seed runs in real Chrome on the current code, asks Glitchless for the numbers from exactly those sessions, and compares them with a saved baseline.
+Vibe-coded games rarely have tests. Their autoplay bots can stand in: `glitchless-playtest` plays fixed-seed runs in real Chrome on the current code, asks Glitchless for the numbers from exactly those sessions, and compares them with a saved baseline. Add it to your game's project with `npm install -D glitchless-playtest playwright`, then:
 
 ```bash
-npm run playtest -- --save baseline   # before the change
-npm run playtest                      # after it: PASS, or FAIL with what got worse (exit code 1)
-npm run playtest -- --compare-only baseline latest
+npx glitchless-playtest --save baseline   # before the change
+npx glitchless-playtest                   # after it: PASS, or FAIL with what got worse (exit code 1)
+npx glitchless-playtest --compare-only baseline latest
 ```
 
 A metric only counts as worse when it moves past both a relative and an absolute margin (slow frames: +50% and +2 percentage points), so noise on a fast machine doesn't fail a build. The share of slow frames, render CPU and draw calls are checked overall and per level; any new error type or crashed run fails too. Frame time p95, hitches, deaths, completion and geometry growth produce warnings. p95 is only a warning because with vsync, frame times cluster at 16.7 and 33.3 ms, so p95 jumps between them when about 5% of frames are slow. A quick run is compared with the matching runs of a full baseline. Scenarios, thresholds and URLs can be overridden in `glitchless.playtest.json`. Runs are saved in `.glitchless/playtest/`.

@@ -132,9 +132,9 @@ export function Agents() {
       </Widget>
 
       <Widget span={6} title="① Glitchless MCP server" sub="production telemetry for coding agents">
-        <CodeBlock code={`claude mcp add glitchless \\\n  -e GLITCHLESS_URL=${apiUrl} \\\n  -- node packages/mcp/src/index.js`} />
+        <CodeBlock code={`claude mcp add glitchless \\\n  -e GLITCHLESS_URL=${apiUrl} \\\n  -- npx -y glitchless-mcp`} />
         <div className="muted" style={{ margin: '8px 0 4px', fontSize: 12 }}>
-          Run from the Glitchless repo. Once published to npm: <code>npx -y glitchless-mcp</code>
+          Any other MCP client: the command is <code>npx -y glitchless-mcp</code>, with <code>GLITCHLESS_URL</code> (and <code>GLITCHLESS_API_KEY</code> if the server needs one) in its environment.
         </div>
         <table className="dt" style={{ marginTop: 6 }}>
           <tbody>
@@ -169,7 +169,7 @@ export function Agents() {
       </Widget>
 
       <Widget span={6} title="③ Claude Code plugin" sub="skills + MCP in one install">
-        <CodeBlock code={`/plugin marketplace add ./          (from the Glitchless repo)\n/plugin install glitchless@glitchless\n\n/glitchless:instrument   # add Glitchless to a three.js game\n/glitchless:triage       # read the findings and fix the top one`} />
+        <CodeBlock code={`/plugin marketplace add glitchless-gg/glitchless\n/plugin install glitchless@glitchless\n\n/glitchless:instrument   # add Glitchless to a three.js game\n/glitchless:triage       # read the findings and fix the top one`} />
       </Widget>
       <Widget span={6} title="④ Exporters" sub="Glitchless sends the same telemetry on to Datadog or any OpenTelemetry backend">
         {shell.exportersHelp}

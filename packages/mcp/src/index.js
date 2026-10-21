@@ -4,7 +4,7 @@
 // hotspots and version comparisons. Pair it with WebMCP (live tools exposed by the running game)
 // and the agent can go from "players are rage quitting" to a verified fix.
 //
-//   claude mcp add glitchless -e GLITCHLESS_URL=http://localhost:7777 -- node packages/mcp/src/index.js
+//   claude mcp add glitchless -e GLITCHLESS_URL=http://localhost:7777 -- npx -y glitchless-mcp
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';

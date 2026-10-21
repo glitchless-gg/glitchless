@@ -25,7 +25,7 @@
   "type": "module",
   "main": "./src/index.js",
   "bin": {
-    "glitchless-mcp": "./src/index.js"
+    "glitchless-mcp": "src/index.js"
   },
   "files": [
     "src"
