@@ -64,7 +64,10 @@ above go in its environment.
 | `glitchless_get_error` | One error issue, with its stack and the gameplay before it |
 | `glitchless_player_funnel` | Per level: starts, completions, deaths and their causes, rage quits |
 | `glitchless_death_hotspots` | Where players die on a level, clustered in world coordinates |
-| `glitchless_compare_versions` | Two or more versions side by side, to confirm a fix with real players |
+| `glitchless_events` | The game's own events (whatever it sends with `track`): counts, attribute breakdowns and funnels |
+| `glitchless_dashboard` | The game's dashboard: its pages, and one board's panels with their numbers |
+| `glitchless_set_dashboard` | Save the game's pages: boards of panels in its own words, and the built-in views it keeps. Needs a key with the dashboard scope |
+| `glitchless_compare_versions` | Two or more versions side by side, in the game's own stats first, to confirm a fix with real players |
 | `glitchless_session` | One play session in detail, with its whole event timeline |
 | `glitchless_playtest` | Autoplay bots play the game and compare with a saved baseline ([glitchless-playtest](https://www.npmjs.com/package/glitchless-playtest); needs Playwright in the game project) |
 

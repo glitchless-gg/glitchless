@@ -16,6 +16,11 @@
 // Ranges are answered in whole minutes, up to the compactor's watermark (meta.from and meta.to say which
 // range was answered): summaries are per minute, and the last few minutes are still on their way through
 // Firehose. Same methods as FileStore (stores/file.js), plus context(), which app.js uses when present.
+//
+// Ranges of more than 31 days are answered in whole days (meta.resolution 'day') from the daily rollups
+// the compactor builds once a day has closed (daily.js says what stays exact), and from the hour
+// summaries for days it has not built yet. Heatmaps and session-type filters read raw rows and are
+// answered over the last 31 days (meta.note). The reader's plan (q.plan) caps a range at its retention.
 
 import zlib from 'node:zlib';
 import { isProjectId } from '../auth.js';
@@ -24,25 +29,31 @@ import { addCell, cellList, MINUTE } from '../rollups.js';
 import { addFactsCell } from '../facts.js';
 import { finalizeSession } from '../session-state.js';
 import { buildContext, sessionContext, wantedCell, errorList, crumbsOf, crumbKey, heatmapLevel } from '../analytics.js';
+import { foldDay, dayFromParts, recentFromParts, mergeDays, sessionDay, UNCAPPED } from '../daily.js';
 import { toRecords } from '../lake/record.js';
-import { mergeItems, decode, expandItems } from '../lake/summaries.js';
+import { decode, expandItems, readSummaries } from '../lake/summaries.js';
 import { LakeTable, currentItems } from '../lake/table.js';
-import { HOUR, DAY, META_PK, hourOf, planOf, retentionDays, PLAN_RETENTION_DAYS, indexPk, servicesPk, mapsPk, clearPk, summaryPk, seg } from '../lake/layout.js';
+import { HOUR, DAY, META_PK, hourOf, planOf, retentionDays, PLAN_RETENTION_DAYS, indexPk, servicesPk, mapsPk, dashboardPk, clearPk, summaryPk, dailyPk, seg } from '../lake/layout.js';
 
 const MAX_RANGE_DAYS = 31;
+// Queries that list the latest sessions: over long ranges they read the days' R items, newest first.
+const RECENT = new Set(['sessions', 'board']);
 // Drill-downs a query needs, by query name; issues: how many top error issues need breadcrumbs.
-const DRILL = { performance: { hitches: true }, overview: { issues: 6 }, findings: { issues: 6 }, errors: { issues: Infinity }, heatmap: { pos: true } };
+// (board: a board can show findings, and the first page of a dashboard is where the overview used to be.)
+const DRILL = { performance: { hitches: true }, overview: { issues: 6 }, board: { issues: 6 }, findings: { issues: 6 }, errors: { issues: Infinity }, heatmap: { pos: true } };
 
 export class LakeStore {
   // table: a LakeTable (or { table, region, doc }), bucket: S3Bucket or FsBucket, firehose: FirehoseSink or
   // LocalFirehose. `compact` (optional) runs after every put: local development without a schedule.
-  constructor({ table, bucket, firehose, now = Date.now, compact = null, watermarkTtlMs = 15_000 }) {
+  // dayOverlapMs: as the compactor's (lake/compactor.js), how far past midnight a day's sessions are read.
+  constructor({ table, bucket, firehose, now = Date.now, compact = null, watermarkTtlMs = 15_000, dayOverlapMs = 3 * HOUR }) {
     this.table = table instanceof LakeTable ? table : new LakeTable(table);
     this.bucket = bucket;
     this.firehose = firehose;
     this.now = now;
     this.compact = compact;
     this.watermarkTtlMs = watermarkTtlMs;
+    this.dayOverlapMs = dayOverlapMs;
     this.registered = new Set();
     this.mark = null;
     this.files = new Map(); // session file → events (finished sessions rarely change)
@@ -98,6 +109,24 @@ export class LakeStore {
     return (await this.table.query(mapsPk(projectId, service))).map((i) => JSON.parse(i.e));
   }
 
+  // The game's saved dashboard (board.js): one item per service.
+  async getDashboard(projectId, service) {
+    checkProject(projectId);
+    const item = await this.table.get(dashboardPk(projectId), service);
+    return item ? JSON.parse(item.b) : null;
+  }
+
+  async putDashboard(projectId, service, dashboard) {
+    checkProject(projectId);
+    if (dashboard) await this.table.put({ pk: dashboardPk(projectId), sk: service, b: JSON.stringify(dashboard) });
+    else await this.table.delete(dashboardPk(projectId), service);
+  }
+
+  // The longest range a reader on `plan` can ask for, in days: its retention (no plan: the longest).
+  maxRangeDays(plan) {
+    return plan ? retentionDays(plan) : Math.max(...Object.values(PLAN_RETENTION_DAYS));
+  }
+
   // The range a query is answered for: whole minutes, up to the compactor's watermark.
   async window(from, to) {
     const lo = Math.max(Math.ceil(from / MINUTE) * MINUTE, Math.floor((to - MAX_RANGE_DAYS * DAY) / MINUTE) * MINUTE);
@@ -106,33 +135,23 @@ export class LakeStore {
   }
 
   async watermark() {
+    return (await this.marks()).w;
+  }
+
+  // The compactor's progress: w, summaries are complete up to it; [df, dt), the days with daily rollups.
+  async marks() {
     const now = this.now();
-    if (!this.mark || now - this.mark.at > this.watermarkTtlMs) this.mark = { at: now, w: (await this.table.get(META_PK, 'watermark'))?.w ?? 0 };
-    return this.mark.w;
+    if (!this.mark || now - this.mark.at > this.watermarkTtlMs) {
+      const item = await this.table.get(META_PK, 'watermark');
+      this.mark = { at: now, w: item?.w ?? 0, df: item?.df ?? Infinity, dt: item?.dt ?? -Infinity };
+    }
+    return this.mark;
   }
 
   // Merged summaries of [lo, hi): { cells, facts, sessions } (sessions not yet finalized).
   async summaries(projectId, service, lo, hi) {
     checkProject(projectId);
-    if (lo >= hi) return { cells: new Map(), facts: new Map(), sessions: new Map() };
-    const first = hourOf(lo);
-    const last = hourOf(hi - 1);
-    const full = (h) => h >= lo && h + HOUR <= hi;
-    const fullHours = [];
-    for (let h = first; h <= last; h += HOUR) if (full(h)) fullHours.push(h);
-    const edges = [first, last].filter((h, i, a) => !full(h) && a.indexOf(h) === i);
-    const fetches = [this.table.summaryItems(projectId, service, 'C', first, last), this.table.summaryItems(projectId, service, 'A', first, last)];
-    if (fullHours.length) fetches.push(this.table.summaryItems(projectId, service, 'H', fullHours[0], fullHours.at(-1)));
-    for (const h of edges) fetches.push(this.table.summaryItems(projectId, service, 'F', h, h));
-    // Whole hours need their minute cells and hour states; edge hours their minute cells and minute states.
-    const wanted = (h) => new Set(['A', 'C', full(h) ? 'H' : 'F']);
-    const items = currentItems((await Promise.all(fetches)).flat(), wanted).map((it) => ({ ...it, payload: decode(it.b) }));
-    return mergeItems(
-      expandItems(items, (f, h) => wanted(h).has(f)),
-      lo,
-      hi,
-      { addCell, addFactsCell },
-    );
+    return readSummaries(this.table, projectId, service, lo, hi);
   }
 
   // { lo, hi, minutes } as FileStore and DynamoStore give it: rollup cells of every minute in [lo, hi).
@@ -152,6 +171,89 @@ export class LakeStore {
   // The context the analytics take (see analytics.js sessionContext), for query `name`.
   async context(projectId, q, name, params = new URLSearchParams()) {
     checkProject(projectId);
+    const retention = q.plan ? retentionDays(q.plan) : null;
+    if (retention && q.from < q.to - retention * DAY) q = { ...q, from: q.to - retention * DAY };
+    const long = q.to - q.from > MAX_RANGE_DAYS * DAY && name !== 'session' && !q.sessions;
+    const daily = long && name !== 'heatmap' && (!q.type || q.type === 'all');
+    const ctx = daily ? await this.dailyContext(projectId, q, name, params) : await this.minuteContext(projectId, q, name, params);
+    ctx.meta = { ...ctx.meta, ...(retention ? { retention_days: retention } : {}) };
+    if (long && !daily) ctx.meta.note = `${name === 'heatmap' ? 'Heatmaps' : 'Session-type filters'} read raw events, so this covers the last ${MAX_RANGE_DAYS} days of the range.`;
+    return ctx;
+  }
+
+  // Ranges of more than 31 days, in whole days: the days' rollups where the compactor has built them,
+  // the hour summaries (folded the same way) for the days on either side of them.
+  async dailyContext(projectId, q, name, params) {
+    const mark = await this.marks();
+    const lo = Math.floor(q.from / DAY) * DAY;
+    const hi = Math.max(lo, Math.min(Math.floor((q.to + 1) / MINUTE) * MINUTE, mark.w));
+    // Rollups for whole days only: a range that ends part way through a day takes that day from the hours.
+    const end = Math.floor(hi / DAY) * DAY;
+    const a = Math.min(Math.max(mark.df, lo), end);
+    const b = Math.min(Math.max(mark.dt, a), end);
+    // The sessions list reads only the latest sessions (storedRecent), not the days' rollups.
+    const days = a < b && name !== 'sessions' ? await this.storedDays(projectId, q.service, a, b) : [];
+    for (const [x, y] of [
+      [lo, a],
+      [b, hi],
+    ])
+      if (x < y) days.push(...(await this.hourlyDays(projectId, q.service, x, y, hi)));
+    const wanted = wantedCell(q);
+    const { cells, facts, daily } = mergeDays(days, (env, version) => wanted({ env, version }));
+    if (RECENT.has(name)) await this.storedRecent(projectId, q.service, a, b, (env, version) => wanted({ env, version }), daily.all.recent);
+    const ctx = sessionContext({ ...q, from: lo, to: Math.max(lo, hi - 1) }, new Map());
+    ctx.daily = daily;
+    ctx.cells = cells.filter(({ c }) => wanted(c));
+    ctx.facts = facts.filter(({ c }) => wanted(c));
+    ctx.meta = { resolution: 'day', approximate: [] };
+    // Recent hitches come from the raw rows of the last 31 days.
+    await this.drills(ctx, projectId, q, name, params, lo, hi, wanted, Math.max(lo, hi - MAX_RANGE_DAYS * DAY));
+    return ctx;
+  }
+
+  // The daily rollups of the days [a, b).
+  async storedDays(projectId, service, a, b) {
+    const items = currentItems(await this.table.dailyItems(projectId, service, a, b - DAY, 'D'), () => new Set(['D']));
+    const byDay = new Map();
+    for (const it of items) (byDay.get(it.hour) || byDay.set(it.hour, []).get(it.hour)).push(it);
+    return [...byDay].map(([day, list]) =>
+      dayFromParts(
+        day,
+        list.sort((x, y) => x.chunk - y.chunk).flatMap((it) => decode(it.b).parts),
+      ),
+    );
+  }
+
+  // The latest sessions of the stored days [a, b) into `recent` ([start, summary], newest first when done):
+  // a week at a time from the newest, until there are as many as a list shows. Sessions count on the day
+  // they started, so every session of an older day is older than all of these.
+  async storedRecent(projectId, service, a, b, keep, recent) {
+    const enough = recent.length + 300;
+    for (let hi = b; hi > a && recent.length < enough; hi -= 7 * DAY) {
+      const items = currentItems(await this.table.dailyItems(projectId, service, Math.max(a, hi - 7 * DAY), hi - DAY, 'R'), () => new Set(['R']));
+      for (const it of items) recent.push(...recentFromParts(decode(it.b).parts, keep));
+    }
+    recent.sort((x, y) => y[0] - x[0]);
+  }
+
+  // The days [x, y) folded from the hour summaries as the compactor folds them (nothing capped): their
+  // sessions are read from dayOverlapMs before x (to tell which started earlier) to dayOverlapMs past y.
+  async hourlyDays(projectId, service, x, y, hi) {
+    const { cells, facts, sessions } = await this.summaries(projectId, service, x - this.dayOverlapMs, Math.min(y + this.dayOverlapMs, hi));
+    const byDay = new Map();
+    const at = (d) => byDay.get(d) || byDay.set(d, { cells: new Map(), facts: new Map(), sessions: [] }).get(d);
+    for (const [m, list] of cells) if (m >= x && m < y) at(Math.floor(m / DAY) * DAY).cells.set(m, list);
+    for (const [m, list] of facts) if (m >= x && m < y) at(Math.floor(m / DAY) * DAY).facts.set(m, list);
+    for (const s of sessions.values()) {
+      finalizeSession(s);
+      const d = sessionDay(s);
+      if (d >= x && d < y) at(d).sessions.push(s);
+    }
+    return [...byDay].map(([d, parts]) => foldDay(d, parts, UNCAPPED));
+  }
+
+  // Ranges of up to 31 days, in whole minutes.
+  async minuteContext(projectId, q, name, params) {
     const { lo, hi } = await this.window(q.from, q.to);
     const qq = { ...q, from: lo, to: Math.max(lo, hi - 1) };
     if (name === 'session') return buildContext(await this.sessionEvents(projectId, q.service, [params.get('id')], lo, hi), qq);
@@ -165,11 +267,16 @@ export class LakeStore {
     const ctx = sessionContext(qq, ordered);
     ctx.cells = cellList(cells, wantedCell(q));
     ctx.facts = cellList(facts, wantedCell(q));
+    await this.drills(ctx, projectId, q, name, params, lo, hi, (e) => ctx.sessions.has(e.session_id));
+    return ctx;
+  }
+
+  // The drill-downs query `name` shows, over [lo, hi) (recent hitches over [hitchesFrom, hi)), of the events
+  // that pass `keep`. They add detail to an answer the summaries already give: if one fails (DuckDB missing
+  // from a deploy, a file gone), the answer goes out without it and says so (meta.partial).
+  async drills(ctx, projectId, q, name, params, lo, hi, keep, hitchesFrom = lo) {
     ctx.drill = { hitches: [], crumbs: new Map(), pos: new Map(), failed: [] };
     const need = DRILL[name] || {};
-    const keep = (e) => ctx.sessions.has(e.session_id);
-    // Drill-downs add detail to an answer the summaries already give: if one fails (DuckDB missing from a
-    // deploy, a file gone), the answer goes out without it and says so (meta.partial).
     const attempt = async (what, fn) => {
       try {
         await fn();
@@ -180,7 +287,7 @@ export class LakeStore {
     };
     if (need.hitches) {
       await attempt('hitches', async () => {
-        ctx.drill.hitches = await this.drill(projectId, q.service, lo, hi, { types: ['hitch'], newest: 100, keep });
+        ctx.drill.hitches = await this.drill(projectId, q.service, hitchesFrom, hi, { types: ['hitch'], newest: 100, keep });
       });
     }
     if (need.issues) {
@@ -296,6 +403,10 @@ export class LakeStore {
     const maxDays = Math.max(...Object.values(PLAN_RETENTION_DAYS)) + 1;
     for (let d = Math.floor(now / DAY) * DAY; d >= now - maxDays * DAY; d -= DAY) {
       const items = await this.table.query(summaryPk(projectId, service, d));
+      if (items.length) await this.table.deleteAll(items.map(({ pk, sk }) => ({ pk, sk })));
+    }
+    for (let y = new Date(now - maxDays * DAY).getUTCFullYear(); y <= new Date(now).getUTCFullYear(); y++) {
+      const items = await this.table.query(dailyPk(projectId, service, Date.UTC(y, 0, 1)));
       if (items.length) await this.table.deleteAll(items.map(({ pk, sk }) => ({ pk, sk })));
     }
     for (const pk of [indexPk(projectId, service), mapsPk(projectId, service)]) await this.table.deleteAll((await this.table.query(pk)).map(({ pk: p, sk }) => ({ pk: p, sk })));

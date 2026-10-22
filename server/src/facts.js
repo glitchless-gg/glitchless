@@ -8,6 +8,7 @@
 // first appeared ([ts, position]) and the queries sort by that.
 
 import { minuteOf } from './rollups.js';
+import { Distinct } from './sketches.js';
 
 // Level transitions always cost a frame or two (shader compile, uploads) — that's attributed via
 // hitch causes, so leave them out of "what triggered this" analysis.
@@ -117,18 +118,32 @@ export function mergeErrors(into, er) {
   for (const [key, x] of Object.entries(er)) {
     const y = into[key];
     if (!y) {
-      into[key] = structuredClone(x);
+      into[key] = { ...structuredClone({ ...x, sessions: {}, players: {} }), sessions: mergeIds({}, x.sessions), players: mergeIds({}, x.players) };
       continue;
     }
     y.n += x.n;
     if (x.first.ts < y.first.ts) y.first = { ...x.first };
     if (x.last > y.last) y.last = x.last;
-    Object.assign(y.sessions, x.sessions);
-    Object.assign(y.players, x.players);
+    y.sessions = mergeIds(y.sessions, x.sessions);
+    y.players = mergeIds(y.players, x.players);
     Object.assign(y.levels, x.levels);
     for (const [v, ts] of Object.entries(x.versions)) if (!(v in y.versions) || ts < y.versions[v]) y.versions[v] = ts;
   }
   return into;
+}
+
+// An error's sessions or players: ids as an object's keys, or, in daily rollups (daily.js), a Distinct
+// sketch. Merging into `a` returns the result (a sketch once either side is one).
+export function mergeIds(a, b) {
+  if (!(a instanceof Distinct) && !(b instanceof Distinct)) return Object.assign(a, b);
+  const d = a instanceof Distinct ? a : Object.keys(a).reduce((s, id) => s.add(id), new Distinct(Infinity, b.p));
+  if (b instanceof Distinct) d.merge(b);
+  else for (const id of Object.keys(b)) d.add(id);
+  return d;
+}
+
+export function idCount(ids) {
+  return ids instanceof Distinct ? ids.count() : Object.keys(ids).length;
 }
 
 // Merge one stored facts cell into minutes (taking ownership of `f` when the minute has no such cell yet).

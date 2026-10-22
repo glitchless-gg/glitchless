@@ -54,8 +54,15 @@ export function pctStatus(v, ok, warn, higherIsBetter = true) {
 }
 
 export const PALETTE = ['#14213d', '#3d8cf5', '#1fae84', '#f2a93b', '#ff6b57', '#4fc1d9', '#2ee6a6', '#8a94a6'];
-export const CAUSE_COLORS = { fell: '#3d8cf5', squirrel: '#f2a93b', vacuum: '#ff6b57', unknown: '#8a94a6' };
+// A death cause's colour: the same for a cause on every page and level, whatever the game calls its causes.
+const CAUSE_PALETTE = ['#3d8cf5', '#f2a93b', '#ff6b57', '#1fae84', '#4fc1d9', '#2ee6a6', '#b07cf2', '#e0437a'];
+export function causeColor(cause) {
+  if (cause == null || cause === '' || cause === 'unknown') return '#8a94a6';
+  let h = 0;
+  for (const ch of String(cause)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CAUSE_PALETTE[h % CAUSE_PALETTE.length];
+}
 
 export function colorFor(key, i) {
-  return CAUSE_COLORS[key] || PALETTE[i % PALETTE.length];
+  return PALETTE[i % PALETTE.length];
 }

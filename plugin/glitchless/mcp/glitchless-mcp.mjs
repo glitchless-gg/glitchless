@@ -7200,6 +7200,9 @@ var require_dist = __commonJS({
   }
 });
 
+// src/index.js
+import { AsyncLocalStorage } from "node:async_hooks";
+
 // ../../node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
@@ -36590,7 +36593,7 @@ var StdioServerTransport = class {
   }
 };
 
-// node_modules/glitchless-playtest/src/config.js
+// ../playtest/src/config.js
 import fs from "node:fs";
 import path from "node:path";
 var DEFAULT_SCENARIOS = [
@@ -36602,6 +36605,8 @@ var DEFAULT_THRESHOLDS = {
   pct_frames_over_budget: { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
   frame_p95: { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
   render_cpu_ms: { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+  // The game's update code (scripts and physics), where the SDK can time it: Phaser, Godot and Unity.
+  update_cpu_ms: { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
   draw_calls: { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
   hitches_per_min: { label: "Hitches per minute", higher: true, pct: 50, abs: 1, severity: "warn" },
   errors_per_session: { label: "Errors per run", higher: true, pct: 50, abs: 1, severity: "warn" },
@@ -36612,6 +36617,7 @@ var DEFAULT_THRESHOLDS = {
   "level.pct_frames_over_budget": { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
   "level.frame_p95": { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
   "level.render_cpu_ms": { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+  "level.update_cpu_ms": { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
   "level.draw_calls": { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
   new_errors: { label: "New error types", severity: "fail" },
   new_crashes: { label: "Crashed runs", severity: "fail" }
@@ -36647,7 +36653,7 @@ function loadConfig(cwd = process.cwd(), overrides = {}) {
   return cfg;
 }
 
-// node_modules/glitchless-playtest/src/run.js
+// ../playtest/src/run.js
 import os from "node:os";
 import path2 from "node:path";
 import { execFileSync } from "node:child_process";
@@ -36778,9 +36784,9 @@ async function playtestRun(cfg, { game = cfg.game, scenarios = cfg.scenarios, lo
   };
 }
 
-// node_modules/glitchless-playtest/src/compare.js
-var OVERALL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "draw_calls", "hitches_per_min", "errors_per_session", "deaths_per_session", "level_completion_pct", "geometries_growth_per_level_load"];
-var PER_LEVEL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "draw_calls"];
+// ../playtest/src/compare.js
+var OVERALL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "update_cpu_ms", "draw_calls", "hitches_per_min", "errors_per_session", "deaths_per_session", "level_completion_pct", "geometries_growth_per_level_load"];
+var PER_LEVEL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "update_cpu_ms", "draw_calls"];
 function judge(before, after, t) {
   if (before == null || after == null || !t) return null;
   const diff = after - before;
@@ -36841,7 +36847,7 @@ function compareRuns(baseline, candidate, thresholds = DEFAULT_THRESHOLDS) {
   };
 }
 
-// node_modules/glitchless-playtest/src/report.js
+// ../playtest/src/report.js
 var fmt = (v) => v == null ? "\u2013" : typeof v === "number" ? Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : String(v);
 var change = (c) => c.change_pct == null ? "" : `${c.change_pct > 0 ? "+" : ""}${c.change_pct}%`;
 var runs = (n) => `${n} autoplay run${n === 1 ? "" : "s"}`;
@@ -36888,6 +36894,7 @@ function runReport(run) {
     ["Slow frames (% over budget)", s.pct_frames_over_budget],
     ["Frame time p95 (ms)", s.frame_p95],
     ["Render CPU per frame (ms)", s.render_cpu_ms],
+    ...s.update_cpu_ms != null ? [["Update CPU per frame (ms)", s.update_cpu_ms]] : [],
     ["Draw calls per frame", s.draw_calls],
     ["Hitches per minute", s.hitches_per_min],
     ["Errors per run", s.errors_per_session],
@@ -36898,8 +36905,9 @@ function runReport(run) {
   for (const [k, v] of rows) out.push(`| ${k} | ${fmt(v)} |`);
   const levels = Object.entries(s.levels || {});
   if (levels.length) {
-    out.push("", "| Level | Slow frames (%) | Frame p95 (ms) | Draw calls | Render CPU (ms) |", "| --- | ---: | ---: | ---: | ---: |");
-    for (const [l, v] of levels) out.push(`| ${l} | ${fmt(v.pct_frames_over_budget)} | ${fmt(v.frame_p95)} | ${fmt(v.draw_calls)} | ${fmt(v.render_cpu_ms)} |`);
+    const update = levels.some(([, v]) => v.update_cpu_ms != null);
+    out.push("", `| Level | Slow frames (%) | Frame p95 (ms) | Draw calls | Render CPU (ms) |${update ? " Update CPU (ms) |" : ""}`, `| --- | ---: | ---: | ---: | ---: |${update ? " ---: |" : ""}`);
+    for (const [l, v] of levels) out.push(`| ${l} | ${fmt(v.pct_frames_over_budget)} | ${fmt(v.frame_p95)} | ${fmt(v.draw_calls)} | ${fmt(v.render_cpu_ms)} |${update ? ` ${fmt(v.update_cpu_ms)} |` : ""}`);
   }
   if (s.errors?.length) {
     out.push("", "Errors:");
@@ -36908,7 +36916,7 @@ function runReport(run) {
   return out.join("\n");
 }
 
-// node_modules/glitchless-playtest/src/runs.js
+// ../playtest/src/runs.js
 import fs2 from "node:fs";
 import path3 from "node:path";
 var NAME = /^[A-Za-z0-9._-]{1,64}$/;
@@ -36932,7 +36940,7 @@ function listRuns(dir) {
   return fs2.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
 }
 
-// node_modules/glitchless-playtest/src/index.js
+// ../playtest/src/index.js
 async function playtest({ saveAs, compareTo, baselineUrl, quick = false, maxSeconds, config: config2 = {}, cwd = process.cwd(), log = () => {
 } } = {}) {
   const cfg = loadConfig(cwd, config2);
@@ -36991,7 +36999,7 @@ var DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || "";
 var server = new McpServer(
   { name: "glitchless", version: "0.1.2" },
   {
-    instructions: 'Glitchless is observability for games made with Three.js, Phaser, Unity or Godot. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity and Godot builds measure themselves when run with --glitchless-measure=SECONDS.'
+    instructions: 'Glitchless is observability for games made with Three.js, Phaser, Unity or Godot. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity and Godot builds measure themselves when run with --glitchless-measure=SECONDS.'
   }
 );
 async function query(name, params = {}) {
@@ -37002,7 +37010,34 @@ async function query(name, params = {}) {
     headers: { "x-glitchless-client": client, ...API_KEY ? { "x-glitchless-api-key": API_KEY } : {} }
   });
   if (!res.ok) throw new Error(`Glitchless API ${name} \u2192 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return res.json();
+  const data = await res.json();
+  const call = calls.getStore();
+  if (call && data?.meta) Object.assign(call, { meta: data.meta, from: params.from });
+  return data;
+}
+var calls = new AsyncLocalStorage();
+function windowNote() {
+  const { meta: meta3, from } = calls.getStore() || {};
+  if (!meta3) return "";
+  const parts = [];
+  if (meta3.resolution === "day") parts.push("answered by day: each session counts on the day it started");
+  if (meta3.approximate?.length) parts.push(`estimated (sketches or samples): ${meta3.approximate.join(", ")}`);
+  if (meta3.note) parts.push(meta3.note);
+  if (meta3.retention_days && from != null && meta3.from - from > 864e5) parts.push(`the plan keeps ${meta3.retention_days} days of data, so the window starts ${new Date(meta3.from).toISOString().slice(0, 10)}`);
+  return parts.length ? `
+(Note: ${parts.join("; ")}.)` : "";
+}
+async function write(method, path4, body) {
+  const client = server.server.getClientVersion?.()?.name || "mcp";
+  const res = await fetch(`${BASE}${path4}`, {
+    method,
+    headers: { "content-type": "application/json", "x-glitchless-client": client, ...API_KEY ? { "x-glitchless-api-key": API_KEY } : {} },
+    ...body ? { body: JSON.stringify(body) } : {}
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 403) throw new Error(`${data.error || "forbidden"}. Saving a dashboard needs a secret key with the dashboard scope (create one in the dashboard's settings).`);
+  if (!res.ok) throw new Error(`Glitchless API ${method} ${path4} \u2192 HTTP ${res.status}: ${data.error || ""}`);
+  return data;
 }
 async function resolveService(service) {
   if (service) return service;
@@ -37016,7 +37051,7 @@ function range(hours = 24) {
   return { from: to - hours * 36e5, to };
 }
 function reply(title, data) {
-  return { content: [{ type: "text", text: `${title}
+  return { content: [{ type: "text", text: `${title}${windowNote()}
 
 ${JSON.stringify(data, null, 2)}` }] };
 }
@@ -37025,17 +37060,21 @@ function fail(err) {
 }
 var common = {
   service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
-  hours: external_exports.number().min(0.25).max(168).optional().describe("Look-back window in hours (default 24)"),
+  hours: external_exports.number().min(0.25).max(9600).optional().describe("Look-back window in hours (default 24). Up to the plan's retention on Glitchless Cloud: 336 (14 days) on Free, 2160 (90 days) on Indie, 9600 (400 days) on Studio. Past 744 (31 days) answers are by day."),
   version: external_exports.string().optional().describe("Only include sessions from this game version")
 };
 function tool(name, description, schema, handler) {
-  server.registerTool(name, { description, inputSchema: schema, annotations: { readOnlyHint: true } }, async (args) => {
-    try {
-      return await handler(args || {});
-    } catch (err) {
-      return fail(err);
-    }
-  });
+  server.registerTool(
+    name,
+    { description, inputSchema: schema, annotations: { readOnlyHint: true } },
+    async (args) => calls.run({}, async () => {
+      try {
+        return await handler(args || {});
+      } catch (err) {
+        return fail(err);
+      }
+    })
+  );
 }
 tool("glitchless_list_games", "List the games reporting to Glitchless, with their versions, environments and when they were last seen.", {}, async () => {
   const { services } = await query("services");
@@ -37102,6 +37141,95 @@ tool("glitchless_player_funnel", "Player experience per level: sessions that sta
   return reply(`Player funnel for ${svc}`, { kpis: d.kpis, funnel: d.funnel, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15) });
 });
 tool(
+  "glitchless_events",
+  "The game's own metrics, from the custom events it sends with track(): each event's count in the window, the sessions and players that sent it, and how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done). Give `funnel` to count the sessions that went from one event to the next, in that order.",
+  {
+    ...common,
+    name: external_exports.string().optional().describe('Only this event, e.g. "paywall"'),
+    funnel: external_exports.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"')
+  },
+  async ({ service, hours, version: version2, name, funnel }) => {
+    const svc = await resolveService(service);
+    const d = await query("events", { service: svc, version: version2, name, funnel, ...range(hours) });
+    const brief = d.events.slice(0, 15).map((e) => `${e.name}: ${e.count} in ${e.sessions} session(s)`).join("\n");
+    return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions):
+${brief || "None in this window. A game sends them with track(name, attrs)."}`, {
+      events: d.events.map(({ series, ...e }) => e),
+      ...d.funnel ? { funnel: d.funnel } : {}
+    });
+  }
+);
+tool(
+  "glitchless_dashboard",
+  "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live), and one board's panels with their numbers for the window. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` is what to edit and send back to glitchless_set_dashboard.",
+  { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
+  async ({ service, hours, version: version2, page }) => {
+    const svc = await resolveService(service);
+    const { dashboard } = await query("dashboard", { service: svc, version: version2, ...range(hours) });
+    if (!dashboard) return reply(`${svc} has sent no data yet`, {});
+    const b = await query("board", { service: svc, version: version2, page, ...range(hours) });
+    const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...p.view ? { view: p.view, ...p.options ? { options: p.options } : {} } : { panels: p.panels } }));
+    const board = b.board ? { page: b.board.page, title: b.board.title, panels: b.board.panels.map(({ ts, series, p50, p95, ...p }) => p) } : { error: b.error };
+    return reply(`Dashboard for ${svc} (${dashboard.source}${dashboard.updated_by ? `, saved by ${dashboard.updated_by}` : ""}):`, { pages, board, spec: dashboard.spec });
+  }
+);
+var panelSchema = external_exports.object({
+  type: external_exports.enum(["stat", "series", "breakdown", "funnel", "levels", "frame_time", "errors", "deaths", "events", "findings", "sessions", "versions", "live"]),
+  title: external_exports.string().optional().describe(`In the game's own words, e.g. "Stops won vs lost"`),
+  note: external_exports.string().optional().describe("One line on why this panel matters"),
+  size: external_exports.enum(["s", "m", "l"]).optional().describe("s = a quarter row (stats), m = half, l = full width"),
+  metric: external_exports.string().optional().describe("stat: sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths or rage_quit_pct"),
+  event: external_exports.string().optional().describe('stat, series, breakdown: one event, "name", "name=value" or "name:key=value"'),
+  per: external_exports.string().optional().describe('stat: divide by this event to get a percentage, e.g. event "buy=done" per "paywall"'),
+  by: external_exports.string().optional().describe('series, breakdown: the attribute to split by, e.g. "mode" or "what", or $version / $level'),
+  limit: external_exports.number().int().optional(),
+  steps: external_exports.string().optional().describe('funnel: events in order, comma-separated, e.g. "paywall,buy=tapped,buy=done"'),
+  label: external_exports.string().optional().describe('levels: what the game calls a level, e.g. "Stop" or "Puzzle"'),
+  sent: external_exports.string().optional().describe('sessions: only sessions that sent this event, e.g. "buy=done"'),
+  events: external_exports.array(external_exports.string()).optional().describe('live: only these event names or types, e.g. ["buy", "paywall", "error"]')
+}).describe("One panel");
+var pageSchema = external_exports.object({
+  id: external_exports.string().optional().describe('Short id used in the page address, e.g. "money" (default: from the title)'),
+  title: external_exports.string().optional().describe("The name in the sidebar, in the words the game uses (a view keeps its built-in name without one)"),
+  icon: external_exports.enum(["board", "overview", "events", "perf", "errors", "players", "heatmap", "sessions", "versions", "live", "flag", "bolt", "play", "clock"]).optional(),
+  panels: external_exports.array(panelSchema).optional().describe("A board: its panels, in order"),
+  view: external_exports.enum(["events", "performance", "errors", "players", "heatmaps", "sessions", "versions", "live"]).optional().describe("A built-in view instead of panels"),
+  options: external_exports.object({ events: external_exports.array(external_exports.string()).optional() }).optional().describe("live view: events, only these event names or types")
+}).describe("One page: either panels (a board) or view (a built-in view)");
+server.registerTool(
+  "glitchless_set_dashboard",
+  {
+    description: "Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases, a platformer about deaths per level. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. Needs a secret key with the dashboard scope.",
+    inputSchema: {
+      service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
+      pages: external_exports.array(pageSchema).optional(),
+      reset: external_exports.boolean().optional().describe("Delete the saved dashboard and go back to the automatic one")
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+  },
+  async ({ service, pages, reset }) => {
+    try {
+      const svc = await resolveService(service);
+      if (!reset && !pages?.length) throw new Error("give pages, or reset: true");
+      const res = await write(reset ? "DELETE" : "PUT", `/v1/dashboard?service=${encodeURIComponent(svc)}`, reset ? null : { pages });
+      if (reset) return reply(`Dashboard for ${svc} reset to automatic.`, {});
+      const lines = [];
+      for (const p of res.dashboard.pages) {
+        if (p.view) {
+          lines.push(`${p.title} (built-in ${p.view} view)`);
+          continue;
+        }
+        const { board } = await query("board", { service: svc, page: p.id, ...range(168) });
+        lines.push(`${p.title}:`, ...board.panels.map((x) => `  - ${x.title}${x.empty ? ` (no data yet: ${x.why})` : ""}`));
+      }
+      return reply(`Saved the dashboard for ${svc} (${res.dashboard.pages.length} pages). How it looks with the last 7 days:
+${lines.join("\n")}`, {});
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+tool(
   "glitchless_death_hotspots",
   "Where players die on a level: clustered death positions in world coordinates (x range, share of the level\u2019s deaths, top cause, rage quits at that spot), plus the level bounds and completion stats. Use it to find difficulty spikes, then look up the level data around those coordinates.",
   { ...common, level: external_exports.string().describe('Level id, e.g. "level-3"') },
@@ -37113,19 +37241,22 @@ tool(
 );
 tool(
   "glitchless_compare_versions",
-  "Compare game versions side by side: p50/p95/p99 frame time (overall and per level), hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session and geometry growth per level load. Use it to confirm a fix after shipping a new version.",
+  "Compare game versions side by side, in the game's own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version.",
   { service: common.service, hours: common.hours, a: external_exports.string().optional().describe("Baseline version (default: second newest)"), b: external_exports.string().optional().describe("New version (default: newest)") },
   async ({ service, hours, a, b }) => {
     const svc = await resolveService(service);
-    const { versions } = await query("versions", { service: svc, ...range(hours || 72) });
+    const { versions, has = {}, board = [] } = await query("versions", { service: svc, ...range(hours || 72) });
     if (versions.length < 2 && !(a && b)) return reply(`Only one version of ${svc} has reported in this window`, versions);
     const va = versions.find((v) => v.version === a) || versions.at(-2);
     const vb = versions.find((v) => v.version === b) || versions.at(-1);
-    const keys = ["frame_p50", "frame_p95", "frame_p99", "hitches_per_min", "crash_free_pct", "error_free_pct", "errors_per_session", "level_completion_pct", "rage_quit_pct", "deaths_per_session", "geometries_growth_per_level_load"];
-    const delta = Object.fromEntries(keys.map((k) => [k, { [va.version]: va[k], [vb.version]: vb[k], change: va[k] != null && vb[k] != null ? Math.round((vb[k] - va[k]) * 100) / 100 : null }]));
+    const pair = (x, y) => ({ [va.version]: x ?? null, [vb.version]: y ?? null, change: x != null && y != null ? Math.round((y - x) * 100) / 100 : null });
+    const keys = [...has.frames ? ["frame_p50", "frame_p95", "frame_p99", "hitches_per_min"] : [], "crash_free_pct", "error_free_pct", "errors_per_session", ...has.levels ? ["level_completion_pct"] : [], ...has.deaths || has.fails ? ["rage_quit_pct"] : [], ...has.deaths ? ["deaths_per_session"] : [], ...has.geometry ? ["geometries_growth_per_level_load"] : []];
+    const delta = Object.fromEntries(keys.map((k) => [k, pair(va[k], vb[k])]));
+    const own2 = Object.fromEntries(board.map((s, i) => [s.unit === "per session" ? `${s.title} (per session)` : s.title, pair(va.board?.[i], vb.board?.[i])]));
+    const events = Object.fromEntries(Object.keys(vb.events || va.events || {}).map((n) => [n, pair(va.events?.[n], vb.events?.[n])]));
     const levels = [.../* @__PURE__ */ new Set([...Object.keys(va.level_p95 || {}), ...Object.keys(vb.level_p95 || {})])];
     const level_p95 = Object.fromEntries(levels.map((l) => [l, { [va.version]: va.level_p95?.[l] ?? null, [vb.version]: vb.level_p95?.[l] ?? null }]));
-    return reply(`${svc}: ${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { delta, level_p95, all_versions: versions.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString() })) });
+    return reply(`${svc}: ${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { board: own2, events_per_session: events, delta, level_p95, all_versions: versions.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString() })) });
   }
 );
 tool(

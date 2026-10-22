@@ -11,7 +11,7 @@
 // rage_quit, crashed, p50/p95…), the same fields and values indexSessions always produced.
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
-import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, MINUTE } from './rollups.js';
+import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, MINUTE, OTHER, ATTRS } from './rollups.js';
 
 // 'script' is a Godot GDScript runtime error and 'exception' an unhandled Unity exception: the function
 // stops part way, like an uncaught JS exception. 'game_loop_stopped' is a Phaser game whose loop died
@@ -26,6 +26,13 @@ const NODE_COUNTS = ['nodes', 'orphan_nodes'];
 // missing field stays missing through JSON).
 export const MARK = { start: 0, complete: 1, fail: 2, death: 3 };
 const MARK_OF = { level_start: MARK.start, level_complete: MARK.complete, level_fail: MARK.fail, death: MARK.death };
+
+// Custom events (`custom`, the game's own metrics), per name: { n, o, a }. n counts them; o holds the
+// earliest occurrences as [ts, attrs], for ordered funnels; a counts each attribute's values as
+// { v: { value: count }, s, c } (s and c sum numeric values, fixed point, for an average). Names, keys
+// and values are the game's own words, so each is capped; past a cap the counts stay right but the
+// detail goes under OTHER, and only the first EV.occurrences of a name take part in funnels.
+export const EV = { names: 64, occurrences: 16, keys: ATTRS.keys, values: 40, scale: 1e3 };
 
 export function newSession(e) {
   return {
@@ -52,6 +59,7 @@ export function newSession(e) {
     context_lost: false,
     rage_inputs: 0,
     annotations: [],
+    ev: {},
     hitches: 0,
     frozen: 0,
     frames: 0,
@@ -100,6 +108,7 @@ export function addToSession(s, e) {
       if (e.name === 'webgl_context_restored') setContext(s, e.ts, false);
       if (e.name === 'rage_input') s.rage_inputs++;
       if (e.name === 'annotation') s.annotations.push({ ts: e.ts, note: e.attrs?.note });
+      addCustom(s, e);
       break;
     case 'frame_window':
       addEvent(s.cell, e);
@@ -136,6 +145,50 @@ function setContext(s, ts, lost) {
   s.context_lost = lost;
 }
 
+function addCustom(s, e) {
+  if (typeof e.name !== 'string' || !e.name) return;
+  const name = eventName(e.name);
+  let v = s.ev[name];
+  if (!v) {
+    if (Object.keys(s.ev).length >= EV.names) return;
+    v = s.ev[name] = { n: 0, o: [], a: {} };
+  }
+  const attrs = smallAttrs(e.attrs);
+  v.n++;
+  v.o = mergeByTs(v.o, [[e.ts, attrs]], (x) => x[0]).slice(0, EV.occurrences);
+  for (const [k, value] of Object.entries(attrs)) countAttr(v.a, k, { v: { [String(value)]: 1 }, ...(typeof value === 'number' ? { s: Math.round(value * EV.scale), c: 1 } : {}) });
+}
+
+// Add one attribute's counts ({ v, s, c }) into a name's attributes.
+function countAttr(a, key, add) {
+  let t = a[key];
+  if (!t) {
+    if (Object.keys(a).length >= EV.keys) return;
+    t = a[key] = { v: {} };
+  }
+  for (const [value, k] of Object.entries(add.v)) {
+    const label = value in t.v || Object.keys(t.v).length < EV.values ? value : OTHER;
+    t.v[label] = (t.v[label] || 0) + k;
+  }
+  if (add.c) {
+    t.s = (t.s || 0) + add.s;
+    t.c = (t.c || 0) + add.c;
+  }
+}
+
+function mergeCustom(a, b) {
+  for (const [name, bv] of Object.entries(b || {})) {
+    let av = a[name];
+    if (!av) {
+      if (Object.keys(a).length >= EV.names) continue;
+      av = a[name] = { n: 0, o: [], a: {} };
+    }
+    av.n += bv.n;
+    av.o = mergeByTs(av.o, bv.o, (x) => x[0]).slice(0, EV.occurrences);
+    for (const [k, t] of Object.entries(bv.a)) countAttr(av.a, k, t);
+  }
+}
+
 // Merge `b` into `a`. Where both set an order-dependent field, the later timestamp wins, and on a tie
 // `b` (merge later states as `b`: they hold events that arrived later).
 export function mergeSession(a, b) {
@@ -159,6 +212,7 @@ export function mergeSession(a, b) {
   a.halted = !!(a.halted || b.halted);
   a.rage_inputs += b.rage_inputs;
   a.annotations = mergeByTs(a.annotations, b.annotations, (x) => x.ts);
+  mergeCustom((a.ev ||= {}), b.ev);
   a.hitches += b.hitches;
   a.frozen += b.frozen;
   a.frames += b.frames;
@@ -258,6 +312,7 @@ export function sessionFromJSON(o) {
     ...rest,
     marks: o.marks || [],
     annotations: o.annotations || [],
+    ev: o.ev || {},
     nodes: o.nodes || {},
     cell: cellFromJSON(cell),
     fwLevels: new Set(fwLevels),

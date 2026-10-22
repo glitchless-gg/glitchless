@@ -33,7 +33,8 @@
 import crypto from 'node:crypto';
 
 export const DEFAULT_PROJECT = 'default';
-export const SCOPES = ['read', 'delete'];
+// read: queries; delete: clear a game's data; dashboard: save or reset a game's dashboard (board.js).
+export const SCOPES = ['read', 'delete', 'dashboard'];
 export const DEFAULT_INGEST_RPS = 1000;
 
 export class AuthError extends Error {

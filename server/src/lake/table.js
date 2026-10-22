@@ -4,7 +4,7 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, BatchWriteCommand, BatchGetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
-import { HOUR, DAY, summaryPk, summarySk } from './layout.js';
+import { HOUR, DAY, summaryPk, summarySk, dailyPk, dailySk } from './layout.js';
 
 export class LakeTable {
   constructor({ table, region = 'us-east-1', doc = null }) {
@@ -96,6 +96,25 @@ export class LakeTable {
     return results.flat().map((item) => {
       const [fam, hour, run, chunk] = item.sk.split('#');
       return { ...item, family: fam, hour: Number(hour), run, chunk: Number(chunk) };
+    });
+  }
+
+  // Daily rollup items of one family (D or R) of the days [fromDay, toDay], with their day as `hour`, so
+  // currentItems() picks each day's newest complete set. A month per query, all at once: a year's
+  // partition is read in parallel rather than page after page.
+  async dailyItems(project, service, fromDay, toDay, family = 'D') {
+    if (toDay < fromDay) return [];
+    const spans = [];
+    for (let lo = fromDay; lo <= toDay; ) {
+      const d = new Date(lo);
+      const hi = Math.min(toDay, Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - DAY);
+      spans.push([lo, hi]);
+      lo = hi + DAY;
+    }
+    const results = await Promise.all(spans.map(([lo, hi]) => this.query(dailyPk(project, service, lo), [dailySk(lo, '', 0, family).replace(/#000$/, ''), dailySk(hi, '~', 0, family)])));
+    return results.flat().map((item) => {
+      const [fam, day, run, chunk] = item.sk.split('#');
+      return { ...item, family: fam, hour: Number(day), run, chunk: Number(chunk) };
     });
   }
 }

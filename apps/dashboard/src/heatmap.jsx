@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CAUSE_COLORS } from './format.js';
+import { causeColor } from './format.js';
 
 // World-space heatmap over the level thumbnail the SDK captured (glitchless.captureMap).
 export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotspots = [], path, cursor, events = [], zoom = 1, showDensity = true, showDeaths = true }) {
@@ -98,7 +98,7 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
         const [x, y] = toPx(...pick(d));
         ctx.beginPath();
         ctx.arc(x, y, d.rage_quit ? 5 : 3.2, 0, Math.PI * 2);
-        ctx.fillStyle = CAUSE_COLORS[d.cause] || '#cfc8e8';
+        ctx.fillStyle = causeColor(d.cause);
         ctx.globalAlpha = 0.85;
         ctx.fill();
         ctx.globalAlpha = 1;

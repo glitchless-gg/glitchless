@@ -13,8 +13,18 @@ export const MINUTE = 60_000;
 // Fixed-point scales for summed fields: integers add exactly in any order.
 export const FIXED = { sec: 1e6, render: 1e6, heap: 1e6, calls: 1e3, tris: 1, geo: 1 };
 
-// One cell: n counts events by type; the rest covers frame windows only. t0 is the first frame window's
-// ts, which orders versions and levels the way the raw events would.
+// Custom event names, attribute keys and values are the game's own, so a cell counts at most this many
+// names (ev) and name × attribute × value triples (evv); the rest go under OTHER.
+export const MAX_EVENT_NAMES = 200;
+export const MAX_EVENT_VALUES = 400;
+export const OTHER = '(other)';
+// The attributes of a custom event that counts and breakdowns use (see smallAttrs).
+export const ATTRS = { keys: 12, valueLength: 64 };
+const SEP = '\u0001';
+
+// One cell: n counts events by type, ev custom events by name and evv by name, attribute and value (keys
+// joined by SEP; see attrKey); the rest covers frame windows only. t0 is the first frame window's ts,
+// which orders versions and levels the way the raw events would.
 export function newCell(env = null, version = null, level = null) {
   return {
     env,
@@ -22,6 +32,8 @@ export function newCell(env = null, version = null, level = null) {
     level,
     t0: null,
     n: {},
+    ev: {},
+    evv: {},
     fw: 0,
     frames: 0,
     hitches: 0,
@@ -58,6 +70,11 @@ export function rollup(events, minutes = new Map()) {
 
 export function addEvent(c, e) {
   c.n[e.type] = (c.n[e.type] || 0) + 1;
+  if (e.type === 'custom' && typeof e.name === 'string' && e.name) {
+    const name = eventName(e.name);
+    countName(c.ev, name, 1, MAX_EVENT_NAMES);
+    for (const [k, v] of Object.entries(smallAttrs(e.attrs))) countName(c.evv, attrKey(name, k, v), 1, MAX_EVENT_VALUES);
+  }
   if (e.type !== 'frame_window') return;
   if (c.t0 == null || e.ts < c.t0) c.t0 = e.ts;
   c.fw++;
@@ -79,6 +96,8 @@ export function addEvent(c, e) {
 
 export function mergeCell(into, c) {
   for (const [t, k] of Object.entries(c.n)) into.n[t] = (into.n[t] || 0) + k;
+  for (const [name, k] of Object.entries(c.ev || {})) countName(into.ev, name, k, MAX_EVENT_NAMES);
+  for (const [key, k] of Object.entries(c.evv || {})) countName(into.evv, key, k, MAX_EVENT_VALUES);
   if (c.t0 != null && (into.t0 == null || c.t0 < into.t0)) into.t0 = c.t0;
   into.fw += c.fw;
   into.frames += c.frames;
@@ -152,6 +171,39 @@ export function seconds(c) {
 
 export function minuteOf(ts) {
   return Math.floor(ts / MINUTE) * MINUTE;
+}
+
+// A custom event's name as the queries key it.
+export function eventName(name) {
+  return String(name).slice(0, 64);
+}
+
+// The attributes counts and breakdowns use: strings (shortened), booleans and finite numbers, at most
+// ATTRS.keys of them. Nested objects and lists are left out.
+export function smallAttrs(attrs) {
+  const out = {};
+  if (!attrs || typeof attrs !== 'object') return out;
+  for (const [k, v] of Object.entries(attrs)) {
+    if (Object.keys(out).length >= ATTRS.keys) break;
+    if (typeof v === 'string') out[k] = v.slice(0, ATTRS.valueLength);
+    else if (typeof v === 'boolean' || isNum(v)) out[k] = v;
+  }
+  return out;
+}
+
+// evv's key for one attribute value of a named event, and back.
+export function attrKey(name, key, value) {
+  return `${name}${SEP}${key}${SEP}${String(value)}`;
+}
+
+export function splitAttrKey(k) {
+  const [name, key, ...rest] = k.split(SEP);
+  return { name, key, value: rest.join(SEP) };
+}
+
+function countName(counts, name, k, cap) {
+  const key = name in counts || Object.keys(counts).length < cap ? name : OTHER;
+  counts[key] = (counts[key] || 0) + k;
 }
 
 function cellKey(env, version, level) {

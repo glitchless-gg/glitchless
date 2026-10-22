@@ -18,7 +18,7 @@
 
 import crypto from 'node:crypto';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, BatchWriteCommand, QueryCommand, UpdateCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, BatchWriteCommand, QueryCommand, UpdateCommand, PutCommand, GetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { semverCompare } from './file.js';
 import { DEFAULT_PROJECT, isProjectId } from '../auth.js';
 import { rollup, addCell, cellList, cellToJSON, cellFromJSON, minuteOf, MINUTE } from '../rollups.js';
@@ -210,11 +210,17 @@ export class DynamoStore {
     return out;
   }
 
+  // The newest MAX_RANGE_HOURS hours of the range.
   hours(from, to) {
     const hours = [];
-    const start = Math.floor(from / HOUR) * HOUR;
+    const start = Math.max(Math.floor(from / HOUR) * HOUR, Math.floor(to / HOUR) * HOUR - (MAX_RANGE_HOURS - 1) * HOUR);
     for (let t = start; t <= to && hours.length < MAX_RANGE_HOURS; t += HOUR) hours.push(t);
     return hours;
+  }
+
+  // The longest range this store answers, in days (app.js reports it with the services).
+  maxRangeDays() {
+    return MAX_RANGE_HOURS / 24;
   }
 
   async getMaps(projectId, service) {
@@ -223,6 +229,20 @@ export class DynamoStore {
     const bySk = new Map();
     for (const pk of pks) for (const i of await this.queryAll(pk)) bySk.set(i.sk, JSON.parse(i.e));
     return [...bySk.values()];
+  }
+
+  // The game's saved dashboard (board.js): one item per service.
+  async getDashboard(projectId, service) {
+    checkProject(projectId);
+    const res = await this.doc.send(new GetCommand({ TableName: this.table, Key: { pk: `P#${projectId}#DASH`, sk: service } }));
+    return res.Item ? JSON.parse(res.Item.b) : null;
+  }
+
+  async putDashboard(projectId, service, dashboard) {
+    checkProject(projectId);
+    const Key = { pk: `P#${projectId}#DASH`, sk: service };
+    if (dashboard) await this.doc.send(new PutCommand({ TableName: this.table, Item: { ...Key, b: JSON.stringify(dashboard) } }));
+    else await this.doc.send(new DeleteCommand({ TableName: this.table, Key }));
   }
 
   async services(projectId) {

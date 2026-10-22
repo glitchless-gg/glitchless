@@ -7,6 +7,11 @@
 //   node scripts/lake-loadtest.js                         # 1,000 ten-minute sessions, dense and sparse
 //   node scripts/lake-loadtest.js --sessions 200 --buffer 900 --scenario sparse --json out.json
 //   node scripts/lake-loadtest.js --sdk legacy                 # the earlier SDK: 5 s batches, positions
+//   node scripts/lake-loadtest.js --scenario dense --sessions 7200 --long 365 [--serve 7799]
+//                                   # long ranges: a full day of the dense game through the lake until its
+//                                   # daily rollups are built, then copied back over 365 days; prices the
+//                                   # day build and times 90-day and 365-day queries (--serve: then serve
+//                                   # that game's API and the built dashboard on a port)
 //
 // Sessions follow the browser SDK: a frame window every 5 s with pickups, hitches, deaths and level
 // events, about 40 events per player-minute, sent as a gzipped batch every 15 s (--sdk legacy: a plain
@@ -14,6 +19,8 @@
 // player each at a time (Firehose objects and compactor items are per game, so small games cost more).
 
 import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
 import zlib from 'node:zlib';
 import { performance as perf } from 'node:perf_hooks';
 import { Sketch } from '../packages/sdk/src/sketch.js';
@@ -21,8 +28,11 @@ import { parsePayload, normalize } from '../server/src/ingest.js';
 import { DynamoStore } from '../server/src/stores/dynamo.js';
 import { FakeDynamo } from '../server/test/helpers/fake-dynamo.js';
 import { lakeSim } from '../server/test/helpers/lake-sim.js';
-import { overview, performance, buildContext } from '../server/src/analytics.js';
+import { overview, performance, players, customEvents, eventFunnel, parseFunnel, sessionsList, buildContext } from '../server/src/analytics.js';
 import { findings } from '../server/src/findings.js';
+import { autoBoard, evaluateBoard } from '../server/src/board.js';
+import { createApp } from '../server/src/app.js';
+import { dailyPk, dailySk, summaryPk } from '../server/src/lake/layout.js';
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
@@ -34,7 +44,7 @@ const MINUTES = Number(flag('minutes', 10));
 const BUFFER_S = Number(flag('buffer', 300));
 const EVERY_MIN = Number(flag('every', 2));
 const PARTITIONING = flag('partitioning', 'project');
-const SCENARIOS = flag('scenario', 'both') === 'both' ? ['dense', 'sparse'] : [flag('scenario')];
+const SCENARIOS = { both: ['dense', 'sparse'], none: [] }[flag('scenario', 'both')] || [flag('scenario')];
 // The browser SDK closes a frame window every 5 s. The current SDK sends them in a gzipped batch every
 // 15 s and is anonymous by default (no player id, no positions, deaths without coordinates); --sdk legacy
 // is the earlier one: a plain JSON batch every 5 s with positions.
@@ -470,5 +480,107 @@ for (const name of SCENARIOS) {
   console.log(`  counts: ${JSON.stringify(p.counts)}`);
   console.log(`  one dashboard load (overview + performance + findings, 24 h): dynamodb ${p.dashboard.dynamoRru} RRU; lake ${p.dashboard.lakeRru} RRU + ${p.dashboard.lakeGets} S3 GETs`);
 }
+// ── long ranges: daily rollups ──
+
+// A full day of the dense game (50 players at a time: 7,200 ten-minute sessions fill a day) through the
+// lake until the compactor has built its daily rollups, then that day copied back over `days` days: what a
+// day build costs, what a day keeps, and how long long-range queries take and what they read.
+async function runLong(days) {
+  const DAY = 86_400_000;
+  const HOUR = 3_600_000;
+  const day = Math.floor(Date.now() / DAY) * DAY - 3 * DAY;
+  const length = MINUTES * 60_000;
+  const rnd = rng(31);
+  const beacons = [];
+  for (let i = 0; i < SESSIONS; i++) beacons.push(...session({ project: 'dense', id: i, start: day + Math.floor((i * length) / 50) + Math.floor(rnd() * 1000), minutes: MINUTES, rnd }));
+  beacons.sort((a, b) => a.at - b.at);
+  const sim = lakeSim({ start: day - HOUR, bufferMs: BUFFER_S * 1000, everyMs: EVERY_MIN * 60_000, deliveryDelayMs: BUFFER_S * 1500 + 60_000, partitionByProject: PARTITIONING === 'project', pageSize: 1e9 });
+  sim.doc.kindOf = lakeKind;
+  const build = { days: 0, ms: 0, wru: 0, rru: 0, items: 0 };
+  const buildDay = sim.compactor.buildDay.bind(sim.compactor);
+  sim.compactor.buildDay = async (d, run) => {
+    const before = { ...sim.doc.meter };
+    const t = perf.now();
+    const n = await buildDay(d, run);
+    build.ms += perf.now() - t;
+    build.wru += sim.doc.meter.wru - before.wru;
+    build.rru += sim.doc.meter.rru - before.rru;
+    build.items += n;
+    if (n) build.days++;
+    return n;
+  };
+  const t0 = Date.now();
+  for (const b of beacons) {
+    await sim.advance(b.at);
+    await sim.store.put(b.project, normalize(parsePayload(b.payload, { projectId: b.project }), b.at));
+  }
+  await sim.advance(Math.floor(beacons.at(-1).at / DAY) * DAY + DAY + 5 * HOUR);
+  console.log(`\nlong ranges: ${SESSIONS} sessions in one day through the lake in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  const service = JSON.parse(beacons[0].payload).service;
+  const items = [...(sim.doc.tables.get(dailyPk('dense', service, day))?.values() || [])].filter((it) => Number(it.sk.split('#')[1]) === day);
+  const dayBytes = items.reduce((n, it) => n + it.b.length, 0);
+  const latestBytes = items.filter((it) => it.sk.startsWith('R#')).reduce((n, it) => n + it.b.length, 0);
+  const hourBytes = [...(sim.doc.tables.get(summaryPk('dense', service, day))?.values() || [])].reduce((n, it) => n + (it.b?.length || 0), 0);
+  // The day copied back over `days` days, and the days with rollups starting at the first copy.
+  for (let k = 1; k < days; k++) {
+    const d = day - k * DAY;
+    for (const it of items) {
+      const [family, , run, chunk] = it.sk.split('#');
+      sim.doc.put({ ...it, pk: dailyPk('dense', service, d), sk: dailySk(d, run, Number(chunk), family) });
+    }
+  }
+  sim.doc.put({ ...sim.doc.get('LAKE#META', 'watermark'), df: day - (days - 1) * DAY });
+  sim.store.mark = null;
+  const to = sim.clock;
+  const queries = {
+    board: (ctx) => evaluateBoard(ctx, autoBoard(ctx)),
+    events: (ctx) => [customEvents(ctx), eventFunnel(ctx, parseFunnel('bone_collected,powerup'))],
+    overview: (ctx) => [overview(ctx), findings(ctx, [])],
+    players: (ctx) => players(ctx),
+    performance: (ctx) => performance(ctx),
+  };
+  const timings = [];
+  for (const span of [...new Set([90, days])]) {
+    for (const [name, fn] of Object.entries({ ...queries, sessions: (ctx) => sessionsList(ctx) })) {
+      for (const pass of ['cold', 'warm']) {
+        const q = { service, from: to - span * DAY, to, env: null, version: null, type: 'all', sessions: null };
+        const before = { ...sim.doc.meter, gets: sim.bucket.meter.get };
+        const t = perf.now();
+        const ctx = await sim.store.context('dense', q, name);
+        const readMs = perf.now() - t;
+        fn(ctx);
+        timings.push({ span, name, pass, ms: Math.round(perf.now() - t), readMs: Math.round(readMs), rru: sim.doc.meter.rru - before.rru, pages: sim.doc.meter.reads - before.reads, s3Gets: sim.bucket.meter.get - before.gets, approximate: ctx.meta?.approximate || [] });
+      }
+    }
+  }
+  const perDay = {
+    sessions: SESSIONS,
+    rollupKB: dayBytes / 1024,
+    latestSessionsKB: latestBytes / 1024,
+    rollupItems: items.length,
+    hourSummariesKB: hourBytes / 1024,
+    build: { ...build, msPerDay: build.ms / (build.days || 1), wruPerDay: build.wru / (build.days || 1), rruPerDay: build.rru / (build.days || 1) },
+    // Lambda arm64 taken as 2× slower than this machine, at 2 GB, as for the compactor above.
+    buildUsd: (build.wru * PRICES.ddbWru + build.rru * PRICES.ddbRru + ((build.ms * 2) / 1000) * 2 * PRICES.lambdaGBSecond) / (build.days || 1),
+    storageUsdPerMonth: { 90: ((90 * dayBytes) / GB) * PRICES.ddbGBMonth, 400: ((400 * dayBytes) / GB) * PRICES.ddbGBMonth },
+  };
+  console.log(`  a day of ${SESSIONS} sessions: daily rollups ${perDay.rollupKB.toFixed(0)} KB in ${items.length} items, ${perDay.latestSessionsKB.toFixed(0)} KB of it the latest sessions (its hour summaries: ${perDay.hourSummariesKB.toFixed(0)} KB)`);
+  console.log(
+    `  building a day: ${perDay.build.msPerDay.toFixed(0)} ms, ${perDay.build.rruPerDay.toFixed(0)} RRU, ${perDay.build.wruPerDay.toFixed(0)} WRU = ${usd(perDay.buildUsd)} a day (${usd((perDay.buildUsd * 1000) / SESSIONS)} per 1,000 sessions); keeping 90 days of rollups ${usd(perDay.storageUsdPerMonth[90])} a month, 400 days ${usd(perDay.storageUsdPerMonth[400])}`,
+  );
+  for (const x of timings) console.log(`  ${String(x.span).padStart(3)} days ${x.name.padEnd(11)} ${x.pass}: ${String(x.ms).padStart(5)} ms (reading ${x.readMs} ms), ${x.rru} RRU in ${x.pages} pages = ${usd(x.rru * PRICES.ddbRru)}, ${x.s3Gets} S3 GETs${x.approximate.length ? `; approximate: ${x.approximate.join(', ')}` : ''}`);
+  console.log(`  without daily rollups a 90-day query would read about ${((90 * hourBytes) / 1e6).toFixed(0)} MB of hour summaries (${Math.round((90 * hourBytes) / 8192)} RRU)`);
+  const serve = Number(flag('serve', 0));
+  if (serve) {
+    const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+    const auth = { resolveIngest: () => ({ projectId: 'dense' }), resolveReader: () => ({ projectId: 'dense', scopes: ['read'], plan: 'studio' }) };
+    http.createServer(createApp({ store: sim.store, auth, staticRoutes: [{ prefix: '/', dir: path.join(root, 'apps/dashboard/dist'), spa: true }] })).listen(serve, () => console.log(`  serving ${days} days of ${service} on http://localhost:${serve} (Ctrl-C stops)`));
+  } else sim.close();
+  return { perDay, timings };
+}
+
+const LONG = Number(flag('long', 0));
+if (LONG) results.push({ long: await runLong(LONG) });
+
 const out = flag('json', null);
 if (out) fs.writeFileSync(out, JSON.stringify({ prices: PRICES, settings: { SESSIONS, MINUTES, BUFFER_S, EVERY_MIN, PARTITIONING, SDK, BATCH_MS, POSITIONS, GZIP }, results }, null, 2));

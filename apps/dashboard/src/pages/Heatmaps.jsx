@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
-import { Widget, QueryValue, Segmented, Status } from '../components.jsx';
+import { Widget, QueryValue, Segmented, Status, Empty } from '../components.jsx';
 import { LevelMap } from '../heatmap.jsx';
-import { fmtNum, fmtPct, CAUSE_COLORS, pctStatus } from '../format.js';
+import { fmtNum, fmtPct, causeColor, pctStatus } from '../format.js';
 import { NoGame } from './Overview.jsx';
 
 export function Heatmaps({ route }) {
@@ -16,11 +16,20 @@ export function Heatmaps({ route }) {
   if (!data) return <div className="loading-bar" />;
   const lvl = data.level;
   const st = data.stats || {};
+  // Heatmaps need positions (setPosition) or placed deaths; many games (puzzles, menus, card games) have neither.
+  if (!(data.levels || []).length && !data.density?.samples && !(data.deaths || []).length) {
+    return (
+      <Empty title="No positions from this game">
+        Heatmaps show where players go and where they die in a level. They need the game to send positions with <code>setPosition</code>, which only makes sense for games with a world to move through. The board and Events pages cover everything else.
+      </Empty>
+    );
+  }
+  const deaths = st.deaths > 0;
   return (
     <div className="grid">
       <Widget
         span={12}
-        title={`${lvl || 'Level'} — where players go, and where they die`}
+        title={`${lvl || 'Level'}: where players go${deaths ? ', and where they die' : ''}`}
         sub={data.map ? `map captured in-game by glitchless.captureMap() · ${data.axis === 'xy' ? 'side view' : 'top-down'}` : 'no map captured — showing positions only'}
         actions={
           <>
@@ -40,29 +49,33 @@ export function Heatmaps({ route }) {
       >
         <LevelMap map={data.map} bounds={data.bounds} axis={data.axis} density={data.density} deaths={data.deaths} hotspots={data.hotspots} zoom={zoom} showDensity={layer !== 'deaths'} showDeaths={layer !== 'density'} />
         <div className="legend" style={{ marginTop: 8 }}>
-          {Object.entries(CAUSE_COLORS)
-            .filter(([c]) => c !== 'unknown')
-            .map(([c, col]) => (
-              <span key={c}>
-                <i style={{ background: col, height: 8, width: 8, borderRadius: 4 }} />
-                death: {c}
-              </span>
-            ))}
-          <span>
-            <i style={{ background: '#ff4fa3', height: 8, width: 8, borderRadius: 4 }} />
-            rage quit
-          </span>
-          <span>
-            <i style={{ background: 'linear-gradient(90deg,#5b2ca6,#e0437a,#ffc440)', width: 30 }} />
-            time spent (log)
-          </span>
+          {/* Only what this level has: its own death causes, rage quits and time spent. */}
+          {[...new Set((data.deaths || []).map((d) => d.cause))].map((c) => (
+            <span key={c ?? 'none'}>
+              <i style={{ background: causeColor(c), height: 8, width: 8, borderRadius: 4 }} />
+              death: {c ?? 'no cause'}
+            </span>
+          ))}
+          {(data.hotspots || []).some((h) => h.rage_quits) && (
+            <span>
+              <i style={{ background: '#ff4fa3', height: 8, width: 8, borderRadius: 4 }} />
+              rage quit
+            </span>
+          )}
+          {data.density?.samples > 0 && (
+            <span>
+              <i style={{ background: 'linear-gradient(90deg,#5b2ca6,#e0437a,#ffc440)', width: 30 }} />
+              time spent (log)
+            </span>
+          )}
         </div>
       </Widget>
       <QueryValue span={3} label="Completion rate" value={fmtPct(st.completion_pct, 0)} status={pctStatus(st.completion_pct, 75, 50)} sub={`${fmtNum(st.completed)} of ${fmtNum(st.sessions)} sessions`} />
-      <QueryValue span={3} label="Deaths" value={fmtNum(st.deaths)} sub={`${fmtNum(st.deaths_per_session, 1)} per session`} />
-      <QueryValue span={3} label="Rage quits here" value={fmtNum(st.rage_quits)} status={pctStatus(st.rage_quit_pct, 5, 12, false)} sub={`${fmtPct(st.rage_quit_pct)} of sessions`} />
+      {deaths && <QueryValue span={3} label="Deaths" value={fmtNum(st.deaths)} sub={`${fmtNum(st.deaths_per_session, 1)} per session`} />}
+      {deaths && <QueryValue span={3} label="Rage quits here" value={fmtNum(st.rage_quits)} status={pctStatus(st.rage_quit_pct, 5, 12, false)} sub={`${fmtPct(st.rage_quit_pct)} of sessions`} />}
       <QueryValue span={3} label="Position samples" value={fmtNum(data.density?.samples)} sub="4 Hz per player" />
-      <Widget span={12} title="Death hotspots" sub="clustered death positions — the top cluster is usually a design problem, not a skill problem" flush>
+      {deaths && (
+      <Widget span={12} title="Death hotspots" sub="where deaths cluster on this level" flush>
         <table className="dt">
           <thead>
             <tr>
@@ -88,7 +101,7 @@ export function Heatmaps({ route }) {
                   <Status kind={h.share > 0.4 ? 'alert' : h.share > 0.2 ? 'warn' : 'neutral'}>{fmtPct(h.share * 100, 0)}</Status>
                 </td>
                 <td>
-                  <span className="tag" style={{ borderLeft: `3px solid ${CAUSE_COLORS[h.top_cause] || '#999'}` }}>
+                  <span className="tag" style={{ borderLeft: `3px solid ${causeColor(h.top_cause)}` }}>
                     {h.top_cause}
                   </span>
                 </td>
@@ -98,6 +111,7 @@ export function Heatmaps({ route }) {
           </tbody>
         </table>
       </Widget>
+      )}
     </div>
   );
 }

@@ -86,6 +86,23 @@ What the adapter adds:
 | `glitchless.registerTool(name, description, inputSchema, handler)` | expose a game tool to coding agents over WebMCP |
 | `glitchless.measure(seconds)` | frame-time stats over the next N seconds (the A/B primitive) |
 
+### Your own metrics
+
+Every game counts different things, so `track` takes any name and attributes:
+
+```js
+glitchless.track('open', { edition: 'free' });
+glitchless.track('play', { mode: 'endless' });
+glitchless.track('paywall', { where: 'settings' });
+glitchless.track('buy', { step: 'done' });
+```
+
+The dashboard's Events page counts each one over time, breaks it down by each attribute (plays by `mode`,
+paywall views by `where`) and builds funnels between them (`paywall` → `buy=done`). Each game also gets its own
+dashboard, pages of the panels that matter for it, which your coding agent can design with the
+`glitchless_set_dashboard` MCP tool. Attributes are strings, numbers or booleans: at most 12 per event, and strings
+are cut to 64 characters. Use the game's words, never anything that identifies a player.
+
 ## WebMCP
 
 Tools the running game exposes:

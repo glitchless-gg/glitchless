@@ -39,7 +39,30 @@ export async function api(name, params = {}) {
     }
   }
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  if (data?.meta) for (const fn of metaListeners) fn(name, data.meta);
+  return data;
+}
+
+// Told the meta of every query answer: how a range was answered (by day past 31 days, estimated parts,
+// a view that covers less of it).
+const metaListeners = new Set();
+export function onMeta(fn) {
+  metaListeners.add(fn);
+  return () => metaListeners.delete(fn);
+}
+
+// A change, such as saving a game's board: JSON in and out, with the same headers as queries. Throws with
+// the server's message (a board that doesn't validate says what to fix).
+export async function apiSend(method, path, body = null) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', 'x-glitchless-client': 'dashboard', ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...context.headers },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
 }
 
 export async function health() {

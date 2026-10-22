@@ -3,11 +3,17 @@
 // gauges, breadcrumbs and errors. The raw path folds all three from the events of the range; a store that
 // keeps them per minute merges the stored ones instead, and both give identical answers. Frame-time
 // percentiles always come from merged sketches — never from averaging per-session percentiles.
+//
+// Over more than 31 days the hosted store hands over a daily context instead (daily.js): ctx.sessions is
+// empty, ctx.cells and ctx.facts hold one cell per day, and ctx.daily holds the range's sessions folded
+// per day; the functions below that read sessions answer from it (daily.js says what stays exact).
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
-import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, FIXED } from './rollups.js';
+import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, splitAttrKey, attrKey, FIXED } from './rollups.js';
 import { foldSessions, finalizeSession, MARK, FATAL_KINDS } from './session-state.js';
 import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysBySeen, valueQuantile, valueCount } from './facts.js';
+import { idCount } from './facts.js';
+import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, sessionTotal, approximate } from './daily.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
 
@@ -47,7 +53,7 @@ export function wantedCell(q) {
 }
 
 // Rollup cells covering exactly ctx.events: [{ m: minute ts, c: cell }].
-function cellsOf(ctx) {
+export function cellsOf(ctx) {
   return (ctx.cells ??= cellList(rollup(ctx.events)));
 }
 
@@ -89,6 +95,11 @@ function bucketIndex(ctx, ts) {
   return Math.min(ctx.buckets.length - 1, Math.max(0, Math.floor((ts - ctx.buckets[0]) / ctx.bucketMs)));
 }
 
+// How many sessions the context holds (a daily context counts them per day).
+export function sessionCount(ctx) {
+  return ctx.daily ? sessionTotal(ctx) : ctx.sessions.size;
+}
+
 // One finalized state per session (session-state.js), in the order sessions first appear.
 export function indexSessions(events) {
   const sessions = foldSessions(events);
@@ -122,12 +133,21 @@ export function sessionSummary(s) {
     ended: s.ended,
     geometries: s.geo_first != null ? { first: s.geo_first, last: s.geo_last, max: s.geo_max } : null,
     ttff_ms: s.ttff,
+    // What the player did, in the game's own events (not the SDKs'): the most sent first.
+    events: Object.fromEntries(
+      Object.entries(s.ev || {})
+        .filter(([name]) => !SDK_EVENTS.has(name))
+        .sort((a, b) => b[1].n - a[1].n)
+        .slice(0, 6)
+        .map(([name, v]) => [name, v.n]),
+    ),
   };
 }
 
 // ───────────────────────────── overview ─────────────────────────────
 
 export function overview(ctx) {
+  if (ctx.daily) return dailyOverview(ctx);
   const sessions = [...ctx.sessions.values()];
   const nb = ctx.buckets.length;
   const series = {
@@ -181,7 +201,7 @@ export function overview(ctx) {
       pct_frames_over_budget: round(all.fractionAbove(budget * 1.15) * 100, 1),
       avg_fps: frameSeconds ? round(total.frames / frameSeconds, 1) : null,
       hitches_per_min: frameSeconds ? round(total.hitches / (frameSeconds / 60), 2) : null,
-      avg_session_s: round(avg(sessions.map((s) => s.duration_s)), 1),
+      avg_session_s: meanSeconds(sessions),
       rage_quits: rageQuits,
       rage_quit_pct: pct(rageQuits, n),
       errors: total.n.error || 0,
@@ -208,6 +228,7 @@ function deployments(ctx) {
 // ───────────────────────────── performance ─────────────────────────────
 
 export function performance(ctx) {
+  if (ctx.daily) return dailyPerformance(ctx);
   const nb = ctx.buckets.length;
   const total = newCell();
   const byLevel = new Map();
@@ -465,7 +486,7 @@ export function errorIssues(ctx) {
 export function errorList(ctx) {
   const errors = {};
   const series = new Map();
-  const totalSessions = ctx.sessions.size || 1;
+  const totalSessions = sessionCount(ctx) || 1;
   const nb = ctx.buckets.length;
   for (const { m, c } of factsOf(ctx)) {
     mergeErrors(errors, c.er);
@@ -474,13 +495,14 @@ export function errorList(ctx) {
       series.get(key)[bucketIndex(ctx, m)] += x.n;
     }
   }
+  if (ctx.daily) approximate(ctx, 'error_sessions', Object.values(errors).some((x) => x.sessions.approx || x.players.approx));
   // In the order each issue first occurred, as the raw events would list them.
   const list = Object.entries(errors)
     .map(([key, x]) => ({ x, series: series.get(key) }))
     .sort((a, b) => a.x.first.ts - b.x.first.ts)
     .map(({ x, series }) => {
       const e = x.first;
-      const sessions = Object.keys(x.sessions).length;
+      const sessions = idCount(x.sessions);
       return {
         fingerprint: x.fp,
         kind: e.kind,
@@ -492,7 +514,7 @@ export function errorList(ctx) {
         stack: e.stack,
         count: x.n,
         sessions,
-        players: Object.keys(x.players).length,
+        players: idCount(x.players),
         versions: Object.entries(x.versions)
           .sort((a, b) => a[1] - b[1])
           .map(([v]) => v),
@@ -533,6 +555,7 @@ export function crumbKey(sessionId, ts) {
 // ───────────────────────────── players / design ─────────────────────────────
 
 export function funnel(ctx) {
+  if (ctx.daily) return dailyFunnel(ctx);
   const levels = new Map();
   const get = (l) => {
     let v = levels.get(l);
@@ -574,7 +597,7 @@ export function funnel(ctx) {
       deaths: l.deaths,
       deaths_per_session: l.sessions_started.size ? round(l.deaths / l.sessions_started.size, 2) : null,
       fails: l.fails,
-      avg_complete_s: l.durations.length ? round(avg(l.durations), 1) : null,
+      avg_complete_s: l.durations.length ? round(l.durations.reduce((a, d) => a + Math.round(d * FIXED.sec), 0) / FIXED.sec / l.durations.length, 1) : null,
       death_causes: l.causes,
       rage_quits: l.rage_quits,
       rage_quit_pct: pct(l.rage_quits, l.sessions_started.size || 1),
@@ -584,6 +607,7 @@ export function funnel(ctx) {
 }
 
 export function players(ctx) {
+  if (ctx.daily) return dailyPlayers(ctx);
   const sessions = [...ctx.sessions.values()];
   const byPlayer = new Map();
   for (const s of sessions) {
@@ -613,7 +637,7 @@ export function players(ctx) {
       sessions: sessions.length,
       sessions_per_player: byPlayer.size ? round(sessions.length / byPlayer.size, 2) : null,
       returning_players_pct: pct([...byPlayer.values()].filter((p) => p.days.size > 1).length, byPlayer.size || 1),
-      avg_session_s: round(avg(sessions.map((s) => s.duration_s)), 1),
+      avg_session_s: meanSeconds(sessions),
       median_session_s: quantile(sessions.map((s) => s.duration_s), 0.5),
       rage_quits: rageQuits.length,
       rage_quit_pct: pct(sessions.filter((s) => s.rage_quit).length, n),
@@ -625,6 +649,191 @@ export function players(ctx) {
     death_causes: causes,
     rage_quits: rageQuits,
   };
+}
+
+// ───────────────────────────── custom events ─────────────────────────────
+
+// Custom events the SDKs send by themselves, as opposed to the game's own (`track()`).
+export const SDK_EVENTS = new Set(['rage_input', 'screen_change', 'app_resume', 'webgl_context_restored', 'annotation']);
+
+// Every custom event of the context, indexed once per query: per name its count and series (rollup cells,
+// exact), the sessions and players that sent it (session states), and per attribute value its count and
+// series (cells) and sessions (session states). Numeric attributes also keep a sum for their average.
+export function eventIndex(ctx) {
+  if (ctx.evIndex) return ctx.evIndex;
+  if (ctx.daily) return (ctx.evIndex = dailyEventIndex(ctx));
+  const nb = ctx.buckets.length;
+  const names = new Map();
+  const get = (n) => {
+    let e = names.get(n);
+    if (!e) names.set(n, (e = { name: n, count: 0, sessions: 0, players: new Set(), series: new Array(nb).fill(0), attrs: new Map() }));
+    return e;
+  };
+  const attrOf = (e, key) => {
+    let a = e.attrs.get(key);
+    if (!a) e.attrs.set(key, (a = { key, values: new Map(), sum: 0, n: 0 }));
+    return a;
+  };
+  const valueOf = (a, value) => {
+    let x = a.values.get(value);
+    if (!x) a.values.set(value, (x = { value, count: 0, sessions: 0, series: new Array(nb).fill(0) }));
+    return x;
+  };
+  for (const { m, c } of cellsOf(ctx)) {
+    const i = bucketIndex(ctx, m);
+    for (const [n, k] of Object.entries(c.ev || {})) {
+      const e = get(n);
+      e.count += k;
+      e.series[i] += k;
+    }
+    for (const [k, count] of Object.entries(c.evv || {})) {
+      const { name, key, value } = splitAttrKey(k);
+      if (!key) continue; // OTHER: past the cell's cap
+      const x = valueOf(attrOf(get(name), key), value);
+      x.count += count;
+      x.series[i] += count;
+    }
+  }
+  for (const s of ctx.sessions.values()) {
+    for (const [n, v] of Object.entries(s.ev || {})) {
+      const e = get(n);
+      e.sessions++;
+      e.players.add(s.player_id);
+      for (const [key, t] of Object.entries(v.a)) {
+        const a = attrOf(e, key);
+        for (const value of Object.keys(t.v)) valueOf(a, value).sessions++;
+        if (t.c) {
+          a.sum += t.s;
+          a.n += t.c;
+        }
+      }
+    }
+  }
+  return (ctx.evIndex = names);
+}
+
+// How many events match a filter ({ name, key, value }, as parseFunnel gives): with a value but no key,
+// the first attribute that has that value counts.
+export function eventCount(ctx, f, field = 'count') {
+  const e = eventIndex(ctx).get(f.name);
+  if (!e) return 0;
+  if (f.value == null) return field === 'series' ? e.series : e[field];
+  const attrs = f.key ? [e.attrs.get(f.key)].filter(Boolean) : [...e.attrs.values()];
+  const xs = attrs.map((a) => a.values.get(f.value)).filter(Boolean);
+  if (field === 'series') return ctx.buckets.map((_, i) => xs.reduce((s, x) => s + x.series[i], 0));
+  return xs.reduce((s, x) => s + x[field], 0);
+}
+
+// How many events of one rollup cell match a filter. A value without a key counts every attribute that
+// has it (as eventCount does).
+export function cellCount(c, f) {
+  if (f.value == null) return c.ev?.[f.name] || 0;
+  if (f.key) return c.evv?.[attrKey(f.name, f.key, f.value)] || 0;
+  let n = 0;
+  for (const [k, count] of Object.entries(c.evv || {})) {
+    const a = splitAttrKey(k);
+    if (a.name === f.name && a.value === f.value) n += count;
+  }
+  return n;
+}
+
+// Whether a session sent an event that matches a filter.
+export function sentEvent(s, f) {
+  const v = s.ev?.[f.name];
+  if (!v) return false;
+  if (f.value == null) return true;
+  return Object.entries(v.a).some(([k, t]) => (!f.key || k === f.key) && t.v[f.value]);
+}
+
+// An event's counts split by a dimension every event has: 'version' or 'level' (from the rollup cells),
+// with the sessions that sent it per version.
+export function eventsBy(ctx, f, dim) {
+  const nb = ctx.buckets.length;
+  const out = new Map();
+  for (const { m, c } of cellsOf(ctx)) {
+    const n = cellCount(c, f);
+    if (!n) continue;
+    const value = String(c[dim] ?? '(none)');
+    let x = out.get(value);
+    if (!x) out.set(value, (x = { value, count: 0, sessions: 0, series: new Array(nb).fill(0) }));
+    x.count += n;
+    x.series[bucketIndex(ctx, m)] += n;
+  }
+  if (dim === 'version') for (const s of ctx.sessions.values()) if (sentEvent(s, f) && out.has(String(s.version))) out.get(String(s.version)).sessions++;
+  if (dim === 'version' && ctx.daily) dailyEventSessions(ctx, f, out);
+  return [...out.values()].sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
+}
+
+// The game's own metrics: every custom event name with its count over time, the sessions and players that
+// sent it, and how each attribute's values break down. `name` keeps one event; `sdk` adds the SDKs' own.
+export function customEvents(ctx, { name = null, sdk = false } = {}) {
+  const sessions = sessionCount(ctx);
+  const n = sessions || 1;
+  const events = [...eventIndex(ctx).values()]
+    .filter((e) => (name == null || e.name === name) && (sdk || !SDK_EVENTS.has(e.name)))
+    .map((e) => ({
+      name: e.name,
+      sdk: SDK_EVENTS.has(e.name),
+      count: e.count,
+      sessions: e.sessions,
+      players: e.players.size,
+      sessions_pct: pct(e.sessions, n),
+      per_session: e.sessions ? round(e.count / e.sessions, 2) : null,
+      series: e.series,
+      attrs: [...e.attrs.values()].map((a) => ({
+        key: a.key,
+        values: [...a.values.values()].map(({ series, ...x }) => x).sort((x, y) => y.count - x.count || (x.value < y.value ? -1 : 1)),
+        avg: a.n ? round(a.sum / 1e3 / a.n, 2) : null,
+      })),
+    }))
+    .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+  return { ts: ctx.buckets, sessions, events };
+}
+
+// "open,paywall,buy=done" or "buy:step=done" → [{ name, key, value }]. A value without a key matches any
+// attribute that has it.
+export function parseFunnel(spec) {
+  return String(spec || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((step) => {
+      const [left, value] = step.split('=');
+      const [name, key] = left.split(':');
+      return { name: name.trim(), key: key?.trim() || null, value: value?.trim() ?? null };
+    });
+}
+
+// Ordered funnel over custom events: how many sessions reached each step after the one before it (the
+// earliest matching occurrence at or after the previous step's), and the median seconds between steps.
+export function eventFunnel(ctx, steps) {
+  if (ctx.daily) return dailyEventFunnel(ctx, steps);
+  const reached = steps.map(() => 0);
+  const gaps = steps.map(() => []);
+  const matches = (attrs, st) => {
+    if (st.value == null) return true;
+    if (st.key) return String(attrs?.[st.key]) === st.value;
+    return Object.values(attrs || {}).some((v) => String(v) === st.value);
+  };
+  for (const s of ctx.sessions.values()) {
+    let t = -Infinity;
+    for (let i = 0; i < steps.length; i++) {
+      const hit = s.ev?.[steps[i].name]?.o.find(([ts, attrs]) => ts >= t && matches(attrs, steps[i]));
+      if (!hit) break;
+      if (i > 0) gaps[i].push((hit[0] - t) / 1000);
+      t = hit[0];
+      reached[i]++;
+    }
+  }
+  const label = (st) => `${st.name}${st.key ? `:${st.key}` : ''}${st.value != null ? `=${st.value}` : ''}`;
+  return steps.map((st, i) => ({
+    step: label(st),
+    sessions: reached[i],
+    pct_of_first: pct(reached[i], reached[0] || 1),
+    pct_of_previous: i ? pct(reached[i], reached[i - 1] || 1) : 100,
+    median_s_from_previous: i && gaps[i].length ? round(median(gaps[i]), 1) : null,
+  }));
 }
 
 export function heatmap(ctx, level, maps) {
@@ -690,6 +899,7 @@ export function heatmapLevel(ctx, maps, requested) {
 
 // Deaths in time order, from the sessions' level and death marks; one level's, or all.
 export function deathsOf(ctx, level = undefined) {
+  if (ctx.daily) return dailyDeaths(ctx, level);
   const out = [];
   for (const s of ctx.sessions.values()) {
     for (const { ts, k: kind, level: lvl, cause, x, y, z } of s.marks) {
@@ -756,8 +966,12 @@ export function deathHotspots(deaths, axis = 'xz', binSize = 2) {
 
 // ───────────────────────────── sessions ─────────────────────────────
 
-export function sessionsList(ctx, { limit = 300 } = {}) {
+// The newest sessions first; `sent` ({ name, key, value }, as parseFunnel gives) keeps those that sent a
+// matching event.
+export function sessionsList(ctx, { limit = 300, sent = null } = {}) {
+  if (ctx.daily) return dailySessionsList(ctx, { limit, sent });
   return [...ctx.sessions.values()]
+    .filter((s) => !sent || sentEvent(s, sent))
     .sort((a, b) => (b.start ?? b.first_ts) - (a.start ?? a.first_ts))
     .slice(0, limit)
     .map(sessionSummary);
@@ -792,12 +1006,14 @@ export function sessionDetail(ctx, id, maps) {
 
 // ───────────────────────────── versions ─────────────────────────────
 
-export function versions(ctx) {
+export function versions(ctx, { stats = [], events = 8 } = {}) {
   const sessionsBy = new Map();
   for (const s of ctx.sessions.values()) {
     if (!sessionsBy.has(s.version)) sessionsBy.set(s.version, []);
     sessionsBy.get(s.version).push(s);
   }
+  // A daily context has each version's session numbers (sessionStats()) instead of its sessions.
+  if (ctx.daily) for (const [version, stats] of dailyVersionStats(ctx)) sessionsBy.set(version, stats);
   const framesBy = new Map();
   for (const { c } of cellsOf(ctx)) {
     if (!sessionsBy.has(c.version)) continue;
@@ -805,24 +1021,34 @@ export function versions(ctx) {
     framesBy.get(c.version).push(c);
   }
   const list = [...sessionsBy].map(([version, sessions]) => ({ version, ...summarize(sessions, framesBy.get(version) || []) }));
+  // The game's own numbers per version: the board's stats (`stats`, board panels of type stat) and the
+  // per-session rate of its most sent events. Counts are per session, so versions with more players compare.
+  const top = customEvents(ctx).events.slice(0, events).map((e) => e.name);
+  for (const v of list) {
+    const cells = framesBy.get(v.version) || [];
+    const n = v.sessions || 1;
+    const count = (spec) => {
+      const [f] = parseFunnel(spec);
+      return cells.reduce((sum, c) => sum + cellCount(c, f), 0);
+    };
+    v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
+    v.board = stats.map((p) => {
+      if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
+      if (!p.per) return round(count(p.event) / n, 2);
+      const base = count(p.per);
+      return base ? round((count(p.event) / base) * 100, 1) : null;
+    });
+  }
   return list.sort((a, b) => a.first_seen - b.first_seen);
 }
 
-// The metrics both a version comparison and a playtest run report for one group of sessions; frame
-// time and renderer cost come from the rollup cells of those sessions' events.
+// A board stat's metric as a version summary names it.
+const VERSION_METRIC = { errors: 'errors_per_session', deaths: 'deaths_per_session' };
+
+// The metrics both a version comparison and a playtest run report for one group of sessions (or their
+// sessionStats()); frame time and renderer cost come from the rollup cells of those sessions' events.
 function summarize(sessions, cells) {
-  let first_seen = Infinity;
-  let last_seen = 0;
-  let starts = 0;
-  let completes = 0;
-  let hitches = 0;
-  for (const s of sessions) {
-    first_seen = Math.min(first_seen, s.start ?? s.first_ts);
-    last_seen = Math.max(last_seen, s.last_ts);
-    starts += Object.values(s.attempts).reduce((a, b) => a + b, 0);
-    completes += s.completes;
-    hitches += s.hitches;
-  }
+  const st = Array.isArray(sessions) ? sessionStats(sessions) : sessions;
   const total = newCell();
   const levels = new Map();
   for (const c of cells) {
@@ -835,31 +1061,55 @@ function summarize(sessions, cells) {
   const frameSeconds = seconds(total);
   const levelP95 = {};
   for (const l of inFirstSeenOrder(levels)) levelP95[l.key] = round(l.ft.quantile(0.95), 2);
-  const n = sessions.length || 1;
+  const n = st.sessions || 1;
   return {
-    sessions: sessions.length,
-    players: new Set(sessions.map((s) => s.player_id)).size,
-    first_seen,
-    last_seen,
-    crash_free_pct: pct(sessions.filter((s) => !s.crashed).length, n),
-    error_free_pct: pct(sessions.filter((s) => s.errors === 0).length, n),
-    errors_per_session: round(sessions.reduce((a, s) => a + s.errors, 0) / n, 2),
+    sessions: st.sessions,
+    players: st.players,
+    first_seen: st.first_seen,
+    last_seen: st.last_seen,
+    avg_session_s: st.avg_session_s,
+    avg_fps: frameSeconds ? round(total.frames / frameSeconds, 1) : null,
+    level_attempts: st.starts,
+    level_fails: st.fails,
+    crash_free_pct: pct(st.sessions - st.crashed, n),
+    error_free_pct: pct(st.sessions - st.errored, n),
+    errors_per_session: round(st.errors / n, 2),
     frame_p50: round(sketch.quantile(0.5), 2),
     frame_p95: round(sketch.quantile(0.95), 2),
     frame_p99: round(sketch.quantile(0.99), 2),
-    hitches_per_min: frameSeconds ? round(hitches / (frameSeconds / 60), 2) : null,
+    hitches_per_min: frameSeconds ? round(st.hitches / (frameSeconds / 60), 2) : null,
     // Renderer cost per frame: on fast GPUs vsync hides a perf bug in frame time, these don't.
     draw_calls: total.calls[1] ? Math.round(meanOf(total.calls, FIXED.calls)) : null,
     render_cpu_ms: total.render[1] ? round(meanOf(total.render, FIXED.render), 2) : null,
-    level_completion_pct: pct(completes, starts || 1),
-    rage_quit_pct: pct(sessions.filter((s) => s.rage_quit).length, n),
-    deaths_per_session: round(sessions.reduce((a, s) => a + s.deaths, 0) / n, 2),
-    geometries_growth_per_level_load: quantile(
-      sessions.filter((s) => s.geo_first != null && s.level_loads >= 2).map((s) => (s.geo_last - s.geo_first) / (s.level_loads - 1)),
-      0.5,
-    ),
+    level_completion_pct: pct(st.completes, st.starts || 1),
+    rage_quit_pct: pct(st.rage, n),
+    deaths_per_session: round(st.deaths / n, 2),
+    geometries_growth_per_level_load: st.geometries_growth_per_level_load,
     level_p95: levelP95,
   };
+}
+
+// The session numbers summarize() reports, from a group of sessions (daily.js gives the same per version).
+function sessionStats(sessions) {
+  const st = { sessions: sessions.length, players: new Set(sessions.map((s) => s.player_id)).size, first_seen: Infinity, last_seen: 0, avg_session_s: meanSeconds(sessions), starts: 0, completes: 0, fails: 0, hitches: 0, crashed: 0, errored: 0, errors: 0, rage: 0, deaths: 0 };
+  for (const s of sessions) {
+    st.first_seen = Math.min(st.first_seen, s.start ?? s.first_ts);
+    st.last_seen = Math.max(st.last_seen, s.last_ts);
+    st.starts += Object.values(s.attempts).reduce((a, b) => a + b, 0);
+    st.completes += s.completes;
+    st.fails += s.fails;
+    st.hitches += s.hitches;
+    if (s.crashed) st.crashed++;
+    if (s.errors !== 0) st.errored++;
+    st.errors += s.errors;
+    if (s.rage_quit) st.rage++;
+    st.deaths += s.deaths;
+  }
+  st.geometries_growth_per_level_load = quantile(
+    sessions.filter((s) => s.geo_first != null && s.level_loads >= 2).map((s) => (s.geo_last - s.geo_first) / (s.level_loads - 1)),
+    0.5,
+  );
+  return st;
 }
 
 // ───────────────────────────── playtest ─────────────────────────────
@@ -923,6 +1173,14 @@ export function pct(a, b) {
 export function avg(arr) {
   const xs = arr.filter(isNum);
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+}
+
+// Mean session length in seconds, from summed milliseconds (exact in any order, as daily rollups sum them).
+export function meanSeconds(sessions) {
+  if (!sessions.length) return null;
+  let ms = 0;
+  for (const s of sessions) ms += Math.max(0, (s.end ?? s.last_ts) - (s.start ?? s.first_ts));
+  return round(ms / 1000 / sessions.length, 1);
 }
 
 export function median(arr) {

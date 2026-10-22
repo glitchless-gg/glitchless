@@ -19,6 +19,8 @@ You have two sources of truth:
    - memory → `glitchless_performance` `memory` + `by_level.geometries_max`.
    - stability → `glitchless_get_error` with the fingerprint: stack, `location`, breadcrumbs.
    - design → `glitchless_death_hotspots` for the level, then `glitchless_player_funnel`.
+   - the game's own metrics (plays, purchases, the paywall, whatever it sends with `track`) → `glitchless_events`,
+     with a `funnel` for drop-off between steps; `glitchless_dashboard` shows the pages and panels this game cares about.
 3. **Find the code.** Use the evidence as search keys: event names from `preceding_events` (e.g. the `glitchless.track('powerup')` call site), gauge names passed to `glitchless.setContext`, the error's function/file, level data near the hotspot's x range.
 4. **Reproduce and baseline.** Web: load the level / trigger the effect with the game's tools, then run `glitchless_measure` for 5–10s. Unity and Godot: build, then run the measure flag on the level in question. Record p95, worst frame, draw calls, render and update CPU, peak gauges, the memory delta. For errors, reproduce and confirm with `glitchless_errors` (web) or the session in `glitchless_session`.
 5. **Save a playtest baseline before touching code** (web games). Call `glitchless_playtest` with `save_as: "baseline"`. The game's autoplay bots play fixed-seed runs on the current code so you can prove later that your change made nothing else worse. It needs the game and Glitchless server running and Playwright in the project; if it can't run, say so and continue. For Unity and Godot, keep the measure JSON from step 4 as the baseline.

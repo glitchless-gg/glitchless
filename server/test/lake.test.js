@@ -5,8 +5,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
-import { buildContext, overview, performance, versions, players, errorIssues, sessionsList, sessionDetail, heatmap, heatmapLevels, playtestSummary } from '../src/analytics.js';
+import { buildContext, overview, performance, versions, players, customEvents, eventFunnel, parseFunnel, errorIssues, sessionsList, sessionDetail, heatmap, heatmapLevels, playtestSummary } from '../src/analytics.js';
 import { findings } from '../src/findings.js';
+import { autoBoard, autoDashboard, evaluateBoard } from '../src/board.js';
 import { foldSessions, finalizeSession, mergeSession, sessionToJSON, sessionFromJSON } from '../src/session-state.js';
 import { toRecords } from '../src/lake/record.js';
 import { rawErrorsPrefix, dayOf, hourLabel } from '../src/lake/layout.js';
@@ -51,6 +52,9 @@ const QUERIES = {
   players: (ctx) => players(ctx),
   errors: (ctx) => errorIssues(ctx),
   sessions: (ctx) => sessionsList(ctx),
+  events: (ctx) => ({ ...customEvents(ctx), funnel: eventFunnel(ctx, parseFunnel('enemy_spawn,bone_collected=big,enemy_spawn:boss=true')) }),
+  board: (ctx) => evaluateBoard(ctx, autoBoard(ctx)),
+  dashboard: (ctx) => autoDashboard(ctx).pages.map(({ panels, ...p }) => p),
 };
 
 let sim;

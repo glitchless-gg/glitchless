@@ -45,6 +45,12 @@ Glitchless.error("save slot unreadable", {"slot": 2}) # an error the game caught
 var stats := await Glitchless.measure(5.0)            # what --glitchless-measure prints
 ```
 
+`track` is for the game's own metrics, whatever they are: `track("open", "full")`, `track("play", "endless")`,
+`track("buy", {"step": "done"})`. One word becomes the attribute `what`. The dashboard's Events page counts each
+event over time, breaks it down by attribute and builds funnels between events, and the game's own dashboard (its
+pages designed by your coding agent with `glitchless_set_dashboard`) shows the ones that matter. Attributes are strings, numbers or
+booleans, at most 12 per event.
+
 `init(service, version, env, intake, options)` options. Every one is optional.
 
 | option | default | |

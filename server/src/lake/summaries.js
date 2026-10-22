@@ -17,10 +17,11 @@
 // JSON compresses about tenfold.
 
 import zlib from 'node:zlib';
-import { rollup, cellToJSON, cellFromJSON, minuteOf } from '../rollups.js';
-import { foldFacts } from '../facts.js';
+import { rollup, cellToJSON, cellFromJSON, minuteOf, addCell } from '../rollups.js';
+import { foldFacts, addFactsCell } from '../facts.js';
 import { foldSessions, mergeSession, sessionToJSON, sessionFromJSON } from '../session-state.js';
-import { hourOf } from './layout.js';
+import { hourOf, HOUR } from './layout.js';
+import { currentItems } from './table.js';
 
 export const FAMILIES = ['C', 'F', 'H'];
 export const STORED_FAMILIES = ['A', 'C', 'F', 'H'];
@@ -169,6 +170,30 @@ export function mergeItems(items, lo, hi, { addCell, addFactsCell }) {
   // order is exact; within each, the order above keeps later arrivals last.
   for (const [, , , list] of minuteStates) for (const o of list) addSession(o);
   return { cells, facts, sessions };
+}
+
+// Read and merge one service's summaries of [lo, hi) from the table (lake/table.js): whole hours take their
+// hour states, the hours at the edges their minute states. → { cells, facts, sessions } as mergeItems().
+export async function readSummaries(table, project, service, lo, hi) {
+  if (lo >= hi) return { cells: new Map(), facts: new Map(), sessions: new Map() };
+  const first = hourOf(lo);
+  const last = hourOf(hi - 1);
+  const full = (h) => h >= lo && h + HOUR <= hi;
+  const fullHours = [];
+  for (let h = first; h <= last; h += HOUR) if (full(h)) fullHours.push(h);
+  const edges = [first, last].filter((h, i, a) => !full(h) && a.indexOf(h) === i);
+  const fetches = [table.summaryItems(project, service, 'C', first, last), table.summaryItems(project, service, 'A', first, last)];
+  if (fullHours.length) fetches.push(table.summaryItems(project, service, 'H', fullHours[0], fullHours.at(-1)));
+  for (const h of edges) fetches.push(table.summaryItems(project, service, 'F', h, h));
+  // Whole hours need their minute cells and hour states; edge hours their minute cells and minute states.
+  const wanted = (h) => new Set(['A', 'C', full(h) ? 'H' : 'F']);
+  const items = currentItems((await Promise.all(fetches)).flat(), wanted).map((it) => ({ ...it, payload: decode(it.b) }));
+  return mergeItems(
+    expandItems(items, (f, h) => wanted(h).has(f)),
+    lo,
+    hi,
+    { addCell, addFactsCell },
+  );
 }
 
 function famRank(f) {

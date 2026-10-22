@@ -245,7 +245,26 @@ does the same.
 Press Play in the Editor, play a level and die once, then call `glitchless_list_games` or open the dashboard.
 The **Glitchless** GameObject under DontDestroyOnLoad shows the SDK is running.
 
+## Every engine: the game's own metrics, and its board
+
+Games differ: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and
+purchases, a platformer about where players die. Glitchless doesn't assume a genre, so this part is yours.
+
+1. Find the moments this game's designer would want counted, and send each with `track`: one event name per
+   moment, plus one word or a few attributes about it. Never anything about the player.
+   - Three.js or Phaser: `glitchless.track('play', { mode: 'endless' })`
+   - Godot: `Glitchless.track("play", "endless")` (one word becomes the attribute `what`) or a dictionary
+   - Unity: `Glitchless.Track("play", "endless");` or a `Dictionary<string, object>`
+
+   Good candidates: the game opening (with the edition, free or full), a mode or run starting, a run ending and
+   how, shop and paywall views and where they were opened, purchases started and finished, hints, choices that
+   matter (difficulty), shares and rating prompts. Levels, stages and puzzles go through levelStart,
+   levelComplete and levelFail, not `track`. Attributes are strings, numbers or booleans, at most 12 per event.
+2. Once events arrive, design the game's own dashboard: follow the `dashboard` skill (next to this one), which
+   turns the developer's questions into collectors, panels and pages and saves them with the
+   `glitchless_set_dashboard` MCP tool.
+
 ## Report
 
-Tell the user what you wired (with file:line), the gauges you chose and why, the agent tools or measure commands
-you set up, and anything you weren't sure about.
+Tell the user what you wired (with file:line), the gauges you chose and why, the events you track and the board
+you designed, the agent tools or measure commands you set up, and anything you weren't sure about.

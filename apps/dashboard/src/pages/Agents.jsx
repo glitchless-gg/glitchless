@@ -12,7 +12,10 @@ const MCP_TOOLS = [
   ['glitchless_get_error', 'one error issue: stack, breadcrumbs, affected sessions'],
   ['glitchless_player_funnel', 'level completion, deaths, rage quits'],
   ['glitchless_death_hotspots', 'where players die on a level (clustered)'],
-  ['glitchless_compare_versions', 'before/after a fix: p95, errors, completion, rage quits'],
+  ['glitchless_events', "the game's own events: counts, breakdowns, funnels"],
+  ['glitchless_dashboard', "the game's pages, and a board's panels with their numbers"],
+  ['glitchless_set_dashboard', "save the game's pages: boards in its own words, built-in views"],
+  ['glitchless_compare_versions', "before/after a fix, in the game's own stats first"],
   ['glitchless_session', 'one session timeline (replay data)'],
 ];
 

@@ -69,6 +69,8 @@ The Editor and development builds send too, with `Env` set to `dev` unless you s
 
 Use the game's own words for names, causes and levels, never anything a player typed.
 
+**Your own metrics.** `Track` takes any event: `Glitchless.Track("open", "full")`, `Glitchless.Track("play", "endless")`, or a `Dictionary<string, object>` of attributes. One word becomes the attribute `what`. The dashboard's Events page counts each event over time, breaks it down by attribute and builds funnels between events (`paywall` → `buy=done`), and the game's own dashboard, whose pages your coding agent designs with `glitchless_set_dashboard`, shows the ones that matter. Attributes are strings, numbers or booleans, at most 12 per event.
+
 **Scenes as levels.** When a scene becomes the active one, it's a level and `level_start` is sent, unless its name reads as a menu, loader, overlay or end screen: `Boot`, `Bootstrap`, `Init`, `Preloader`, `Loading`, `Splash`, `Title`, `MainMenu`, `UI`, `HUD`, `Pause`, `GameOver`, `Settings`, `Credits`, `Shop`, `Empty` and the like (the words are matched after splitting camelCase). The level ends when its scene unloads. A menu made active on top doesn't end it. `SceneManager.LoadScene` of the same scene is a restart. Change it with:
 
 - `LevelForScene = name => name.StartsWith("World") ? name : null` to choose yourself;

@@ -10,6 +10,8 @@
 //                                               every minute in [lo, hi), the whole minutes of the range
 //                                               the store has complete rollups for (lo >= hi: none)
 //   getMaps(projectId, service)
+//   getDashboard(projectId, service)            the game's saved dashboard (board.js), or null
+//   putDashboard(projectId, service, dashboard) saves it; null goes back to the automatic dashboard
 //   services(projectId)
 //   clear(projectId, service)
 //
@@ -64,6 +66,12 @@ export class FileStore {
     const mapsFile = path.join(this.dir, 'maps.json');
     if (fs.existsSync(mapsFile)) {
       for (const m of JSON.parse(fs.readFileSync(mapsFile, 'utf8'))) this.ownerOf(m)?.maps.set(mapKey(m), m);
+    }
+    const dashboardsFile = path.join(this.dir, 'dashboards.json');
+    if (fs.existsSync(dashboardsFile)) {
+      for (const [projectId, dashboards] of Object.entries(JSON.parse(fs.readFileSync(dashboardsFile, 'utf8')))) {
+        if (isProjectId(projectId)) for (const [service, dashboard] of Object.entries(dashboards)) this.project(projectId).dashboards.set(service, dashboard);
+      }
     }
   }
 
@@ -126,6 +134,18 @@ export class FileStore {
     return [...this.project(projectId).maps.values()].filter((m) => m.service === service);
   }
 
+  async getDashboard(projectId, service) {
+    return this.project(projectId).dashboards.get(service) ?? null;
+  }
+
+  async putDashboard(projectId, service, dashboard) {
+    const p = this.project(projectId);
+    if (dashboard) p.dashboards.set(service, dashboard);
+    else p.dashboards.delete(service);
+    const all = Object.fromEntries([...this.projects].filter(([, q]) => q.dashboards.size).map(([id, q]) => [id, Object.fromEntries(q.dashboards)]));
+    await fs.promises.writeFile(path.join(this.dir, 'dashboards.json'), JSON.stringify(all));
+  }
+
   async services(projectId) {
     const by = new Map();
     for (const e of this.project(projectId).events) {
@@ -162,7 +182,7 @@ export class FileStore {
   project(projectId) {
     if (!isProjectId(projectId)) throw new Error(`invalid projectId: ${projectId}`);
     let p = this.projects.get(projectId);
-    if (!p) this.projects.set(projectId, (p = { events: [], maps: new Map(), rollups: new Map() }));
+    if (!p) this.projects.set(projectId, (p = { events: [], maps: new Map(), rollups: new Map(), dashboards: new Map() }));
     return p;
   }
 

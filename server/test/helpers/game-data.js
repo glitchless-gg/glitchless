@@ -55,7 +55,11 @@ export function gameSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
         });
         if (hitches) push({ type: 'hitch', level, duration_ms: 60 + Math.floor(rnd() * 300), causes: [pick(['script', 'gc', 'shader_compile'])], ctx: { particles: Math.floor(rnd() * 900) }, recent: [pick(['bone_collected', 'enemy_spawn'])] });
         if (rnd() < 0.3) push({ type: 'pos', level, pts: [[ts, rnd() * 50, 0, rnd() * 50]] });
-        if (rnd() < 0.4) push({ type: 'custom', level, name: pick(['bone_collected', 'enemy_spawn']) });
+        // Attributes come from the event's position in the session, not rnd(), so the rest of the data stays the same.
+        if (rnd() < 0.4) {
+          const name = pick(['bone_collected', 'enemy_spawn']);
+          push({ type: 'custom', level, name, attrs: { kind: events.length % 3 ? 'small' : 'big', points: (events.length % 7) * 2.5, ...(name === 'enemy_spawn' ? { boss: events.length % 5 === 0 } : {}) } });
+        }
         if (rnd() < 0.05) push({ type: 'error', level, kind: pick(['js', 'manual']), message: 'TypeError: boom', fingerprint: pick(['f1', 'f2']) });
         if (rnd() < 0.06) push({ type: 'death', level, x: rnd() * 50, y: 0, z: rnd() * 50, cause: pick(['fell', 'squirrel']) });
       }

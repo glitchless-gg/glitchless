@@ -8,7 +8,11 @@
 //      finished session (session_end, or nothing new for a while) for session detail and replay;
 //   4. once an hour has closed, consolidates its summary items into one set and rewrites its events as
 //      Parquet for the drill-downs (late events reopen the hour and are folded in the same way);
-//   5. records how far summaries are complete (the watermark queries stop at).
+//   5. once a day has closed, folds it into daily rollups (daily.js) for ranges of more than 31 days: the
+//      day's cells and facts, and the sessions that started that day, read from the hour summaries of the
+//      day and `dayOverlapMs` either side of it (late data reopens a day like an hour);
+//   6. records how far summaries are complete (the watermark queries stop at) and which days have daily
+//      rollups.
 //
 // One run at a time (a lease in DynamoDB, and reserved concurrency 1 on the Lambda). A run writes down
 // which objects and blocks it is about to touch before touching them, so a run that dies half way is
@@ -21,8 +25,9 @@ import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { addCell, cellFromJSON, cellToJSON, MINUTE } from '../rollups.js';
 import { addFactsCell } from '../facts.js';
-import { mergeSession, sessionFromJSON, sessionToJSON } from '../session-state.js';
-import { foldBlocks, blockKey, blockPayloads, expandItems, decode, STORED_FAMILIES } from './summaries.js';
+import { mergeSession, sessionFromJSON, sessionToJSON, finalizeSession } from '../session-state.js';
+import { foldDay, dayParts, CAPS } from '../daily.js';
+import { foldBlocks, blockKey, blockPayloads, expandItems, decode, chunk, readSummaries, STORED_FAMILIES } from './summaries.js';
 import { currentItems } from './table.js';
 import { duck, queryRows, writeParquet, toEvent, lit } from './duck.js';
 import {
@@ -41,6 +46,8 @@ import {
   sessionKey,
   summaryPk,
   summarySk,
+  dailyPk,
+  dailySk,
   indexPk,
   servicesPk,
   clearPk,
@@ -60,10 +67,16 @@ export const DEFAULTS = {
   idleMs: 30 * MINUTE, // a session with nothing new for this long is finished
   endedIdleMs: 2 * MINUTE, // …or this long after its session_end
   lookbackHours: 2, // arrival hours watched on a first run
+  // A day's sessions are read from this long before it to this long after it: a session that runs past
+  // midnight counts on the day it started, with all its events (up to this long into the next day).
+  dayOverlapMs: 3 * HOUR,
+  dayCloseAfterMs: 30 * MINUTE, // a day's rollups are built this long after its overlap has ended
+  dayCaps: CAPS, // what a day keeps at most (daily.js)
   leaseMs: 10 * MINUTE,
   // Work per run, so a run catching up after an outage still finishes inside the Lambda's time limit.
   maxObjects: 3000,
   maxConsolidations: 300,
+  maxDayBuilds: 100,
 };
 
 export class Compactor {
@@ -125,10 +138,12 @@ export class Compactor {
       const closable = Object.entries(state.pending).filter(([, p]) => now >= p.hour + HOUR + this.opt.closeAfterMs && now >= p.last + this.opt.closeAfterMs);
       const sessionsDue = state.openSessions > 0 && now >= (state.nextFinish ?? 0);
       const watermark = Math.floor((now - this.opt.deliveryDelayMs) / MINUTE) * MINUTE;
-      if (!fresh.length && !closable.length && !sessionsDue) {
+      const daysDue = Object.values(state.days).some((d) => now >= d.due);
+      if (!fresh.length && !closable.length && !sessionsDue && !daysDue) {
         // Nothing arrived and nothing is due: only the watermark moves. Idle runs write nothing else.
-        if (pruneSeen(state, now, this.opt)) await this.saveState(state);
-        await this.table.put({ pk: META_PK, sk: 'watermark', w: watermark, run, at: now });
+        const days = this.markDays(state, watermark);
+        if (pruneSeen(state, now, this.opt) || days) await this.saveState(state);
+        await this.table.put({ pk: META_PK, sk: 'watermark', w: watermark, run, at: now, df: state.dayFrom, dt: state.dayTo });
         return { ...stats, idle: true, watermark };
       }
 
@@ -153,6 +168,7 @@ export class Compactor {
         const plan = planOfProject.get(b.project);
         stats.items += await this.writeBlock(b, run, { plan, raw: [...rawOf.get(k)].sort(), now });
         state.pending[k] = { project: b.project, service: b.service, hour: b.hour, plan, last: now };
+        this.touchDays(state, b, plan, now);
       }
       stats.blocks = blocks.size;
 
@@ -167,7 +183,7 @@ export class Compactor {
 
       for (const f of fresh) (state.seen[f.hour] ||= []).push(f.key);
       if (!backlog) pruneSeen(state, now, this.opt);
-      state.lastRun = t + 1;
+      state.lastRun = t + 2;
       state.inflight = null;
       await this.saveState(state);
 
@@ -182,8 +198,24 @@ export class Compactor {
         await this.saveState(state);
       }
 
+      // ── Phase 3: daily rollups of the days that have closed, oldest first. ──
+      const dayRun = runId(t + 2);
+      const due = Object.entries(state.days)
+        .filter(([, d]) => now >= d.due)
+        .sort((a, b) => a[1].day - b[1].day);
+      stats.days = 0;
+      for (const [k, d] of due.slice(0, this.opt.maxDayBuilds)) {
+        await this.buildDay(d, dayRun);
+        delete state.days[k];
+        stats.days++;
+      }
+
       // Behind on objects: summaries are not complete up to now, so the watermark waits.
-      if (!backlog) await this.table.put({ pk: META_PK, sk: 'watermark', w: watermark, run, at: now });
+      if (!backlog) {
+        this.markDays(state, watermark);
+        await this.table.put({ pk: META_PK, sk: 'watermark', w: watermark, run, at: now, df: state.dayFrom, dt: state.dayTo });
+      }
+      if (stats.days || !backlog) await this.saveState(state);
       stats.watermark = backlog ? null : watermark;
       this.log('[compactor]', JSON.stringify(stats));
       return stats;
@@ -306,6 +338,86 @@ export class Compactor {
       await this.table.deleteAll(items.filter((it) => it.run === inflight.run && !it.full).map(({ pk, sk }) => ({ pk, sk })));
     }
     this.log('[compactor] undid run', inflight.run);
+  }
+
+  // ── daily rollups ──
+
+  // Days whose rollups a block of hour summaries changes: its own, the one before when the block is in the
+  // first dayOverlapMs (that day's sessions run on into it), the one after when it is in the last (it tells
+  // that day which sessions started before it).
+  touchDays(state, b, plan, now) {
+    const x = this.opt.dayOverlapMs;
+    const d = dayStart(b.hour);
+    const days = [d];
+    if (b.hour < d + x) days.push(d - DAY);
+    if (b.hour + HOUR > d + DAY - x) days.push(d + DAY);
+    for (const day of days) {
+      const k = `${b.project}\n${b.service}\n${day}`;
+      const due = Math.max(day + DAY + x + this.opt.dayCloseAfterMs, now + this.opt.closeAfterMs);
+      const have = state.days[k];
+      // A day queries already read from its rollups (before dayTo) is rebuilt without holding dayTo back.
+      state.days[k] = { project: b.project, service: b.service, day, plan, due: Math.max(have?.due ?? 0, due), rebuild: have ? have.rebuild : day < state.dayTo };
+    }
+  }
+
+  // Move dayTo (days before it have rollups) up to the first day not yet closed or not yet built.
+  // → whether it moved.
+  markDays(state, watermark) {
+    let to = dayStart(watermark - this.opt.dayOverlapMs - this.opt.dayCloseAfterMs);
+    for (const d of Object.values(state.days)) if (!d.rebuild && d.day < to) to = d.day;
+    if (to <= state.dayTo) return false;
+    state.dayTo = to;
+    return true;
+  }
+
+  // Fold one day of one service into its daily rollups and replace the ones it had (none: no data that day).
+  async buildDay(d, run) {
+    const x = this.opt.dayOverlapMs;
+    const { cells, facts, sessions } = await readSummaries(this.table, d.project, d.service, d.day - x, d.day + DAY + x);
+    for (const s of sessions.values()) finalizeSession(s);
+    const day = foldDay(d.day, { cells, facts, sessions: sessions.values() }, this.opt.dayCaps);
+    const old = (await Promise.all(['D', 'R'].map((f) => this.table.dailyItems(d.project, d.service, d.day, d.day, f)))).flat();
+    let written = 0;
+    if (day.cells.size || day.facts.size || day.groups.size) {
+      const parts = dayParts(day);
+      const ttl = Math.floor((d.day + DAY + retentionDays(d.plan) * DAY) / 1000);
+      const items = [];
+      for (const [family, list] of [
+        ['D', parts.main],
+        ['R', parts.recent],
+      ]) {
+        if (!list.length) continue;
+        const payloads = chunk(list);
+        payloads.forEach((b, i) => items.push({ pk: dailyPk(d.project, d.service, d.day), sk: dailySk(d.day, run, i, family), b, full: run, chunks: { [family]: payloads.length }, ttl }));
+      }
+      await this.table.putAll(items);
+      written = items.length;
+    }
+    await this.table.deleteAll(old.filter((it) => it.full !== run).map(({ pk, sk }) => ({ pk, sk })));
+    return written;
+  }
+
+  // Daily rollups for days from before this store kept them (data compacted by an older compactor): builds
+  // the days [from, to) of each { project, service, plan } (to: the first day the compactor itself built),
+  // then lets queries read rollups from `from` on.
+  async backfillDays(services, from, to = null) {
+    const owner = crypto.randomBytes(6).toString('hex');
+    if (!(await this.lease(owner, this.now()))) return { skipped: 'another run holds the lease' };
+    try {
+      const state = await this.loadState(this.now());
+      to ??= state.dayFrom;
+      const run = runId(Math.max(this.now(), (state.lastRun ?? 0) + 1));
+      let built = 0;
+      for (const s of services) for (let day = dayStart(from); day < to; day += DAY) built += (await this.buildDay({ ...s, day }, run)) ? 1 : 0;
+      state.dayFrom = Math.min(state.dayFrom, dayStart(from));
+      state.lastRun = Math.max(state.lastRun ?? 0, parseInt(run, 36) + 1);
+      await this.saveState(state);
+      const mark = await this.table.get(META_PK, 'watermark');
+      if (mark) await this.table.put({ ...mark, df: state.dayFrom });
+      return { built, from: state.dayFrom };
+    } finally {
+      await this.table.delete(META_PK, 'lease', { ConditionExpression: '#o = :o', ExpressionAttributeNames: { '#o': 'owner' }, ExpressionAttributeValues: { ':o': owner } }).catch(() => {});
+    }
   }
 
   // ── sessions ──
@@ -451,6 +563,10 @@ export class Compactor {
     state.seen ||= {};
     state.pending ||= {};
     state.watchFrom ??= hourOf(now) - this.opt.lookbackHours * HOUR;
+    state.days ||= {};
+    // Daily rollups start the day after the first run that kept them: every later day is folded whole.
+    state.dayFrom ??= dayStart(now) + DAY;
+    state.dayTo ??= state.dayFrom;
     return state;
   }
 
@@ -504,6 +620,10 @@ function addOnce(s, e) {
 // Event identities are [arrival ms, record seq, position, writer]; arrival order is ms, seq, writer, position.
 function cmpOrder(a, b) {
   return a[0] - b[0] || a[1] - b[1] || a[3] - b[3] || a[2] - b[2];
+}
+
+function dayStart(ts) {
+  return Math.floor(ts / DAY) * DAY;
 }
 
 function ttlFor(plan, ts) {

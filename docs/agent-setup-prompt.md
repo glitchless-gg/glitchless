@@ -31,11 +31,13 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
    - webmcp, for a game that runs in a browser (Three.js, Phaser): command `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game: measure frame times, inspect the scene and reproduce problems. Unity and Godot builds don't need it: they measure themselves with --glitchless-measure.
    If your tool needs a restart to load new MCP servers, tell me.
 
-4. If your tool loads skills from a folder (for example ~/.claude/skills, ~/.codex/skills or the project's .agents/skills), copy ~/.glitchless/plugin/glitchless/skills/instrument and ~/.glitchless/plugin/glitchless/skills/triage there. If it doesn't, remember this for later: when I ask what's wrong with the game, read ~/.glitchless/plugin/glitchless/skills/triage/SKILL.md and follow it.
+4. If your tool loads skills from a folder (for example ~/.claude/skills, ~/.codex/skills or the project's .agents/skills), copy ~/.glitchless/plugin/glitchless/skills/instrument, ~/.glitchless/plugin/glitchless/skills/dashboard and ~/.glitchless/plugin/glitchless/skills/triage there. If it doesn't, remember this for later: when I ask what's wrong with the game, read ~/.glitchless/plugin/glitchless/skills/triage/SKILL.md and follow it; when I ask for a dashboard or for metrics, read ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md.
 
 5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions arrive: call the glitchless_list_games tool, or ask me to look at {{DASHBOARD_URL}}.
 
-6. Tell me what you changed, file by file, and anything you weren't sure about.
+6. Give the game its own dashboard: follow ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my players, add the events that answer it, then save pages that fit this game with the glitchless_set_dashboard tool.
+
+7. Tell me what you changed, file by file, the events you track, and anything you weren't sure about.
 <!-- prompt:end -->
 
 ## Notes for whoever maintains this

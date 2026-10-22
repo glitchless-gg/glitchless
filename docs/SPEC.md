@@ -109,15 +109,67 @@ its key belongs to (§6); `service` picks a game inside that project.
 
 | name | returns |
 | --- | --- |
-| `services` | `[{service, versions[], envs[], last_seen}]` |
+| `services` | `{services:[{service, versions[], envs[], last_seen}], max_range_days}`: the longest range this store answers for the reader (the plan's retention on Glitchless Cloud; `null`: no limit) |
 | `overview` | `{kpis, series, top_errors, funnel, findings}` |
 | `performance` | `{distribution, by_level, by_gpu_tier, by_browser, by_version, hitches, memory, load}` |
 | `errors` | `{issues:[{fingerprint, message, kind, count, sessions, players, first_seen, last_seen, versions, levels, stack, sample_session}]}` |
 | `players` | `{funnel, deaths_by_level, rage_quits, session_length, retention}` |
 | `heatmap` | `{level, map, deaths:[{x,y,z,cause,version}], density:{…}}` (requires `level`) |
 | `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` |
-| `versions` | `{versions:[{version, sessions, crash_free, p95, completion, rage_quit_rate, errors}]}` |
+| `versions` | `{versions:[{version, sessions, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit}]}`. `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `has` says which built-in measures the game reports |
 | `findings` | Ranked findings with evidence — what the MCP server hands to coding agents |
+| `events` | The game's own metrics (`custom` events): `{ts, sessions, events:[{name, count, sessions, players, per_session, series, attrs:[{key, values:[{value, count, sessions}], avg}]}]}`. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]` |
+| `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
+| `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
+
+### 3b. Dashboards and boards
+
+Every game gets a dashboard that fits it (`server/src/board.js`): its list of pages, in the order the sidebar shows
+them, the first opening first. A page is a board (`panels`, below) or one of the built-in views (`view`: events,
+performance, errors, players, heatmaps, sessions, versions, live), which a game keeps, renames, reorders or drops:
+
+```json
+{ "pages": [
+  { "id": "overview", "title": "Overview", "icon": "overview", "panels": [ … ] },
+  { "id": "money", "title": "Paywall", "icon": "bolt", "panels": [ … ] },
+  { "id": "purchases-live", "title": "Purchases, live", "view": "live", "options": { "events": ["paywall", "buy"] } },
+  { "id": "errors", "title": "Errors", "view": "errors" }
+] }
+```
+
+`id` (default: from the view or the title) is the page's address, `#/<id>`; `icon` is one of board, overview,
+events, perf, errors, players, heatmap, sessions, versions, live, flag, bolt, play, clock. At most 20 pages and 24
+panels a board. A built-in view a dashboard leaves out still opens from links (`#/errors/<fingerprint>`,
+`#/sessions/<id>`). The live view takes `options.events`: names or types to show.
+
+A dashboard is saved per game: `GET /v1/dashboard?service=` needs the read scope; `PUT /v1/dashboard?service=` with
+`{pages}` and `DELETE` (back to the automatic dashboard) need the `dashboard` scope. A game without a saved one gets
+the automatic dashboard, made from the data it sent in the last week: an Overview board (the stats every game has,
+findings, its own events, then levels, frame time, errors and deaths only if it reports them), then Events if it
+sends custom events, Performance if it sends frame times, Errors, Players, Heatmaps if it sends positions, Sessions,
+Versions and Live Tail. Versions are compared on the stat panels of every board.
+
+| panel `type` | fields | shows |
+| --- | --- | --- |
+| `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct) or `event`, optional `per` | one number; `event` per `per` is a percentage |
+| `series` | `event`, optional `by`, `limit` | the event's count over time, split by an attribute's top values; `by` can also be `$version` or `$level` |
+| `breakdown` | `event`, `by`, `limit` | the attribute's values with counts and sessions |
+| `funnel` | `steps` | sessions through the steps, in order |
+| `levels` | `label` | starts, completion, fails, deaths and times per level; columns only for what the game reports |
+| `frame_time`, `errors`, `deaths`, `events` | `limit` (errors) | frame-time p50/p95, top errors, deaths by level and cause, every custom event |
+| `findings` | `limit` | the ranked findings |
+| `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
+| `versions` | none | the board's own stat panels, version by version |
+| `live` | `events` | events as they arrive, optionally only these names or types |
+
+Every panel takes `title`, `note` and `size` (`s`, `m` or `l`). An event is written like a funnel step: `name`,
+`name=value` (any attribute) or `name:key=value`. A panel with no data in the window says why instead of showing
+zeros.
+
+Custom events are counted in the per-minute cells (by name, and by name, attribute and value) and in the session
+states (the first 16 occurrences of each name with their attributes, for ordered funnels), so every event store
+answers the same. Names, attributes and values are the game's own, so each is capped: 200 names and 400 values a
+minute, 64 names a session and 40 values per attribute. Past a cap the rest is counted as `(other)`.
 
 ## 4. Derived concepts
 
@@ -210,6 +262,10 @@ running rollup per minute and rewrites its own item after every batch, so items 
 locking; a query merges all writers' items. `since` is set at a project's first rollup write, 2 hours ahead,
 because servers from before rollups may still be writing.
 
+Every answer carries `meta`: the range answered (`from`, `to`, `bucket_ms`), the filters, and from the hosted
+store `resolution: 'day'` for ranges of more than 31 days, `approximate` (the parts estimated from sketches or
+samples, §7), `note` (a view answered over less of the range) and `retention_days` (the reader's plan).
+
 ## 7. Hosted event store (Glitchless Cloud)
 
 The hosted service stores events without one DynamoDB item per event
@@ -235,6 +291,31 @@ The hosted service stores events without one DynamoDB item per event
   not-yet-compacted gzip files with DuckDB. So do session-type filters (`type=user|synthetic|simulated`).
   If an optional drill-down fails, the query answers without it and lists it in `meta.partial`.
 - **Ranges** are answered in whole minutes, up to the compactor's watermark: data Firehose may still be
-  buffering is left out. `meta.from` and `meta.to` give the range answered.
+  buffering is left out. `meta.from` and `meta.to` give the range answered. The reader's plan caps a range at
+  its retention (`meta.retention_days`).
+- **Daily rollups** ([`server/src/daily.js`](../server/src/daily.js)) answer ranges of more than 31 days, in
+  whole days (`meta.resolution: 'day'`, day buckets). Once a day has closed (3 hours into the next day, plus
+  half an hour), the compactor folds it into one set of items under `P#<p>#Y#<s>#<year>`: the day's cells and
+  facts merged per (env, version, level), and the sessions that **started** that day folded per (env,
+  version) into counts, sums, quantile maps, device breakdowns, the level funnel, custom events, players and a
+  sample of sessions for ordered funnels; their latest sessions go in separate items (`R`), read only by
+  session lists. A session counts on the day it started, with all its events (up to 3 hours past midnight).
+  Late data reopens a day. Days the compactor has not built yet (the last day or two, and days before it kept
+  rollups: `meta` item `df`) are folded from the hour summaries the same way, at query time.
+  `server/test/daily.test.js` checks every query against the raw events at day resolution.
+  - **Exact**: everything from cells and facts, session counts, rates, sums and averages, the level funnel's
+    counts, custom events' sessions and values, the latest sessions and rage quits.
+  - **Exact while small, then estimated** (named in `meta.approximate`): distinct players (overall, per
+    level, per event, per error) and error sessions (HyperLogLog past 128–512 per day), returning players
+    (a uniform sample of 512 players a day), medians of per-session values (time to first frame, session
+    length, memory growth: 3 then 2 significant digits past 512 values), ordered funnels (256 sessions a
+    day, weighted), GPUs past the top 30 a day, difficulty hotspots past 100 deaths per level a day.
+    Findings' engine-specific advice follows the SDK most of the range's sessions use.
+  - **Over the last 31 days of the range** (`meta.note`): heatmaps and session-type filters, which read raw
+    rows; recent hitches.
+  - **Cost** (`scripts/lake-loadtest.js --long`): a day of 7,200 sessions keeps about 140 KB of rollups
+    (its hour summaries: 27 MB) and costs about $0.0002 to build; a 90-day board reads about 1,300 RRU
+    ($0.0002) and a 365-day one about 5,300 RRU.
+
 - **Retention** per plan: S3 lifecycle rules on `events/plan=<plan>/` and `sessions/plan=<plan>/`, raw files
   after 3 days, and a TTL on DynamoDB items.

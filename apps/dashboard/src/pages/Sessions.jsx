@@ -9,10 +9,20 @@ import { NoGame } from './Overview.jsx';
 export function Sessions() {
   const f = useFilters();
   const [filter, setFilter] = useState('all');
+  const [sent, setSent] = useState('');
   const { data } = useQuery('sessions', f.params, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
   if (!f.service) return <NoGame />;
   if (!data) return <div className="loading-bar" />;
-  const rows = (data.sessions || []).filter((s) => {
+  const all = data.sessions || [];
+  // Filters only for what this game reports.
+  const has = {
+    frames: all.some((s) => s.p95 != null),
+    rage: all.some((s) => s.rage_quit),
+    bots: all.some((s) => s.session_type === 'synthetic'),
+  };
+  const eventNames = [...new Set(all.flatMap((s) => Object.keys(s.events || {})))].sort();
+  const rows = all.filter((s) => {
+    if (sent && !s.events?.[sent]) return false;
     if (filter === 'crashed') return s.crashed;
     if (filter === 'rage') return s.rage_quit;
     if (filter === 'errors') return s.errors > 0;
@@ -28,72 +38,114 @@ export function Sessions() {
         sub="click a session to replay it"
         flush
         actions={
-          <Segmented
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: 'all', label: 'All' },
-              { value: 'errors', label: 'With errors' },
-              { value: 'slow', label: 'Slow (p95 > 33ms)' },
-              { value: 'rage', label: 'Rage quits' },
-              { value: 'crashed', label: 'Crashed' },
-              { value: 'synthetic', label: 'Synthetic' },
-            ]}
-          />
+          <>
+            {eventNames.length > 0 && (
+              <select className="btn" value={sent} onChange={(e) => setSent(e.target.value)} title="Only sessions that sent this event">
+                <option value="">Any event</option>
+                {eventNames.map((n) => (
+                  <option key={n} value={n}>
+                    sent {n}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Segmented
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'errors', label: 'With errors' },
+                ...(has.frames ? [{ value: 'slow', label: 'Slow (p95 > 33ms)' }] : []),
+                ...(has.rage ? [{ value: 'rage', label: 'Rage quits' }] : []),
+                { value: 'crashed', label: 'Crashed' },
+                ...(has.bots ? [{ value: 'synthetic', label: 'Bots' }] : []),
+              ]}
+            />
+          </>
         }
       >
-        <div className="tablewrap" style={{ maxHeight: 'calc(100vh - 190px)' }}>
-          <table className="dt">
-            <thead>
-              <tr>
-                <th>Started</th>
-                <th>Player</th>
-                <th>Version</th>
-                <th>Device</th>
-                <th>Levels</th>
-                <th className="num">Duration</th>
-                <th className="num">p95 frame</th>
-                <th className="num">Deaths</th>
-                <th className="num">Errors</th>
-                <th>Outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((s) => (
-                <tr key={s.session_id} className="click" onClick={() => f.go(`sessions/${s.session_id}`)}>
-                  <td className="muted">{timeAgo(s.start)}</td>
-                  <td className="mono" style={{ fontSize: 11.5 }}>
-                    {s.player_id.slice(0, 10)} {s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
-                  </td>
-                  <td>
-                    <span className="tag">{s.version}</span>
-                  </td>
-                  <td style={{ fontSize: 12 }}>
-                    {s.browser} · {s.gpu} <span className="tag">{s.gpu_tier}</span>
-                  </td>
-                  <td>
-                    {s.levels.map((l) => (
-                      <span key={l} className="tag" style={s.completed.includes(l) ? { background: '#efe7fb', color: '#5420a0' } : undefined}>
-                        {l}
-                      </span>
-                    ))}
-                  </td>
-                  <td className="num">{fmtDuration(s.duration_s)}</td>
-                  <td className="num">
-                    <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
-                  </td>
-                  <td className="num">{s.deaths}</td>
-                  <td className="num">{s.errors ? <span className="alert-t">{s.errors}</span> : 0}</td>
-                  <td>
-                    {s.crashed && <Status kind="alert">crashed</Status>} {s.rage_quit && <Status kind="warn">rage quit · {s.rage?.level}</Status>}{' '}
-                    {!s.crashed && !s.rage_quit && (s.completed.length ? <Status kind="ok">cleared {s.completed.length}</Status> : <Status kind="neutral">{s.ended ? 'left' : 'playing'}</Status>)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SessionsTable rows={rows} all={all} maxHeight="calc(100vh - 190px)" />
       </Widget>
+    </div>
+  );
+}
+
+// Sessions as rows, one click from their replay. Columns only for what this game reports (`all`: every
+// session in the range, so filtering doesn't make columns come and go).
+export function SessionsTable({ rows, all = rows, maxHeight }) {
+  const f = useFilters();
+  const has = {
+    levels: all.some((s) => s.levels.length),
+    frames: all.some((s) => s.p95 != null),
+    deaths: all.some((s) => s.deaths > 0),
+  };
+  const eventNames = [...new Set(all.flatMap((s) => Object.keys(s.events || {})))];
+  return (
+    <div className="tablewrap" style={maxHeight ? { maxHeight } : undefined}>
+      <table className="dt">
+        <thead>
+          <tr>
+            <th>Started</th>
+            <th>Player</th>
+            <th>Version</th>
+            <th>Device</th>
+            {eventNames.length > 0 && <th>Events</th>}
+            {has.levels && <th>Levels</th>}
+            <th className="num">Duration</th>
+            {has.frames && <th className="num">p95 frame</th>}
+            {has.deaths && <th className="num">Deaths</th>}
+            <th className="num">Errors</th>
+            <th>Outcome</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((s) => (
+            <tr key={s.session_id} className="click" onClick={() => f.go(`sessions/${s.session_id}`)}>
+              <td className="muted">{timeAgo(s.start)}</td>
+              <td className="mono" style={{ fontSize: 11.5 }}>
+                {s.player_id.slice(0, 10)} {s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
+              </td>
+              <td>
+                <span className="tag">{s.version}</span>
+              </td>
+              <td style={{ fontSize: 12 }}>
+                {[s.browser, s.os, s.gpu].filter(Boolean).join(' · ') || '–'} {s.gpu_tier && <span className="tag">{s.gpu_tier}</span>}
+              </td>
+              {eventNames.length > 0 && (
+                <td>
+                  {Object.entries(s.events || {}).map(([n, k]) => (
+                    <span key={n} className="tag">
+                      {n}
+                      {k > 1 ? ` ×${k}` : ''}
+                    </span>
+                  ))}
+                </td>
+              )}
+              {has.levels && (
+                <td>
+                  {s.levels.map((l) => (
+                    <span key={l} className="tag" style={s.completed.includes(l) ? { background: '#efe7fb', color: '#5420a0' } : undefined}>
+                      {l}
+                    </span>
+                  ))}
+                </td>
+              )}
+              <td className="num">{fmtDuration(s.duration_s)}</td>
+              {has.frames && (
+                <td className="num">
+                  <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
+                </td>
+              )}
+              {has.deaths && <td className="num">{s.deaths}</td>}
+              <td className="num">{s.errors ? <span className="alert-t">{s.errors}</span> : 0}</td>
+              <td>
+                {s.crashed && <Status kind="alert">crashed</Status>} {s.rage_quit && <Status kind="warn">rage quit · {s.rage?.level}</Status>}{' '}
+                {!s.crashed && !s.rage_quit && (s.completed.length ? <Status kind="ok">cleared {s.completed.length}</Status> : <Status kind="neutral">{s.ended ? 'left' : 'playing'}</Status>)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

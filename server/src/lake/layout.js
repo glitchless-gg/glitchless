@@ -19,11 +19,15 @@
 //   P#<p>#L#<s>#<YYYY-MM-DD>  <family>#<hour>#<run>#<chunk>   summaries of one hour (summaries.js), gzip JSON:
 //                                                              C = minute cells + facts, F = per-minute
 //                                                              session states, H = per-hour session states
+//   P#<p>#Y#<s>#<YYYY>        <D|R>#<day>#<run>#<chunk>       daily rollups of the days of one year (daily.js),
+//                                                              gzip JSON, for ranges of more than 31 days:
+//                                                              D = the day's rollups, R = its latest sessions
 //   P#<p>#X#<s>               <session>                       session index: first/last seen, session file
 //   P#<p>#SVC                 <service>                       versions, envs, last_seen (as DynamoStore)
 //   P#<p>#MAP#<s>             <level>#<version>               level map thumbnails (as DynamoStore)
 //   P#<p>#CLEAR               <service>                       data cleared at: older raw data is skipped
-//   LAKE#META                 watermark | lease               compactor progress and its single-run lease
+//   LAKE#META                 watermark | days | lease        compactor progress (minutes; the days with daily
+//                                                              rollups) and its single-run lease
 
 export const MINUTE = 60_000;
 export const HOUR = 3_600_000;
@@ -81,7 +85,10 @@ export const summarySk = (family, hour, run, chunk = 0) => `${family}#${String(h
 export const indexPk = (project, service) => `P#${project}#X#${service}`;
 export const servicesPk = (project) => `P#${project}#SVC`;
 export const mapsPk = (project, service) => `P#${project}#MAP#${service}`;
+export const dashboardPk = (project) => `P#${project}#DASH`;
 export const clearPk = (project) => `P#${project}#CLEAR`;
+export const dailyPk = (project, service, dayTs) => `P#${project}#Y#${service}#${dayOf(dayTs).slice(0, 4)}`;
+export const dailySk = (dayTs, run, chunk = 0, family = 'D') => `${family}#${String(dayTs).padStart(13, '0')}#${run}#${String(chunk).padStart(3, '0')}`;
 export const META_PK = 'LAKE#META';
 
 // S3 lifecycle rules for the bucket: raw data after compaction, then events and sessions per plan.

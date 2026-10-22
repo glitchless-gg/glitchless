@@ -2,7 +2,8 @@
 // Written for two readers: a human on the dashboard, and a coding agent over MCP — so every
 // finding says what's wrong, how sure we are (numbers), where to look, and what usually fixes it.
 
-import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, round, pct } from './analytics.js';
+import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, sessionCount, round, pct } from './analytics.js';
+import { dailySdks } from './daily.js';
 import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './facts.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -11,7 +12,7 @@ export function findings(ctx, maps = []) {
   const out = [];
   const perf = performance(ctx);
   const budget = perf.kpis.frame_budget_ms || 16.67;
-  const totalSessions = ctx.sessions.size || 1;
+  const totalSessions = sessionCount(ctx) || 1;
 
   // 1. Frame-time spikes per level, with correlated gauges and preceding events.
   const levels = perf.by_level.filter((l) => l.frames > 300 && l.key !== '(menu)');
@@ -29,7 +30,7 @@ export function findings(ctx, maps = []) {
     if (!corr.length && carried[0]) evidenceBits.push(`\`${carried[0].key}\` sits at ${fmt(carried[0].here)} for this whole level vs ${fmt(carried[0].baseline)} on ${best.key} — objects created earlier are never cleaned up`);
     if (l.draw_calls && best?.draw_calls && l.draw_calls > best.draw_calls * 2) evidenceBits.push(`draw calls average ${fmt(l.draw_calls)} (${best.key}: ${fmt(best.draw_calls)})`);
     const causes = { ...facts.hc };
-    const engine = engineOf([...ctx.sessions.values()].filter((s) => s.fwLevels.has(l.key)));
+    const engine = engineIn(ctx, (s) => s.fwLevels.has(l.key));
     out.push({
       id: `perf-level-${l.key}`,
       severity,
@@ -51,7 +52,7 @@ export function findings(ctx, maps = []) {
   for (const [version, m] of latestLeak ? [latestLeak] : []) {
     const older = leaky.filter(([v]) => v !== version).map(([v, o]) => `${v}: +${Math.round(o.geometries_growth_per_level_load)}`);
     // The Unity SDK sends its mesh count where three.js sends geometries.
-    const unity = engineOf([...ctx.sessions.values()].filter((s) => s.version === version && s.geo)) === 'unity';
+    const unity = engineIn(ctx, (s) => s.version === version && s.geo) === 'unity';
     out.push({
       id: `leak-geometries-${version}`,
       severity: m.geometries_growth_per_level_load > 150 ? 'high' : 'medium',
@@ -103,7 +104,7 @@ export function findings(ctx, maps = []) {
       title: `${issue.message.slice(0, 90)}`,
       summary: `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? FATAL_WORDS[issue.kind] || 'Unhandled — reaches window.onerror.' : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}`,
       evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs },
-      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineOf([ctx.sessions.get(issue.sample_session)]), issue, crumbs),
+      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
     });
@@ -118,7 +119,7 @@ export function findings(ctx, maps = []) {
     const ragers = new Map();
     for (const s of ctx.sessions.values()) if (s.rage_quit && s.rage?.level === l.level) ragers.set(s.session_id, s.rage.ts);
     const spots = deathHotspots(
-      deaths.map((d) => ({ ...d, rage_quit: ragers.get(d.session_id) === d.ts })),
+      deaths.map((d) => ({ ...d, rage_quit: d.rage_quit ?? ragers.get(d.session_id) === d.ts })),
       maps.find((m) => m.level === l.level)?.axis || 'xy',
     );
     const top = spots[0];
@@ -176,7 +177,7 @@ export function findings(ctx, maps = []) {
       title: `Low-tier GPUs struggle: p95 ${lo.p95}ms vs ${hi.p95}ms on ${hi.key}-tier`,
       summary: `${lo.sessions} sessions on low-tier GPUs (integrated Intel HD/UHD, mobile) spend ${lo.pct_over_budget}% of frames over budget.`,
       evidence: { low: lo, reference: hi },
-      suggestion: QUALITY_TIER_TIPS[engineOf([...ctx.sessions.values()].filter((s) => s.device?.gpu_tier === 'low'))],
+      suggestion: QUALITY_TIER_TIPS[engineIn(ctx, (s) => s.device?.gpu_tier === 'low')],
       link: { page: 'performance', section: 'devices' },
       impact: lo.sessions / totalSessions,
     });
@@ -184,7 +185,7 @@ export function findings(ctx, maps = []) {
 
   // 7. Slow first frame.
   if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > 4000) {
-    const engine = engineOf([...ctx.sessions.values()].filter((s) => s.ttff != null));
+    const engine = engineIn(ctx, (s) => s.ttff != null);
     out.push({
       id: 'load-ttff',
       severity: perf.kpis.ttff_p95 > 8000 ? 'high' : 'medium',
@@ -241,13 +242,24 @@ function carriedGauges(ctx, level, baselineLevel) {
 // 'phaser', or 'web' (the browser SDK on its own or with three.js).
 const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-phaser/': 'phaser' };
 function engineOf(sessions) {
+  return engineOfSdks(sessions.map((s) => [s?.sdk || '', 1]));
+}
+
+// The engine of the sessions that pass `keep`. A daily context has no sessions, only how many each SDK
+// sent: its advice follows the SDK of most of the range's sessions.
+function engineIn(ctx, keep) {
+  if (ctx.daily) return engineOfSdks(Object.entries(dailySdks(ctx)));
+  return engineOf([...ctx.sessions.values()].filter(keep));
+}
+
+// [sdk, sessions] pairs → engine.
+function engineOfSdks(pairs) {
   const counts = {};
   let n = 0;
-  for (const s of sessions) {
-    n++;
-    const sdk = s?.sdk || '';
+  for (const [sdk, k] of pairs) {
+    n += k;
     const engine = Object.entries(SDK_ENGINES).find(([prefix]) => sdk.startsWith(prefix))?.[1];
-    if (engine) counts[engine] = (counts[engine] || 0) + 1;
+    if (engine) counts[engine] = (counts[engine] || 0) + k;
   }
   const [top, count] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || [];
   return count * 2 > n ? top : 'web';

@@ -37,7 +37,7 @@ It's open source and runs anywhere: one Node server with a file store on a lapto
 | [`apps/phaser-demo`](apps/phaser-demo) | **Fetch!**, a small Phaser runner (Phaser 3 or 4) with planted bugs, an autoplay bot and a playtest config (`npm run game:phaser`) |
 | [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_death_hotspots`, `glitchless_compare_versions`, … |
 | [`packages/playtest`](packages/playtest) | `glitchless-playtest`: autoplay bots play every change and Glitchless compares it with a saved baseline. Also the `glitchless_playtest` MCP tool |
-| [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument` and `/glitchless:triage` skills + both MCP servers |
+| [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard` and `/glitchless:triage` skills + both MCP servers |
 | [`datadog`](datadog) | Datadog dashboard + monitors JSON and a setup script |
 | [`scripts/seed.js`](scripts/seed.js) | Simulated player history generated from the game's real level data (tagged `simulated`) |
 | [`docs`](docs) | [Technical spec](docs/SPEC.md), [set-up prompt for any coding agent](docs/agent-setup-prompt.md) |
