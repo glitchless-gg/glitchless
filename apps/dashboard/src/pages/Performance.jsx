@@ -5,7 +5,7 @@ import { Widget, QueryValue, TimeSeries, BarList, Histogram, Status, GroupTitle,
 import { fmtNum, fmtMs, fmtPct, frameStatus, pctStatus, timeAgo, PALETTE } from '../format.js';
 import { NoGame } from './Overview.jsx';
 
-const CAUSE_LABEL = { script: 'Long script (LoAF)', shader_compile: 'Shader compile', gc: 'GC pause', asset_load: 'Asset loading', frozen: 'Frozen frame', unattributed: 'Unattributed' };
+const CAUSE_LABEL = { script: 'Long script (LoAF)', shader_compile: 'Shader compile', gc: 'GC pause', asset_load: 'Asset loading', texture_upload: 'Texture uploads', geometry_upload: 'Geometry uploads', object_spawn: 'Object spawn', scene_change: 'Scene change', render: 'Long render', frozen: 'Frozen frame', unattributed: 'Unattributed' };
 
 export function Performance({ route }) {
   const f = useFilters();

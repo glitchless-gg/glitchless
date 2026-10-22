@@ -5,7 +5,7 @@ import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 
-export const SDK_VERSION = '0.2.1';
+export const SDK_VERSION = '0.2.2';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)
@@ -92,7 +92,7 @@ export class Glitchless {
     this.hz = 60;
     this.frameId = 0;
     this.lastFrameAt = 0;
-    this.earlyDeltas = [];
+    this.refreshDeltas = []; // frame times for the refresh-rate guess (frame budget)
     this.win = this.newWindow();
     this.datadog = this.opts.datadog ? new DatadogBridge(this.opts) : null;
 
@@ -118,6 +118,9 @@ export class Glitchless {
   // ───────────────────────────── game semantic API ─────────────────────────────
 
   levelStart(levelId) {
+    // Frames, positions and hitches so far belong to the level that is ending: close their window now,
+    // so a short level (a 6 s wave, a quick retry) keeps its own frames instead of handing them to the next.
+    if (this.win.frames || this.posBuffer.length) this.closeWindow();
     this.level = String(levelId);
     this.levelStartedAt = Date.now();
     this.push({ type: 'level_start' });
@@ -296,11 +299,14 @@ export class Glitchless {
         this.throttled = false;
         this.onFrame(dt, now);
       }
-      // Infer refresh rate (60/120/144Hz) from the median of early frames → frame budget.
-      const deltas = this.earlyDeltas;
-      if (deltas.length < 120 && dt < 100) {
+      // Infer the refresh rate (60/120/144Hz) → frame budget. A frame can take longer than the display's
+      // interval but never less, so the fast frames tell the rate: a busy start (shader compiles, loading)
+      // at 30 fps must not set a 33 ms budget for the whole session. Checked again later, only ever faster.
+      const deltas = this.refreshDeltas;
+      if (dt < 100 && dt > 3.5) {
         deltas.push(dt);
-        if (deltas.length === 120) this.setBudget(median(deltas));
+        if (deltas.length === 120 || deltas.length === 600) this.setBudget(quantileOf(deltas, 0.2), deltas.length === 600);
+        if (deltas.length >= 600) deltas.splice(0, 480); // check again every 480 frames
       }
     }
     this.lastFrameAt = now;
@@ -312,10 +318,12 @@ export class Glitchless {
     this.pendingLong = null;
   }
 
-  setBudget(medianDt) {
+  setBudget(typicalDt, onlyFaster = false) {
     const rates = [30, 60, 75, 90, 100, 120, 144, 165, 240];
-    const hz = 1000 / medianDt;
-    this.hz = rates.reduce((best, r) => (Math.abs(r - hz) < Math.abs(best - hz) ? r : best), 60);
+    const measured = 1000 / typicalDt;
+    const hz = rates.reduce((best, r) => (Math.abs(r - measured) < Math.abs(best - measured) ? r : best), 60);
+    if (onlyFaster && hz <= this.hz) return;
+    this.hz = hz;
     this.budgetMs = 1000 / this.hz;
   }
 
@@ -824,8 +832,12 @@ function heapMb() {
 }
 
 function median(arr) {
+  return quantileOf(arr, 0.5);
+}
+
+function quantileOf(arr, q) {
   const s = [...arr].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
+  return s[Math.min(s.length - 1, Math.floor(s.length * q))];
 }
 
 function round(v, d) {

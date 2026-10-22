@@ -5,6 +5,7 @@
 //      a base64 registration token (which failed with "Unable to parse token").
 //   3. Don't treat the browser's 1001 "going away" close (or errors) during page unload as an auth
 //      failure — that wiped the stored session, so a Vite hot reload dropped the agent's connection.
+//   4. No CommonJS export next to the ES one: Vite and esbuild warned about `module` in an ES module.
 /* eslint-disable */
 /**
  * WebMCP - Snippet to add MCP functionality to any website
@@ -2032,9 +2033,5 @@ class WebMCP {
     }
 }
 
-// Export for module usage
-if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = WebMCP;
-}
-
+// Glitchless patch: ES module export only (the CommonJS `module.exports` branch made every bundler warn).
 export default WebMCP;

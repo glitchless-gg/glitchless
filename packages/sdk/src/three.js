@@ -1,5 +1,12 @@
 // Three.js adapter: hooks the renderer for per-frame stats, the loading manager for asset timing,
-// the canvas for context loss, and adds scene inspection + level map capture.
+// the canvas for context loss, the WebGL context for what each frame uploads (hitch causes), and adds
+// scene inspection + level map capture.
+
+// What one frame has to upload before it counts as a cause of that frame's hitch.
+const TEXTURE_BURST = 4; // textures uploaded or re-uploaded (a canvas texture with needsUpdate each frame is 1)
+const TEXTURE_PIXELS = 1 << 20; // or one big upload: a megapixel (a 1024x1024 texture)
+const BUFFER_BURST = 32; // geometry buffers uploaded (new meshes with their own geometry)
+const BUFFER_BYTES = 4 << 20;
 
 export function instrumentThree(gd, { renderer, scene, camera, THREE } = {}) {
   if (!gd || !renderer) throw new Error('instrumentThree(gd, { renderer, scene, camera }) — renderer is required');
@@ -16,6 +23,7 @@ export function instrumentThree(gd, { renderer, scene, camera, THREE } = {}) {
   };
 
   const gl = typeof renderer.getContext === 'function' ? renderer.getContext() : null;
+  const work = gl ? watchGl(gl, gd) : null;
   const canvas = renderer.domElement;
   canvas?.addEventListener('webglcontextlost', (e) => {
     e.preventDefault(); // required, or the context can never be restored
@@ -77,6 +85,27 @@ export function instrumentThree(gd, { renderer, scene, camera, THREE } = {}) {
     },
     assetsInFlight: () => assets.inFlight,
     assetStats: () => (assets.count ? { count: assets.count, failed: assets.failed, ms: assets.ms, slowest: assets.slowest } : null),
+    // What the frame that just ended sent to the GPU: called when that frame turns out to be a hitch.
+    hitchDetail(dt) {
+      const w = work && work.frame === gd.frameId - 1 ? work : null;
+      const r = gd.lastRender && gd.lastRender.frameId >= gd.frameId - 1 ? gd.lastRender : null;
+      const causes = [];
+      if (w?.linked) causes.push('shader_compile');
+      if (w && (w.textures >= TEXTURE_BURST || w.pixels >= TEXTURE_PIXELS)) causes.push('texture_upload');
+      if (w && (w.buffers >= BUFFER_BURST || w.bufferBytes >= BUFFER_BYTES)) causes.push('geometry_upload');
+      if (r && r.ms >= Math.max(16, dt * 0.4)) causes.push('render');
+      return {
+        causes,
+        fields: {
+          render_ms: r ? Math.round(r.ms * 10) / 10 : null,
+          textures_uploaded: w?.textures ?? 0,
+          texture_mpx: w ? Math.round(w.pixels / 1e4) / 100 : 0,
+          buffers_uploaded: w?.buffers ?? 0,
+          buffer_kb: w ? Math.round(w.bufferBytes / 1024) : 0,
+          programs_linked: w?.linked ?? 0,
+        },
+      };
+    },
     inspectScene: (opts) => inspectScene(scene, opts),
     rawRender: originalRender,
     captureMap: (levelId, opts) => captureMap(gd, levelId, opts),
@@ -148,6 +177,57 @@ export function inspectScene(scene, { top = 10 } = {}) {
   };
 }
 
+// Counts what each frame sends to the GPU by wrapping the context's upload calls: texture uploads (and
+// re-uploads: a CanvasTexture redrawn every frame), geometry buffers and shader programs linked. Three.js
+// keeps no per-frame counters for these, and they are what a spawn burst costs. Counters are per frame
+// (gd.frameId), so when a frame turns out to be a hitch, hitchDetail() reads the work of that frame.
+function watchGl(gl, gd) {
+  const work = { frame: -1, textures: 0, pixels: 0, buffers: 0, bufferBytes: 0, linked: 0 };
+  const here = () => {
+    if (work.frame === gd.frameId) return work;
+    work.frame = gd.frameId;
+    work.textures = work.pixels = work.buffers = work.bufferBytes = work.linked = 0;
+    return work;
+  };
+  const size = (src) => (src ? (src.width || src.videoWidth || src.displayWidth || 0) * (src.height || src.videoHeight || src.displayHeight || 0) : 0);
+  const wrap = (name, count) => {
+    const original = gl[name];
+    if (typeof original !== 'function' || original.__glitchless) return;
+    const counted = function (...args) {
+      try {
+        count(here(), args);
+      } catch {
+        // counting must never break a draw
+      }
+      return original.apply(this, args);
+    };
+    counted.__glitchless = true;
+    gl[name] = counted;
+  };
+  const texture = (w, pixels) => {
+    w.textures++;
+    w.pixels += pixels;
+  };
+  // texImage2D(target, level, internalformat, width, height, border, format, type, data) or (…, format, type, source)
+  wrap('texImage2D', (w, a) => texture(w, typeof a[3] === 'number' && a.length >= 8 ? a[3] * a[4] : size(a[5])));
+  // texSubImage2D(target, level, x, y, width, height, format, type, data) or (target, level, x, y, format, type, source)
+  wrap('texSubImage2D', (w, a) => texture(w, a.length >= 8 && typeof a[6] === 'number' ? a[4] * a[5] : size(a[6])));
+  wrap('texImage3D', (w, a) => texture(w, a[3] * a[4] * a[5]));
+  wrap('texSubImage3D', (w, a) => texture(w, a[5] * a[6] * a[7]));
+  wrap('compressedTexImage2D', (w, a) => texture(w, a[3] * a[4]));
+  wrap('compressedTexSubImage2D', (w, a) => texture(w, a[4] * a[5]));
+  wrap('bufferData', (w, a) => {
+    w.buffers++;
+    w.bufferBytes += typeof a[1] === 'number' ? a[1] : a[1]?.byteLength || 0;
+  });
+  wrap('bufferSubData', (w, a) => {
+    w.buffers++;
+    w.bufferBytes += a[2]?.byteLength || 0;
+  });
+  wrap('linkProgram', (w) => w.linked++);
+  return work;
+}
+
 // Render an orthographic side (xy) or top-down (xz) thumbnail of the level for heatmap backgrounds.
 function captureMap(gd, levelId, { axis = 'xz', bounds, width, exclude } = {}) {
   const { renderer, scene, THREE } = gd.render;
@@ -178,6 +258,13 @@ function captureMap(gd, levelId, { axis = 'xz', bounds, width, exclude } = {}) {
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
 
+    // three.js only tone maps and encodes sRGB on the way to the screen: a render target gets linear
+    // light, which read back as 8-bit colour looks far darker than the game. So the scene goes into a
+    // linear (half-float where it can) target, and an output pass (as three's OutputPass does) applies the
+    // game's own tone mapping and colour space into the target that is read back.
+    const pass = outputPass(THREE, renderer);
+    const hdr = pass && (renderer.extensions?.has?.('EXT_color_buffer_float') || renderer.extensions?.has?.('EXT_color_buffer_half_float'));
+    const linear = pass ? new THREE.WebGLRenderTarget(w, h, hdr ? { type: THREE.HalfFloatType } : {}) : null;
     const rt = new THREE.WebGLRenderTarget(w, h);
     const prevTarget = renderer.getRenderTarget();
     // Push fog out of the way instead of removing it: toggling scene.fog off would make three.js
@@ -189,15 +276,22 @@ function captureMap(gd, levelId, { axis = 'xz', bounds, width, exclude } = {}) {
     // Optional: hide things that clutter a map (player, sky dome, effects).
     const hidden = (exclude || []).filter((o) => o?.visible);
     hidden.forEach((o) => (o.visible = false));
-    renderer.setRenderTarget(rt);
+    renderer.setRenderTarget(linear || rt);
     renderer.clear();
     gd.render.rawRender(scene, cam); // bypass our stats hook
+    if (pass) {
+      pass.material.uniforms.tDiffuse.value = linear.texture;
+      renderer.setRenderTarget(rt);
+      gd.render.rawRender(pass.scene, pass.camera);
+    }
     const pixels = new Uint8Array(w * h * 4);
     renderer.readRenderTargetPixels(rt, 0, 0, w, h, pixels);
     renderer.setRenderTarget(prevTarget);
     if (prevFog) Object.assign(fog, fog.isFogExp2 ? { density: prevFog.density } : { near: prevFog.near, far: prevFog.far });
     hidden.forEach((o) => (o.visible = true));
     rt.dispose();
+    linear?.dispose();
+    pass?.dispose();
 
     const canvas = document.createElement('canvas');
     canvas.width = w;
@@ -221,6 +315,77 @@ function captureMap(gd, levelId, { axis = 'xz', bounds, width, exclude } = {}) {
     gd.log('captureMap failed', err);
     return null;
   }
+}
+
+// A full-screen pass that turns linear light into what the screen shows: the renderer's tone mapping and
+// exposure, then its output colour space. The same shader as three's OutputShader, built from the
+// ShaderChunks of the game's own three.js (null before r155, whose chunks name these differently).
+function outputPass(THREE, renderer) {
+  const chunks = THREE.ShaderChunk;
+  if (!THREE.RawShaderMaterial || !chunks?.tonemapping_pars_fragment || !chunks.colorspace_pars_fragment?.includes('sRGBTransferOETF')) return null;
+  const names = [
+    ['LinearToneMapping', 'LINEAR'],
+    ['ReinhardToneMapping', 'REINHARD'],
+    ['CineonToneMapping', 'CINEON'],
+    ['ACESFilmicToneMapping', 'ACES_FILMIC'],
+    ['AgXToneMapping', 'AGX'],
+    ['NeutralToneMapping', 'NEUTRAL'],
+  ];
+  const defines = {};
+  const tone = names.find(([k]) => THREE[k] != null && THREE[k] === renderer.toneMapping);
+  if (tone) defines[`${tone[1]}_TONE_MAPPING`] = '';
+  const space = renderer.outputColorSpace;
+  const transfer = THREE.ColorManagement?.getTransfer?.(space);
+  if (transfer != null ? transfer === THREE.SRGBTransfer : space === THREE.SRGBColorSpace) defines.SRGB_TRANSFER = '';
+  const material = new THREE.RawShaderMaterial({
+    defines,
+    uniforms: { tDiffuse: { value: null }, toneMappingExposure: { value: renderer.toneMappingExposure ?? 1 } },
+    vertexShader: `precision highp float;
+      uniform mat4 modelViewMatrix;
+      uniform mat4 projectionMatrix;
+      attribute vec3 position;
+      attribute vec2 uv;
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `precision highp float;
+      uniform sampler2D tDiffuse;
+      #include <tonemapping_pars_fragment>
+      #include <colorspace_pars_fragment>
+      varying vec2 vUv;
+      void main() {
+        gl_FragColor = texture2D(tDiffuse, vUv);
+        #if defined(LINEAR_TONE_MAPPING)
+          gl_FragColor.rgb = LinearToneMapping(gl_FragColor.rgb);
+        #elif defined(REINHARD_TONE_MAPPING)
+          gl_FragColor.rgb = ReinhardToneMapping(gl_FragColor.rgb);
+        #elif defined(CINEON_TONE_MAPPING)
+          gl_FragColor.rgb = CineonToneMapping(gl_FragColor.rgb);
+        #elif defined(ACES_FILMIC_TONE_MAPPING)
+          gl_FragColor.rgb = ACESFilmicToneMapping(gl_FragColor.rgb);
+        #elif defined(AGX_TONE_MAPPING)
+          gl_FragColor.rgb = AgXToneMapping(gl_FragColor.rgb);
+        #elif defined(NEUTRAL_TONE_MAPPING)
+          gl_FragColor.rgb = NeutralToneMapping(gl_FragColor.rgb);
+        #endif
+        #ifdef SRGB_TRANSFER
+          gl_FragColor = sRGBTransferOETF(gl_FragColor);
+        #endif
+      }`,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const geometry = new THREE.PlaneGeometry(2, 2);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.Mesh(geometry, material));
+  return {
+    material,
+    scene,
+    camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+    dispose() {
+      geometry.dispose();
+      material.dispose();
+    },
+  };
 }
 
 function screenshot({ renderer, scene, camera, rawRender }, { maxWidth = 960 } = {}) {

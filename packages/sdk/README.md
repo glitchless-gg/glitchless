@@ -2,8 +2,8 @@
 
 The browser SDK for [Glitchless](https://github.com/glitchless-gg/glitchless): game observability for web games, with adapters for Three.js and Phaser. One init call gives you:
 
-- **Frame-time percentiles.** The budget is inferred from the display refresh rate (60/120/144 Hz). Every 5 s the SDK summarises frames into a mergeable 2%-accuracy sketch; batches go out every 15 s, gzipped.
-- **Hitches with attribution.** Each hitch is tied to a Long Animation Frame script, a shader compile, a GC pause or an asset load, plus your game-context gauges and the gameplay events in the 1.5 s before it.
+- **Frame-time percentiles.** The budget is inferred from the display refresh rate (60/120/144 Hz), read off the fastest frames, so a slow start doesn't halve it. Every 5 s the SDK summarises frames into a mergeable 2%-accuracy sketch; batches go out every 15 s, gzipped.
+- **Hitches with attribution.** Each hitch is tied to a Long Animation Frame script, a shader compile, a GC pause or an asset load (and with Three.js, to what the frame uploaded to the GPU: textures, geometry buffers, shader programs), plus your game-context gauges and the gameplay events in the 1.5 s before it.
 - **Errors with gameplay breadcrumbs.** Also captures WebGL context loss.
 - **Device and GPU tier, load timing**: time to first frame and time to first input.
 - **Gameplay.** Level funnel, deaths, rage inputs; in `full` privacy mode also death places and 4 Hz position samples (heatmaps, replay).
@@ -119,7 +119,7 @@ Tools the running game exposes:
 
 They're registered two ways:
 
-- **[webmcp.dev](https://webmcp.dev) bridge.** Works with Claude Code, Codex and Cursor today. Run `claude mcp add webmcp -- npx -y @jason.today/webmcp@latest --mcp`, ask the agent for a token, then paste it into the WebMCP widget.
+- **[webmcp.dev](https://webmcp.dev) bridge.** Works with Claude Code, Codex and Cursor today. Run `claude mcp add webmcp -- npx -y @jason.today/webmcp@latest --mcp`, ask the agent for a token, then paste it into the WebMCP widget: the small square in the bottom-right corner, just left of the overlay (`webmcp: { position: 'top-left' }` moves it).
 - **W3C `document.modelContext.registerTool`.** Used when the browser supports it (Chrome origin trial).
 
 The webmcp.dev client is vendored from `@jason.today/webmcp` (MIT) in `src/vendor/`.

@@ -38,7 +38,7 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is opt
 | `glitchless.track(name, attrs)` | any custom design event (`bone_collected`, `powerup`) |
 | `glitchless.setPosition({ x, y, z })` | every frame; SDK samples at `positionHz` |
 | `glitchless.setContext({ particles, entities, ... })` | numeric gauges attached to frame windows and hitches |
-| `glitchless.captureMap(levelId, { axis: 'xy' \| 'xz', bounds, exclude })` | after a level is built: renders an orthographic thumbnail used as the heatmap background. `bounds = {min:[a,b], max:[a,b]}` in world units for the two axes; `exclude` = objects to hide while capturing (player, sky dome, effects) |
+| `glitchless.captureMap(levelId, { axis: 'xy' \| 'xz', bounds, exclude })` | after a level is built: renders an orthographic thumbnail used as the heatmap background, with the renderer's own tone mapping and output colour space (three.js r155+), so it looks like the game. `bounds = {min:[a,b], max:[a,b]}` in world units for the two axes; `exclude` = objects to hide while capturing (player, sky dome, effects) |
 | `glitchless.registerTool(name, description, inputSchema, handler)` | expose a game-specific tool to coding agents over WebMCP |
 | `glitchless.error(err, attrs)` | manually report a handled error |
 | `glitchless.flush()` | force send (SDK also flushes on `pagehide`) |
@@ -83,8 +83,8 @@ Every event has `type`, `ts` (epoch ms) and `level` (current level or `null`). T
 | type | fields |
 | --- | --- |
 | `session_start` | `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl}`, `page {url, referrer}` |
-| `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}` |
-| `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}]` |
+| `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}`, `budget_ms` (from the display's refresh rate, read off the fastest frames and checked again as the session goes). A window never spans two levels: `levelStart` closes it, with the positions sampled so far |
+| `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
 | `load` | `ttff_ms` (navigation → first rendered frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}` |
 | `error` | `kind` (`js` \| `promise` \| `webgl_context_lost` \| `manual`), `message, stack, source, line, col, fingerprint` |
 | `level_start` | — |

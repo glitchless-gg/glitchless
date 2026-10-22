@@ -111,7 +111,10 @@ export function builtInTools(gd) {
 export class WebMCPBridge {
   constructor(gd, config = {}) {
     this.gd = gd;
-    this.config = { bridge: true, standard: true, position: 'bottom-left', color: '#14213D', ...config };
+    // Bottom-right, the corner games already keep free for the overlay: the pairing button sits just left of
+    // it instead of over the game's own HUD. An explicit `position` goes where it says.
+    this.placeByOverlay = !config.position;
+    this.config = { bridge: true, standard: true, position: 'bottom-right', color: '#14213D', ...config };
     this.bridge = null;
     this.standard = false;
     this.registered = new Set();
@@ -142,6 +145,8 @@ export class WebMCPBridge {
       try {
         const { default: WebMCP } = await import('./vendor/webmcp.js');
         this.bridge = new WebMCP({ color: this.config.color, position: this.config.position, size: '30px', padding: '14px' });
+        const widget = document.getElementById(this.bridge.elementId);
+        if (widget && this.placeByOverlay && this.gd.overlay) widget.style.right = '290px';
         for (const t of this.allTools()) this.registerBridge(t);
       } catch (err) {
         this.gd.log('WebMCP bridge unavailable', err);

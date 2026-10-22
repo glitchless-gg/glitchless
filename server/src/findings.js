@@ -389,11 +389,15 @@ function perfSuggestion(corr, preceding, causes, level, engine) {
   const gauge = corr[0]?.key;
   const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;
   if (gauge || trigger) {
-    tips.push(
-      `Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'}${gauge ? ` and drives \`${gauge}\`` : ''}. If it creates many meshes, render them with one InstancedMesh or THREE.Points, share a single geometry/material, pool objects instead of allocating per effect, and remove + dispose() them when the effect ends.`,
-    );
+    // Lights cost per pixel and change every material's shader, so their fix is not the mesh one.
+    const fix = /light/i.test(gauge || '')
+      ? 'If it adds lights, keep their number constant: a small pool of lights moved to where they are needed, or emissive materials and glow sprites instead of a light per object.'
+      : 'If it creates many meshes, render them with one InstancedMesh or THREE.Points, share a single geometry/material, pool objects instead of allocating per effect, and remove + dispose() them when the effect ends.';
+    tips.push(`Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'}${gauge ? ` and drives \`${gauge}\`` : ''}. ${fix}`);
   }
-  if (causes.shader_compile) tips.push('Some hitches coincide with new shader programs: pre-compile materials with renderer.compileAsync(scene, camera) during loading.');
+  if (causes.shader_compile) tips.push('Some hitches coincide with new shader programs: pre-compile materials with renderer.compileAsync(scene, camera) during loading, and keep the number of lights constant (adding or removing a light recompiles every lit material).');
+  if (causes.texture_upload) tips.push('Some hitches upload many textures in one frame (a CanvasTexture per object, or needsUpdate on every change): share one texture or atlas across objects, redraw only what changed, and dispose() textures with the objects that used them.');
+  if (causes.geometry_upload) tips.push('Some hitches upload many geometry buffers in one frame: share one geometry between copies (or an InstancedMesh), and create them before they are needed rather than on the frame they appear.');
   if (causes.gc) tips.push('Heap drops during hitches suggest GC pauses: avoid per-frame allocations (new Vector3, arrays, closures) in the update loop.');
   if (causes.asset_load) tips.push('Hitches overlap asset loads: preload before the level starts.');
   if (!tips.length) tips.push(`Profile ${level.key} with the overlay open and \`glitchless_measure\`; check draw calls (${level.draw_calls} avg) and triangles.`);
