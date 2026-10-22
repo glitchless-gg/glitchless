@@ -1,6 +1,6 @@
 # glitchless
 
-The browser SDK for [Glitchless](https://github.com/glitchless-gg/glitchless): game observability for web games. One init call gives you:
+The browser SDK for [Glitchless](https://github.com/glitchless-gg/glitchless): game observability for web games, with adapters for Three.js and Phaser. One init call gives you:
 
 - **Frame-time percentiles.** The budget is inferred from the display refresh rate (60/120/144 Hz). Every 5 s the SDK summarises frames into a mergeable 2%-accuracy sketch; batches go out every 15 s, gzipped.
 - **Hitches with attribution.** Each hitch is tied to a Long Animation Frame script, a shader compile, a GC pause or an asset load, plus your game-context gauges and the gameplay events in the 1.5 s before it.
@@ -41,6 +41,34 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE });
 ```
 
 Script tag: `<script src="https://<your-glitchless>/sdk/glitchless.js"></script>`, then use `Glitchless.init(...)` and `Glitchless.instrumentThree(glitchless, {...})`.
+
+## Phaser
+
+Phaser 3.60+ and Phaser 4. Init before you create the game, then hand the game to `instrumentPhaser`:
+
+```js
+import * as Phaser from 'phaser';
+import { Glitchless } from 'glitchless';
+import { instrumentPhaser } from 'glitchless/phaser';
+
+const glitchless = Glitchless.init({ service: 'my-game', version: '1.0.0', intake: 'http://localhost:7777', clientToken: 'gl_pub_dev' });
+const game = new Phaser.Game(config);
+instrumentPhaser(glitchless, { game, Phaser });
+```
+
+Script tag: `Glitchless.instrumentPhaser(glitchless, { game })`.
+
+What the adapter adds:
+
+- **Frames from Phaser's loop.** Each Phaser step is one frame, so a game with an fps limit is measured by the frames it draws. Each frame is split into update time (your scenes' `update`, physics, tweens) and render time.
+- **Draw calls, triangles and shader compiles**, counted on the WebGL context (Phaser keeps no counters), or the Canvas renderer's draw count.
+- **Scenes as levels.** A scene that starts is a level (`level_start`), unless its key reads as a loader, menu, overlay or end screen (`Boot`, `Preloader`, `MainMenu`, `UIScene`, `HUD`, `GameOver`…). Its shutdown ends the level; a restart is a new attempt. Pass `levels: ['Level1', 'Level2']`, `levels: (scene) => name or null`, or `levels: false`. Calling `glitchless.levelStart()` yourself turns scene levels off.
+- **Gauges** in every frame window and hitch: `game_objects`, `particles`, `physics_bodies`, `tweens`, `listeners` (event handlers on the game and its scenes: a count that grows on every restart is a leak) and `sounds`. Turn them off with `gauges: false`.
+- **Hitch causes** from what the slow step did: `object_spawn` (50+ objects added), `texture_upload` (a texture made mid-game), `shader_compile`, `scene_change`, `script`, `render`.
+- **Errors**: failed loads (`kind: 'asset'`), WebGL context loss, and `game_loop_stopped`: an uncaught error inside `update` or a physics callback stops Phaser's loop for good, the screen freezes, and the dashboard counts it as a crash.
+- **WebMCP**: `glitchless_inspect_scene` lists each running scene's display list by type and texture, physics bodies, tweens and the busiest event listeners; `glitchless_screenshot` captures the canvas right after Phaser renders.
+
+`captureMap` isn't there for Phaser yet, so heatmaps draw positions without a level picture. [apps/phaser-demo](https://github.com/glitchless-gg/glitchless/tree/main/apps/phaser-demo) is a small Phaser game wired this way, with planted bugs.
 
 **What it sends, and what it costs the game.** [PRIVACY.md](https://github.com/glitchless-gg/glitchless/blob/main/packages/sdk/PRIVACY.md) lists every field in both privacy modes. The per-frame work is a sketch insert, a few counters and two clock reads around `renderer.render`: about 30 ns for the sketch, measured. Every 5 s it summarises a window (about 10 µs); every 15 s it serialises and gzips one batch (about 15 µs to serialise a real batch of about 5 KB, which gzips to about 1 KB) and sends it with `fetch`, which runs off the main thread. Batches go out uncompressed with `sendBeacon` when the page is hidden or closed.
 

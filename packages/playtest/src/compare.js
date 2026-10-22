@@ -3,8 +3,8 @@
 
 import { DEFAULT_THRESHOLDS } from './config.js';
 
-const OVERALL = ['pct_frames_over_budget', 'frame_p95', 'render_cpu_ms', 'draw_calls', 'hitches_per_min', 'errors_per_session', 'deaths_per_session', 'level_completion_pct', 'geometries_growth_per_level_load'];
-const PER_LEVEL = ['pct_frames_over_budget', 'frame_p95', 'render_cpu_ms', 'draw_calls'];
+const OVERALL = ['pct_frames_over_budget', 'frame_p95', 'render_cpu_ms', 'update_cpu_ms', 'draw_calls', 'hitches_per_min', 'errors_per_session', 'deaths_per_session', 'level_completion_pct', 'geometries_growth_per_level_load'];
+const PER_LEVEL = ['pct_frames_over_budget', 'frame_p95', 'render_cpu_ms', 'update_cpu_ms', 'draw_calls'];
 
 export function judge(before, after, t) {
   if (before == null || after == null || !t) return null;

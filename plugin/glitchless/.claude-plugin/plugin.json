@@ -1,7 +1,7 @@
 {
   "name": "glitchless",
   "version": "0.1.0",
-  "description": "Glitchless for Claude Code: add game observability to a three.js game, then triage and fix what players actually hit — frame-time hitches, leaks, errors and difficulty spikes — using production telemetry (Glitchless MCP) and the live game (WebMCP).",
+  "description": "Glitchless for Claude Code: add game observability to a Three.js, Phaser, Unity or Godot game, then triage and fix what players actually hit — frame-time hitches, leaks, errors and difficulty spikes — using production telemetry (Glitchless MCP) and the live game (WebMCP).",
   "author": { "name": "Glitchless" },
   "keywords": ["gamedev", "threejs", "godot", "observability", "performance", "telemetry", "webmcp"]
 }

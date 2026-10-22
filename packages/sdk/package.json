@@ -1,7 +1,7 @@
 {
   "name": "glitchless",
-  "version": "0.1.1",
-  "description": "Game observability SDK for Three.js and web games: frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
+  "version": "0.2.0",
+  "description": "Game observability SDK for web games (Three.js, Phaser 3 and 4, or plain WebGL): frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
   "keywords": [
     "game-observability",
     "observability",
@@ -10,6 +10,9 @@
     "game-analytics",
     "threejs",
     "three.js",
+    "phaser",
+    "phaser3",
+    "phaser4",
     "webgl",
     "web-games",
     "performance",
@@ -37,6 +40,7 @@
   "exports": {
     ".": "./src/index.js",
     "./three": "./src/three.js",
+    "./phaser": "./src/phaser.js",
     "./sketch": "./src/sketch.js"
   },
   "files": [

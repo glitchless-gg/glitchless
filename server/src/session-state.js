@@ -13,9 +13,12 @@
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, MINUTE } from './rollups.js';
 
-// 'script' is a Godot GDScript runtime error: the function stops part way, like an uncaught JS exception.
-export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script']);
-const UNHANDLED_KINDS = new Set(['js', 'promise', 'script']);
+// 'script' is a Godot GDScript runtime error and 'exception' an unhandled Unity exception: the function
+// stops part way, like an uncaught JS exception. 'game_loop_stopped' is a Phaser game whose loop died
+// on an uncaught error: the screen froze, so the session crashed whatever the player did next.
+export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script', 'exception', 'game_loop_stopped']);
+const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception']);
+const HALT_KINDS = new Set(['game_loop_stopped']);
 const RAGE_QUIT_WINDOW_MS = 20_000;
 const NODE_COUNTS = ['nodes', 'orphan_nodes'];
 
@@ -44,6 +47,7 @@ export function newSession(e) {
     errors: 0,
     fatal_errors: 0,
     last_unhandled: null,
+    halted: false, // the game stopped running (see HALT_KINDS)
     ctxAt: null, // last webgl context loss or restore
     context_lost: false,
     rage_inputs: 0,
@@ -90,6 +94,7 @@ export function addToSession(s, e) {
       if (FATAL_KINDS.has(e.kind)) s.fatal_errors++;
       if (e.kind === 'webgl_context_lost') setContext(s, e.ts, true);
       if (UNHANDLED_KINDS.has(e.kind)) s.last_unhandled = e.ts;
+      if (HALT_KINDS.has(e.kind)) s.halted = true;
       break;
     case 'custom':
       if (e.name === 'webgl_context_restored') setContext(s, e.ts, false);
@@ -151,6 +156,7 @@ export function mergeSession(a, b) {
   a.fatal_errors += b.fatal_errors;
   if (b.last_unhandled != null && (a.last_unhandled == null || b.last_unhandled > a.last_unhandled)) a.last_unhandled = b.last_unhandled;
   if (b.ctxAt != null && (a.ctxAt == null || b.ctxAt >= a.ctxAt)) setContext(a, b.ctxAt, b.context_lost);
+  a.halted = !!(a.halted || b.halted);
   a.rage_inputs += b.rage_inputs;
   a.annotations = mergeByTs(a.annotations, b.annotations, (x) => x.ts);
   a.hitches += b.hitches;
@@ -221,9 +227,9 @@ export function finalizeSession(s) {
   s.duration_s = Math.max(0, (end - start) / 1000);
   s.rage_quit = !!(s.ended && s.last_fail && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
   s.rage = s.rage_quit ? s.last_fail : null;
-  // Game-aware crash: the run actually broke — context lost for good, a frozen frame,
-  // or an unhandled error right before the session ended.
-  s.crashed = s.context_lost || s.frozen > 0 || !!(s.last_unhandled && s.ended && end - s.last_unhandled <= 10_000);
+  // Game-aware crash: the run actually broke — context lost for good, a frozen frame, a game loop that
+  // stopped, or an unhandled error right before the session ended.
+  s.crashed = s.context_lost || !!s.halted || s.frozen > 0 || !!(s.last_unhandled && s.ended && end - s.last_unhandled <= 10_000);
   s.p95 = s.sketch.quantile(0.95);
   s.p50 = s.sketch.quantile(0.5);
   return s;

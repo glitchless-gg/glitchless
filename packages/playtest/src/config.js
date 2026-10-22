@@ -22,6 +22,8 @@ export const DEFAULT_THRESHOLDS = {
   pct_frames_over_budget: { label: 'Slow frames (% over budget)', higher: true, pct: 50, abs: 2, severity: 'fail' },
   frame_p95: { label: 'Frame time p95 (ms)', higher: true, pct: 15, abs: 2, severity: 'warn' },
   render_cpu_ms: { label: 'Render CPU per frame (ms)', higher: true, pct: 30, abs: 1, severity: 'fail' },
+  // The game's update code (scripts and physics), where the SDK can time it: Phaser, Godot and Unity.
+  update_cpu_ms: { label: 'Update CPU per frame (ms)', higher: true, pct: 30, abs: 1, severity: 'fail' },
   draw_calls: { label: 'Draw calls per frame', higher: true, pct: 25, abs: 50, severity: 'fail' },
   hitches_per_min: { label: 'Hitches per minute', higher: true, pct: 50, abs: 1, severity: 'warn' },
   errors_per_session: { label: 'Errors per run', higher: true, pct: 50, abs: 1, severity: 'warn' },
@@ -32,6 +34,7 @@ export const DEFAULT_THRESHOLDS = {
   'level.pct_frames_over_budget': { label: 'Slow frames (% over budget)', higher: true, pct: 50, abs: 2, severity: 'fail' },
   'level.frame_p95': { label: 'Frame time p95 (ms)', higher: true, pct: 15, abs: 2, severity: 'warn' },
   'level.render_cpu_ms': { label: 'Render CPU per frame (ms)', higher: true, pct: 30, abs: 1, severity: 'fail' },
+  'level.update_cpu_ms': { label: 'Update CPU per frame (ms)', higher: true, pct: 30, abs: 1, severity: 'fail' },
   'level.draw_calls': { label: 'Draw calls per frame', higher: true, pct: 25, abs: 50, severity: 'fail' },
   new_errors: { label: 'New error types', severity: 'fail' },
   new_crashes: { label: 'Crashed runs', severity: 'fail' },

@@ -1,6 +1,6 @@
 # What Glitchless for the web sends
 
-This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js` and `src/device.js`; keep it in step with them. The Godot SDK has its own list in `godot/addons/glitchless/PRIVACY.md`, and the two modes mean the same thing in both.
+This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js`, `src/device.js` and the engine adapters (`src/three.js`, `src/phaser.js`); keep it in step with them. The Godot and Unity SDKs have their own lists in `godot/addons/glitchless/PRIVACY.md` and `unity/Packages/gg.glitchless.sdk/PRIVACY.md`, and the two modes mean the same thing in all three.
 
 Nothing here is legal advice.
 
@@ -32,12 +32,12 @@ Every batch has an envelope: `service`, `env`, `version` (the game's), `session_
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user` or `synthetic`), `privacy`, `device` (above), `page`, `nav_ms` | the first batch |
+| `session_start` | `session_type` (`user` or `synthetic`), `privacy`, `device` (above), `page`, `nav_ms`; with the Phaser adapter, `engine` (`phaser`, its version and renderer: the same for every player of a build) | the first batch |
 | `session_end` | `reason`, `duration_s` | page hidden or closed |
-| `frame_window` | frames, fps, refresh rate and budget, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, render ms, draw calls, triangles, geometry/texture/shader counts, JS heap MB, `ctx` (the game's gauges) | every 5 s, sent in batches every 15 s |
-| `hitch` | duration, likely causes (Long Animation Frame script attribution, shader compile, GC, asset load), draw calls, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms and over twice the recent median, at most 3 per window |
+| `frame_window` | frames, fps, refresh rate and budget, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, render ms, update ms (Phaser), draw calls, triangles, geometry/texture/shader counts, JS heap MB, `ctx` (the game's gauges; with Phaser also object, body, tween, listener and sound counts) | every 5 s, sent in batches every 15 s |
+| `hitch` | duration, likely causes (Long Animation Frame script attribution, shader compile, GC, asset load; with Phaser also scene change, object spawn, texture upload, update or render time), draw calls, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms and over twice the recent median, at most 3 per window |
 | `load` | time to first frame, asset load timings | once |
-| `error` | `kind`, `message`, `stack`, `source` (file name), `line`, `col`, `fn`, `fingerprint`, `attrs` (only what the game passes to `glitchless.error`). The server builds breadcrumbs from the session's earlier events | each error, at most 25 of a kind per session |
+| `error` | `kind`, `message`, `stack`, `source` (file name), `line`, `col`, `fn`, `fingerprint`, `attrs` (what the game passes to `glitchless.error`; for errors an adapter reports, engine counts, the Phaser scene key or how long the loop stalled). The server builds breadcrumbs from the session's earlier events | each error, at most 25 of a kind per session |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them | the game calls them |
 | `death` | `cause`; with positions on: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `glitchless.track()`; also `rage_input` (a key code and count) from the SDK | as they happen |

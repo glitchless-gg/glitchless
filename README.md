@@ -7,7 +7,7 @@
 
 # Glitchless
 
-Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js games in the browser and Godot 4.5+ games on phones and desktops.
+Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js and Phaser games in the browser, and Godot 4.5+ and Unity (2022.3 LTS and 6) games on phones and desktops.
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.
@@ -28,11 +28,13 @@ It's open source and runs anywhere: one Node server with a file store on a lapto
 
 | Path | What |
 | --- | --- |
-| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js adapter, overlay, WebMCP tools, Datadog RUM bridge. ~80 KB as one `<script>` |
+| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js and Phaser (3 and 4) adapters, overlay, WebMCP tools, Datadog RUM bridge. ~85 KB as one `<script>` |
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
+| [`unity`](unity) | Glitchless for **Unity 2022.3 LTS and Unity 6** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`server`](server) | Intake, query API and findings. Runs locally (`npm run server`) or on **AWS Lambda Web Functions** + DynamoDB ([`server/web/deploy.js`](server/web/deploy.js)) |
 | [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
 | [`apps/zoomies`](apps/zoomies) | **Zoomies!**, a vibe-coded Three.js platformer that ships with four realistic bugs for the demo |
+| [`apps/phaser-demo`](apps/phaser-demo) | **Fetch!**, a small Phaser runner (Phaser 3 or 4) with planted bugs, an autoplay bot and a playtest config (`npm run game:phaser`) |
 | [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_death_hotspots`, `glitchless_compare_versions`, … |
 | [`packages/playtest`](packages/playtest) | `glitchless-playtest`: autoplay bots play every change and Glitchless compares it with a saved baseline. Also the `glitchless_playtest` MCP tool |
 | [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument` and `/glitchless:triage` skills + both MCP servers |
@@ -73,7 +75,26 @@ glitchless.captureMap('level-1', { axis: 'xy', bounds: { min: [0, -6], max: [180
 
 Or ask your agent: `/glitchless:instrument`.
 
+For a Phaser game (3.60+ or 4), hand the game to the Phaser adapter right after you create it. Scenes become levels on their own:
+
+```js
+import { Glitchless } from 'glitchless';
+import { instrumentPhaser } from 'glitchless/phaser';
+
+const glitchless = Glitchless.init({ service: 'my-game', version: '1.0.0', intake: 'http://localhost:7777' });
+const game = new Phaser.Game(config);
+instrumentPhaser(glitchless, { game, Phaser });
+```
+
 For a Godot game, copy [`godot/addons/glitchless`](godot/addons/glitchless) into it, add the `Glitchless` autoload and call `Glitchless.init("my-game", "", "prod", "http://localhost:7777")`. See its [README](godot/addons/glitchless/README.md).
+
+For a Unity game, add the package by git URL (**Package Manager → + → Add package from git URL**):
+
+```
+https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk
+```
+
+then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake = "http://localhost:7777" })` in the `Awake` of your first scene (`using GlitchlessSdk;`). See its [README](unity/Packages/gg.glitchless.sdk/README.md).
 
 ## Connect your coding agent
 
@@ -97,7 +118,7 @@ npx glitchless-playtest                   # after it: PASS, or FAIL with what go
 npx glitchless-playtest --compare-only baseline latest
 ```
 
-A metric only counts as worse when it moves past both a relative and an absolute margin (slow frames: +50% and +2 percentage points), so noise on a fast machine doesn't fail a build. The share of slow frames, render CPU and draw calls are checked overall and per level; any new error type or crashed run fails too. Frame time p95, hitches, deaths, completion and geometry growth produce warnings. p95 is only a warning because with vsync, frame times cluster at 16.7 and 33.3 ms, so p95 jumps between them when about 5% of frames are slow. A quick run is compared with the matching runs of a full baseline. Scenarios, thresholds and URLs can be overridden in `glitchless.playtest.json`. Runs are saved in `.glitchless/playtest/`.
+A metric only counts as worse when it moves past both a relative and an absolute margin (slow frames: +50% and +2 percentage points), so noise on a fast machine doesn't fail a build. The share of slow frames, render CPU, update CPU (the game's own update code, where the SDK can time it, as with Phaser) and draw calls are checked overall and per level; any new error type or crashed run fails too. Frame time p95, hitches, deaths, completion and geometry growth produce warnings. p95 is only a warning because with vsync, frame times cluster at 16.7 and 33.3 ms, so p95 jumps between them when about 5% of frames are slow. A quick run is compared with the matching runs of a full baseline. Scenarios, thresholds and URLs can be overridden in `glitchless.playtest.json`. Runs are saved in `.glitchless/playtest/`.
 
 For your own game, give the playtest URL parameters that start your autoplay bot and an expression that is true when a run is over:
 
@@ -127,7 +148,7 @@ The server can send every game's telemetry on to other backends. Switch on eithe
 How Glitchless maps onto OpenTelemetry:
 
 - **Resource:** the game build: `service.name`, `service.version` and `deployment.environment.name`, plus a `service.instance.id` for the Glitchless server process.
-- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
+- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot` or `unity`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
 - **Log records:** `session.id` and `user.id`, then the event's own fields under `game.*`, with event names like `glitchless.death`. Errors are `ERROR` records with `exception.type`, `exception.message` and `exception.stacktrace`.
 
 The standard variables work as they do in any OpenTelemetry SDK:

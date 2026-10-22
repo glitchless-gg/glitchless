@@ -5,7 +5,7 @@ import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 
-export const SDK_VERSION = '0.1.1';
+export const SDK_VERSION = '0.2.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)
@@ -56,6 +56,8 @@ export class Glitchless {
     this.opts = { ...DEFAULTS, ...options };
     this.opts.intake = this.opts.intake ? String(this.opts.intake).replace(/\/$/, '') : null;
     this.sessionId = 's_' + randomId(16); // per page load, kept in memory only
+    this.sdk = SDK; // engine adapters name themselves here (glitchless-phaser/…), so fix advice fits the engine
+    this.engine = null; // { name, version, renderer }, set by an engine adapter
     this.privacy = this.opts.privacy === 'full' ? 'full' : 'anonymous';
     this.positionsOn = this.opts.positions ?? this.privacy === 'full';
     this.playerId = this.privacy === 'full' ? loadPlayerId() : forgetPlayerId();
@@ -88,6 +90,9 @@ export class Glitchless {
     this.ringCount = 0;
     this.budgetMs = 1000 / 60;
     this.hz = 60;
+    this.frameId = 0;
+    this.lastFrameAt = 0;
+    this.earlyDeltas = [];
     this.win = this.newWindow();
     this.datadog = this.opts.datadog ? new DatadogBridge(this.opts) : null;
 
@@ -185,7 +190,7 @@ export class Glitchless {
   // Frame stats over the next `seconds` — the A/B primitive agents use before/after a fix.
   measure(seconds = 5) {
     const before = this.render?.memory?.() || {};
-    const probe = { sketch: new Sketch(), renderSketch: new Sketch(), frames: 0, max: 0, hitches: [], calls: 0, callsMax: 0, tris: 0, renderFrames: 0, ctxMax: {}, errors: this.stats.errors, level: this.level };
+    const probe = { sketch: new Sketch(), renderSketch: new Sketch(), updateSketch: new Sketch(), frames: 0, max: 0, hitches: [], calls: 0, callsMax: 0, tris: 0, renderFrames: 0, ctxMax: {}, errors: this.stats.errors, level: this.level };
     this.probes.add(probe);
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -211,12 +216,10 @@ export class Glitchless {
           hitch_count: probe.hitches.length,
           draw_calls: { avg: probe.renderFrames ? Math.round(probe.calls / probe.renderFrames) : null, max: probe.callsMax || null },
           triangles_avg: probe.renderFrames ? Math.round(probe.tris / probe.renderFrames) : null,
+          // CPU time in the game's update code, where an engine adapter can see it (Phaser's scene updates).
+          ...(probe.updateSketch.n ? { update_cpu_ms: { p50: round(probe.updateSketch.quantile(0.5), 2), p95: round(probe.updateSketch.quantile(0.95), 2) } } : {}),
           peak_context: probe.ctxMax,
-          memory_delta: {
-            geometries: delta(before.geometries, after.geometries),
-            textures: delta(before.textures, after.textures),
-            programs: delta(before.programs, after.programs),
-          },
+          memory_delta: memoryDelta(before, after),
           new_errors: this.stats.errors - probe.errors,
         });
       }, seconds * 1000);
@@ -242,6 +245,8 @@ export class Glitchless {
       slow: 0,
       renderMs: 0,
       renderFrames: 0,
+      updateMs: 0,
+      updateFrames: 0,
       drawCalls: 0,
       drawCallsMax: 0,
       triangles: 0,
@@ -250,40 +255,58 @@ export class Glitchless {
   }
 
   installFrameLoop() {
-    let last = 0;
-    this.frameId = 0;
-    const deltas = [];
-    const tick = (now) => {
-      this.frameId++;
-      if (last && !document.hidden) {
-        const dt = now - last;
-        // Browsers throttle rAF to ~1Hz for occluded windows that still report "visible". A single long
-        // frame between normal ones is a real freeze; a run of long frames is throttling — drop those.
-        if (dt >= 5000) this.pendingLong = null;
-        else if (dt > FROZEN_MS) {
-          if (this.pendingLong || this.throttled) {
-            this.pendingLong = null;
-            this.throttled = true;
-          } else this.pendingLong = { dt, now };
-        } else {
-          if (this.pendingLong) this.onFrame(this.pendingLong.dt, this.pendingLong.now);
-          this.pendingLong = null;
-          this.throttled = false;
-          this.onFrame(dt, now);
-        }
-        // Infer refresh rate (60/120/144Hz) from the median of early frames → frame budget.
-        if (deltas.length < 120 && dt < 100) {
-          deltas.push(dt);
-          if (deltas.length === 120) this.setBudget(median(deltas));
-        }
-      }
-      last = now;
-      requestAnimationFrame(tick);
+    const raf = (now) => {
+      if (this.externalClock) return; // an engine adapter drives tick() from the engine's own loop now
+      this.tick(now);
+      requestAnimationFrame(raf);
     };
-    requestAnimationFrame(tick);
+    requestAnimationFrame(raf);
     document.addEventListener('visibilitychange', () => {
-      last = 0; // don't count time spent in a background tab as a frame
+      this.lastFrameAt = 0; // don't count time spent in a background tab as a frame
     });
+  }
+
+  // An engine adapter calls this once per game step instead of the SDK timing animation frames, so a
+  // game with an fps limit (or a loop on setTimeout) is measured by the frames it actually draws.
+  useFrameClock() {
+    this.externalClock = true;
+    this.lastFrameAt = 0;
+  }
+
+  // The frame that starts at `now` (a performance.now() time): times the one before it.
+  tick(now) {
+    this.frameId++;
+    const last = this.lastFrameAt;
+    if (last && !document.hidden) {
+      const dt = now - last;
+      // Browsers throttle rAF to ~1Hz for occluded windows that still report "visible". A single long
+      // frame between normal ones is a real freeze; a run of long frames is throttling — drop those.
+      if (dt >= 5000) this.pendingLong = null;
+      else if (dt > FROZEN_MS) {
+        if (this.pendingLong || this.throttled) {
+          this.pendingLong = null;
+          this.throttled = true;
+        } else this.pendingLong = { dt, now, detail: this.render?.hitchDetail?.(dt) };
+      } else {
+        if (this.pendingLong) this.onFrame(this.pendingLong.dt, this.pendingLong.now, this.pendingLong.detail);
+        this.pendingLong = null;
+        this.throttled = false;
+        this.onFrame(dt, now);
+      }
+      // Infer refresh rate (60/120/144Hz) from the median of early frames → frame budget.
+      const deltas = this.earlyDeltas;
+      if (deltas.length < 120 && dt < 100) {
+        deltas.push(dt);
+        if (deltas.length === 120) this.setBudget(median(deltas));
+      }
+    }
+    this.lastFrameAt = now;
+  }
+
+  // The engine can't take frames for a while (paused, or its loop slept): the gap is not a frame.
+  skipFrame() {
+    this.lastFrameAt = 0;
+    this.pendingLong = null;
   }
 
   setBudget(medianDt) {
@@ -293,7 +316,7 @@ export class Glitchless {
     this.budgetMs = 1000 / this.hz;
   }
 
-  onFrame(dt, now) {
+  onFrame(dt, now, detail) {
     const w = this.win;
     w.frames++;
     w.sketch.add(dt);
@@ -318,6 +341,7 @@ export class Glitchless {
         p.tris += r.triangles;
         if (r.calls > p.callsMax) p.callsMax = r.calls;
       }
+      if (rendered && r.updateMs != null) p.updateSketch.add(r.updateMs);
       if (dt > HITCH_MS && dt > 2 * (this.recentMedian || 0)) p.hitches.push({ ms: round(dt, 1), level: this.level, draw_calls: rendered ? r.calls : null, ctx: { ...this.ctx }, recent: this.recentWithin(1500) });
     }
     if (rendered) {
@@ -326,6 +350,10 @@ export class Glitchless {
       w.drawCalls += r.calls;
       w.triangles += r.triangles;
       if (r.calls > w.drawCallsMax) w.drawCallsMax = r.calls;
+      if (r.updateMs != null) {
+        w.updateMs += r.updateMs;
+        w.updateFrames++;
+      }
     }
 
     if (!this.firstFrameAt) {
@@ -340,6 +368,8 @@ export class Glitchless {
       this.stats.hitches++;
       const mem = this.render?.memory?.() || {};
       const heap = heapMb();
+      // What the engine saw in this frame: its own likely causes and timings (see phaser.js).
+      const engine = detail ?? this.render?.hitchDetail?.(dt) ?? null;
       this.pendingHitches.push({
         type: 'hitch',
         ts: Date.now(),
@@ -356,6 +386,7 @@ export class Glitchless {
         _heapBefore: this.prevHeap,
         _heapAfter: heap,
         _assetsInFlight: this.render?.assetsInFlight?.() || 0,
+        _engine: engine,
       });
       this.prevPrograms = mem.programs;
     } else if ((this.frameId & 31) === 0) {
@@ -365,13 +396,14 @@ export class Glitchless {
   }
 
   // Called by the engine adapter after each render call.
-  onRender(ms, calls, triangles) {
+  onRender(ms, calls, triangles, updateMs = null) {
     if (this.lastRender && this.lastRender.frameId === this.frameId) {
       this.lastRender.ms += ms;
       this.lastRender.calls += calls;
       this.lastRender.triangles += triangles;
+      if (updateMs != null) this.lastRender.updateMs = (this.lastRender.updateMs ?? 0) + updateMs;
     } else {
-      this.lastRender = { frameId: this.frameId, ms, calls, triangles };
+      this.lastRender = { frameId: this.frameId, ms, calls, triangles, updateMs };
     }
   }
 
@@ -565,6 +597,7 @@ export class Glitchless {
       level: null,
       session_type: this.opts.sessionType,
       privacy: this.privacy,
+      engine: this.engine,
       device: this.privacy === 'full' ? this.device() : anonymizeDevice(this.device()),
       page: { url: location.origin + location.pathname, referrer: originOf(document.referrer) },
       nav_ms: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
@@ -596,6 +629,7 @@ export class Glitchless {
         hitches: w.hitches,
         frozen: w.frozen,
         render_ms: w.renderFrames ? round(w.renderMs / w.renderFrames, 2) : null,
+        ...(w.updateFrames ? { process_ms: round(w.updateMs / w.updateFrames, 2) } : {}),
         draw_calls: w.renderFrames ? Math.round(w.drawCalls / w.renderFrames) : null,
         draw_calls_max: w.renderFrames ? w.drawCallsMax : null,
         triangles: w.renderFrames ? Math.round(w.triangles / w.renderFrames) : null,
@@ -624,9 +658,10 @@ export class Glitchless {
       if (h._heapBefore != null && h._heapAfter != null && h._heapAfter < h._heapBefore - 2) causes.push('gc');
       if (h._assetsInFlight > 0) causes.push('asset_load');
       if (loaf?.scripts?.length) causes.push('script');
+      for (const c of h._engine?.causes || []) if (!causes.includes(c)) causes.push(c);
       if (h.frozen) causes.push('frozen');
-      const { _perfEnd, _programsBefore, _heapBefore, _heapAfter, _assetsInFlight, ...rest } = h;
-      const hitch = { ...rest, causes, loaf: loaf?.scripts || [] };
+      const { _perfEnd, _programsBefore, _heapBefore, _heapAfter, _assetsInFlight, _engine, ...rest } = h;
+      const hitch = { ...rest, ...(_engine?.fields || {}), causes, loaf: loaf?.scripts || [] };
       this.queue.push(hitch);
       this.recentHitches.push(hitch);
       if (this.recentHitches.length > 20) this.recentHitches.shift();
@@ -664,7 +699,7 @@ export class Glitchless {
       version: this.opts.version,
       session_id: this.sessionId,
       player_id: this.playerId,
-      sdk: SDK,
+      sdk: this.sdk,
       events,
     });
     const url = `${this.opts.intake}/v1/intake?token=${encodeURIComponent(this.opts.clientToken)}`;
@@ -699,6 +734,13 @@ export class Glitchless {
 
 function delta(a, b) {
   return a == null || b == null ? null : b - a;
+}
+
+// The change in every engine count measure() saw at both ends (three.js: geometries, textures, programs).
+function memoryDelta(before, after) {
+  const out = {};
+  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) out[k] = delta(before[k], after[k]);
+  return out;
 }
 
 function chunkBySize(events, limit) {

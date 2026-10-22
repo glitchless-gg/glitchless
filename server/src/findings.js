@@ -50,14 +50,20 @@ export function findings(ctx, maps = []) {
   const latestLeak = leaky.sort((a, b) => semver(b[0], a[0]))[0];
   for (const [version, m] of latestLeak ? [latestLeak] : []) {
     const older = leaky.filter(([v]) => v !== version).map(([v, o]) => `${v}: +${Math.round(o.geometries_growth_per_level_load)}`);
+    // The Unity SDK sends its mesh count where three.js sends geometries.
+    const unity = engineOf([...ctx.sessions.values()].filter((s) => s.version === version && s.geo)) === 'unity';
     out.push({
       id: `leak-geometries-${version}`,
       severity: m.geometries_growth_per_level_load > 150 ? 'high' : 'medium',
       category: 'memory',
-      title: `Geometry leak in ${version}: +${Math.round(m.geometries_growth_per_level_load)} geometries per level load`,
-      summary: `Across ${m.sessions} sessions with 2+ level loads, renderer geometry count grows from a median of ${fmt(m.median_first)} to ${fmt(m.median_last)} and never comes back down${older.length ? ` (also in ${older.join(', ')} per load)` : ''}. GPU memory grows until low-end devices stutter or lose the WebGL context.`,
+      title: unity ? `Mesh leak in ${version}: +${Math.round(m.geometries_growth_per_level_load)} meshes per level load` : `Geometry leak in ${version}: +${Math.round(m.geometries_growth_per_level_load)} geometries per level load`,
+      summary: unity
+        ? `Across ${m.sessions} sessions with 2+ level loads, the number of meshes in memory grows from a median of ${fmt(m.median_first)} to ${fmt(m.median_last)} and never comes back down${older.length ? ` (also in ${older.join(', ')} per load)` : ''}. Memory climbs with every level until a phone runs out and the OS kills the game.`
+        : `Across ${m.sessions} sessions with 2+ level loads, renderer geometry count grows from a median of ${fmt(m.median_first)} to ${fmt(m.median_last)} and never comes back down${older.length ? ` (also in ${older.join(', ')} per load)` : ''}. GPU memory grows until low-end devices stutter or lose the WebGL context.`,
       evidence: { version, ...m },
-      suggestion: 'When unloading a level, call geometry.dispose(), material.dispose() and texture.dispose() for everything you remove (scene.remove() alone does not free GPU memory). Share one geometry/material across identical tiles instead of creating one per mesh.',
+      suggestion: unity
+        ? 'Meshes and materials made at runtime (new Mesh(), Instantiate() of a material) are not freed with their GameObject: Destroy() them in OnDestroy. Reading renderer.material or meshFilter.mesh makes a copy each time; use sharedMaterial and sharedMesh, or destroy the copies. Call Resources.UnloadUnusedAssets() after unloading a level.'
+        : 'When unloading a level, call geometry.dispose(), material.dispose() and texture.dispose() for everything you remove (scene.remove() alone does not free GPU memory). Share one geometry/material across identical tiles instead of creating one per mesh.',
       link: { page: 'performance', section: 'memory' },
       impact: m.sessions / totalSessions,
     });
@@ -95,13 +101,9 @@ export function findings(ctx, maps = []) {
       severity,
       category: 'stability',
       title: `${issue.message.slice(0, 90)}`,
-      summary: `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? (issue.kind === 'script' ? 'Unhandled script error — the function stopped part way.' : 'Unhandled — reaches window.onerror.') : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}`,
+      summary: `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? FATAL_WORDS[issue.kind] || 'Unhandled — reaches window.onerror.' : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}`,
       evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs },
-      suggestion: !issue.location
-        ? 'Reproduce with the breadcrumbs above and guard the failing path.'
-        : engineOf([ctx.sessions.get(issue.sample_session)]) === 'godot'
-          ? `Start at ${issue.location}. The error fires during normal play (not on load), so look for a node that is null or already freed (a get_node() path that no longer exists, or a node freed earlier: check is_instance_valid()) or a missing dictionary key on the code path triggered by ${crumbs.at(-1) || 'the preceding game event'}. Make it fail safe and apply game state (score, pickups) before anything that can fail: release exports skip most script errors silently, and a call on a typed null crashes the game.`
-          : `Start at ${issue.location}. The error fires during normal play (not on load), so look for an unchecked lookup (e.g. a pool/array .find() returning undefined) on the code path triggered by ${crumbs.at(-1) || 'the preceding game event'}. Make it fail safe and make sure game state (score, pickups) is applied before anything that can throw.`,
+      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineOf([ctx.sessions.get(issue.sample_session)]), issue, crumbs),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
     });
@@ -174,10 +176,7 @@ export function findings(ctx, maps = []) {
       title: `Low-tier GPUs struggle: p95 ${lo.p95}ms vs ${hi.p95}ms on ${hi.key}-tier`,
       summary: `${lo.sessions} sessions on low-tier GPUs (integrated Intel HD/UHD, mobile) spend ${lo.pct_over_budget}% of frames over budget.`,
       evidence: { low: lo, reference: hi },
-      suggestion:
-        engineOf([...ctx.sessions.values()].filter((s) => s.device?.gpu_tier === 'low')) === 'godot'
-          ? 'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render 3D at a lower resolution (Viewport.scaling_3d_scale around 0.7), turn off shadows, glow and SSAO in the WorldEnvironment, drop MSAA and halve particle amounts.'
-          : 'Add a quality tier: cap devicePixelRatio at 1.5, disable shadows/post-processing and halve particle counts when gpu_tier is low or p95 stays above budget for 5s.',
+      suggestion: QUALITY_TIER_TIPS[engineOf([...ctx.sessions.values()].filter((s) => s.device?.gpu_tier === 'low'))],
       link: { page: 'performance', section: 'devices' },
       impact: lo.sessions / totalSessions,
     });
@@ -185,19 +184,18 @@ export function findings(ctx, maps = []) {
 
   // 7. Slow first frame.
   if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > 4000) {
-    const godot = engineOf([...ctx.sessions.values()].filter((s) => s.ttff != null)) === 'godot';
+    const engine = engineOf([...ctx.sessions.values()].filter((s) => s.ttff != null));
     out.push({
       id: 'load-ttff',
       severity: perf.kpis.ttff_p95 > 8000 ? 'high' : 'medium',
       category: 'performance',
       title: `Slow start: p95 time-to-first-frame is ${(perf.kpis.ttff_p95 / 1000).toFixed(1)}s`,
-      summary: godot
-        ? 'Players expect to be playing within seconds of opening the game, and some give up during a long splash screen.'
-        : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.',
+      summary:
+        engine === 'godot' || engine === 'unity'
+          ? 'Players expect to be playing within seconds of opening the game, and some give up during a long splash screen.'
+          : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.',
       evidence: { ttff_p50: perf.kpis.ttff_p50, ttff_p95: perf.kpis.ttff_p95 },
-      suggestion: godot
-        ? 'Keep the first scene small and load the rest in the background with ResourceLoader.load_threaded_request(), preload() only what the first screen needs, turn on the Shader Baker in the export preset (Godot 4.5+) so the first frame does not wait on shader compiles, and use VRAM-compressed textures.'
-        : 'Lazy-load non-first-level assets, compress textures (KTX2/Basis) and meshes (Draco/Meshopt), and warm shaders with renderer.compileAsync before the first frame.',
+      suggestion: SLOW_START_TIPS[engine],
       link: { page: 'performance', section: 'load' },
       impact: 1,
     });
@@ -239,16 +237,56 @@ function carriedGauges(ctx, level, baselineLevel) {
     .sort((a, b) => b.here / (b.baseline + 1) - a.here / (a.baseline + 1));
 }
 
-// Which SDK sent most of these sessions, so fix advice names that engine's APIs (three.js for the browser SDK).
+// Which SDK sent most of these sessions, so fix advice names that engine's APIs: 'godot', 'unity',
+// 'phaser', or 'web' (the browser SDK on its own or with three.js).
+const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-phaser/': 'phaser' };
 function engineOf(sessions) {
-  let godot = 0;
+  const counts = {};
   let n = 0;
   for (const s of sessions) {
     n++;
-    if (s?.sdk?.startsWith('glitchless-godot/')) godot++;
+    const sdk = s?.sdk || '';
+    const engine = Object.entries(SDK_ENGINES).find(([prefix]) => sdk.startsWith(prefix))?.[1];
+    if (engine) counts[engine] = (counts[engine] || 0) + 1;
   }
-  return godot * 2 > n ? 'godot' : 'web';
+  const [top, count] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || [];
+  return count * 2 > n ? top : 'web';
 }
+
+const FATAL_WORDS = {
+  script: 'Unhandled script error — the function stopped part way.',
+  exception: 'Unhandled exception — Unity skipped the rest of that callback, so whatever came after it never ran.',
+  game_loop_stopped: "Phaser's game loop stopped — the game froze and the player could only leave.",
+};
+
+function errorSuggestion(engine, issue, crumbs) {
+  const where = `Start at ${issue.location}. The error fires during normal play (not on load), so look for`;
+  const trigger = crumbs.at(-1) || 'the preceding game event';
+  switch (engine) {
+    case 'godot':
+      return `${where} a node that is null or already freed (a get_node() path that no longer exists, or a node freed earlier: check is_instance_valid()) or a missing dictionary key on the code path triggered by ${trigger}. Make it fail safe and apply game state (score, pickups) before anything that can fail: release exports skip most script errors silently, and a call on a typed null crashes the game.`;
+    case 'unity':
+      return `${where} a reference that is missing or already destroyed (a GetComponent() or Find() that returned null, an inspector field left empty, an object Destroy()ed earlier: a MissingReferenceException) or a dictionary or array lookup on the code path triggered by ${trigger}. Make it fail safe and apply game state (score, pickups) before anything that can throw: the rest of that Update() or coroutine is skipped every time it throws.`;
+    case 'phaser':
+      return `${where} an unchecked lookup (a Group's getFirstDead() or a table entry that returns null or undefined, a destroyed game object still referenced from a timer, tween or physics callback) on the code path triggered by ${trigger}. In Phaser an uncaught error inside update(), a physics callback or an event handler stops the game loop for good, so make the path fail safe and apply game state (score, pickups) before anything that can throw.`;
+    default:
+      return `${where} an unchecked lookup (e.g. a pool/array .find() returning undefined) on the code path triggered by ${trigger}. Make it fail safe and make sure game state (score, pickups) is applied before anything that can throw.`;
+  }
+}
+
+const QUALITY_TIER_TIPS = {
+  godot: 'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render 3D at a lower resolution (Viewport.scaling_3d_scale around 0.7), turn off shadows, glow and SSAO in the WorldEnvironment, drop MSAA and halve particle amounts.',
+  unity: 'Add a quality tier: when the device tier is low or p95 stays above budget for 5s, switch QualitySettings to a lower level, render at a lower scale (renderScale on the URP asset, or ScalableBufferManager), turn off shadows and post-processing, and halve particle counts.',
+  phaser: 'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render at a lower resolution (a smaller game size with Scale.FIT, and resolution 1), drop preFX/postFX filters and lights, and halve particle emitter quantities.',
+  web: 'Add a quality tier: cap devicePixelRatio at 1.5, disable shadows/post-processing and halve particle counts when gpu_tier is low or p95 stays above budget for 5s.',
+};
+
+const SLOW_START_TIPS = {
+  godot: 'Keep the first scene small and load the rest in the background with ResourceLoader.load_threaded_request(), preload() only what the first screen needs, turn on the Shader Baker in the export preset (Godot 4.5+) so the first frame does not wait on shader compiles, and use VRAM-compressed textures.',
+  unity: 'Keep the first scene small and load the rest with SceneManager.LoadSceneAsync() or Addressables, move heavy Awake()/Start() work behind the first frame, warm shaders behind the splash screen with a ShaderVariantCollection, and use compressed textures (ASTC on phones).',
+  phaser: 'Have the Preloader load only what the menu and first level need and load later levels in their own scenes, pack images into texture atlases, and ship compressed audio (and compressed textures where the target supports them).',
+  web: 'Lazy-load non-first-level assets, compress textures (KTX2/Basis) and meshes (Draco/Meshopt), and warm shaders with renderer.compileAsync before the first frame.',
+};
 
 // One tip per Godot hitch cause. The SDK names causes from what the long frame measured: pipeline
 // compiles, a scene swap, 50+ nodes added, or process / physics / render time taking the frame.
@@ -278,8 +316,63 @@ function godotPerfSuggestion(corr, preceding, causes, level) {
   return tips.join(' ');
 }
 
+// Phaser hitch causes: what the slow step did (spawned 50+ objects, made a texture, started a scene) or
+// where its time went (update code, rendering).
+const PHASER_CAUSE_TIPS = {
+  object_spawn: 'Some hitches add many game objects in one step: create them once and recycle them through a Group (getFirstDead / setActive) or use one particle emitter instead of an object each, and destroy() what you are done with.',
+  texture_upload: 'Some hitches make a texture mid-game (generateTexture, a canvas or render texture): make it once in the preloader and reuse the key; every new texture is uploaded to the GPU on the frame it is made, and textures stay in memory until removed.',
+  scene_change: 'Some hitches come with a scene starting: load its files in a preloader scene first and keep heavy work in create() small, or spread it over the first frames.',
+  script: 'Some hitches are long update steps: look for loops over every object, physics colliders added per object instead of per group, and handlers added with events.on() on every restart (they pile up because scene events outlive shutdown).',
+  render: 'Some hitches are long render steps: cut texture switches with atlases, avoid redrawing Graphics every frame (draw once, or bake to a texture), and limit preFX/postFX.',
+  gc: 'Heap drops during hitches suggest GC pauses: avoid creating objects, arrays and closures every frame in update().',
+  asset_load: 'Hitches overlap file loads: load in a preloader scene before play starts.',
+  frozen: 'Some frames froze for over 0.7s: something blocked the main thread for that long; move it behind a loading screen or split it up.',
+};
+
+function phaserPerfSuggestion(corr, preceding, causes, level) {
+  const tips = [];
+  const gauge = corr[0]?.key;
+  const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;
+  if (gauge || trigger) tips.push(`Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'}${gauge ? ` and drives \`${gauge}\`` : ''}.`);
+  if (gauge === 'physics_bodies') tips.push('`physics_bodies` counts arcade or matter bodies: objects that are faded out or off screen still simulate until destroyed or disabled (disableBody(true, true)). Recycle them through a Group, and add one collider per group rather than per object.');
+  if (gauge === 'game_objects') tips.push('`game_objects` counts everything on the running scenes\' display lists: something adds objects and never destroys them. Destroy them when their effect ends, or recycle them through a Group.');
+  if (gauge === 'listeners') tips.push('`listeners` counts event handlers on the game and its scenes. It climbs when a scene adds handlers with this.events.on() or this.game.events.on() in create() and never removes them: scene events survive a restart, so remove them in a shutdown handler or use once().');
+  if (gauge === 'particles') tips.push('`particles` counts live particles: lower the emitters\' quantity and lifespan, or stop() emitters that are off screen.');
+  if (gauge === 'tweens') tips.push('`tweens` counts running tweens: one tween per object in a burst is costly; tween a container, or a whole group at once, and make sure looping tweens are stopped.');
+  const top = Object.entries(causes).filter(([c]) => PHASER_CAUSE_TIPS[c]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  for (const [c] of top) tips.push(PHASER_CAUSE_TIPS[c]);
+  if (!tips.length) tips.push(`Profile ${level.key} with glitchless_measure and glitchless_inspect_scene: look at update and render CPU, draw calls (${level.draw_calls} avg) and the busiest event listeners.`);
+  return tips.join(' ');
+}
+
+// Unity hitch causes, from what the slow frame measured: a GC collection, shader compiles, a scene
+// load, or where the frame's time went (scripts, physics, rendering).
+const UNITY_CAUSE_TIPS = {
+  gc: 'Some hitches are garbage collections: cut per-frame allocations (new lists, LINQ, string building, boxing, GetComponents() without a list), cache what Update() needs, and turn on incremental GC in Player Settings.',
+  shader_compile: 'Some hitches compile shaders on first use: warm them behind the loading screen with a ShaderVariantCollection (WarmUp), and strip variants you do not use.',
+  scene_change: 'Some hitches come with a scene load: use SceneManager.LoadSceneAsync() (allowSceneActivation for a loading screen) or Addressables, and keep Awake()/Start() of the new scene light.',
+  object_spawn: 'Some hitches Instantiate() many objects at once: pool and reuse them (UnityEngine.Pool.ObjectPool), or draw many copies with a particle system or GPU instancing.',
+  script: 'Some hitches are long Update()/LateUpdate() frames: spread big loops over several frames (a coroutine, or a job with the Jobs system), and cache GetComponent()/Find() results instead of calling them every frame.',
+  physics: 'Some hitches are long physics steps: fewer active rigidbodies and colliders, simpler collider shapes, a larger Fixed Timestep, and a Maximum Allowed Timestep that stops the physics catch-up spiral.',
+  render: 'Some hitches are long render frames: cut draw calls and SetPass calls (static and dynamic batching, the SRP Batcher, GPU instancing) and real-time shadows.',
+  frozen: 'Some frames froze for over 0.7s: something blocked the main thread (a synchronous load, Resources.Load of a large asset, a long loop); move it to a background thread or behind a loading screen.',
+};
+
+function unityPerfSuggestion(corr, preceding, causes, level) {
+  const tips = [];
+  const gauge = corr[0]?.key;
+  const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;
+  if (gauge || trigger) tips.push(`Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'}${gauge ? ` and drives \`${gauge}\`` : ''}. If it spawns many objects, pool and reuse them instead of calling Instantiate() and Destroy() per effect, or use one particle system.`);
+  const top = Object.entries(causes).filter(([c]) => UNITY_CAUSE_TIPS[c]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  for (const [c] of top) tips.push(UNITY_CAUSE_TIPS[c]);
+  if (!tips.length) tips.push(`Profile ${level.key} with the Unity Profiler (CPU and Rendering modules) in a development build; check draw calls (${level.draw_calls} avg).`);
+  return tips.join(' ');
+}
+
 function perfSuggestion(corr, preceding, causes, level, engine) {
   if (engine === 'godot') return godotPerfSuggestion(corr, preceding, causes, level);
+  if (engine === 'phaser') return phaserPerfSuggestion(corr, preceding, causes, level);
+  if (engine === 'unity') return unityPerfSuggestion(corr, preceding, causes, level);
   const tips = [];
   const gauge = corr[0]?.key;
   const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;

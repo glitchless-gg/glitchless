@@ -1,0 +1,9 @@
+{
+  "game": "http://localhost:5175/",
+  "scenarios": [
+    { "name": "expert, Phaser 3", "params": { "autoplay": 1, "seed": 7, "skill": 0.95, "level": 1 }, "max_s": 90 },
+    { "name": "average on level 2, Phaser 3", "params": { "autoplay": 1, "seed": 21, "skill": 0.8, "level": 2 }, "max_s": 60 },
+    { "name": "expert, Phaser 4", "params": { "autoplay": 1, "seed": 7, "skill": 0.95, "level": 1, "phaser": 4 }, "max_s": 90 }
+  ],
+  "done_when": "window.__GLITCHLESS_PLAYTEST_DONE__ || window.fetchGame?.won || window.fetchGame?.quit"
+}

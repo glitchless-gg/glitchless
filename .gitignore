@@ -19,3 +19,15 @@ samconfig.toml
 
 # Saved playtest runs (glitchless-playtest)
 .glitchless/
+
+# Unity dev project (unity/): generated folders, and the sample copied in from Samples~
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/obj/
+unity/UserSettings/
+unity/Builds/
+unity/Assets/Samples/
+unity/Assets/Samples.meta
+unity/*.csproj
+unity/*.sln

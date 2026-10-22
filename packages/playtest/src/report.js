@@ -49,6 +49,7 @@ export function runReport(run) {
     ['Slow frames (% over budget)', s.pct_frames_over_budget],
     ['Frame time p95 (ms)', s.frame_p95],
     ['Render CPU per frame (ms)', s.render_cpu_ms],
+    ...(s.update_cpu_ms != null ? [['Update CPU per frame (ms)', s.update_cpu_ms]] : []),
     ['Draw calls per frame', s.draw_calls],
     ['Hitches per minute', s.hitches_per_min],
     ['Errors per run', s.errors_per_session],
@@ -59,8 +60,9 @@ export function runReport(run) {
   for (const [k, v] of rows) out.push(`| ${k} | ${fmt(v)} |`);
   const levels = Object.entries(s.levels || {});
   if (levels.length) {
-    out.push('', '| Level | Slow frames (%) | Frame p95 (ms) | Draw calls | Render CPU (ms) |', '| --- | ---: | ---: | ---: | ---: |');
-    for (const [l, v] of levels) out.push(`| ${l} | ${fmt(v.pct_frames_over_budget)} | ${fmt(v.frame_p95)} | ${fmt(v.draw_calls)} | ${fmt(v.render_cpu_ms)} |`);
+    const update = levels.some(([, v]) => v.update_cpu_ms != null);
+    out.push('', `| Level | Slow frames (%) | Frame p95 (ms) | Draw calls | Render CPU (ms) |${update ? ' Update CPU (ms) |' : ''}`, `| --- | ---: | ---: | ---: | ---: |${update ? ' ---: |' : ''}`);
+    for (const [l, v] of levels) out.push(`| ${l} | ${fmt(v.pct_frames_over_budget)} | ${fmt(v.frame_p95)} | ${fmt(v.draw_calls)} | ${fmt(v.render_cpu_ms)} |${update ? ` ${fmt(v.update_cpu_ms)} |` : ''}`);
   }
   if (s.errors?.length) {
     out.push('', 'Errors:');

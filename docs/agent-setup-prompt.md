@@ -20,9 +20,7 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
    If that folder already exists, run `git -C ~/.glitchless pull` instead.
    If the intake URL in step 2 starts with http://localhost, start a local Glitchless server and leave it running: in ~/.glitchless run `npm install && npm run build`, then `npm run server` in the background. It's ready when {{INTAKE_URL}}/v1/health answers, and the dashboard is at the same address.
 
-2. Work out the engine, then read the guide for it and follow it for this game:
-   - a web game (Three.js, React Three Fiber or plain WebGL): ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md
-   - a Godot 4.5+ game: ~/.glitchless/godot/addons/glitchless/README.md
+2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It covers Three.js (and React Three Fiber), Phaser 3 and 4, Unity 2022.3 or later, and Godot 4.5 or later; for Godot it sends you to ~/.glitchless/godot/addons/glitchless/README.md.
    Use these settings:
    - intake URL: {{INTAKE_URL}}
    - client token: {{CLIENT_TOKEN}} (it's public and can only send data, so it's fine inside the game build)
@@ -30,7 +28,7 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example, `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
    - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variables GLITCHLESS_URL={{INTAKE_URL}} and GLITCHLESS_API_KEY set to my secret key. Take the key from GLITCHLESS_API_KEY in my environment, or ask me for it. Never put the secret key in the game, in a file that gets committed, or in your reply.
-   - webmcp: command `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game: measure frame times, inspect the scene and reproduce problems.
+   - webmcp, for a game that runs in a browser (Three.js, Phaser): command `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game: measure frame times, inspect the scene and reproduce problems. Unity and Godot builds don't need it: they measure themselves with --glitchless-measure.
    If your tool needs a restart to load new MCP servers, tell me.
 
 4. If your tool loads skills from a folder (for example ~/.claude/skills, ~/.codex/skills or the project's .agents/skills), copy ~/.glitchless/plugin/glitchless/skills/instrument and ~/.glitchless/plugin/glitchless/skills/triage there. If it doesn't, remember this for later: when I ask what's wrong with the game, read ~/.glitchless/plugin/glitchless/skills/triage/SKILL.md and follow it.
@@ -42,7 +40,7 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
 
 ## Notes for whoever maintains this
 
-- Keep step 2's paths in step with the repo. If the instrument skill gains a Godot section, point both
-  engines at the skill.
+- Keep step 2's path in step with the repo. The instrument skill is the one entry point for every engine;
+  if Godot gets a section there, drop the pointer to its README.
 - Name only config locations you're sure of as examples in step 3; the agent knows its own.
 - An agent without MCP support can still do steps 1, 2 and 6. Triage then needs the dashboard.

@@ -871,15 +871,19 @@ export function playtestSummary(ctx) {
   const levels = {};
   const budgets = [];
   const all = new Sketch();
+  const updateMs = [];
   for (const e of ctx.events) {
     if (e.type !== 'frame_window') continue;
     if (e.budget_ms) budgets.push(e.budget_ms);
     if (e.ft) all.merge(e.ft);
+    // The game's own update code per frame (Godot's _process, Phaser's scene updates, Unity's Update).
+    if (e.process_ms != null) updateMs.push(e.process_ms);
     if (e.level == null) continue;
-    const l = (levels[e.level] ||= { seconds: 0, calls: [], renderMs: [], sketch: new Sketch() });
+    const l = (levels[e.level] ||= { seconds: 0, calls: [], renderMs: [], updateMs: [], sketch: new Sketch() });
     l.seconds += e.duration_s || 0;
     if (e.draw_calls != null) l.calls.push(e.draw_calls);
     if (e.render_ms != null) l.renderMs.push(e.render_ms);
+    if (e.process_ms != null) l.updateMs.push(e.process_ms);
     if (e.ft) l.sketch.merge(e.ft);
   }
   // Same definition as the dashboard: frames slower than 1.15× the display's frame budget. Unlike p95,
@@ -890,12 +894,13 @@ export function playtestSummary(ctx) {
     ...summarize(sessions, cellsOf(ctx).map(({ c }) => c)),
     frame_budget_ms: round(budget, 2),
     pct_frames_over_budget: overBudget(all),
+    update_cpu_ms: updateMs.length ? round(avg(updateMs), 2) : null,
     crashes: sessions.filter((s) => s.crashed).length,
     deaths: sessions.reduce((a, s) => a + s.deaths, 0),
     levels: Object.fromEntries(
       naturalSort(Object.keys(levels)).map((k) => {
         const l = levels[k];
-        return [k, { seconds: round(l.seconds, 1), frame_p95: round(l.sketch.quantile(0.95), 2), pct_frames_over_budget: overBudget(l.sketch), draw_calls: l.calls.length ? Math.round(avg(l.calls)) : null, render_cpu_ms: l.renderMs.length ? round(avg(l.renderMs), 2) : null }];
+        return [k, { seconds: round(l.seconds, 1), frame_p95: round(l.sketch.quantile(0.95), 2), pct_frames_over_budget: overBudget(l.sketch), draw_calls: l.calls.length ? Math.round(avg(l.calls)) : null, render_cpu_ms: l.renderMs.length ? round(avg(l.renderMs), 2) : null, update_cpu_ms: l.updateMs.length ? round(avg(l.updateMs), 2) : null }];
       }),
     ),
     errors: errorIssues(ctx).map((i) => ({ fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions })),

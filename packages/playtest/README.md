@@ -1,9 +1,9 @@
 # glitchless-playtest
 
-Playtest every change. Autoplay bots play your web game on a saved baseline and on the current code,
-and [Glitchless](https://github.com/glitchless-gg/glitchless) compares the two runs: slow frames,
-render time, draw calls, hitches, errors, deaths and level completion. A regression exits with code 1,
-so it can gate a pull request.
+Playtest every change. Autoplay bots play your web game (Three.js, Phaser or plain WebGL) on a saved
+baseline and on the current code, and [Glitchless](https://github.com/glitchless-gg/glitchless) compares
+the two runs: slow frames, render and update time, draw calls, hitches, errors, deaths and level
+completion. A regression exits with code 1, so it can gate a pull request.
 
 ```bash
 npx glitchless-playtest --save baseline   # before changing the code
@@ -23,6 +23,11 @@ npx glitchless-playtest                   # after: compares with "baseline"
   Chrome by default, so frame times come from your real GPU.
 
 A run ends after `max_s` seconds, or as soon as the page sets `window.__GLITCHLESS_PLAYTEST_DONE__ = true`.
+
+On a fast machine, vsync hides a slower build in frame time. Render CPU and update CPU per frame don't
+hide it, so they fail a run on their own: update CPU is the game's update code, which the SDK times
+where the engine lets it (Phaser's scene updates and physics). The Phaser demo in the Glitchless repo,
+`apps/phaser-demo`, has a working `glitchless.playtest.json`.
 
 ## Options
 

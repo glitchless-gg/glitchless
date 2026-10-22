@@ -4,7 +4,11 @@
 // 1) asks the bridge for a registration token, 2) opens the game in Chrome and pairs it through the
 // widget, 3) lists the tools the game exposes and calls a few of them.
 //
-//   node scripts/webmcp-smoke.js [--game http://localhost:5173/] [--headed]
+//   node scripts/webmcp-smoke.js [--game http://localhost:5173/] [--level level-2] [--headed]
+//   node scripts/webmcp-smoke.js --game http://localhost:5175/ --level level-2     (the Phaser demo)
+//
+// The game's own tools are found by name: <game>_load_level, <game>_get_state, and the tool that
+// sets off the expensive effect (<game>_trigger_zoomies or <game>_throw_ball).
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -16,6 +20,7 @@ const flag = (n, d) => {
   return i < 0 ? d : args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true;
 };
 const GAME = flag('game', 'http://localhost:5173/');
+const LEVEL = flag('level', 'level-2');
 
 const client = new Client({ name: 'glitchless-smoke', version: '0.1.0' });
 await client.connect(new StdioClientTransport({ command: 'npx', args: ['-y', '@jason.today/webmcp@latest', '--mcp'], stderr: 'ignore' }));
@@ -49,15 +54,16 @@ const call = async (suffix, a = {}) => {
   return res;
 };
 
+const trigger = ['_trigger_zoomies', '_throw_ball'].find((s) => find(s)) || '_trigger_zoomies';
 await call('glitchless_session');
-await call('zoomies_load_level', { level: 'level-2' });
+await call('_load_level', { level: LEVEL });
 await new Promise((r) => setTimeout(r, 1500));
 await call('glitchless_measure', { seconds: 3 });
-await call('zoomies_get_state');
+await call('_get_state');
 await Promise.all([call('glitchless_measure', { seconds: 6 }), (async () => {
   for (let i = 0; i < 3; i++) {
     await new Promise((r) => setTimeout(r, 1200));
-    await call('zoomies_trigger_zoomies');
+    await call(trigger);
   }
 })()]);
 await call('glitchless_inspect_scene', { top: 5 });

@@ -45,6 +45,25 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is opt
 
 Everything else (frames, hitches, errors, device/GPU, load timing, memory, session lifecycle) is automatic.
 
+### Phaser adapter (`glitchless/phaser`)
+
+```js
+import { instrumentPhaser } from 'glitchless/phaser';
+const game = new Phaser.Game(config);
+instrumentPhaser(glitchless, { game, Phaser, levels: 'auto' }); // Phaser 3.60+ and Phaser 4
+```
+
+The same SDK, with Phaser's own loop as the frame clock. Differences on the wire:
+
+| | |
+| --- | --- |
+| envelope | `"sdk": "glitchless-phaser/<version>"`, so findings give Phaser advice |
+| `session_start` | adds `engine: { name: 'phaser', version, renderer: 'webgl' \| 'canvas' \| 'headless' }` |
+| `frame_window` | one frame per Phaser step (`prestep` to `prestep`), so an fps limit or a `setTimeout` loop is measured as drawn; adds `process_ms` (scene updates, `prestep` to `poststep`); `render_ms` is `prerender` to `postrender`; `draw_calls` and `triangles` are counted on the WebGL context (the Canvas renderer's `drawCount` otherwise); `textures` is the texture manager's key count; `programs` counts WebGL programs linked; `geometries` is null; `ctx` adds `game_objects`, `particles`, `physics_bodies`, `tweens`, `listeners`, `sounds` |
+| `hitch` | `causes` adds `scene_change`, `object_spawn` (50+ objects added in one step), `texture_upload`, `shader_compile` (a program linked), `script`, `render`; adds `process_ms`, `render_ms`, `objects_added`, `textures_added`, `programs_linked` |
+| `level_start` | sent when a scene that reads as a level starts (`levels: 'auto'`); a scene's shutdown sets the level to null. `levels` can be an array of keys, a function, or `false` |
+| `error` | adds `kind: 'asset'` (a loader `loaderror`) and `kind: 'game_loop_stopped'`: the loop stopped stepping after an uncaught error, with that error's stack. The server counts that session as crashed |
+
 ## 2. Wire format
 
 `POST {intake}/v1/intake?token={clientToken}` with `Content-Type: text/plain` (avoids CORS preflight; `sendBeacon` compatible).
@@ -120,6 +139,22 @@ its key belongs to (§6); `service` picks a game inside that project.
 | `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events) |
 | `death` | `x`, `y`, `z` only when positions are on (full mode or `positions: true`); the server leaves unplaced deaths off heatmaps and hotspots |
 | `session_end` | `reason`: `background`, `close`, `quit`, `measure` |
+| `custom` | also `screen_change`, `app_resume` |
+
+## 5b. Unity SDK
+
+`unity/Packages/gg.glitchless.sdk` (Unity 2022.3 and 6) sends the same envelope with `"sdk": "glitchless-unity/0.1.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+
+| | |
+| --- | --- |
+| envelope | `player_id` is null in anonymous mode (the default) |
+| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. `page` and `nav_ms` are null |
+| `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. A window never spans two levels |
+| `hitch` | `causes` from `gc`, `shader_compile`, `scene_change`, `object_spawn`, `script`, `physics`, `render`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `gc_collections`, `gc_alloc_kb`, `shader_compiles`, `objects_added`; `loaf` is empty |
+| `level_start` | also sent when a scene that reads as a level becomes active |
+| `error` | `kind`: `exception` (uncaught; unhandled, like `js`), `log_error`, `assert`, `manual`, `warning`; adds `recent` (last 6 game events) |
+| `death` | `x`, `y`, `z` only when positions are on |
+| `session_end` | `reason`: `background` (phones), `quit`, `measure` |
 | `custom` | also `screen_change`, `app_resume` |
 
 ## 6. Projects, keys and storage

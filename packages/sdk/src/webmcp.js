@@ -64,10 +64,10 @@ export function builtInTools(gd) {
     {
       name: 'glitchless_inspect_scene',
       description:
-        'Summarize the live Three.js scene graph: object counts by type, unique geometries/materials, lights and shadow casters, the most numerous object groups (flagging groups that should use InstancedMesh or shared geometry/material), and the heaviest meshes by triangle count.',
+        'Summarize the live scene. Three.js: object counts by type, unique geometries/materials, lights and shadow casters, the most numerous object groups (flagging groups that should use InstancedMesh or shared geometry/material) and the heaviest meshes by triangle count. Phaser: each running scene\'s display list by type and texture, physics bodies, tweens, particles and event listeners (a count that grows on every restart is a leak), plus the most numerous object groups (flagging dead objects that should be destroyed or pooled).',
       inputSchema: { type: 'object', properties: { top: { type: 'number', description: 'How many object groups to list (default 10)' } } },
       readOnly: true,
-      execute: ({ top = 10 } = {}) => gd.render?.inspectScene?.({ top }) ?? 'No Three.js scene attached (call instrumentThree).',
+      execute: ({ top = 10 } = {}) => gd.render?.inspectScene?.({ top }) ?? 'No scene attached: call instrumentThree or instrumentPhaser after Glitchless.init.',
     },
     {
       name: 'glitchless_screenshot',

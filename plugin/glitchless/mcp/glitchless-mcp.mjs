@@ -36590,7 +36590,7 @@ var StdioServerTransport = class {
   }
 };
 
-// ../playtest/src/config.js
+// node_modules/glitchless-playtest/src/config.js
 import fs from "node:fs";
 import path from "node:path";
 var DEFAULT_SCENARIOS = [
@@ -36647,7 +36647,7 @@ function loadConfig(cwd = process.cwd(), overrides = {}) {
   return cfg;
 }
 
-// ../playtest/src/run.js
+// node_modules/glitchless-playtest/src/run.js
 import os from "node:os";
 import path2 from "node:path";
 import { execFileSync } from "node:child_process";
@@ -36778,7 +36778,7 @@ async function playtestRun(cfg, { game = cfg.game, scenarios = cfg.scenarios, lo
   };
 }
 
-// ../playtest/src/compare.js
+// node_modules/glitchless-playtest/src/compare.js
 var OVERALL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "draw_calls", "hitches_per_min", "errors_per_session", "deaths_per_session", "level_completion_pct", "geometries_growth_per_level_load"];
 var PER_LEVEL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "draw_calls"];
 function judge(before, after, t) {
@@ -36841,7 +36841,7 @@ function compareRuns(baseline, candidate, thresholds = DEFAULT_THRESHOLDS) {
   };
 }
 
-// ../playtest/src/report.js
+// node_modules/glitchless-playtest/src/report.js
 var fmt = (v) => v == null ? "\u2013" : typeof v === "number" ? Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : String(v);
 var change = (c) => c.change_pct == null ? "" : `${c.change_pct > 0 ? "+" : ""}${c.change_pct}%`;
 var runs = (n) => `${n} autoplay run${n === 1 ? "" : "s"}`;
@@ -36908,7 +36908,7 @@ function runReport(run) {
   return out.join("\n");
 }
 
-// ../playtest/src/runs.js
+// node_modules/glitchless-playtest/src/runs.js
 import fs2 from "node:fs";
 import path3 from "node:path";
 var NAME = /^[A-Za-z0-9._-]{1,64}$/;
@@ -36932,7 +36932,7 @@ function listRuns(dir) {
   return fs2.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
 }
 
-// ../playtest/src/index.js
+// node_modules/glitchless-playtest/src/index.js
 async function playtest({ saveAs, compareTo, baselineUrl, quick = false, maxSeconds, config: config2 = {}, cwd = process.cwd(), log = () => {
 } } = {}) {
   const cfg = loadConfig(cwd, config2);
@@ -36989,9 +36989,9 @@ var BASE = (process.env.GLITCHLESS_URL || "http://localhost:7777").replace(/\/$/
 var API_KEY = process.env.GLITCHLESS_API_KEY || "";
 var DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || "";
 var server = new McpServer(
-  { name: "glitchless", version: "0.1.0" },
+  { name: "glitchless", version: "0.1.2" },
   {
-    instructions: 'Glitchless is observability for web games. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly.'
+    instructions: 'Glitchless is observability for games made with Three.js, Phaser, Unity or Godot. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity and Godot builds measure themselves when run with --glitchless-measure=SECONDS.'
   }
 );
 async function query(name, params = {}) {

@@ -16,10 +16,10 @@ const API_KEY = process.env.GLITCHLESS_API_KEY || '';
 const DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || '';
 
 const server = new McpServer(
-  { name: 'glitchless', version: '0.1.1' },
+  { name: 'glitchless', version: '0.1.2' },
   {
     instructions:
-      'Glitchless is observability for web games. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly.',
+      'Glitchless is observability for games made with Three.js, Phaser, Unity or Godot. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity and Godot builds measure themselves when run with --glitchless-measure=SECONDS.',
   },
 );
 
