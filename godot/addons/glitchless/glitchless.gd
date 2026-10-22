@@ -29,7 +29,7 @@ extends Node
 ##   --glitchless-synthetic        mark the session as a bot's (--autoplay does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.1.0"
+const SDK_VERSION := "0.1.1"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -890,9 +890,17 @@ func _notification(what: int) -> void:
 			_on_background()
 		NOTIFICATION_APPLICATION_RESUMED:
 			_on_foreground()
+		# Control Center, Notification Center, Siri and calls on iOS, and the notification shade on
+		# Android, take focus without sending the game to the background, and nothing is drawn until
+		# focus comes back. That gap is not a frame, so the frame clock starts again on both sides,
+		# as it does for the background. (On desktop it costs one frame per focus change.)
 		NOTIFICATION_APPLICATION_FOCUS_OUT:
+			_last_us = 0
+			_pending_long = {}
 			if _inited:
 				flush()
+		NOTIFICATION_APPLICATION_FOCUS_IN:
+			_last_us = 0
 		NOTIFICATION_WM_CLOSE_REQUEST:
 			if get_tree().auto_accept_quit:
 				_shutdown("close")

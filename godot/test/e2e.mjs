@@ -12,6 +12,8 @@
 //   4. measure   --glitchless-measure prints frame stats as JSON and quits
 //   5. away      a short trip to the background ends the session and resumes it
 //   6. long away a trip longer than session_timeout starts a new session
+//   7. focus     losing focus without going to the background (Control Center, a call)
+//                and drawing nothing meanwhile is not a frozen frame
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -185,7 +187,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.1.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.1.1'));
   });
   check('engine gauges ride in ctx: level_3 carries the orphan nodes level_2 leaked', () => {
     const peak = (level) => Math.max(...raw.filter((e) => e.type === 'frame_window' && e.level === level).map((w) => w.ctx?.orphan_nodes ?? 0));
@@ -248,6 +250,22 @@ try {
     const [first, second] = longAway.sort((a, b) => a.start - b.start);
     assert.deepEqual(typesOf(first.session_id), ['session_start', 'background']);
     assert.deepEqual(typesOf(second.session_id), ['session_start', 'quit']);
+  });
+
+  // 7. Control Center on iOS, the notification shade on Android: focus goes, nothing is drawn for 1.5 s,
+  // focus comes back. The game never stuttered, so nothing near 1.5 s may be reported.
+  const beforeFocus = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  runGodot(demo(['--seed=7', '--focus-away-at=2', '--focus-away-for=1.5', `--intake=http://127.0.0.1:${port}`]), 'focus away run');
+  await new Promise((r) => setTimeout(r, 300));
+  const focusRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeFocus.has(s.session_id));
+  check('focus: time out of focus (Control Center, a call) is not a frame, so no false freeze', () => {
+    assert.equal(focusRun.length, 1, `${focusRun.length} sessions`);
+    const id = focusRun[0].session_id;
+    assert.deepEqual(typesOf(id), ['session_start', 'quit'], 'losing focus is not going to the background');
+    const long = raw2().filter((e) => e.session_id === id && e.type === 'hitch' && e.duration_ms >= 1300);
+    assert.deepEqual(long.map((e) => e.duration_ms), [], 'a hitch as long as the time out of focus');
+    const windows = raw2().filter((e) => e.session_id === id && e.type === 'frame_window');
+    assert.ok(windows.length && windows.every((w) => !(w.ft_max >= 1300)), `worst frame ${Math.max(...windows.map((w) => w.ft_max))} ms`);
   });
 
   const all = (await query(port, 'sessions')).sessions;

@@ -180,7 +180,7 @@ minute, 64 names a session and 40 values per attribute. Past a cap the rest is c
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.1.0"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.1.1"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |

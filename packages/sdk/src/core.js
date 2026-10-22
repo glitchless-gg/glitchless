@@ -5,7 +5,7 @@ import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 
-export const SDK_VERSION = '0.2.0';
+export const SDK_VERSION = '0.2.1';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)
@@ -261,9 +261,12 @@ export class Glitchless {
       requestAnimationFrame(raf);
     };
     requestAnimationFrame(raf);
-    document.addEventListener('visibilitychange', () => {
-      this.lastFrameAt = 0; // don't count time spent in a background tab as a frame
-    });
+    // Time in a background tab is not a frame. Neither is time without focus: iOS Control Center, a call
+    // or Siri over Safari take focus without hiding the page, and no frames come until focus is back.
+    // (On desktop that costs one frame per focus change.)
+    document.addEventListener('visibilitychange', () => this.skipFrame());
+    window.addEventListener('blur', () => this.skipFrame());
+    window.addEventListener('focus', () => this.skipFrame());
   }
 
   // An engine adapter calls this once per game step instead of the SDK timing animation frames, so a

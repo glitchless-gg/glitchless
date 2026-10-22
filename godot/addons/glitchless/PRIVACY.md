@@ -28,7 +28,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), and `sdk` (`glitchless-godot/0.1.0`).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), and `sdk` (`glitchless-godot/0.1.1`).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 

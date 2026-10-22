@@ -18,6 +18,9 @@ extends Node2D
 ##   --privacy=full       send in full mode instead of anonymous
 ##   --background-at=S    pretend the phone sent the game to the background S
 ##                        seconds in, and back after --background-for=S (default 1)
+##   --focus-away-at=S    pretend the player pulled down Control Center (or the
+##                        notification shade) S seconds in: the game loses focus and
+##                        draws nothing for --focus-away-for=S (default 1.5)
 ##   --session-timeout=S  Glitchless's session_timeout (default 300)
 ##   --glitchless            send even though this is a debug build
 ## e.g. godot --path godot -- --autoplay --seed=3 --glitchless
@@ -36,6 +39,8 @@ var _next_event := 0.0
 var _events_this_level := 0
 var _background_at := -1.0
 var _background_for := 1.0
+var _focus_away_at := -1.0
+var _focus_away_for := 1.5
 var _bonus_target = null  # untyped: in a release export a call on a typed null crashes the game outright
 
 
@@ -58,12 +63,18 @@ func _ready() -> void:
 			_background_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--background-for="):
 			_background_for = float(a.get_slice("=", 1))
+		elif a.begins_with("--focus-away-at="):
+			_focus_away_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--focus-away-for="):
+			_focus_away_for = float(a.get_slice("=", 1))
 		elif a.begins_with("--session-timeout="):
 			timeout = float(a.get_slice("=", 1))
 	print("user dir: ", OS.get_user_data_dir())
 	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout})
 	if _background_at >= 0.0:
 		_pretend_background()
+	if _focus_away_at >= 0.0:
+		_pretend_focus_away()
 	_next_level()
 
 
@@ -140,6 +151,16 @@ func _pretend_background() -> void:
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_PAUSED)
 	await get_tree().create_timer(_background_for).timeout
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_RESUMED)
+
+
+# What iOS sends for Control Center, Notification Center, Siri or a call, and Android
+# for the notification shade: the app loses focus without going to the background,
+# and draws nothing until it gets focus back (here the main thread just waits).
+func _pretend_focus_away() -> void:
+	await get_tree().create_timer(_focus_away_at).timeout
+	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
+	OS.delay_msec(int(_focus_away_for * 1000.0))
+	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_FOCUS_IN)
 
 
 # The planted stutter: a bubble sort, so far-away sparks draw first.
