@@ -25,6 +25,7 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
    - intake URL: {{INTAKE_URL}}
    - client token: {{CLIENT_TOKEN}} (it's public and can only send data, so it's fine inside the game build)
    - privacy: keep the default anonymous mode. Ask me before turning on full mode, because full mode needs a line in the game's privacy policy.
+   If the game already reports its own analytics or counters, list them for me and send the same moments to Glitchless with track(), under the same names. Remove the old reporting only when I say so.
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example, `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
    - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variables GLITCHLESS_URL={{INTAKE_URL}} and GLITCHLESS_API_KEY set to my secret key. Take the key from GLITCHLESS_API_KEY in my environment, or ask me for it. Never put the secret key in the game, in a file that gets committed, or in your reply.
