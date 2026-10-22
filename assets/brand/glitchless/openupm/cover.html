@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- The OpenUPM listing's cover for gg.glitchless.sdk: 600 x 300 (2:1), rendered at 2x by render-cover.mjs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<style>
+  :root { --navy: #14213d; --navy-2: #0e182e; --mint: #2ee6a6; --coral: #ff6b57; --fog: #c5d0e4; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 600px; height: 300px; }
+  body { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 85% 15%, #1d2e52 0%, var(--navy) 55%, var(--navy-2) 100%); color: #fff; font-family: Inter, sans-serif; }
+  .copy { position: absolute; left: 30px; top: 26px; width: 330px; }
+  .brand { display: flex; align-items: center; gap: 9px; font: 800 19px/1 Outfit, sans-serif; letter-spacing: -0.02em; }
+  .brand img { width: 30px; height: 30px; }
+  h1 { margin-top: 26px; font: 800 33px/1.05 Outfit, sans-serif; letter-spacing: -0.025em; }
+  h1 em { font-style: normal; color: var(--mint); }
+  p { margin-top: 12px; font-size: 13px; line-height: 1.45; color: var(--fog); max-width: 300px; }
+  .meta { position: absolute; left: 30px; bottom: 24px; font: 600 11.5px/1 Inter, sans-serif; letter-spacing: .02em; color: var(--mint); }
+  .art { position: absolute; right: 18px; top: 22px; width: 230px; height: 256px; }
+  .trace { position: absolute; left: 0; right: 0; bottom: 34px; height: 64px; display: flex; align-items: flex-end; gap: 2px; padding: 0 6px; }
+  .trace i { flex: 1; border-radius: 1px; }
+  .trace i.bad { background: var(--coral); }
+  .trace i.ok { background: var(--mint); }
+  .budget { position: absolute; left: 6px; right: 6px; bottom: 52px; border-top: 1px dashed rgba(255, 255, 255, .45); }
+  .label { position: absolute; bottom: 14px; font: 500 10px/1 ui-monospace, Menlo, monospace; }
+  .label.l { left: 6px; color: var(--coral); }
+  .label.r { right: 6px; color: var(--mint); }
+  .glitchy { position: absolute; right: 22px; top: 0; height: 168px; }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <div class="brand"><img src="../logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+    <h1>Game observability<br>for <em>Unity</em></h1>
+    <p>Stutter, crashes and where players quit.<br>Your coding agent gets the data to fix it.</p>
+  </div>
+  <div class="meta">Unity 2022.3 LTS and Unity 6 · MCP · MIT</div>
+  <div class="art">
+    <img class="glitchy" src="../mascot/on-dark/glitchy-search.png" alt="">
+    <div class="trace" id="trace"></div>
+    <div class="budget"></div>
+    <span class="label l">before: hitches</span>
+    <span class="label r">after: 60 fps</span>
+  </div>
+  <script>
+    // Frame times in ms: a stuttering stretch, then the fixed game holding its 16.7 ms budget.
+    const before = [17, 18, 34, 17, 52, 19, 18, 61, 22, 17, 45, 18, 70, 19, 38, 17, 58, 21, 18, 66];
+    const after = [16, 16, 17, 16, 16, 16, 17, 16, 16, 16, 16, 17, 16, 16, 16, 16, 17, 16];
+    const scale = (ms) => Math.min(64, Math.round(ms * 0.9));
+    document.getElementById('trace').innerHTML = [
+      ...before.map((ms) => `<i class="${ms > 25 ? 'bad' : 'ok'}" style="height:${scale(ms)}px"></i>`),
+      ...after.map((ms) => `<i class="ok" style="height:${scale(ms)}px"></i>`),
+    ].join('');
+  </script>
+</body>
+</html>
