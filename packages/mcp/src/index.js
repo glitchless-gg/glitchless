@@ -17,7 +17,7 @@ const API_KEY = process.env.GLITCHLESS_API_KEY || '';
 const DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || '';
 
 const server = new McpServer(
-  { name: 'glitchless', version: '0.1.2' },
+  { name: 'glitchless', version: '0.2.0' },
   {
     instructions:
       'Glitchless is observability for games made with Three.js, Phaser, Unity or Godot. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity and Godot builds measure themselves when run with --glitchless-measure=SECONDS.',

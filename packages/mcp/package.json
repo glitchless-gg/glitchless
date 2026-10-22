@@ -1,8 +1,8 @@
 {
   "name": "glitchless-mcp",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "mcpName": "io.github.glitchless-gg/glitchless",
-  "description": "Game observability MCP server: lets coding agents (Claude Code, Codex, Cursor and others) read your game's player telemetry and ranked findings, and run playtest bots.",
+  "description": "Game observability MCP server: lets coding agents (Claude Code, Codex, Cursor and others) read your game's player telemetry and ranked findings, design its own dashboard, and run playtest bots.",
   "keywords": [
     "mcp",
     "mcp-server",
@@ -10,6 +10,8 @@
     "game-observability",
     "observability",
     "gamedev",
+    "game-analytics",
+    "dashboard",
     "game-development",
     "threejs",
     "godot",

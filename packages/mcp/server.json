@@ -9,12 +9,12 @@
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.1.2",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "glitchless-mcp",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "transport": {
         "type": "stdio"
       },
@@ -28,7 +28,7 @@
         },
         {
           "name": "GLITCHLESS_API_KEY",
-          "description": "A secret read key (gl_sk_...), if the server needs one",
+          "description": "A secret key (gl_sk_...), if the server needs one; with the dashboard scope it can also save the game's dashboard",
           "format": "string",
           "isRequired": false,
           "isSecret": true
