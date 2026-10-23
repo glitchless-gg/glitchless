@@ -3,26 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Glitchless intake + query API. Runs locally (file store) or on AWS Lambda Web Functions (DynamoDB).",
+  "description": "Glitchless intake + query API: one Node server with a file store. No dependencies.",
   "scripts": {
     "start": "node src/local.js",
-    "test": "node --test test/*.test.js",
-    "bundle:web": "node web/build.js"
-  },
-  "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1152.0",
-    "@aws-sdk/client-firehose": "^3.1154.0",
-    "@aws-sdk/client-iam": "^3.1152.0",
-    "@aws-sdk/client-lambda-web": "^3.1152.0",
-    "@aws-sdk/client-s3": "^3.1152.0",
-    "@aws-sdk/client-sts": "^3.1152.0",
-    "@aws-sdk/lib-dynamodb": "^3.1152.0"
-  },
-  "optionalDependencies": {
-    "@duckdb/node-api": "^2.0.0-r.1"
-  },
-  "devDependencies": {
-    "@aws-sdk/client-cloudformation": "^3.1154.0",
-    "esbuild": "^0.28.2"
+    "test": "node --test test/*.test.js"
   }
 }

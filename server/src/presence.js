@@ -1,6 +1,6 @@
 // Players now: how many sessions of a game sent anything in the last two minutes, counted as batches arrive (by the
 // server's clock, so a device's clock doesn't matter). This counts within one server process, which is all the
-// open-source server runs. A host that runs many processes behind one address (Glitchless Cloud, on Lambda) counts in
+// open-source server runs. A host that runs many processes behind one address (Glitchless Cloud) counts in
 // its own database and gives createApp an auth.playersNow(projectId, service) hook instead (app.js).
 
 export const PLAYERS_NOW_MS = 120_000;

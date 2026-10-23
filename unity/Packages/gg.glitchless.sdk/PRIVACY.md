@@ -93,7 +93,7 @@ Uninstalling the game deletes them all (in WebGL, clearing the site's data does)
 
 ## Kept on the server
 
-The open-source Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item. The hosted service at glitchless.gg keeps them for as long as the plan says. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do.
+The open-source Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The hosted service at glitchless.gg keeps them for as long as the plan says. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do.
 
 If the server forwards to Datadog or an OpenTelemetry backend, that backend receives the same events, sent from the server, not the device. Bug reports are never forwarded.
 

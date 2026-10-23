@@ -1,7 +1,7 @@
 // Daily rollups: how queries over more than 31 days are answered without loading every session of the
-// range. The hosted store keeps one summary per (project, service, UTC day), built once the day has
-// closed (lake/compactor.js), and merges the days of a range; the days still open come from the hourly
-// summaries, folded the same way at query time (stores/lake.js).
+// range (SPEC §7). A store that keeps them has one summary per (project, service, UTC day), built once the
+// day has closed, and merges the days of a range; the days still open come from its hourly summaries,
+// folded the same way at query time. The file store has none: it answers every range from its events.
 //
 // A day's summary holds:
 //   cells, facts   the day's minute cells and facts (rollups.js, facts.js) merged into one per (env,
@@ -30,7 +30,7 @@
 //                  active on the days after it; medians of per-session values: quantile maps; ordered funnels: the day's
 //                  sample, weighted by its sampling rate; GPUs past the top CAPS.gpus a day; difficulty
 //                  hotspots past CAPS.deaths deaths a level a day; attribute values past their caps
-//   not at day resolution (stores/lake.js answers them over the last 31 days and says so in meta)
+//   not at day resolution (the store answers them over the last 31 days and says so in meta)
 //                  heatmaps (position samples), session-type filters, recent hitches
 
 import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, budgetMedian, meanOf, seconds, FIXED, OTHER } from './rollups.js';

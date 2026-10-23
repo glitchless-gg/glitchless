@@ -81,7 +81,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 ## Kept on the server
 
-The open-source Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item. The hosted service at glitchless.gg keeps them for as long as the plan says.
+The open-source Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The hosted service at glitchless.gg keeps them for as long as the plan says.
 
 If the server forwards to Datadog or an OpenTelemetry backend, that backend receives the same events, sent from the server, not the device.
 

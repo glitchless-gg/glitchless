@@ -2,7 +2,7 @@
   "name": "glitchless-monorepo",
   "private": true,
   "type": "module",
-  "description": "Glitchless \u2014 observability for vibe-coded games",
+  "description": "Glitchless — observability for vibe-coded games",
   "workspaces": [
     "packages/*",
     "apps/*",
@@ -25,10 +25,7 @@
     "test:otlp": "node server/test/otlp-collector.e2e.mjs",
     "bots": "node scripts/bots.js",
     "playtest": "node packages/playtest/bin/glitchless-playtest.js",
-    "loadtest:lake": "node scripts/lake-loadtest.js",
     "webmcp:smoke": "node scripts/webmcp-smoke.js",
-    "deploy:aws": "node server/web/deploy.js",
-    "teardown:aws": "node server/web/teardown.js",
     "datadog:setup": "node datadog/setup.js",
     "mcp": "node packages/mcp/src/index.js"
   },

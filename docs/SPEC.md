@@ -168,8 +168,7 @@ batch sent twice stores it once.
 
 Reports never join the events, rollups or summaries: each store keeps a small record (everything but the
 screenshot) to list, and the screenshot apart, as it keeps level maps. FileStore: `reports.jsonl` and
-`reports/<id>.jpg`, kept 14 days like events. DynamoDB: `P#<project>#BUG#<service>` (§6). Hosted: the same items in
-the lake's table and the screenshot in S3 under `reports/` (§7), kept for the plan's retention. They are read
+`reports/<id>.jpg`, kept 14 days like events; another store (§7) keeps them as long as it keeps events. They are read
 through the `reports` and `report` queries (§3), the Bug Reports view and `reports` panel (§3b), each session's
 timeline (`{type: 'bug_report', ts, level, id, note, has_screenshot}`), a finding once a level has three in the
 range (`reports-<level>`, quoting the notes), and the `glitchless_bug_reports` MCP tool. `DELETE
@@ -317,7 +316,7 @@ picks the past hour up to the past 30 days. A pinned link always shows its own w
 dev log that judges read two months later. `from` and `to` are times in ms or ISO strings; a date without a time
 is that whole UTC day, so `{from: "2026-11-12", to: "2026-11-16"}` is five days. Both or neither; the window is at
 most 30 days and falls between 400 days ago and a year from now. A pinned window still stops at what the reader's
-plan keeps, counted back from now (§7), so once those days have aged out the board shows nothing for them.
+plan keeps, counted back from now, so once those days have aged out the board shows nothing for them.
 
 **Reading.** The token goes in `x-glitchless-share` (or `?share=`). The reader hook answers
 `{projectId, scopes: ['read'], share: {service, page, from?, to?, sums?}, keyId, rps}` (`from` and `to` in ms for a
@@ -379,11 +378,8 @@ doesn't climb out (`..`); otherwise 400 or 413. A version holds at most 200 maps
 uploaded most recently: an upload past that deletes the oldest (`pruned`).
 
 **Storage.** Per project, service, version and file, apart from the events. FileStore:
-`sourcemaps/<project>/<service>/<version>/<file>.map`. DynamoDB: an item `F#<version>#<file>` under
-`P#<project>#SMAP#<service>` naming the current upload, and the map's gzip in chunks of 300,000 base64 characters
-(`C#<version>#<file>#<upload>#<n>`), with a 400-day TTL. Hosted: the same `F#` items in the lake's table and the
-gzip in S3 under `sourcemaps/` (§7), expired 400 days after the upload; a version stays in players' hands far
-longer than a plan keeps its events. `DELETE /v1/data` deletes a game's maps with its data.
+`sourcemaps/<project>/<service>/<version>/<file>.map`. A store that expires data keeps a map 400 days after its
+upload (`RETENTION_DAYS`), whatever it keeps events for: a version stays in players' hands far longer. `DELETE /v1/data` deletes a game's maps with its data.
 
 **Matching a frame.** A stack line (Chrome `at fn (url:line:col)`, Firefox and Safari `fn@url:line:col`) belongs
 to the longest uploaded `file` of the event's version that its URL path ends with, so the game can be served from
@@ -476,7 +472,7 @@ could not connect, never the URL. Links open the game: `https://app.glitchless.g
 | `POST /api/projects/{p}/alerts/test` | sends a test alert to every channel → `{sent: [{channel, ok, to?, error?}]}`; 10 an hour |
 | `POST /api/dev/alerts/check` | the dev server only: runs the check now |
 
-The `glitchless-alerts` Lambda checks every game with alerts on, every 15 minutes, one run at a time.
+Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time.
 
 ## 4. Derived concepts
 
@@ -501,10 +497,11 @@ The `glitchless-alerts` Lambda checks every game with alerts on, every 15 minute
   filed under its own ID. A player's first-seen day is the day of their first event the store has (its first-seen
   index, which lasts as long as the store keeps data: the plan's retention on Glitchless Cloud, so a player gone
   longer than that is new again). They join that day's cohort
-  when a session of theirs in the selection (env, version) started on it, as sessions count on the day they start
-  (§7). A cohort is a whole day of the range, and its Dn is null until day N has ended inside the range. Up to 31
-  days it is exact from session states; past 31 days the hosted store reads each day's sample of new players against
-  the days' samples of active players, exact while small and named in `meta.approximate` (`retention`) once capped.
+  when a session of theirs in the selection (env, version) started on it, as sessions count on the day they start.
+  A cohort is a whole day of the range, and its Dn is null until day N has ended inside the range. Up to 31 days it
+  is exact from session states; past 31 days a store with daily rollups (§7) reads each day's sample of new players
+  against the days' samples of active players, exact while small and named in `meta.approximate` (`retention`) once
+  capped.
 - **Players now**: sessions that sent anything in the last two minutes, counted as batches arrive. The open-source
   server counts in memory, per process; Glitchless Cloud counts across every server instance (whole minutes: this
   one and the two before) through the `auth.playersNow` hook.
@@ -645,22 +642,10 @@ activity feed and the query cache are all per project.
 `getReport`, `deleteReport`, `putSourcemap`, `getSourcemap`, `sourcemaps`, `deleteSourcemaps`, `services`, `clear`
 ([`server/src/stores/file.js`](../server/src/stores/file.js) lists them), and optionally `cohorts` (the players first
 seen on each day of a range, for retention): the file store keeps that first-seen index in memory over everything it
-holds, the hosted store's compactor writes it (§7), and the DynamoDB store has none, so its retention counts players
-as new on their first day in the range (`first_seen: 'range'`). DynamoDB keys:
+holds; a store without one counts players as new on their first day in the range (`first_seen: 'range'`).
 
-| pk | sk | holds |
-| --- | --- | --- |
-| `P#<project>#<service>#<YYYY-MM-DDTHH>` | `<ts>#<session>#<batch><seq>` | events |
-| `P#<project>#MAP#<service>` | `<level>#<version>` | level map thumbnails |
-| `P#<project>#BUG#<service>` | `T#<ts>#<id>` \| `I#<id>` | bug report records: by time to list them, by id with the screenshot |
-| `P#<project>#SMAP#<service>` | `F#<version>#<file>` \| `C#<version>#<file>#<upload>#<n>` | a web build's source maps (§3d): one item each, and their gzip in chunks |
-| `P#<project>#SVC` | `<service>` | versions, envs, last_seen |
-| `P#<project>#R#<service>#<YYYY-MM-DD>` | `<minute>#<writer>` | rollup cells |
-| `P#<project>#META` | `rollups#<service>` | `since`: first minute with complete rollups |
-
-Data written before projects existed (JSONL lines without `project_id`; DynamoDB keys `<service>#<hour>`,
-`MAP#<service>`, `SERVICE`) is read as the `default` project, so no migration is needed; old DynamoDB items
-expire with their 30-day TTL.
+Data written before projects existed (JSONL lines without `project_id`) is read as the `default` project, so no
+migration is needed.
 
 **Rollups.** Intake also folds every event into per-minute cells per (project, service, env, version, level):
 a merged frame-time sketch, event counts by type, frames, seconds, hitches, frozen frames, frame-budget
@@ -669,81 +654,39 @@ counts, and sums, counts and maxima of draw calls, render ms, triangles, geometr
 `findings` take their frame-time and count sections from the stored minutes that lie fully inside the range,
 and fold raw events for the partial minutes at each end. Without stored rollups (filters by session type or
 ids, or ranges before `since`) they fold every raw event the same way. Sums are fixed-point, so both paths
-give identical numbers in any arrival order. On the file and DynamoDB stores, session-level numbers
-(crash-free, rage quits, players), device breakdowns, hitch context and findings evidence are folded from the
-raw range, into the same mergeable forms the hosted store keeps (§7).
+give identical numbers in any arrival order. On the file store, session-level numbers (crash-free, rage quits,
+players), device breakdowns, hitch context and findings evidence are folded from the raw range, into mergeable
+forms (session states, §7) that a store can also keep precomputed.
 
-The file store rebuilds rollups from its event files at startup. On DynamoDB each server process keeps a
-running rollup per minute and rewrites its own item after every batch, so items have one writer and need no
-locking; a query merges all writers' items. `since` is set at a project's first rollup write, 2 hours ahead,
-because servers from before rollups may still be writing.
+The file store rebuilds rollups from its event files at startup.
 
-Every answer carries `meta`: the range answered (`from`, `to`, `bucket_ms`), the filters, and from the hosted
-store `resolution: 'day'` for ranges of more than 31 days, `approximate` (the parts estimated from sketches or
-samples, §7), `note` (a view answered over less of the range) and `retention_days` (the reader's plan).
+Every answer carries `meta`: the range answered (`from`, `to`, `bucket_ms`), the filters, and from a store that
+keeps day rollups (§7) `resolution: 'day'` for ranges of more than 31 days, `approximate` (the parts estimated
+from sketches or samples), `note` (a view answered over less of the range) and `retention_days` (the reader's
+plan, when the host has plans).
 
-## 7. Hosted event store (Glitchless Cloud)
+## 7. Other stores
 
-The hosted service stores events without one DynamoDB item per event
-([`server/src/stores/lake.js`](../server/src/stores/lake.js), keys in
-[`server/src/lake/layout.js`](../server/src/lake/layout.js); the AWS stack itself is part of the hosted service):
+`createApp({ store })` takes any store with the methods in §6, so a server can keep its events somewhere other than
+files (a database, object storage). To check one, run the server's tests on it:
+`GLITCHLESS_TEST_STORES=./my-stores.js npm test -w glitchless-server`
+([`server/test/helpers/stores.js`](../server/test/helpers/stores.js) says what that module exports).
 
-- **Ingest.** Each intake batch is one Amazon Data Firehose record (`PutRecordBatch`): the envelope once, then
-  the events. Firehose writes gzip JSON lines to S3 under `raw/dt=…/hour=…/project=…/` (dynamic
-  partitioning on the record's `p`). Level maps go straight to DynamoDB, bug reports to DynamoDB (`P#<p>#BUG#<s>`,
-  as §6) with their screenshots in S3 under `reports/plan=<plan>/project=<p>/service=<s>/`, so neither waits for the
-  compactor. Uploaded source maps (§3d) go to S3 under `sourcemaps/project=<p>/service=<s>/version=<v>/`, each
-  listed by an item in DynamoDB (`P#<p>#SMAP#<s>`); a new service, version or env is registered at once. The ingest hook's `plan` sets retention.
-- **Compactor.** A Lambda (`server/src/lake/compactor.js`) every 1 to 5 minutes reads the new objects with
-  DuckDB and writes, per (project, service, hour), per-minute **summaries** to DynamoDB: rollup cells (§6)
-  and facts per (env, version, level), and the state of every session per minute and per hour. It keeps the
-  events of sessions in progress in a spill file and writes **one file per finished session**. An hour that
-  has closed is consolidated into one set of items and rewritten as **Parquet** (sorted by type, level, time).
-  Late events reopen the hour and the session file. Runs are idempotent and one runs at a time.
-- **First-seen index.** Each compactor run notes when it first saw each player with an ID (install or full
-  mode) under `P#<p>#N#<s>`: an `I#<player>` item with the first time and the last day seen, and a
-  `D#<day>#<player>` item under the day first seen, both expiring with the plan's retention after the day they
-  name. Taking the earliest is idempotent, and a late event that moves a player's first day earlier moves their D
-  item. Retention reads the D items of the range's days (one Query); a day's rollups keep a sample of its new
-  players from them.
-- **Queries.** `overview`, `performance`, `versions`, `findings`, `players`, `errors` and `sessions` merge
-  the summaries of the range. They read hour states for whole hours and minute states at the edges.
-  Session states and facts merge exactly, so they answer as the raw events of the same range would
-  (`server/test/lake.test.js` compares every query). `session` (detail and replay) and `playtest` read
-  session files.
-- **Drill-downs.** Recent hitches, error breadcrumbs and heatmap positions read one project's Parquet and
-  not-yet-compacted gzip files with DuckDB. So do session-type filters (`type=user|synthetic|simulated`).
-  If an optional drill-down fails, the query answers without it and lists it in `meta.partial`.
-- **Ranges** are answered in whole minutes, up to the compactor's watermark: data Firehose may still be
-  buffering is left out. `meta.from` and `meta.to` give the range answered. The reader's plan caps a range at
-  its retention (`meta.retention_days`), counted back from now: a range that ends in the past (a pinned share
-  link, §3c) starts no earlier than what the plan still keeps.
-- **Daily rollups** ([`server/src/daily.js`](../server/src/daily.js)) answer ranges of more than 31 days, in
-  whole days (`meta.resolution: 'day'`, day buckets). Once a day has closed (3 hours into the next day, plus
-  half an hour), the compactor folds it into one set of items under `P#<p>#Y#<s>#<year>`: the day's cells and
-  facts merged per (env, version, level), and the sessions that **started** that day folded per (env,
-  version) into counts, sums, quantile maps, device breakdowns, the level funnel, custom events, players and a
-  sample of sessions for ordered funnels; their latest sessions go in separate items (`R`), read only by
-  session lists. A session counts on the day it started, with all its events (up to 3 hours past midnight).
-  Late data reopens a day. Days the compactor has not built yet (the last day or two, and days before it kept
-  rollups: `meta` item `df`) are folded from the hour summaries the same way, at query time.
-  `server/test/daily.test.js` checks every query against the raw events at day resolution.
-  - **Exact**: everything from cells and facts, session counts, rates, sums and averages, the level funnel's
-    counts, custom events' sessions and values, the latest sessions and rage quits.
-  - **Exact while small, then estimated** (named in `meta.approximate`): distinct players (overall, per
-    level, per event, per error) and error sessions (HyperLogLog past 128–512 per day), returning players
-    (a uniform sample of 512 players a day), medians of per-session values (time to first frame, session
-    length, memory growth: 3 then 2 significant digits past 512 values), ordered funnels (256 sessions a
-    day, weighted), GPUs past the top 30 a day, difficulty hotspots past 100 deaths per level a day. A
-    sessions list reads no days, so it tells a game nobody wins from the sessions it read.
-    Findings' engine-specific advice follows the SDK most of the range's sessions use.
-  - **Over the last 31 days of the range** (`meta.note`): heatmaps and session-type filters, which read raw
-    rows; recent hitches.
-  - **Cost** (`scripts/lake-loadtest.js --long`): a day of 7,200 sessions keeps about 140 KB of rollups
-    (its hour summaries: 27 MB) and costs about $0.0002 to build; a 90-day board reads about 1,300 RRU
-    ($0.0002) and a 365-day one about 5,300 RRU.
+A store may keep precomputed state instead of raw events: session states and facts merge exactly, so a store that
+keeps them per minute or hour answers as the raw events of the range would. For long ranges it may keep **daily
+rollups** ([`server/src/daily.js`](../server/src/daily.js)), and then answers ranges of more than 31 days in whole
+days (`meta.resolution: 'day'`):
 
-- **Retention** per plan: S3 lifecycle rules on `events/plan=<plan>/`, `sessions/plan=<plan>/` and `reports/plan=<plan>/`, raw files
-  after 3 days, and a TTL on DynamoDB items. The `plan` the hooks pass is the one whose retention applies: a
-  Free workspace with the `MEGAJAM26` jam tier passes `indie` (90 days) until 2027-01-31 23:59 UTC, then
-  `free` again, so new data gets 14 days and reads stop at 14 days (cloud README, MegaJam). Source maps expire 400 days after their upload, whatever the plan.
+- **Exact**: everything from cells and facts, session counts, rates, sums and averages, the level funnel's
+  counts, custom events' sessions and values, the latest sessions and rage quits. A session counts on the day it
+  started, with all its events.
+- **Exact while small, then estimated** (named in `meta.approximate`): distinct players (overall, per level, per
+  event, per error) and error sessions (HyperLogLog past 128–512 per day), returning players and retention past
+  31 days (a uniform sample of 512 players a day), medians of per-session values (3 then 2 significant digits past
+  512 values), ordered funnels (256 sessions a day, weighted), GPUs past the top 30 a day, difficulty hotspots past
+  100 deaths per level a day.
+- **Over the last 31 days of the range** (`meta.note`): heatmaps and session-type filters, which read raw rows;
+  recent hitches.
+
+Glitchless Cloud runs its own store of this kind, with retention set by each workspace's plan; it is not part of
+this repo.

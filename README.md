@@ -15,7 +15,7 @@ Glitchless shows you how your game plays for real players, and gives your coding
 - **What players tell you.** Playtesters press F8 in a web game to send a note with a screenshot, the level and the session behind it (opt-in).
 - **Your coding agent.** An MCP server for production data, WebMCP tools exposed by the running game, and autoplay bots that check a fix before it ships.
 
-It's open source and runs anywhere: one Node server with a file store on a laptop, or Lambda and DynamoDB in your own AWS account. It's anonymous by default ([what it sends](packages/sdk/PRIVACY.md)), and it can pass the same data on to Datadog or any OpenTelemetry backend.
+It's open source and runs anywhere Node runs: one server with a file store, on a laptop, a VPS or in a container. It's anonymous by default ([what it sends](packages/sdk/PRIVACY.md)), and it can pass the same data on to Datadog or any OpenTelemetry backend.
 
 <p align="center">
   <img src="assets/brand/glitchless/diagram/glitchless-architecture.png" width="900" alt="Your game, with the Glitchless SDK, sends play sessions to Glitchless (dashboard and findings), which can export to Datadog or OpenTelemetry. Your coding agent reads player data from Glitchless over MCP and drives the running game over WebMCP.">
@@ -34,7 +34,7 @@ It's open source and runs anywhere: one Node server with a file store on a lapto
 | [`unity`](unity) | Glitchless for **Unity 2022.3 LTS and Unity 6** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
 | [`gamemaker`](gamemaker) | Glitchless for **GameMaker 2024.2+** (GML scripts, a local package or `tools/install.mjs`): frame windows from `delta_time`, hitches named by what GameMaker can see (texture pages, room changes, collections, instance bursts), instance, surface and DS counts for leaks, rooms as levels, crashes sent on the next launch, bug reports and `-glitchless-measure` for agents. A demo with planted problems, a Node test that runs the GML without GameMaker, and an end-to-end test sit alongside |
-| [`server`](server) | Intake, query API and findings. Runs locally (`npm run server`) or on **AWS Lambda Web Functions** + DynamoDB ([`server/web/deploy.js`](server/web/deploy.js)) |
+| [`server`](server) | Intake, query API, findings and alerts: one Node 20+ server with a file store and no npm dependencies (`npm run server`, or the [Docker image](#run-it-on-a-server)) |
 | [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Bug Reports, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
 | [`apps/zoomies`](apps/zoomies) | **Zoomies!**, a vibe-coded Three.js platformer that ships with four realistic bugs for the demo |
 | [`apps/phaser-demo`](apps/phaser-demo) | **Fetch!**, a small Phaser runner (Phaser 3 or 4) with planted bugs, an autoplay bot and a playtest config (`npm run game:phaser`) |
@@ -53,6 +53,8 @@ More demos in other genres (an arena shooter, an arcade racer, a tower defense g
 its own events, planted problems, autoplay bot and dashboard, live in their own repo: [**The Glitch Arcade**](https://github.com/glitchless-gg/glitch-arcade).
 
 ## Quickstart (local, no cloud)
+
+Just the server and dashboard: `docker run -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless`, then open http://localhost:7777. To work on Glitchless or try the demo game:
 
 ```bash
 npm install
@@ -181,7 +183,7 @@ The standard variables work as they do in any OpenTelemetry SDK:
 - `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` and `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` set one signal's endpoint, and only signals with an endpoint are sent.
 - `OTEL_METRICS_EXPORTER=none` and `OTEL_LOGS_EXPORTER=none` turn one signal off.
 - `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` is `cumulative` (the default) or `delta`.
-- `OTEL_METRIC_EXPORT_INTERVAL` holds metrics for that many ms. Without it, metrics go out after every intake request, which is the safe choice on Lambda.
+- `OTEL_METRIC_EXPORT_INTERVAL` holds metrics for that many ms. Without it, metrics go out after every intake request, so nothing waits in memory.
 - `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes.
 
 Glitchless only speaks OTLP/HTTP with JSON bodies, so it needs no OpenTelemetry packages. Not every vendor accepts JSON, so the dependable setup is an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (or Grafana Alloy) next to the server, re-exporting in whatever your backend prefers:
@@ -213,14 +215,23 @@ Set `GLITCHLESS_ALERT_WEBHOOK` to a Discord or Slack incoming-webhook URL and `n
 
 Each message says what changed, gives its numbers and a link to the dashboard page, and ends with a line to paste into your coding agent, such as `Use glitchless_triage on zoomies, then look at finding error-3f9a1c`. Problems that were already there when the server started don't post, and an alert doesn't repeat while its problem lasts. The state is kept in memory, so a restart starts over. For a Slack-compatible webhook on another host (Mattermost, for one), add `GLITCHLESS_ALERT_FORMAT=slack`. The rules are in [`server/src/alerts.js`](server/src/alerts.js), and [SPEC §3e](docs/SPEC.md) has the numbers.
 
-## Deploy to AWS (Lambda Web Functions + DynamoDB)
+## Run it on a server
+
+The server is one Node process that keeps its data in files, so anything that runs Node 20+ or a container can host it: a VPS, a home server, Fly.io, Railway or a Raspberry Pi. The Docker image has the server, the dashboard and the browser SDK:
 
 ```bash
-node server/web/deploy.js      # builds, creates table/role/bucket/function, prints the URL + read key
-node server/web/teardown.js    # deletes all of it
+docker run -d --name glitchless -p 7777:7777 -v glitchless-data:/data \
+  -e GLITCHLESS_CLIENT_TOKENS=gl_pub_my_game \
+  -e GLITCHLESS_API_KEY=pick-a-long-read-key \
+  ghcr.io/glitchless-gg/glitchless
 ```
 
-The same `server/src/app.js` runs in both places. Web Functions run a normal Node HTTP server on `AWS_LAMBDA_HTTP_ENDPOINT`. The endpoint is public (`ApplicationManaged`) and capped at 100 req/s. DynamoDB is on-demand with a 30-day TTL.
+Without Docker: `npm install && npm run build -w glitchless -w glitchless-dashboard`, then `npm run server` with `PORT` and `GLITCHLESS_DATA_DIR` set. To build the image yourself, `docker build -t glitchless .` in this folder.
+
+- **Data**: events, level maps, bug reports, source maps and dashboards are files under `/data` (`GLITCHLESS_DATA_DIR`). Back that folder up. The file store reads back the last 14 days.
+- **Keys**: games send with a client token from `GLITCHLESS_CLIENT_TOKENS` (public, write-only). On a server others can reach, set `GLITCHLESS_API_KEY`, so the dashboard, the MCP server and deletes need it.
+- **HTTPS**: put a proxy in front (Caddy, nginx or your host's), since web games on HTTPS can't send to plain HTTP.
+- **Everything else** (exporters, alerts, rate limits) is an environment variable; [`.env.example`](.env.example) lists them.
 
 ## How the numbers are computed
 

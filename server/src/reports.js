@@ -21,8 +21,8 @@ export function reportId(projectId, e) {
   return 'r_' + crypto.createHash('sha256').update([projectId, e.service, e.session_id, e.ts, e.note ?? ''].join('\n')).digest('hex').slice(0, 20);
 }
 
-// A bug_report event → { record, screenshot }. The record is bounded (a DynamoDB item holds it and the screenshot
-// together), and `screenshot` is the data URL or null.
+// A bug_report event → { record, screenshot }. The record is bounded (a store may keep it and the screenshot in one
+// database row), and `screenshot` is the data URL or null.
 export function splitReport(projectId, e) {
   const { screenshot, note, recent, frames, device, ...rest } = e;
   const shot = typeof screenshot === 'string' && screenshot.startsWith('data:image/') ? screenshot : null;

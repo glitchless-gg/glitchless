@@ -21,7 +21,7 @@ export const params = {
   seed: Math.floor(num('seed', Math.floor(Math.random() * 1e9))),
   level: Math.floor(num('level', 1, 1, 3)),
   env: q.get('env') || 'dev',
-  // VITE_GLITCHLESS_INTAKE=same-origin when the game is served by the Glitchless server itself (e.g. on AWS)
+  // VITE_GLITCHLESS_INTAKE=same-origin when the game is served by the Glitchless server itself (its /play/ route)
   intake: q.get('intake') || sameOrigin(import.meta.env.VITE_GLITCHLESS_INTAKE) || 'http://localhost:7777',
   dashboard: q.get('dashboard') || sameOrigin(import.meta.env.VITE_GLITCHLESS_INTAKE) || null,
   nogd: flag('nogd'),

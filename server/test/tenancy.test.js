@@ -9,12 +9,10 @@ import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { AuthError, RateLimiter, defaultAuth, envAuth } from '../src/auth.js';
 import { FileStore } from '../src/stores/file.js';
-import { DynamoStore } from '../src/stores/dynamo.js';
 import { buildContext, overview } from '../src/analytics.js';
 import { evaluateBoard } from '../src/board.js';
 import { normalize, parsePayload } from '../src/ingest.js';
-import { FakeDynamo } from './helpers/fake-dynamo.js';
-import { liveLake, hasDuckDB } from './helpers/lake-sim.js';
+import { STORES } from './helpers/stores.js';
 import { gameSessions } from './helpers/game-data.js';
 
 const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-tenancy-'));
@@ -56,11 +54,7 @@ const [sessionB] = gameSessions({ start: now - 3_600_000, spanMs: 60_000, sessio
 // Same service and even the same session id in both projects: neither may pick the other's data.
 for (const e of sessionB) e.version = '9.9.9';
 
-const stores = {
-  file: () => new FileStore(tmpdir(), { legacyProject: null }),
-  dynamodb: () => new DynamoStore({ table: 't', doc: new FakeDynamo(), legacyProject: null, rollupsSince: 0 }),
-  ...(hasDuckDB ? { lake: () => liveLake().store } : {}),
-};
+const stores = Object.fromEntries(Object.entries(STORES).map(([kind, make]) => [kind, () => make({ legacyProject: null }).store]));
 
 for (const [kind, makeStore] of Object.entries(stores)) {
   test(`${kind}: a project's keys can neither write to nor read another project`, async () => {
@@ -281,22 +275,6 @@ test('data written before projects existed still belongs to the open-source proj
   assert.equal((await file.getMaps('default', 'zoomies')).length, 1);
   assert.equal((await file.query('other', range)).length, 0);
   assert.equal((await new FileStore(dir, { legacyProject: null }).query('default', range)).length, 0);
-
-  // DynamoDB: items keyed the old way ("<service>#<hour>", "MAP#…", "SERVICE").
-  const doc = new FakeDynamo();
-  for (const e of legacy) doc.put({ pk: `zoomies#${new Date(e.ts).toISOString().slice(0, 13)}`, sk: `${e.ts}#${e.session_id}#${Math.random()}`, e: JSON.stringify(e) });
-  doc.put({ pk: 'SERVICE', sk: 'zoomies', versions: new Set([legacy[0].version]), envs: new Set(['prod']), last_seen: now });
-  doc.put({ pk: 'MAP#zoomies', sk: 'level-1#1.0.0', e: JSON.stringify({ level: 'level-1' }) });
-  const dynamo = new DynamoStore({ table: 't', doc });
-  assert.equal((await dynamo.query('default', range)).length, legacy.length);
-  assert.equal((await dynamo.services('default'))[0].service, 'zoomies');
-  assert.equal((await dynamo.getMaps('default', 'zoomies')).length, 1);
-  assert.equal((await dynamo.query('other', range)).length, 0);
-  assert.deepEqual(await dynamo.services('other'), []);
-  // New writes for the same project are read alongside the old ones (by a fresh process: finished
-  // hours are cached).
-  await dynamo.put('default', sessionB);
-  assert.equal((await new DynamoStore({ table: 't', doc }).query('default', range)).length, legacy.length + sessionB.length);
 });
 
 test('ingest is rate limited per key', async () => {

@@ -90,7 +90,7 @@ export function envAuth(env = process.env) {
 }
 
 // Token bucket per key, in memory: a brake on a leaked or looping client, not billing. Each server
-// process (or Lambda instance) counts on its own. Bursts of up to 2 s worth of requests are allowed.
+// process counts on its own. Bursts of up to 2 s worth of requests are allowed.
 export class RateLimiter {
   constructor({ maxKeys = 10_000, now = Date.now } = {}) {
     this.buckets = new Map();

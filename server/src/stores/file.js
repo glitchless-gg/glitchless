@@ -1,7 +1,7 @@
 // Local store: append-only JSONL files per day + an in-memory index per project.
 // Zero dependencies, survives restarts, and good for hundreds of thousands of events on a laptop.
 //
-// Every store (this one and DynamoStore) has the same methods, and every method takes the projectId the
+// Every store (this one, or a host's own: SPEC §7) has the same methods, and every method takes the projectId the
 // auth hooks resolved, so one project can never see another's events, maps, services or rollups:
 //
 //   put(projectId, events)                      stores events (and `map` thumbnails, bug reports) under the project

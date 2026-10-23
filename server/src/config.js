@@ -1,4 +1,4 @@
-// Shared config for the local server and the Lambda Web Function.
+// Config for the server (`npm run server`, or the Docker image): the store, the exporters and the keys.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,11 +12,8 @@ export function loadEnv(file = path.join(ROOT, '.env')) {
   if (fs.existsSync(file)) process.loadEnvFile(file);
 }
 
+// Events, maps, reports and dashboards live in files under GLITCHLESS_DATA_DIR (./data by default).
 export async function createStore() {
-  if (process.env.GLITCHLESS_EVENTS_TABLE) {
-    const { DynamoStore } = await import('./stores/dynamo.js');
-    return new DynamoStore({ table: process.env.GLITCHLESS_EVENTS_TABLE, region: process.env.AWS_REGION || 'us-east-1' });
-  }
   return new FileStore(process.env.GLITCHLESS_DATA_DIR || path.join(ROOT, 'data'));
 }
 

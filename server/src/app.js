@@ -1,5 +1,5 @@
-// The whole Glitchless backend is one plain Node HTTP handler, so the exact same code runs on a laptop
-// (`npm run server`) and on AWS Lambda Web Functions (which runs a normal server listening on a port).
+// The whole Glitchless backend is one plain Node HTTP handler: `npm run server`, the Docker image, or any host
+// that gives it a store (createApp below).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,8 +43,8 @@ const MIME = {
 };
 
 // `auth` is { resolveIngest, resolveReader } (see auth.js); the default is the open-source single project.
-// maxUploadBytes: the largest source map upload this host takes (a host behind a smaller body limit, such as
-// Lambda's 6 MB, passes less, so a big map gets a clear 413 rather than the host's own error).
+// maxUploadBytes: the largest source map upload this host takes (a host behind a smaller body limit passes less,
+// so a big map gets a clear 413 rather than the host's own error).
 export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES }) {
   const subscribers = new Set();
   const activity = [];

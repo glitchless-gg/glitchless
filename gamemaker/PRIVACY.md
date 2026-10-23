@@ -93,7 +93,7 @@ Uninstalling the game may leave the save area; deleting it removes them.
 
 ## Kept on the server
 
-The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item; Glitchless Cloud keeps them for the plan's retention. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.
+The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. Glitchless Cloud keeps them for the plan's retention. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.
 
 ## For the privacy page
 

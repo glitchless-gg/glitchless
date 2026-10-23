@@ -1,0 +1,18 @@
+# Only the server, the browser SDK, the dashboard and the logo go into the image (see Dockerfile).
+**/node_modules
+**/dist
+.git
+.claude
+.env
+.env.*
+data
+cloud
+unity
+unreal
+godot
+gamemaker
+datadog
+plugin
+docs
+scripts
+assets/brand/glitchless/_staging

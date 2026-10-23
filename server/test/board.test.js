@@ -4,19 +4,13 @@
 // read with read.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { AuthError } from '../src/auth.js';
-import { FileStore } from '../src/stores/file.js';
-import { DynamoStore } from '../src/stores/dynamo.js';
 import { buildContext, customEvents, eventFunnel, parseFunnel, versions } from '../src/analytics.js';
 import { validateBoard, validateDashboard, autoBoard, autoDashboard, evaluateBoard, dashboardStats, versionColumns, BoardError } from '../src/board.js';
-import { FakeDynamo } from './helpers/fake-dynamo.js';
 import { gameSessions } from './helpers/game-data.js';
-import { liveLake, hasDuckDB } from './helpers/lake-sim.js';
+import { STORES } from './helpers/stores.js';
 
 const NOW = Date.now();
 const START = NOW - 2 * 3_600_000;
@@ -235,23 +229,9 @@ const auth = {
     throw new AuthError(401, 'no key');
   },
 };
-const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-board-'));
-const STORES = {
-  file: async () => ({ store: new FileStore(tmpdir(), { legacyProject: null }) }),
-  dynamodb: async () => ({ store: new DynamoStore({ table: 't', doc: new FakeDynamo(), legacyProject: null, rollupsSince: 0 }) }),
-  ...(hasDuckDB
-    ? {
-        lake: async () => {
-          const sim = liveLake();
-          return { store: sim.store, settle: () => sim.store.compact(), close: () => sim.close() };
-        },
-      }
-    : {}),
-};
-
 for (const [kind, make] of Object.entries(STORES)) {
   test(`${kind} store: a dashboard is saved per game with the dashboard scope, read with read, and reset to automatic`, async () => {
-    const { store, close: closeStore, settle } = await make();
+    const { store, close: closeStore, settle } = await make({ legacyProject: null });
     const server = http.createServer(createApp({ store, auth, logger: { warn() {}, error() {} } }));
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${server.address().port}`;

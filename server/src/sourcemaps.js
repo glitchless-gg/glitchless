@@ -19,13 +19,12 @@
 import { gunzipSync } from 'node:zlib';
 import { IntakeError } from './ingest.js';
 import { errorList } from './analytics.js';
-import { SOURCEMAP_RETENTION_DAYS } from './lake/layout.js';
 
 export const MAX_UPLOAD_BYTES = 10_000_000; // a request body (the CLI gzips: maps shrink 3–5×)
 export const MAX_MAP_BYTES = 40_000_000; // one map, unpacked
 export const MAX_FILES = 200; // maps per version
 export const MAX_VERSIONS = 50; // versions per game: an upload past this deletes the oldest
-export const RETENTION_DAYS = SOURCEMAP_RETENTION_DAYS; // stores with a TTL keep a map this long after its upload
+export const RETENTION_DAYS = 400; // stores with a TTL keep a map this long after its upload
 const INDEX_TTL_MS = 60_000; // how long a process trusts its list of a game's maps
 const CACHE_BYTES = 96 * 2 ** 20; // parsed maps kept in memory, per process
 const CONTEXT_FRAMES = 5; // frames that carry their line of source
@@ -253,7 +252,7 @@ export function matchFile(url, files) {
 }
 
 // A file name as an upload names it: the path in the build, forward slashes, nothing that climbs out, and short
-// enough to be a file name and a DynamoDB key once encoded (keySeg).
+// enough to be a file name or a database key once encoded (keySeg).
 export function cleanFile(file) {
   const f = String(file ?? '')
     .replace(/\\/g, '/')

@@ -94,7 +94,7 @@ Deleting the app deletes them all.
 
 ## Kept on the server
 
-The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.
+The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. Glitchless Cloud keeps them for the plan's retention. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.
 
 If the server forwards to Datadog (`DD_API_KEY` set), Datadog receives the same events as logs and metrics, sent from the server, not the phone. Datadog then acts as a service provider under its own terms and keeps them for as long as the Datadog plan keeps logs.
 

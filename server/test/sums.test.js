@@ -2,8 +2,7 @@
 // board adds the amounts up (revenue, per player or per session, by item or version, over time) and counts
 // the share of players that bought (conversion). A game has one currency: amounts in another are named, never
 // added in, and numbers sent without a currency (coins) are plain sums. Shared boards hide sums unless their
-// link shows them. Raw events, hour summaries and daily rollups give the same sums (lake.test.js and
-// daily.test.js compare them with the rest).
+// link shows them. Every store gives the same sums from its events or its rollups.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

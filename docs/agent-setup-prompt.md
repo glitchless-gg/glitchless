@@ -13,7 +13,7 @@ It never contains the secret key: the agent reads it from the environment or ask
 doesn't end up in a chat log or a pasted snippet. The repo address is the planned public one.
 
 <!-- prompt:start -->
-Add Glitchless to this game. Glitchless records how the game runs for real players (frame times and stutters, errors, deaths, where they quit) and has an MCP server that lets you, the coding agent, read that data and fix what players hit.
+Add Glitchless to this game. Glitchless shows how the game runs and plays for real players: stutters and what causes them, crashes and errors, the game's own moments (modes, rounds, levels, purchases), where players get stuck or quit, who comes back, and bug reports players send. Its MCP server lets you, the coding agent, read that data, fix what players hit and check that the fix worked.
 
 1. Get the Glitchless agent kit, outside this project so it never gets committed:
    git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
@@ -26,6 +26,8 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
    - client token: {{CLIENT_TOKEN}} (it's public and can only send data, so it's fine inside the game build)
    - privacy: keep the default anonymous mode. Ask me before turning on install mode (what retention, D1/D7/D30, needs) or full mode, because either needs a line in the game's privacy policy.
    If the game already reports its own analytics or counters, list them for me and send the same moments to Glitchless with track(), under the same names. Remove the old reporting only when I say so.
+   If the game sells anything, send each purchase as track('purchase', { amount, currency, item }), so the dashboard can show revenue and conversion.
+   Ask me whether players should be able to send bug reports from inside the game (a hotkey or a button, with a note and a screenshot). If yes, turn them on as the skill describes; the note is whatever the player types, so it needs a line in the privacy policy too.
    For a web game with a production build (Vite or another bundler), also add the source map upload the skill describes (glitchless-sourcemaps), so errors from the minified build show the real file and line. It uploads with a secret key that can upload source maps, read from GLITCHLESS_API_KEY at build time; ask me for one.
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example, `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
@@ -38,9 +40,9 @@ Add Glitchless to this game. Glitchless records how the game runs for real playe
 
 5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions arrive: call the glitchless_list_games tool, or ask me to look at {{DASHBOARD_URL}}.
 
-6. Give the game its own dashboard: follow ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my players, add the events that answer it, then save pages that fit this game with the glitchless_set_dashboard tool.
+6. Give the game its own dashboard: follow ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my players (where they get stuck, which modes they play, whether they come back, what they buy), add the events that answer it, then save pages that fit this game with the glitchless_set_dashboard tool.
 
-7. Tell me what you changed, file by file, the events you track, and anything you weren't sure about.
+7. Tell me what you changed, file by file, the events you track, and anything you weren't sure about. If I use Glitchless Cloud, also tell me I can turn on alerts (Discord, Slack or email) in Settings → Alerts, and share a board with a read-only link.
 <!-- prompt:end -->
 
 ## Notes for whoever maintains this

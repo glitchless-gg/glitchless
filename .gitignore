@@ -1,6 +1,5 @@
 node_modules/
 dist/
-.aws-sam/
 .env
 .env.*
 !.env.example
@@ -8,10 +7,7 @@ data/
 godot/.godot/
 *.log
 .DS_Store
-samconfig.toml
 .build/
-.glitchless-aws.json
-.glitchless-aws.json.deleted
 
 # Office lock files
 ~$*

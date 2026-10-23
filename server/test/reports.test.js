@@ -9,14 +9,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { FileStore } from '../src/stores/file.js';
-import { DynamoStore } from '../src/stores/dynamo.js';
 import { validateDashboard, evaluateBoard } from '../src/board.js';
 import { buildContext } from '../src/analytics.js';
-import { lifecycleRules } from '../src/lake/layout.js';
 import { splitReport, reportSummary } from '../src/reports.js';
 import { findings, gameEngine } from '../src/findings.js';
-import { FakeDynamo } from './helpers/fake-dynamo.js';
-import { liveLake, hasDuckDB } from './helpers/lake-sim.js';
+import { STORES } from './helpers/stores.js';
 import { gameSessions } from './helpers/game-data.js';
 
 const tmpdir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-reports-'));
@@ -45,15 +42,9 @@ async function serve(store) {
   return { base, send, get, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
 }
 
-const stores = {
-  file: () => ({ store: new FileStore(tmpdir()) }),
-  dynamodb: () => ({ store: new DynamoStore({ table: 't', doc: new FakeDynamo(), rollupsSince: 0 }) }),
-  ...(hasDuckDB ? { lake: () => liveLake() } : {}),
-};
-
-for (const [kind, make] of Object.entries(stores)) {
+for (const [kind, make] of Object.entries(STORES)) {
   test(`${kind}: reports are listed newest first, opened with their screenshot, and found on their level`, async () => {
-    const made = make();
+    const made = await make();
     const app = await serve(made.store);
     try {
       assert.equal((await app.send(session)).status, 202);
@@ -128,7 +119,7 @@ for (const [kind, make] of Object.entries(stores)) {
 
       // One report can go on its own, screenshot and all (a player asked).
       const del = (id, service = 'zoomies') => fetch(`${app.base}/v1/report?service=${service}&id=${id}`, { method: 'DELETE' });
-      const shots = async () => (kind === 'lake' ? (await made.bucket.list('reports/')).length : kind === 'file' ? fs.readdirSync(path.join(made.store.dir, 'reports')).length : null);
+      const shots = async () => (made.blobs ? (await made.blobs('reports')).length : null);
       const before = await shots();
       assert.equal((await del(first.id, 'other-game')).status, 404);
       assert.equal((await del(first.id)).status, 200);
@@ -137,12 +128,11 @@ for (const [kind, make] of Object.entries(stores)) {
       assert.equal((await app.get('report', { id: first.id })).error, 'report not found');
       if (before != null) assert.equal(await shots(), before - 1);
 
-      if (kind !== 'dynamodb') {
+      if (made.clears !== false) {
         assert.equal((await fetch(`${app.base}/v1/data?service=zoomies`, { method: 'DELETE' })).status, 200);
         assert.deepEqual((await app.get('reports')).reports ?? [], []);
         assert.equal(await made.store.getReport('default', 'zoomies', reports[1].id), null);
-        if (kind === 'lake') assert.deepEqual(await made.bucket.list('reports/'), []);
-        if (kind === 'file') assert.deepEqual(fs.readdirSync(path.join(made.store.dir, 'reports')), []);
+        if (made.blobs) assert.deepEqual(await made.blobs('reports'), []);
       }
     } finally {
       await app.close();
@@ -197,35 +187,6 @@ test('boards: a reports panel lists the latest reports, a dashboard can have a B
   assert.equal(finding(true).summary, '3 bug reports from 1 session on level-2.');
   ctx.reports = [];
   assert.equal(evaluateBoard(ctx, spec.pages[0])[0].why, 'No bug reports in this window.');
-});
-
-test('lake: a screenshot S3 refuses costs the picture, not the report', { skip: !hasDuckDB && 'needs the optional dependency @duckdb/node-api' }, async () => {
-  const lake = liveLake();
-  const put = lake.bucket.put.bind(lake.bucket);
-  lake.bucket.put = async (key, ...rest) => {
-    if (key.startsWith('reports/')) throw new Error('AccessDenied');
-    return put(key, ...rest);
-  };
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    await lake.store.put('default', [{ ...session[0], ...REPORTS[0] }]);
-  } finally {
-    console.warn = warn;
-  }
-  const [r] = await lake.store.reports('default', 'zoomies', { from: 0, to: now + 60_000 });
-  assert.equal(r.note, REPORTS[0].note);
-  assert.equal(r.has_screenshot, false);
-  assert.equal((await lake.store.getReport('default', 'zoomies', r.id)).screenshot, null);
-  lake.close();
-});
-
-test('lake: report screenshots expire with each plan', () => {
-  const rules = lifecycleRules();
-  for (const plan of ['free', 'indie', 'studio']) {
-    const events = rules.find((r) => r.ID === `events-${plan}`);
-    assert.deepEqual(rules.find((r) => r.ID === `reports-${plan}`), { ...events, ID: `reports-${plan}`, Prefix: `reports/plan=${plan}/` });
-  }
 });
 
 test('Godot, Unity and Unreal games: the reports finding says how to reproduce there, and the reports query names the engine', async () => {

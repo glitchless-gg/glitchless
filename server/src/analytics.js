@@ -4,7 +4,7 @@
 // keeps them per minute merges the stored ones instead, and both give identical answers. Frame-time
 // percentiles always come from merged sketches — never from averaging per-session percentiles.
 //
-// Over more than 31 days the hosted store hands over a daily context instead (daily.js): ctx.sessions is
+// Over more than 31 days a store with daily rollups (SPEC §7) hands over a daily context instead (daily.js): ctx.sessions is
 // empty, ctx.cells and ctx.facts hold one cell per day, and ctx.daily holds the range's sessions folded
 // per day; the functions below that read sessions answer from it (daily.js says what stays exact).
 

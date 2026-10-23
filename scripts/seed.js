@@ -10,7 +10,6 @@
 //
 //   node scripts/seed.js                 # ~440 sessions over the past 30h into the local store
 //   node scripts/seed.js --reset         # wipe the service first
-//   GLITCHLESS_EVENTS_TABLE=glitchless node scripts/seed.js   # seed DynamoDB instead
 
 import { LEVELS } from '../apps/zoomies/src/levels.js';
 import { Sketch } from '../packages/sdk/src/sketch.js';

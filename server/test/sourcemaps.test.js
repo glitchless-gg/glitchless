@@ -13,14 +13,11 @@ import { build } from 'esbuild';
 import { createApp } from '../src/app.js';
 import { AuthError } from '../src/auth.js';
 import { FileStore } from '../src/stores/file.js';
-import { DynamoStore } from '../src/stores/dynamo.js';
 import { buildContext } from '../src/analytics.js';
 import { evaluateBoard } from '../src/board.js';
-import { lifecycleRules } from '../src/lake/layout.js';
 import { decodeMappings, parseMap, originalPosition, parseFrame, matchFile, cleanSource, cleanFile, functionsOf, stableMessage, createSourcemaps, MAX_UPLOAD_BYTES } from '../src/sourcemaps.js';
 import { fingerprint as sdkFingerprint } from '../../packages/sdk/src/fingerprint.js';
-import { FakeDynamo } from './helpers/fake-dynamo.js';
-import { liveLake, hasDuckDB } from './helpers/lake-sim.js';
+import { STORES } from './helpers/stores.js';
 
 // The real path: bundlers write sources relative to it, and macOS's /var is a link.
 const tmpdir = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-sourcemaps-')));
@@ -439,16 +436,11 @@ test('ingest reads only the maps its top frames need, once per process', async (
 
 // ───────────────────────────── every store ─────────────────────────────
 
-const stores = {
-  file: () => new FileStore(tmpdir(), { legacyProject: null }),
-  dynamodb: () => new DynamoStore({ table: 't', doc: new FakeDynamo(), legacyProject: null, rollupsSince: 0 }),
-  ...(hasDuckDB ? { lake: () => liveLake().store } : {}),
-};
-
-for (const [kind, make] of Object.entries(stores)) {
+for (const [kind, make] of Object.entries(STORES)) {
   test(`${kind}: keeps source maps per project, game and version, replaces, deletes and clears them`, async () => {
-    const store = make();
-    // Big enough to need several DynamoDB items: source text that doesn't compress.
+    const made = await make({ legacyProject: null });
+    const { store } = made;
+    // A big map: source text that doesn't compress.
     let seed = 1;
     const noise = Array.from({ length: 700_000 }, () => String.fromCharCode(97 + ((seed = (seed * 48271) % 2147483647) % 26))).join('');
     const big = JSON.stringify({ version: 3, sources: ['a.js'], sourcesContent: [noise], names: [], mappings: 'AAAA' });
@@ -463,25 +455,20 @@ for (const [kind, make] of Object.entries(stores)) {
     assert.deepEqual(await list('A'), ['1.0.0 assets/index-1.js ' + big.length, '1.0.0 assets/vendor~1.js 7', '1.0.1 assets/index-2.js 7']);
     assert.ok((await store.sourcemaps('A', 'g')).every((m) => m.uploaded_at > 0));
     assert.deepEqual(await list('B'), ['1.0.0 assets/index-1.js 7']);
-    // An upload of the same file replaces it (and, in DynamoDB, its old chunks).
+    // An upload of the same file replaces it.
     await store.putSourcemap('A', 'g', '1.0.0', 'assets/index-1.js', '{"small":true}');
     assert.equal(await store.getSourcemap('A', 'g', '1.0.0', 'assets/index-1.js'), '{"small":true}');
-    if (kind === 'dynamodb') assert.equal([...(store.doc.tables.get('P#A#SMAP#g')?.keys() || [])].filter((sk) => sk.startsWith('C#')).length, 3);
     await store.deleteSourcemaps('A', 'g', '1.0.0');
     assert.deepEqual(await list('A'), ['1.0.1 assets/index-2.js 7']);
     assert.equal(await store.getSourcemap('A', 'g', '1.0.0', 'assets/vendor~1.js'), null);
-    if (kind !== 'dynamodb') {
+    if (made.clears !== false) {
       await store.clear('A', 'g');
       assert.deepEqual(await list('A'), []);
       assert.deepEqual(await list('B'), ['1.0.0 assets/index-1.js 7']);
     }
+    await made.close?.();
   });
 }
-
-test('the lake keeps source maps under sourcemaps/ and expires them a while after their upload', () => {
-  const rule = lifecycleRules().find((r) => r.Prefix === 'sourcemaps/');
-  assert.equal(rule.ExpirationInDays, 400);
-});
 
 test('an upload past MAX_VERSIONS deletes the versions uploaded longest ago', async () => {
   const store = new FileStore(tmpdir(), { legacyProject: null });
