@@ -52,7 +52,99 @@ It's open source and runs anywhere Node runs: one server with a file store, on a
 More demos in other genres (an arena shooter, an arcade racer, a tower defense game and a metroidvania), each with
 its own events, planted problems, autoplay bot and dashboard, live in their own repo: [**The Glitch Arcade**](https://github.com/glitchless-gg/glitch-arcade).
 
-## Quickstart (local, no cloud)
+## Quickstart: paste this into your coding agent
+
+Open your game's folder in Claude Code, Codex, Cursor or any other coding agent and paste the prompt below. It starts a Glitchless server on your machine (with Docker, or Node), adds the SDK for your engine, connects the MCP server and builds a dashboard for your game. It asks you first about anything that needs a line in your privacy policy.
+
+<!-- setup-prompt:start -->
+```text
+Add Glitchless to this game. Glitchless shows how the game runs and plays for real players: stutters
+and what causes them, crashes and errors, the game's own moments (modes, rounds, levels, purchases),
+where players get stuck or quit, who comes back, and bug reports players send. Its MCP server lets
+you, the coding agent, read that data, fix what players hit and check that the fix worked.
+
+1. Get the Glitchless agent kit, outside this project so it never gets committed:
+   git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
+   If that folder already exists, run `git -C ~/.glitchless pull` instead.
+   If the intake URL in step 2 starts with http://localhost, make sure a local Glitchless server is
+   running there: if http://localhost:7777/v1/health answers, use it. Otherwise, with Docker, run
+   `docker run -d --name glitchless -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless`
+   (or `docker start glitchless` if that container already exists). Without Docker, in ~/.glitchless
+   run `npm install && npm run build`, then `npm run server` in the background. The dashboard is at
+   the same address.
+
+2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It
+   covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 2022.3 or
+   later, Godot 4.5 or later, Unreal Engine 5.8, and GameMaker 2024.2 or later; for Godot it sends
+   you to ~/.glitchless/godot/addons/glitchless/README.md.
+   Use these settings:
+   - intake URL: http://localhost:7777
+   - client token: gl_pub_dev (it's public and can only send data, so it's fine inside the game
+     build)
+   - privacy: keep the default anonymous mode. Ask me before turning on install mode (what
+     retention, D1/D7/D30, needs) or full mode, because either needs a line in the game's privacy
+     policy.
+   If the game already reports its own analytics or counters, list them for me and send the same
+   moments to Glitchless with track(), under the same names. Remove the old reporting only when I
+   say so.
+   If the game sells anything, send each purchase as track('purchase', { amount, currency, item }),
+   so the dashboard can show revenue and conversion.
+   Ask me whether players should be able to send bug reports from inside the game (a hotkey or a
+   button, with a note and a screenshot). If yes, turn them on as the skill describes; the note is
+   whatever the player types, so it needs a line in the privacy policy too.
+   For a web game with a production build (Vite or another bundler), also add the source map upload
+   the skill describes (glitchless-sourcemaps), so errors from the minified build show the real file
+   and line. It uploads with a secret key that can upload source maps, read from GLITCHLESS_API_KEY
+   at build time; ask me for one. Skip this while the game sends to a local server.
+
+3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example,
+   `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
+   - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variables
+     GLITCHLESS_URL=http://localhost:7777 and GLITCHLESS_API_KEY set to my secret key. Take the key
+     from GLITCHLESS_API_KEY in my environment, or ask me for it; a local server from step 1 has no
+     key, so leave it out. Never put the secret key in the game, in a file that gets committed, or
+     in your reply.
+   - webmcp, for a game that runs in a browser (Three.js, Phaser, Babylon.js, PlayCanvas): command
+     `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game:
+     measure frame times, inspect the scene and reproduce problems. Unity, Godot, Unreal and
+     GameMaker builds don't need it: they measure themselves with --glitchless-measure
+     (-glitchless-measure in Unreal and GameMaker).
+   - For an Unreal game, Epic's Unreal MCP (UE 5.8, Experimental) can sit beside Glitchless: it is
+     your hands in the editor (open maps, look inside Blueprints, edit actors, start Play In
+     Editor), and Glitchless says what is wrong and whether a change fixed it. If the project uses
+     it, or I ask for it, follow the "Agents in the editor: Unreal MCP" part of the instrument
+     skill: it adds the Glitchless Toolset plugin, so Unreal MCP can also measure the game in Play
+     In Editor. Unreal MCP listens on http://localhost:8000/mcp; the Glitchless server stays on its
+     own address.
+   If your tool needs a restart to load new MCP servers, tell me.
+
+4. If your tool loads skills from a folder (for example ~/.claude/skills, ~/.codex/skills or the
+   project's .agents/skills), copy ~/.glitchless/plugin/glitchless/skills/instrument,
+   ~/.glitchless/plugin/glitchless/skills/dashboard and
+   ~/.glitchless/plugin/glitchless/skills/triage there. If it doesn't, remember this for later: when
+   I ask what's wrong with the game, read ~/.glitchless/plugin/glitchless/skills/triage/SKILL.md and
+   follow it; when I ask for a dashboard or for metrics, read
+   ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md.
+
+5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions
+   arrive: call the glitchless_list_games tool, or ask me to look at http://localhost:7777.
+
+6. Give the game its own dashboard: follow
+   ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my
+   players (where they get stuck, which modes they play, whether they come back, what they buy), add
+   the events that answer it, then save pages that fit this game with the glitchless_set_dashboard
+   tool.
+
+7. Tell me what you changed, file by file, the events you track, and anything you weren't sure
+   about. If I use Glitchless Cloud, also tell me I can turn on alerts (Discord, Slack or email) in
+   Settings → Alerts, and share a board with a read-only link. On my own server, alerts go to a
+   Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
+```
+<!-- setup-prompt:end -->
+
+On [Glitchless Cloud](https://app.glitchless.gg), the Get started page gives you the same prompt with your project's address and keys. In Claude Code, the [plugin](#connect-your-coding-agent) does the same in two commands.
+
+## Quickstart by hand
 
 Just the server and dashboard: `docker run -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless`, then open http://localhost:7777. To work on Glitchless or try the demo game:
 
