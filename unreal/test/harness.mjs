@@ -32,7 +32,10 @@ export function packageGame(platform, log, extra = []) {
   const uat = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'RunUAT.bat' : 'RunUAT.sh');
   console.log(`packaging a ${platform} Development build (log: ${log})…`);
   const args = ['BuildCookRun', `-project=${PROJECT}`, `-platform=${platform}`, '-clientconfig=Development', '-build', '-cook', '-stage', '-pak', '-nop4', '-utf8output', '-unattended', '-nocompileeditor', ...extra];
-  const r = spawnSync(uat, args, { shell: WINDOWS, encoding: 'utf8', maxBuffer: 1 << 28, timeout: 3 * 3600_000 });
+  // Windows runs a .bat only through cmd (Node refuses otherwise), as one command line with its paths quoted.
+  const opts = { encoding: 'utf8', maxBuffer: 1 << 28, timeout: 3 * 3600_000 };
+  const q = (a) => (/\s/.test(a) ? `"${a}"` : a);
+  const r = WINDOWS ? spawnSync([uat, ...args].map(q).join(' '), { ...opts, shell: true }) : spawnSync(uat, args, opts);
   fs.writeFileSync(log, `${r.stdout}\n${r.stderr}`);
   if (r.status !== 0) {
     console.error(`${r.stdout}`.split('\n').filter((l) => /error/i.test(l)).slice(0, 30).join('\n'));

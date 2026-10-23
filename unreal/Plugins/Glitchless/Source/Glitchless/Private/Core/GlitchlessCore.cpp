@@ -1965,7 +1965,7 @@ namespace Glitchless
 		{
 			return Files.Read(Path, Out);
 		}
-		std::FILE* F = std::fopen(Path.c_str(), "rb");
+		std::FILE* F = Text::OpenFile(Path, "rb");
 		if (!F)
 		{
 			return false;
@@ -1988,7 +1988,7 @@ namespace Glitchless
 			return Files.Write(Path, Contents);
 		}
 		const std::string Tmp = Path + ".tmp";
-		std::FILE* F = std::fopen(Tmp.c_str(), "wb");
+		std::FILE* F = Text::OpenFile(Tmp, "wb");
 		if (!F)
 		{
 			return false;

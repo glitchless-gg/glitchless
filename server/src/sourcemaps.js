@@ -626,7 +626,7 @@ function maskCode(code) {
 
 // Browser SDKs send JavaScript stacks; the engine SDKs' stacks are their own.
 function isWeb(sdk) {
-  return !/^glitchless-(godot|unity|unreal)\//.test(sdk || '');
+  return !/^glitchless-(godot|unity|unreal|gamemaker)\//.test(sdk || '');
 }
 
 // One per app (app.js): the upload route's checks, and per-process caches of each game's list of maps and of

@@ -7,7 +7,7 @@
 
 # Glitchless
 
-Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (2022.3 LTS and 6) and Unreal Engine 5.8 games on phones and desktops.
+Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (2022.3 LTS and 6) Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.
@@ -33,6 +33,7 @@ It's open source and runs anywhere: one Node server with a file store on a lapto
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
 | [`unity`](unity) | Glitchless for **Unity 2022.3 LTS and Unity 6** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
+| [`gamemaker`](gamemaker) | Glitchless for **GameMaker 2024.2+** (GML scripts, a local package or `tools/install.mjs`): frame windows from `delta_time`, hitches named by what GameMaker can see (texture pages, room changes, collections, instance bursts), instance, surface and DS counts for leaks, rooms as levels, crashes sent on the next launch, bug reports and `-glitchless-measure` for agents. A demo with planted problems, a Node test that runs the GML without GameMaker, and an end-to-end test sit alongside |
 | [`server`](server) | Intake, query API and findings. Runs locally (`npm run server`) or on **AWS Lambda Web Functions** + DynamoDB ([`server/web/deploy.js`](server/web/deploy.js)) |
 | [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Bug Reports, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
 | [`apps/zoomies`](apps/zoomies) | **Zoomies!**, a vibe-coded Three.js platformer that ships with four realistic bugs for the demo |
@@ -118,6 +119,8 @@ then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake =
 
 For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless) into the project's `Plugins` folder, enable it in **Edit → Plugins**, and fill in **Service** and **Intake** in **Project Settings → Plugins → Glitchless**; no code is needed. See its [README](unreal/Plugins/Glitchless/README.md), and [`unreal/demo`](unreal/demo) for a small game with planted problems.
 
+For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-<version>.yymps` with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
+
 ## Connect your coding agent
 
 ```bash
@@ -170,7 +173,7 @@ The server can send every game's telemetry on to other backends. Switch on eithe
 How Glitchless maps onto OpenTelemetry:
 
 - **Resource:** the game build: `service.name`, `service.version` and `deployment.environment.name`, plus a `service.instance.id` for the Glitchless server process.
-- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot`, `unity` or `unreal`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
+- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot`, `unity`, `unreal` or `gamemaker`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
 - **Log records:** `session.id` and `user.id`, then the event's own fields under `game.*`, with event names like `glitchless.death`. Errors are `ERROR` records with `exception.type`, `exception.message` and `exception.stacktrace`.
 
 The standard variables work as they do in any OpenTelemetry SDK:

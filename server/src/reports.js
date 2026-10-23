@@ -111,6 +111,7 @@ const REPRODUCE = {
   godot: (level) => `reproduce it on ${level} (run the game from the Godot editor and play to the place in the screenshot)`,
   unity: (level) => `reproduce it on ${level} (enter Play mode in the Unity Editor and play to the place in the screenshot)`,
   unreal: (level) => `reproduce it on ${level} (play it in the editor with Play In Editor, to the place in the screenshot; with the Glitchless Toolset and Unreal MCP, Measure there)`,
+  gamemaker: (level) => `reproduce it on ${level} (run the game from GameMaker and play to the place in the screenshot, or room_goto the room in a test build)`,
   web: (level) => `reproduce it on ${level} (load the level over WebMCP if the game has a tool for it)`,
 };
 

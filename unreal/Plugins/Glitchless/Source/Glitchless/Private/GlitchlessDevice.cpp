@@ -24,7 +24,7 @@ namespace
 	std::string ReadSmallFile(const char* Path)
 	{
 		std::string Out;
-		if (std::FILE* F = std::fopen(Path, "rb"))
+		if (std::FILE* F = Glitchless::Text::OpenFile(Path, "rb"))
 		{
 			char Buf[2048];
 			const size_t N = std::fread(Buf, 1, sizeof(Buf), F);

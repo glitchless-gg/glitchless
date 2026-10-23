@@ -120,7 +120,7 @@ function packagePlugin({ plugin, zip }) {
   if (z.status !== 0) throw new Error(`zipping failed: ${z.stderr}`);
 
   // Read the zip back: one top folder, the descriptor, the licence, nothing local.
-  const listed = (process.platform === 'win32' ? spawnSync('tar', ['-t', '-f', out]) : spawnSync('unzip', ['-Z1', out])).stdout.toString().split('\n').filter(Boolean);
+  const listed = (process.platform === 'win32' ? spawnSync('tar', ['-t', '-f', out]) : spawnSync('unzip', ['-Z1', out])).stdout.toString().split(/\r?\n/).filter(Boolean); // Windows' tar ends its lines in \r\n
   const files = listed.filter((f) => !f.endsWith('/'));
   const tops = new Set(listed.map((f) => f.split('/')[0]));
   if (tops.size !== 1 || !tops.has(plugin)) failures.push(`${zip(version)}: holds ${[...tops].join(', ')}, not one ${plugin} folder`);
@@ -172,6 +172,14 @@ function check(plugin, top, d) {
 }
 
 function buildPlugin(plugin, top) {
+  // BuildPlugin builds a plugin alone, in a host project with nothing else in it, so one that needs another of
+  // these plugins can't build there (UBT: "Unable to find plugin"). The test project, which has both, builds it:
+  // its editor target with -NoPCH is the same check without a shared PCH.
+  const needs = (JSON.parse(fs.readFileSync(path.join(top, `${plugin}.uplugin`), 'utf8')).Plugins || []).map((p) => p.Name).filter((n) => fs.existsSync(path.join(ROOT, PLUGINS, n)));
+  if (needs.length) {
+    warnings.push(`${plugin}: not built here: it needs ${needs.join(', ')}, and BuildPlugin builds a plugin alone (build unreal/test/GlitchlessTest's editor target with -NoPCH instead)`);
+    return;
+  }
   const busy = spawnSync('pgrep', ['-fl', 'ShaderCompileWorker|UnrealBuildTool|RunUAT|AutomationTool']).stdout?.toString().trim();
   if (busy) {
     failures.push(`${plugin}: not building, another Unreal build is running:\n${busy}`);
@@ -181,11 +189,15 @@ function buildPlugin(plugin, top) {
   const pkg = fs.mkdtempSync(path.join(TMP, `glitchless-build-${plugin}-`));
   const platform = process.platform === 'win32' ? 'Win64' : 'Mac';
   console.log(`building ${plugin} from the staged copy for ${platform} (RunUAT BuildPlugin)…`);
-  const r = spawnSync(uat, ['BuildPlugin', `-Plugin=${path.join(top, `${plugin}.uplugin`)}`, `-Package=${pkg}`, `-TargetPlatforms=${platform}`, '-Rocket', '-unattended', '-nop4'], { shell: process.platform === 'win32', encoding: 'utf8', maxBuffer: 1 << 28 });
+  // Windows runs a .bat only through cmd (Node refuses otherwise), as one command line with its paths quoted.
+  const uatArgs = ['BuildPlugin', `-Plugin=${path.join(top, `${plugin}.uplugin`)}`, `-Package=${pkg}`, `-TargetPlatforms=${platform}`, '-Rocket', '-unattended', '-nop4'];
+  const q = (a) => (/\s/.test(a) ? `"${a}"` : a);
+  const opts = { encoding: 'utf8', maxBuffer: 1 << 28 };
+  const r = process.platform === 'win32' ? spawnSync([uat, ...uatArgs].map(q).join(' '), { ...opts, shell: true }) : spawnSync(uat, uatArgs, opts);
   const log = path.join(outDir, `${plugin}-BuildPlugin-${platform}.log`);
   fs.writeFileSync(log, `${r.stdout}\n${r.stderr}`);
   if (r.status !== 0) failures.push(`${plugin}: BuildPlugin failed (${r.status}); log: ${log}`);
-  const own = `${r.stdout}`.split('\n').filter((l) => /warning|error/i.test(l) && l.includes(`/${plugin}/`));
+  const own = `${r.stdout}`.split('\n').filter((l) => /warning|error/i.test(l) && (l.includes(`/${plugin}/`) || l.includes(`\\${plugin}\\`)));
   if (own.length) (fab ? failures : warnings).push(`${plugin}: BuildPlugin printed ${own.length} warning or error line(s) from the plugin (Fab 4.3.6.2.a); log: ${log}\n${own.slice(0, 10).join('\n')}`);
   fs.rmSync(pkg, { recursive: true, force: true });
 }

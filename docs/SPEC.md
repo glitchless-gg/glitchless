@@ -598,6 +598,27 @@ never what they were read from.
 
 On the server, findings for an `unreal` game name Unreal's fixes (PSO precaching and bundled caches, GC pooling and clustering, streaming budgets, Insights and `stat` commands, scalability groups). `crash` is a fatal kind that halts its session, so the session counts as crashed (§4), like `game_loop_stopped`.
 
+## 5d. GameMaker SDK
+
+`gamemaker/` (GameMaker 2024.2 and later, built for LTS 2026) is GML: the `Glitchless` script's `glitchless_*` functions, internal `__glitchless_*` scripts and two persistent objects that `glitchless_init` creates. It sends the same envelope with `"sdk": "glitchless-gamemaker/0.1.0"` and the same event types, gzipped (a gzip wrapper around `buffer_compress`'s zlib stream; plain JSON in a web build). See its [README](../gamemaker/README.md) and [PRIVACY.md](../gamemaker/PRIVACY.md). Positions are room coordinates. Differences:
+
+| | |
+| --- | --- |
+| envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID |
+| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "GameMaker"`, `browser_version` (the runtime, `2026.0.0.23`), `os`, `mobile`, `device_tier` (`unknown`: GameMaker can't read cores or memory), `gpu_tier` (from the GPU's name in `os_get_info`; `low` on a Steam Deck), `renderer` (`vm` or `yyc`), `driver`, `screen`, `dpr` (null), `refresh_hz`, `steam_deck` (as Unreal decides it: `SteamDeck=1`, a Valve board, or SteamOS, with `os` `SteamOS`); full mode adds `os_version`, `gpu`, `gpu_vendor`, and `model` on a Steam Deck (`cores`, `memory_gb` are null). `page` and `nav_ms` are null |
+| `frame_window` | frame times from `delta_time`; `hz` and `budget_ms` from the game speed. Adds `process_ms` (the Step events: the frame's start to the first Pre-Draw), `render_ms` (the draw events: the first Pre-Draw to the last Draw GUI End), `gc_collections`, `gc_ms` (`gc_get_stats`), `texture_loads` (texture groups loaded or fetched), `heap_mb` (`debug_event("DumpMemory")`), `instances`, `surfaces`, `ds_lists`, `ds_maps`, `buffers` (`debug_event("ResourceCounts")`), `screen`, `window`. `draw_calls`, `triangles`, `gpu_ms`, `physics_ms`, `geometries`, `textures`, `programs` are null. `ctx` also holds `instances` and the resource counts. A window never spans two levels |
+| `hitch` | `causes` from `texture_upload` (a texture page fetched on first draw), `scene_change` (a room change: the level's load), `gc` (a collection over a quarter of the frame), `object_spawn` (50+ instances added), `script` (Step events at 40% of the frame), `render` (draw events at 40%), `frozen`. Adds `process_ms`, `render_ms`, `gc_ms`, `gc_collected`, `instances_added`, `texture_loads`; `loaf` is empty |
+| `level_start` | also sent when a room that reads as a level starts (not `rm_main_menu`, `rm_title`, `rm_boot`, `rm_loading`…, the words Unity and Unreal use); the game's first `glitchless_level_start` turns that off. A menu room leaves the level |
+| `error` | `kind`: `crash` (an unhandled exception, through `exception_unhandled_handler`: GameMaker stops the game, so the crash and `session_end` reason `crash` are written to the outbox and sent on the next launch; in anonymous mode under a fresh session ID) and `manual` (`glitchless_error`, a message or a caught exception). `fn` is `obj_player.Step_0` for an object's event and the function's name for a script function; `stack` keeps GameMaker's frame names. Adds `recent` (last 6 game events) |
+| `death`, `pos` | positions only when they are on (full mode, or `positions: true`) |
+| `session_end` | `reason`: `quit` (`glitchless_quit`, or Game End: then it is sent on the next launch), `measure`, `crash` |
+| `custom` | also `screen_change`, `app_resume`, `rage_input` |
+| `bug_report` | `bug_reports` in the options adds the F8 form, drawn in Draw GUI End, which deactivates the game's instances while open (`pause: false` and `on_open`/`on_close` for a game's own pause); `glitchless_report_bug(note)` sends one from the game's own UI. `screenshot` is a **PNG** data URL (GameMaker writes no JPEG) of the application surface, its longer side at most 960 px |
+
+`-glitchless-measure=S` (with `-glitchless-warmup`, `-glitchless-out`) prints `{"glitchless_measure": {…}}` as the other SDKs do, plus `session_id` and `gc_ms`, and writes it to `glitchless/measure.json` in the save area; `-autoplay` and `-glitchless-synthetic` mark the session synthetic. Igor's `Run` starts the game with macOS's `open`, which passes no command line or environment on, so the SDK also reads its flags from the `GLITCHLESS_ARGS` environment variable and, in a build run from the IDE or Igor, from `glitchless/args.txt` in the save area (the runner's, `com.yoyogames.macyoyorunner`).
+
+On the server, findings for a `gamemaker` game name GameMaker's fixes (texture groups and prefetching, light room Create events, GC pacing, instance pooling and particle systems, surface reuse, freeing DS structures). `crash` is a fatal kind that halts its session, as for Unreal.
+
 ## 6. Projects, keys and storage
 
 A **project** is the tenancy boundary. The server resolves every request to one project through two

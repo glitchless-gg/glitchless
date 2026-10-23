@@ -75,6 +75,16 @@ namespace Glitchless
 
 	namespace Text
 	{
+		std::FILE* OpenFile(const std::string& Path, const char* Mode)
+		{
+#if defined(_MSC_VER)
+			std::FILE* F = nullptr;
+			return fopen_s(&F, Path.c_str(), Mode) == 0 ? F : nullptr;
+#else
+			return std::fopen(Path.c_str(), Mode);
+#endif
+		}
+
 		std::u16string ToUtf16(const std::string& Utf8)
 		{
 			std::u16string Out;
@@ -500,7 +510,7 @@ namespace Glitchless
 		{
 			// The plugin's own names, whole: a game's UGlitchlessTestScript is the game's.
 			static const char* const Own[] = {
-				"Glitchless::", "GlitchlessBugReport::", "GlitchlessDevice::", "GlitchlessText::", "GlitchlessSignals::", "FGlitchless::",
+				"Glitchless::", "GlitchlessBugReport::", "GlitchlessDevice::", "GlitchlessText::", "GlitchlessSignals::", "GlitchlessWindows::", "FGlitchless::",
 				"FGlitchlessRuntime::", "FGlitchlessHttpTransport::", "FGlitchlessOutputDevice::", "FGlitchlessInputProcessor::",
 				"FGlitchlessModule::", "UGlitchlessSubsystem::", "UGlitchlessBlueprintLibrary::", "UGlitchlessSettings::",
 				"UGlitchlessToolset::", "SGlitchlessBugReport::",

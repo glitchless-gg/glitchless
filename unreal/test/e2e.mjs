@@ -5,6 +5,7 @@
 //
 //   node unreal/test/e2e.mjs              build, cook and package, then play
 //   node unreal/test/e2e.mjs --no-build   play the last package again
+//   node unreal/test/e2e.mjs --offscreen  render with no window (on by itself over SSH on Windows)
 //   UE_ROOT=/path/to/UE_5.8 node unreal/test/e2e.mjs
 //
 //   1. autoplay   the scripted run: events, context, hitches from game code, garbage collection and a
@@ -23,35 +24,39 @@ const PLATFORM = WINDOWS ? 'Win64' : 'Mac';
 // The staged build: on a Mac, -archive copies the .app without its content (UE 5.8), so it is run where it was staged.
 const STAGED = path.join(ROOT, 'unreal/test/GlitchlessTest/Saved/StagedBuilds');
 const build = !process.argv.includes('--no-build');
+// Over SSH a Windows game runs in session 0, which has no desktop to put a window on (D3D12 can't make its
+// swapchain there): it renders offscreen instead. --offscreen does the same anywhere.
+const offscreen = process.argv.includes('--offscreen') || (WINDOWS && !process.env.SESSIONNAME);
 const { check, finish, results } = checker();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-unreal-'));
 
 requireEngine();
 
 function executable() {
-  const candidates = WINDOWS ? [path.join(STAGED, 'Windows/GlitchlessTest.exe')] : [path.join(STAGED, 'Mac/GlitchlessTest.app/Contents/MacOS/GlitchlessTest')];
+  // On Windows the staged GlitchlessTest.exe at the top only starts this one (and keeps its stdout to itself).
+  const candidates = WINDOWS ? [path.join(STAGED, 'Windows/GlitchlessTest/Binaries/Win64/GlitchlessTest.exe'), path.join(STAGED, 'Windows/GlitchlessTest.exe')] : [path.join(STAGED, 'Mac/GlitchlessTest.app/Contents/MacOS/GlitchlessTest')];
   const found = candidates.find((p) => fs.existsSync(p));
   if (!found) throw new Error(`no packaged game in ${STAGED}`);
   return found;
 }
 
-// FPaths::ProjectSavedDir() of a packaged game. UE 5.8 signs Mac builds with App Sandbox, so theirs is in the
-// app's container (named for its bundle ID), and the container's tmp is the one place outside it the game may write
-// -glitchless-out.
+// FPaths::ProjectSavedDir() of a packaged game. A Windows Development build isn't "installed" (only Shipping is), so
+// its Saved folder is beside it. UE 5.8 signs Mac builds with App Sandbox, so theirs is in the app's container
+// (named for its bundle ID), and the container's tmp is the one place outside it the game may write -glitchless-out.
 function bundleId() {
   const plist = path.join(STAGED, 'Mac/GlitchlessTest.app/Contents/Info.plist');
   const r = spawnSync('plutil', ['-extract', 'CFBundleIdentifier', 'raw', plist], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : 'gg.glitchless.unrealtest';
 }
 let container = path.join(os.homedir(), 'Library/Containers/gg.glitchless.unrealtest/Data');
-let savedDir = WINDOWS ? path.join(process.env.LOCALAPPDATA || '', 'GlitchlessTest/Saved') : path.join(container, 'Library/Application Support/Epic/GlitchlessTest/Saved');
+let savedDir = WINDOWS ? path.join(STAGED, 'Windows/GlitchlessTest/Saved') : path.join(container, 'Library/Application Support/Epic/GlitchlessTest/Saved');
 let outbox = path.join(savedDir, 'Glitchless/outbox.json');
 let outDir = WINDOWS ? tmp : path.join(container, 'tmp');
 
 // The game runs while this process keeps serving the recorder, so it is spawned, not spawnSync'd.
 function launch(exe, args, timeout) {
   return new Promise((resolve) => {
-    const child = spawn(exe, ['-windowed', '-ResX=1280', '-ResY=720', '-unattended', '-nosound', '-nosplash', '-stdout', '-FullStdOutLogOutput', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(exe, ['-windowed', '-ResX=1280', '-ResY=720', ...(offscreen ? ['-RenderOffscreen'] : []), '-unattended', '-nosound', '-nosplash', '-stdout', '-FullStdOutLogOutput', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (out += d));

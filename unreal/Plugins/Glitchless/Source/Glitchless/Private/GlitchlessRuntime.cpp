@@ -52,8 +52,124 @@
 #else
 #define GLITCHLESS_SIGNALS 0
 #endif
+#if PLATFORM_WINDOWS
+#include "HAL/PlatformStackWalk.h"
+#include "Windows/WindowsHWrapper.h"
+#endif
 
 using Glitchless::FValue;
+
+#if PLATFORM_WINDOWS
+// On Windows, Unreal's crash handler runs on a thread of its own and says a crash happened (OnHandleSystemError)
+// before it has read the exception, and only an engine built from source logs the callstack after that. So the
+// exception is kept as it happens, on the thread it happens on, and read once Unreal says it was a crash. Named,
+// so the parser leaves these frames out.
+namespace GlitchlessWindows
+{
+	struct FException
+	{
+		CONTEXT Context;
+		DWORD Code = 0;
+		DWORD ThreadId = 0;
+		DWORD Params = 0;
+		ULONG_PTR Info[2] = {};
+		ULONGLONG At = 0;
+	};
+	FException Last;
+	std::atomic<int32> Writing{0};
+	PVOID Handler = nullptr;
+
+	// Errors (0xC...), and the codes Unreal raises for an assert or fatal error, a GPU crash and running out of memory.
+	bool MayBeFatal(DWORD Code)
+	{
+		return (Code & 0xF0000000u) == 0xC0000000u || Code == 0x4000 || Code == 0x8000 || Code == 0xc000;
+	}
+
+	// Every exception comes here first, whether something handles it later or not: this only keeps it.
+	LONG CALLBACK OnException(PEXCEPTION_POINTERS Info)
+	{
+		if (Info && Info->ExceptionRecord && Info->ContextRecord && MayBeFatal(Info->ExceptionRecord->ExceptionCode) && Writing.exchange(1) == 0)
+		{
+			const EXCEPTION_RECORD& R = *Info->ExceptionRecord;
+			Last.Context = *Info->ContextRecord;
+			Last.Code = R.ExceptionCode;
+			Last.Params = R.NumberParameters;
+			Last.Info[0] = R.NumberParameters > 0 ? R.ExceptionInformation[0] : 0;
+			Last.Info[1] = R.NumberParameters > 1 ? R.ExceptionInformation[1] : 0;
+			Last.ThreadId = ::GetCurrentThreadId();
+			Last.At = ::GetTickCount64();
+			Writing.store(0);
+		}
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+
+	// The exception as Unreal words it: "Unhandled Exception: EXCEPTION_ACCESS_VIOLATION writing address 0x0000000000000000".
+	std::string Describe(const FException& E)
+	{
+		char Out[160];
+		const char* Name = nullptr;
+		switch (E.Code)
+		{
+		case EXCEPTION_ACCESS_VIOLATION:
+			std::snprintf(Out, sizeof(Out), "Unhandled Exception: EXCEPTION_ACCESS_VIOLATION %s address 0x%016llx", E.Info[0] == 1 ? "writing" : E.Info[0] == 8 ? "executing" : "reading", static_cast<unsigned long long>(E.Info[1]));
+			return Out;
+		case EXCEPTION_STACK_OVERFLOW: Name = "EXCEPTION_STACK_OVERFLOW"; break;
+		case EXCEPTION_INT_DIVIDE_BY_ZERO: Name = "EXCEPTION_INT_DIVIDE_BY_ZERO"; break;
+		case EXCEPTION_ILLEGAL_INSTRUCTION: Name = "EXCEPTION_ILLEGAL_INSTRUCTION"; break;
+		case EXCEPTION_PRIV_INSTRUCTION: Name = "EXCEPTION_PRIV_INSTRUCTION"; break;
+		case EXCEPTION_IN_PAGE_ERROR: Name = "EXCEPTION_IN_PAGE_ERROR"; break;
+		case EXCEPTION_ARRAY_BOUNDS_EXCEEDED: Name = "EXCEPTION_ARRAY_BOUNDS_EXCEEDED"; break;
+		case EXCEPTION_FLT_DIVIDE_BY_ZERO: Name = "EXCEPTION_FLT_DIVIDE_BY_ZERO"; break;
+		default: break;
+		}
+		if (Name)
+		{
+			std::snprintf(Out, sizeof(Out), "Unhandled Exception: %s", Name);
+		}
+		else
+		{
+			std::snprintf(Out, sizeof(Out), "Unhandled Exception: 0x%08lx", static_cast<unsigned long>(E.Code));
+		}
+		return Out;
+	}
+
+	// Adds the kept exception to what Unreal left: the crashed thread's stack, walked
+	// from the context it crashed with (that thread waits for Unreal's handler, so its stack is still there), and,
+	// for anything but an assert (whose message is in GErrorHist already), what the exception was.
+	bool AddException(std::string& Hist, std::string& Description)
+	{
+		if (Last.At == 0 || ::GetTickCount64() - Last.At > 10000 || Writing.load() != 0)
+		{
+			return false; // none, or one too old to be this crash
+		}
+		const FException E = Last;
+		CONTEXT Context = E.Context;
+		HANDLE Thread = ::OpenThread(THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME, 0, E.ThreadId);
+		void* Wrapper = FWindowsPlatformStackWalk::MakeThreadContextWrapper(&Context, Thread);
+		const SIZE_T Size = 65536;
+		ANSICHAR* Trace = static_cast<ANSICHAR*>(FMemory::SystemMalloc(Size));
+		Trace[0] = 0;
+#if defined(_M_ARM64)
+		void* Pc = reinterpret_cast<void*>(Context.Pc);
+#else
+		void* Pc = reinterpret_cast<void*>(Context.Rip);
+#endif
+		FPlatformStackWalk::StackWalkAndDump(Trace, Size, Pc, Wrapper);
+		FWindowsPlatformStackWalk::ReleaseThreadContextWrapper(Wrapper);
+		if (Thread)
+		{
+			::CloseHandle(Thread);
+		}
+		Hist += (Hist.empty() ? "" : "\r\n\r\n") + std::string(Trace);
+		FMemory::SystemFree(Trace);
+		if (E.Code != 0x4000 && Description.empty())
+		{
+			Description = Describe(E);
+		}
+		return true;
+	}
+}
+#endif
 
 namespace
 {
@@ -253,6 +369,13 @@ FGlitchlessRuntime::~FGlitchlessRuntime()
 	FCoreDelegates::ApplicationHasEnteredForegroundDelegate.RemoveAll(this);
 	FCoreDelegates::OnEnsureFailed.Remove(EnsureHandle);
 	FCoreDelegates::OnHandleSystemError.Remove(SystemErrorHandle);
+#if PLATFORM_WINDOWS
+	if (GlitchlessWindows::Handler)
+	{
+		::RemoveVectoredExceptionHandler(GlitchlessWindows::Handler);
+		GlitchlessWindows::Handler = nullptr;
+	}
+#endif
 	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().RemoveAll(this);
 	FCoreUObjectDelegates::GetPostGarbageCollect().RemoveAll(this);
 	FCoreUObjectDelegates::PreLoadMap.RemoveAll(this);
@@ -639,7 +762,15 @@ void FGlitchlessRuntime::OnSystemError()
 	}
 	std::string Message;
 	std::string Stack;
-	Glitchless::StackParser::DescribeCrash(GlitchlessText::Utf8(GErrorHist), GlitchlessText::Utf8(GErrorExceptionDescription), Message, Stack);
+	std::string Hist = GlitchlessText::Utf8(GErrorHist);
+	std::string Description = GlitchlessText::Utf8(GErrorExceptionDescription);
+	Glitchless::StackParser::DescribeCrash(Hist, Description, Message, Stack);
+#if PLATFORM_WINDOWS
+	if (Glitchless::StackParser::Parse(Stack).empty() && GlitchlessWindows::AddException(Hist, Description))
+	{
+		Glitchless::StackParser::DescribeCrash(Hist, Description, Message, Stack);
+	}
+#endif
 	const FString Fatal = R->LogDevice->LastFatal();
 	if (Message == "Crash" && !Fatal.IsEmpty())
 	{
@@ -652,7 +783,13 @@ void FGlitchlessRuntime::OnSystemError()
 // game without CrashReportClient dies right after this without calling OnHandleSystemError.
 void FGlitchlessRuntime::OnAppError()
 {
+#if PLATFORM_WINDOWS
+	// Windows logs the line before it raises the assert, and then always calls OnHandleSystemError, which
+	// finds the assert's callstack in the exception kept from it.
+	return;
+#else
 	OnSystemError();
+#endif
 }
 
 #if GLITCHLESS_SIGNALS
@@ -681,6 +818,12 @@ namespace GlitchlessSignals
 
 void FGlitchlessRuntime::InstallSignalHandlers()
 {
+#if PLATFORM_WINDOWS
+	if (!GlitchlessWindows::Handler)
+	{
+		GlitchlessWindows::Handler = ::AddVectoredExceptionHandler(1, GlitchlessWindows::OnException);
+	}
+#endif
 #if GLITCHLESS_SIGNALS
 	for (const int Signal : GlitchlessSignals::CrashSignals)
 	{

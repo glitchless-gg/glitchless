@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"__glitchless_text",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"__glitchless_text",
+  "parent":{
+    "name":"Glitchless",
+    "path":"folders/Glitchless.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 The Glitchless authors. MIT License: see LICENSE.
 #pragma once
 
+#include <cstdio>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,6 +33,8 @@ namespace Glitchless
 		bool EndsWith(const std::string& S, const std::string& Suffix);
 		std::vector<std::string> Lines(const std::string& S);
 		void ReplaceAll(std::string& S, const std::string& From, const std::string& To);
+		/** std::fopen, or MSVC's fopen_s, where fopen warns (C4996) and Unreal's plugin builds don't silence it. */
+		std::FILE* OpenFile(const std::string& Path, const char* Mode);
 	}
 
 	/** One frame of a stack trace. */

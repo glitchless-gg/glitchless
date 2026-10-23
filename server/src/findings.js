@@ -200,7 +200,7 @@ export function findings(ctx, maps = []) {
       title: `\`${g.key}\` keeps climbing: median ${fmt(g.median_first)} → ${fmt(g.median_last)} per session`,
       summary: `In ${g.climbing} of the ${g.sessions} sessions that report it, the \`${g.key}\` gauge climbed from a median of ${fmt(g.median_first)} to ${fmt(g.median_last)} and was still at its peak when the session ended. Something is made and never removed: it holds memory now, and frame time as it grows.`,
       evidence: g,
-      suggestion: gaugeEngine === 'unreal' ? unrealGaugeLeak(g.key) : `Find where the game adds to \`${g.key}\` and check that each one goes away when it's done (an effect that finished, an object off screen, a level that ended): remove it from the scene and dispose its geometry, materials and textures, or return it to a pool.`,
+      suggestion: gaugeEngine === 'unreal' ? unrealGaugeLeak(g.key) : gaugeEngine === 'gamemaker' ? gamemakerGaugeLeak(g.key) : `Find where the game adds to \`${g.key}\` and check that each one goes away when it's done (an effect that finished, an object off screen, a level that ended): remove it from the scene and dispose its geometry, materials and textures, or return it to a pool.`,
       link: { page: 'performance', section: 'memory' },
       impact: g.climbing / totalSessions,
     });
@@ -354,7 +354,7 @@ export function findings(ctx, maps = []) {
       category: 'performance',
       title: `Slow start: p95 time-to-first-frame is ${(perf.kpis.ttff_p95 / 1000).toFixed(1)}s`,
       summary:
-        engine === 'godot' || engine === 'unity' || engine === 'unreal'
+        engine === 'godot' || engine === 'unity' || engine === 'unreal' || engine === 'gamemaker'
           ? 'Players expect to be playing within seconds of opening the game, and some give up during a long splash screen.'
           : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.',
       evidence: { ttff_p50: perf.kpis.ttff_p50, ttff_p95: perf.kpis.ttff_p95 },
@@ -404,8 +404,8 @@ function carriedGauges(ctx, level, baselineLevel) {
 }
 
 // Which SDK sent most of these sessions, so fix advice names that engine's APIs: 'godot', 'unity', 'unreal',
-// 'phaser', 'babylon', 'playcanvas', or 'web' (the browser SDK on its own or with three.js).
-const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-unreal/': 'unreal', 'glitchless-phaser/': 'phaser', ...WEB_ENGINES };
+// 'gamemaker', 'phaser', 'babylon', 'playcanvas', or 'web' (the browser SDK on its own or with three.js).
+const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-unreal/': 'unreal', 'glitchless-gamemaker/': 'gamemaker', 'glitchless-phaser/': 'phaser', ...WEB_ENGINES };
 function engineOf(sessions) {
   return engineOfSdks(sessions.map((s) => [s?.sdk || '', 1]));
 }
@@ -462,6 +462,8 @@ function errorSuggestion(engine, issue, crumbs) {
     case 'babylon':
     case 'playcanvas':
       return webEngineErrorSuggestion(engine, where, trigger);
+    case 'gamemaker':
+      return gamemakerErrorSuggestion(where, issue, trigger);
     default:
       return `${where} an unchecked lookup (e.g. a pool/array .find() returning undefined) on the code path triggered by ${trigger}. Make it fail safe and make sure game state (score, pickups) is applied before anything that can throw.`;
   }
@@ -486,6 +488,7 @@ const QUALITY_TIER_TIPS = {
   unreal: 'Add a quality tier: when gpu_tier is low (a Steam Deck is) or p95 stays above budget for 5s, lower the scalability groups (UGameUserSettings::SetOverallScalabilityLevel, or sg.ShadowQuality, sg.GlobalIlluminationQuality, sg.ReflectionQuality, sg.PostProcessQuality and sg.EffectsQuality one by one; RunHardwareBenchmark picks levels per machine), render at a lower r.ScreenPercentage and let TSR upscale, swap Lumen for cheaper lighting (r.DynamicGlobalIlluminationMethod and r.ReflectionMethod) and cut shadow cost (fewer shadow-casting lights, r.Shadow.Virtual.Enable 0 for plain shadow maps).',
   godot:'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render 3D at a lower resolution (Viewport.scaling_3d_scale around 0.7), turn off shadows, glow and SSAO in the WorldEnvironment, drop MSAA and halve particle amounts.',
   unity: 'Add a quality tier: when the device tier is low or p95 stays above budget for 5s, switch QualitySettings to a lower level, render at a lower scale (renderScale on the URP asset, or ScalableBufferManager), turn off shadows and post-processing, and halve particle counts.',
+  gamemaker: 'Add a quality tier: when p95 stays above budget for 5s (or on a low-tier GPU), turn off what costs most per frame: shaders and full-screen surface effects, particle density (part_type and part_emitter amounts), and the size of the application surface (surface_resize(application_surface, ...) with display_set_gui_size for the GUI), and turn on texture group prefetching so pages are not swapped in during play.',
   phaser: 'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render at a lower resolution (a smaller game size with Scale.FIT, and resolution 1), drop preFX/postFX filters and lights, and halve particle emitter quantities.',
   web: 'Add a quality tier: cap devicePixelRatio at 1.5, disable shadows/post-processing and halve particle counts when gpu_tier is low or p95 stays above budget for 5s.',
   ...WEB_ENGINE_QUALITY_TIPS,
@@ -495,6 +498,7 @@ const SLOW_START_TIPS = {
   unreal: 'Make the startup map tiny (a menu with little in it), load the first level behind a loading screen (the MoviePlayer, or a widget while the level streams in), load what that level needs with the Asset Manager instead of hard references from the game instance, and let the bundled PSO cache precompile behind the loading screen rather than during play.',
   godot:'Keep the first scene small and load the rest in the background with ResourceLoader.load_threaded_request(), preload() only what the first screen needs, turn on the Shader Baker in the export preset (Godot 4.5+) so the first frame does not wait on shader compiles, and use VRAM-compressed textures.',
   unity: 'Keep the first scene small and load the rest with SceneManager.LoadSceneAsync() or Addressables, move heavy Awake()/Start() work behind the first frame, warm shaders behind the splash screen with a ShaderVariantCollection, and use compressed textures (ASTC on phones).',
+  gamemaker: 'Keep the first room light (a menu with little in it), prefetch only the texture groups it draws (texturegroup_load, or texture_prefetch) and load the rest behind a loading room, set heavy texture groups to load on demand (Dynamic Texture Groups) instead of at start, and move big Create-event work (building grids, reading files, json_parse of large data) out of the first frame.',
   phaser: 'Have the Preloader load only what the menu and first level need and load later levels in their own scenes, pack images into texture atlases, and ship compressed audio (and compressed textures where the target supports them).',
   web: 'Lazy-load non-first-level assets, compress textures (KTX2/Basis) and meshes (Draco/Meshopt), and warm shaders with renderer.compileAsync before the first frame.',
   ...WEB_ENGINE_SLOW_START_TIPS,
@@ -631,8 +635,63 @@ function unrealPerfSuggestion(corr, preceding, causes, level) {
   return tips.join(' ');
 }
 
+// GameMaker hitch causes (SPEC §5d), from what the long frame measured: a texture page fetched on first draw, a
+// room change, a collection, a burst of new instances, or the Step or Draw events taking the frame.
+const GAMEMAKER_CAUSE_TIPS = {
+  texture_upload:
+    'Some hitches load a texture page the first time something on it is drawn: put what a room draws together in one texture group, prefetch it before the room starts (texturegroup_load or texture_prefetch, behind a loading room or a fade), and keep sprites drawn together on the same page so drawing them does not swap pages (the debug overlay counts texture swaps).',
+  scene_change:
+    'Some hitches come with a room change: room_goto builds the whole room in one frame (every instance\'s Create event, the layers, the tiles). Keep Create events light (no file reads, big loops or json_parse there), spread setup over the first frames, prefetch the room\'s texture groups in the room before, and cover the change with a fade or a loading room.',
+  gc: 'Some hitches are garbage collections: avoid making arrays, structs and method closures every step (build them once in Create and reuse them), don\'t rebuild strings every frame, and run collections where players don\'t see them (gc_enable(false) during a fight, then gc_collect() at a checkpoint, or gc_target_frame_time to cap the time each frame spends on it).',
+  object_spawn:
+    'Some hitches create many instances in one step: pool them (deactivate and reuse instead of instance_create_layer / instance_destroy for every bullet or spark), and draw effects with a particle system (part_system_create, part_particles_create) instead of an instance each.',
+  script:
+    'Some hitches are long Step frames: look for with() loops over every instance, collision checks against everything (use collision_* functions on the nearest few, or a spatial grid), ds_list and array sorts each step, and pathfinding run for every instance at once (spread it over frames). Build with YYC for code that is still slow.',
+  render:
+    'Some hitches are long Draw frames: cut texture swaps and vertex batches (sprites on the same texture page, fewer draw_set_colour/shader/blend changes between draws), draw static scenery with tile layers or a vertex buffer instead of an instance each, and reuse surfaces instead of creating them each frame.',
+  frozen:
+    'Some frames froze for over 0.7s: something blocked the game for that long (a big file read, json_parse of large data, a room with thousands of instances, a long loop); move it to a loading room or split it over frames (a time source works well for that).',
+};
+
+function gamemakerPerfSuggestion(corr, preceding, causes, level) {
+  const tips = [];
+  const gauge = corr[0]?.key;
+  const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;
+  if (gauge) tips.push(`Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'} and drives \`${gauge}\`. If it creates instances per effect, pool and reuse them instead of instance_create_layer and instance_destroy each time, or draw the effect with a particle system.`);
+  else if (trigger) tips.push(`Find the code that runs on \`${trigger}\`.`);
+  if (gauge === 'instances') tips.push('`instances` counts every instance: when it climbs, instances are made faster than they are destroyed (or are persistent and follow the player from room to room), and every Step and Draw event costs more.');
+  if (gauge === 'surfaces') tips.push('`surfaces` counts surfaces in memory: create a surface once, check surface_exists() before drawing to it (they can be lost), and surface_free() it when done; a surface_create() in a Step or Draw event leaks one every frame.');
+  const top = Object.entries(causes).filter(([c]) => GAMEMAKER_CAUSE_TIPS[c]).sort((a, b) => GENERIC_CAUSES.includes(a[0]) - GENERIC_CAUSES.includes(b[0]) || b[1] - a[1]).slice(0, 3);
+  for (const [c] of top) tips.push(GAMEMAKER_CAUSE_TIPS[c]);
+  if (!tips.length) tips.push(`Profile ${level.key} with GameMaker's profiler (run in Debug mode, the Profile tab) and the debug overlay (show_debug_overlay(true)): it shows Step and Draw time, texture swaps and vertex batches.`);
+  return tips.join(' ');
+}
+
+// A climbing gauge in a GameMaker game. The SDK sends the instance count and the runner's surface, DS and buffer
+// counts as gauges; GameMaker frees none of the latter by itself.
+function gamemakerGaugeLeak(key) {
+  if (key === 'instances') return 'Instances pile up: something creates them and never destroys them, or makes them persistent so they follow the player into every room. instance_destroy() each one when it is done (an effect that finished, a bullet off screen), keep persistent for the few controllers that need it, and pool what is made per shot or spark. instance_number(obj) per object in the debug overlay shows which object keeps growing.';
+  if (key === 'surfaces') return 'Surfaces pile up: something calls surface_create() and never surface_free(). Create each surface once (in Create, or the first time it is needed, after checking surface_exists()), reuse it every frame, and free it in the Clean Up event of the instance that owns it.';
+  if (key === 'ds_maps' || key === 'ds_lists' || key === 'ds_grids') return `\`${key}\` pile up: GameMaker never frees DS structures by itself, so each ds_*_create() needs a ds_*_destroy() (in the Clean Up event of the instance that owns it). Structs and arrays are freed by the garbage collector, so they are the safer choice for new code.`;
+  if (key === 'buffers') return 'Buffers pile up: each buffer_create() or buffer_load() needs a buffer_delete() when its data has been used (after an HTTP reply, a file save or a network packet).';
+  return `Find where the game adds to \`${key}\` and check that each one goes away when it's done (an effect that finished, an instance off screen, a room that ended): instance_destroy() instances or return them to a pool, and free surfaces, DS structures and buffers by hand.`;
+}
+
+// GameMaker's error kinds (SPEC §5d): a crash (an unhandled exception stops the game; sent on the next launch) or
+// an error the game caught and reported (glitchless_error, kind manual).
+function gamemakerErrorSuggestion(where, issue, trigger) {
+  const m = issue.message || '';
+  let cause = `a variable read before it was set, an instance or a struct field that isn't there, or an array index out of range on the path triggered by ${trigger}`;
+  if (/unable to find (any )?instance/i.test(m)) cause = `an object read (obj.var or a with()) when it has no instances left, often one destroyed earlier, on the path triggered by ${trigger}: check instance_exists() first, or keep the instance's id and test that`;
+  else if (/not set before reading/i.test(m)) cause = `a variable read before anything set it, on the path triggered by ${trigger}: set every instance variable in Create (or check variable_instance_exists()), and read optional struct fields with struct[$ "name"], which gives undefined instead of stopping the game`;
+  else if (/index|out of range|bounds/i.test(m)) cause = `an array or DS index past the end, on the path triggered by ${trigger}: check array_length() (or ds_list_size()) first`;
+  if (issue.kind === 'crash') return `${where} ${cause}. An unhandled exception stops a GameMaker game, so make that path fail safe (or wrap risky code in try/catch and report it with glitchless_error), and apply game state (score, pickups) before anything that can fail.`;
+  return `${where} ${cause}. The game caught this one and carried on; fix the cause so the fallback isn't needed.`;
+}
+
 function perfSuggestion(corr, preceding, causes, level, engine) {
   if (engine === 'godot') return godotPerfSuggestion(corr, preceding, causes, level);
+  if (engine === 'gamemaker') return gamemakerPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'phaser') return phaserPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'unity') return unityPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'unreal') return unrealPerfSuggestion(corr, preceding, causes, level);

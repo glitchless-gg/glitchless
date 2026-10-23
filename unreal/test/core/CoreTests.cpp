@@ -1144,6 +1144,23 @@ TEST(CrashesAreDescribedFromWhatUnrealLeft)
 	StackParser::DescribeCrash("", "", Message, Stack);
 	EXPECT_EQ(Message, "Crash");
 	EXPECT(Stack.empty());
+	// Windows, after the plugin walked the exception it kept: an access violation...
+	StackParser::DescribeCrash("0x00007ff6c1b01234 GlitchlessTest.exe!UGlitchlessTestScript::Step() [C:\\work\\Game\\Source\\GlitchlessTestScript.cpp:176]\r\n"
+		"0x00007ff6c1b05678 GlitchlessTest.exe!FTSTicker::Tick() []\r\n",
+		"Unhandled Exception: EXCEPTION_ACCESS_VIOLATION writing address 0x0000000000000000", Message, Stack);
+	EXPECT_EQ(Message, "Unhandled Exception: EXCEPTION_ACCESS_VIOLATION writing address 0x0000000000000000");
+	const std::vector<FStackFrame> Av = StackParser::Parse(Stack);
+	EXPECT_EQ(Av.at(StackParser::TopIndex(Av)).Fn, "UGlitchlessTestScript::Step");
+	EXPECT_EQ(Av.at(StackParser::TopIndex(Av)).Line, 176);
+	// ...and a fatal error, its message from GErrorHist and its callstack from RaiseException down.
+	StackParser::DescribeCrash("Fatal error: [File:C:\\work\\Game\\Source\\GlitchlessTestScript.cpp] [Line: 168] \r\nPlanted fatal error: the save file is corrupt\r\n\r\n\r\n\r\n"
+		"0x00007ff92e1a0000 KERNELBASE.dll!RaiseException() []\r\n"
+		"0x00007ff6c1b0aaaa GlitchlessTest.exe!UE::Logging::Private::BasicFatalLog() []\r\n"
+		"0x00007ff6c1b0bbbb GlitchlessTest.exe!UGlitchlessTestScript::Step() [C:\\work\\Game\\Source\\GlitchlessTestScript.cpp:168]\r\n",
+		"", Message, Stack);
+	EXPECT_EQ(Message, "Fatal error: [File:C:\\work\\Game\\Source\\GlitchlessTestScript.cpp] [Line: 168] Planted fatal error: the save file is corrupt");
+	const std::vector<FStackFrame> Fatal = StackParser::Parse(Stack);
+	EXPECT_EQ(Fatal.at(StackParser::TopIndex(Fatal)).Fn, "UGlitchlessTestScript::Step");
 }
 
 TEST(WorkAfterTheDrawCountsOnTheNextFrame)
