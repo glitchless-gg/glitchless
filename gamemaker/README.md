@@ -18,7 +18,7 @@ Anonymous mode, the default, sends nothing that can be tied to a person. [PRIVAC
 
 ## Install
 
-1. Get the local package, `Glitchless-0.1.0.yymps`: from a release, or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
+1. Get the local package, `Glitchless-0.1.0.yymps`: from the [0.1.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.1.0), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
 2. In GameMaker: **Tools → Import Local Package**, pick the file, **Add All**, **Import**. It adds a *Glitchless* folder with eight scripts and two objects, `obj_glitchless` and `obj_glitchless_tail`. Don't place the objects in a room: `glitchless_init` makes them.
 3. Call `glitchless_init` once, as early as you can: the first room's creation code, or the Create event of your first object.
 4. For a sandboxed macOS build (the Mac App Store): **Game Options → macOS → Allow outgoing network connections**.
