@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, QueryValue, TimeSeries, BarList, Sparkline, CodeBlock, Empty } from '../components.jsx';
-import { fmtNum, fmtPct, colorFor } from '../format.js';
+import { fmtNum, fmtPct, fmtSum, colorFor } from '../format.js';
+import { CsvButton, eventsCsv, panelCsv } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
 import { FunnelTable } from './Board.jsx';
 import { addToBoard } from '../dashboard.js';
@@ -49,9 +50,12 @@ export function Events({ route }) {
         title="Events"
         sub="click one for its breakdown"
         actions={
-          <label className="muted" style={{ fontSize: 12 }}>
-            <input type="checkbox" checked={sdk} onChange={(e) => setSdk(e.target.checked)} /> SDK events too
-          </label>
+          <>
+            <label className="muted" style={{ fontSize: 12 }}>
+              <input type="checkbox" checked={sdk} onChange={(e) => setSdk(e.target.checked)} /> SDK events too
+            </label>
+            {events.length > 0 && <CsvButton name="events" rows={() => eventsCsv(events)} />}
+          </>
         }
         flush
       >
@@ -100,6 +104,13 @@ export function Events({ route }) {
               <BarList rows={a.values.slice(0, 8).map((v, i) => ({ label: v.value, value: v.count, color: colorFor(v.value, i), display: `${fmtNum(v.count)} · ${fmtNum(v.sessions)} sessions` }))} />
               {a.values.length > 8 && <div className="muted">{a.values.length - 8} more values</div>}
               {a.avg != null && <div className="muted">average {fmtNum(a.avg, 1)}</div>}
+              {(picked.sums || [])
+                .filter((x) => x.attr === a.key)
+                .map((x) => (
+                  <div className="muted" key={x.currency || ''}>
+                    sum {fmtSum(x.sum, x.currency)} · {fmtNum(x.events)} events{x.currency ? ` in ${x.currency}` : ''}
+                  </div>
+                ))}
             </div>
           ))}
         </Widget>
@@ -120,6 +131,7 @@ export function Events({ route }) {
               Add to board
             </button>
           )}
+          {data.funnel && <CsvButton name="funnel" rows={() => panelCsv({ type: 'funnel', steps: data.funnel })} />}
         </form>
         {data.funnel && <div style={{ marginTop: 10 }}><FunnelTable steps={data.funnel} /></div>}
       </Widget>
@@ -136,14 +148,17 @@ function NoEvents({ onSdk }) {
           Every game counts different things: plays by mode, levels cleared, purchases, hints used. Send them with <code>track</code>, and they show up here and on the game's boards.
         </Empty>
       </div>
-      <Widget span={4} title="Three.js or Phaser">
+      <Widget span={3} title="Web games (Three.js, Phaser, Babylon.js, PlayCanvas)">
         <CodeBlock code={"glitchless.track('play', { mode: 'endless' });\nglitchless.track('buy', { step: 'done' });"} />
       </Widget>
-      <Widget span={4} title="Godot">
+      <Widget span={3} title="Godot">
         <CodeBlock code={'Glitchless.track("play", "endless")\nGlitchless.track("buy", {"step": "done"})'} />
       </Widget>
-      <Widget span={4} title="Unity">
+      <Widget span={3} title="Unity">
         <CodeBlock code={'Glitchless.Track("play", "endless");\nGlitchless.Track("buy", "done");'} />
+      </Widget>
+      <Widget span={3} title="Unreal">
+        <CodeBlock code={'FGlitchless::Track(TEXT("play"), TEXT("endless"));\n// Blueprint: Track Event (What)'} />
       </Widget>
       <div className="s12 muted" style={{ textAlign: 'center' }}>
         <button className="btn" onClick={onSdk}>

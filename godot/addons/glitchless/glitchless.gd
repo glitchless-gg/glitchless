@@ -9,6 +9,7 @@ extends Node
 ##   Glitchless.track("play", "endless")
 ##   Glitchless.death(pos.x, pos.y, "meteor")
 ##   Glitchless.set_context({"blocks": blocks.size()})
+##   Glitchless.report_bug(note)  # or bug_reports in init options: F8 opens a form
 ##
 ## Frame times are measured from the start of the game; events wait in memory
 ## until init() says where to send them. Every few seconds they go out as one
@@ -17,8 +18,9 @@ extends Node
 ##
 ## Debug builds send nothing unless the game is run with --glitchless, so a
 ## developer's phone does not skew the numbers. Anonymous mode, the default,
-## sends nothing that can be tied to a person: PRIVACY.md beside this file
-## lists every field each mode sends.
+## sends nothing that can be tied to a person; install mode adds a random
+## player ID kept on the device, so returning players can be counted (retention):
+## PRIVACY.md beside this file lists every field each mode sends.
 ##
 ## Flags (after "--" on the command line):
 ##   --glitchless                  send from a debug build too
@@ -29,12 +31,13 @@ extends Node
 ##   --glitchless-synthetic        mark the session as a bot's (--autoplay does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.1.1"
+const SDK_VERSION := "0.2.0"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
 const ErrorLogger := preload("logger.gd")
 const Device := preload("device.gd")
+const BugReport := preload("bug_report.gd")
 
 const HITCH_MS := 50.0  # one frame over 50 ms is a stutter a player sees
 const JANK_MS := 33.4  # two missed 60 Hz frames
@@ -49,10 +52,12 @@ const MAX_OUTBOX_EVENTS := 4000
 const MAX_OUTBOX_AGE_MS := 6 * 86400 * 1000  # the server files anything over 7 days old under "now"
 const SEND_DEADLINE_MS := 1500  # how long closing or going to the background may wait on the network
 const RING_SIZE := 240
+const BUG_RECENT := 20  # game events and hitches a bug report carries
+const BUG_FRAMES := 6  # frame windows a bug report carries
 const ADDON_DIR := "res://addons/glitchless/"
 const SAVE_DIR := "user://glitchless"
 const OUTBOX_PATH := "user://glitchless/outbox.json"
-const PLAYER_PATH := "user://glitchless/player_id"
+const PLAYER_PATH := "user://glitchless/player_id"  # install and full mode
 const ID_CHARS := "abcdefghijklmnopqrstuvwxyz0123456789"
 const PIPELINE_MONITORS: Array[int] = [
 	Performance.PIPELINE_COMPILATIONS_CANVAS,
@@ -65,7 +70,7 @@ const PIPELINE_MONITORS: Array[int] = [
 ## Everything init() takes in its options. PRIVACY.md says what each changes.
 const DEFAULTS := {
 	"client_token": "gl_pub_dev",
-	"privacy": "anonymous",  # or "full"
+	"privacy": "anonymous",  # "install" adds a random player ID kept on the device; "full" that, device detail and positions
 	"positions": null,  # death and movement positions; null: on in full mode only
 	"sample_rate": 1.0,
 	"flush_interval": 5.0,  # seconds between batches
@@ -78,7 +83,14 @@ const DEFAULTS := {
 	"rage_input": null,  # null: on except on phones, where fast tapping is normal play
 	"enabled": null,  # null: off in debug builds unless --glitchless
 	"debug": false,
+	# true, or {"hotkey": KEY_F8, "pause": true, "screenshot": true}: players send bug reports from a form in the game
+	"bug_reports": false,
 }
+
+## The bug report form opened or closed. The game is paused meanwhile unless
+## bug_reports has "pause": false; then pause and resume the game here.
+signal bug_report_opened
+signal bug_report_closed
 
 var session_id := ""
 var player_id := ""  ## stays empty in anonymous mode
@@ -93,6 +105,7 @@ var _service := "unknown-game"
 var _version := "0.0.0"
 var _env := "dev"
 var _intake := ""
+var _privacy := "anonymous"
 var _full := false
 var _positions := false
 var _session_type := "user"
@@ -132,6 +145,7 @@ var _early: Array[float] = []
 var _recent_median := 0.0
 var _frame_id := 0
 var _last_us := 0
+var _untimed := 0  # frames not to time (taking a bug report's screenshot)
 var _pending_long := {}
 var _throttled := false
 var _first_frame_ms := 0
@@ -146,6 +160,12 @@ var _screen: Array = []
 var _window: Array = []
 var _engine := {}
 var _scrubbers: Array = []  # [RegEx, replacement], made in _ready
+var _history: Array[Dictionary] = []  # the last game events, slimmed, for bug reports
+var _recent_hitches: Array[Dictionary] = []
+var _recent_windows: Array[Dictionary] = []  # {ts, level, fps, p95} of the last frame windows
+var _bug_opts := {}  # bug_reports from init options; empty while they're off
+var _bug_hotkey := KEY_NONE
+var _bug_form: BugReport
 
 # What the frame that just ended cost, read at the start of the next one.
 var _f_calls := 0
@@ -239,7 +259,8 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_env = env if env != "" else "prod"
 	var flag_intake := _flag_value("--glitchless-intake")
 	_intake = (flag_intake if flag_intake != "" else intake).trim_suffix("/")
-	_full = str(_opts.privacy) == "full"
+	_privacy = str(_opts.privacy) if str(_opts.privacy) in ["install", "full"] else "anonymous"
+	_full = _privacy == "full"
 	_positions = _full if _opts.positions == null else bool(_opts.positions)
 	_rage_input = not OS.has_feature("mobile") if _opts.rage_input == null else bool(_opts.rage_input)
 	_engine_gauges = bool(_opts.engine_gauges)
@@ -256,6 +277,12 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		enabled = not OS.is_debug_build() or _has_flag("--glitchless") or flag_intake != ""
 	enabled = enabled and _intake != ""
 	sampled = randf() < float(_opts.sample_rate)
+	var bug: Variant = _opts.bug_reports
+	if bug is Dictionary or (bug is bool and bug):
+		_bug_opts = {"hotkey": KEY_F8, "pause": true, "screenshot": true}
+		if bug is Dictionary:
+			_bug_opts.merge(bug, true)
+		_bug_hotkey = _keycode(_bug_opts.hotkey)
 	session_id = _new_id("s_", 16)  # held in memory only; anonymous mode never writes it down
 	# The first batch goes soon, so a session that crashes early is still seen.
 	_next_flush = Time.get_ticks_msec() + int(minf(2.0, float(_opts.flush_interval)) * 1000.0)
@@ -264,12 +291,20 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		_log("off (debug build without --glitchless, or no intake)")
 		return
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	if _full:
-		player_id = _load_player_id()
+	if _privacy != "anonymous":
+		player_id = _load_player_id()  # install and full mode share it (SPEC §4b)
 	elif FileAccess.file_exists(PLAYER_PATH):
-		DirAccess.remove_absolute(PLAYER_PATH)  # left by a full-mode build: anonymous mode keeps no ID
+		DirAccess.remove_absolute(PLAYER_PATH)  # left by an install- or full-mode build: anonymous mode keeps no ID
 	_load_outbox()
-	_log("on: %s %s %s -> %s (%s, %s)" % [_service, _version, _env, _intake, _opts.privacy, _session_type])
+	_log("on: %s %s %s -> %s (%s, %s)" % [_service, _version, _env, _intake, _privacy, _session_type])
+
+
+## Forgets the player ID kept on the device (install and full mode), for a
+## game's "reset my ID" setting. This session keeps sending the ID it started
+## with; the next launch makes a new one, so nothing joins the two.
+func reset_install_id() -> void:
+	if FileAccess.file_exists(PLAYER_PATH):
+		DirAccess.remove_absolute(PLAYER_PATH)
 
 
 func level_start(level_id: Variant) -> void:
@@ -353,6 +388,26 @@ func error(message: String, attrs: Dictionary = {}) -> void:
 	_report_error({"kind": "manual", "function": "", "file": "", "line": 0, "code": message, "rationale": "", "type": -1, "frames": frames, "attrs": attrs})
 
 
+## A player's bug report from the game's own UI: what they typed, a screenshot
+## of the game (false sends none, an Image sends that one), where they are and
+## what just happened. Sent on its own straight away, from every session:
+##   var result := await Glitchless.report_bug(note)
+## result.sent is true once the server has it; otherwise result.reason is
+## "offline" (nothing is sent from this build) or "error" (it goes with a later batch).
+func report_bug(note: String = "", screenshot: Variant = true) -> Dictionary:
+	return await _send_report(_bug_snapshot(screenshot), note)
+
+
+## Opens the bug report form, for a game's own "Report a bug" button. Works
+## whether or not bug_reports is on (that adds the hotkey).
+func open_bug_report() -> void:
+	_bug_report_form().open()
+
+
+func is_bug_report_open() -> bool:
+	return _bug_form != null and _bug_form.is_open
+
+
 ## Frame stats over the next `seconds`, the same numbers as the browser SDK's
 ## glitchless_measure tool: `var stats := await Glitchless.measure(5.0)`.
 func measure(seconds: float = 5.0) -> Dictionary:
@@ -406,8 +461,9 @@ func _process(_delta: float) -> void:
 	_head_us = now
 	_frame_id += 1
 	_read_last_frame()
-	if _last_us > 0:
+	if _last_us > 0 and _untimed == 0:
 		_frame((now - _last_us) / 1000.0)
+	_untimed = maxi(0, _untimed - 1)
 	_last_us = now
 	for entry in _logger.take():
 		_report_error(entry)
@@ -653,12 +709,18 @@ func _close_window(fresh: bool = true) -> void:
 			"window": _window,
 			"ctx": w.ctx,
 		})
+		_recent_windows.append({"ts": w.started_at, "level": level, "fps": snappedf(n / secs, 0.1), "p95": _round(s.quantile(0.95), 0.01)})
+		if _recent_windows.size() > 12:
+			_recent_windows.pop_front()
 	if not _pos_buffer.is_empty():
 		_queue_event({"type": "pos", "ts": _pos_buffer[0][0], "level": level, "pts": _pos_buffer})
 		_pos_buffer = []
 	_pending_hitches.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.duration_ms > b.duration_ms)
 	for h in _pending_hitches.slice(0, MAX_HITCH_EVENTS_PER_WINDOW):
 		_queue_event(h)
+		_recent_hitches.append(_slim(h))
+	if _recent_hitches.size() > BUG_RECENT:
+		_recent_hitches = _recent_hitches.slice(_recent_hitches.size() - BUG_RECENT)
 	_pending_hitches.clear()
 
 
@@ -946,6 +1008,7 @@ func _new_session() -> void:
 	_started_at = _now()
 	_session_start_sent = false
 	_recent.clear()
+	_history.clear()
 	_error_counts.clear()
 
 
@@ -963,6 +1026,10 @@ func _shutdown(reason: String) -> void:
 
 func _input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
+		return
+	if _bug_hotkey != KEY_NONE and event is InputEventKey and ((event as InputEventKey).physical_keycode == _bug_hotkey or (event as InputEventKey).keycode == _bug_hotkey):
+		_bug_report_form().toggle()
+		get_viewport().set_input_as_handled()
 		return
 	var code := ""
 	if event is InputEventKey:
@@ -997,6 +1064,10 @@ func _push(e: Dictionary) -> void:
 	if not e.has("level"):
 		e.level = level
 	_queue_event(e)
+	if e.type != "session_end":
+		_history.append(_slim(e))
+		if _history.size() > BUG_RECENT:
+			_history.pop_front()
 
 
 func _queue_event(e: Dictionary) -> void:
@@ -1033,10 +1104,122 @@ func _session_start_event() -> Dictionary:
 		"ts": _started_at,
 		"level": null,
 		"session_type": _session_type,
+		"privacy": _privacy,
 		"device": Device.info(_full),
 		"page": null,
 		"nav_ms": null,
 	}
+
+
+# ───────────────────────────── bug reports ─────────────────────────────
+
+func _bug_report_form() -> BugReport:
+	if _bug_form == null:
+		_bug_form = BugReport.new(self, _bug_opts)
+		add_child(_bug_form)
+	return _bug_form
+
+
+# What the player is looking at and doing right now (SPEC §2 bug_report). The
+# screenshot is the last frame drawn: true captures it, an Image is used as
+# it is, false leaves it out. `image` is the picture for the form's preview.
+func _bug_snapshot(screenshot: Variant) -> Dictionary:
+	var image: Image = null
+	if screenshot is Image:
+		image = screenshot
+	elif screenshot is bool and screenshot and DisplayServer.get_name() != "headless":
+		var tex := get_tree().root.get_texture()
+		image = tex.get_image() if tex else null
+	# Reading the picture back stalls this frame, and the form's first frame
+	# draws it: that isn't the game stuttering, so neither is timed.
+	_untimed = 2
+	var snap := {"ts": _now(), "level": level, "image": image, "screenshot": BugReport.fit_screenshot(image)}
+	if _positions and _position != null:
+		snap.position = [snappedf(_position[0], 0.01), snappedf(_position[1], 0.01), snappedf(_position[2], 0.01)]
+	# The last game events and hitches, oldest first.
+	var recent: Array[Dictionary] = _history.duplicate()
+	var hitches: Array[Dictionary] = _recent_hitches.duplicate()
+	for h in _pending_hitches:
+		hitches.append(_slim(h))
+	for h in hitches:
+		if snap.ts - int(h.ts) < 60000:
+			recent.append(h)
+	recent.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.ts < b.ts)
+	snap.recent = recent.slice(maxi(0, recent.size() - BUG_RECENT))
+	# Frame rate and p95 of the last windows, and of the one still open.
+	var frames := _recent_windows.duplicate()
+	if _win.frames > 0:
+		var secs := maxf((Time.get_ticks_msec() - _win.started_ms) / 1000.0, 0.001)
+		frames.append({"ts": _win.started_at, "level": level, "fps": snappedf(_win.frames / secs, 0.1), "p95": _round(_win.sketch.quantile(0.95), 0.01)})
+	snap.frames = frames.slice(maxi(0, frames.size() - BUG_FRAMES))
+	return snap
+
+
+# Sends one report on a request of its own. It waits in the outbox meanwhile,
+# so if the send fails, or the game closes first, it goes with a later batch.
+func _send_report(snap: Dictionary, note: String) -> Dictionary:
+	var e := {"type": "bug_report", "ts": snap.ts, "level": snap.level, "note": note.substr(0, BugReport.MAX_NOTE)}
+	if snap.screenshot != "":
+		e.screenshot = snap.screenshot
+	if snap.has("position"):
+		e.x = snap.position[0]
+		e.y = snap.position[1]
+		e.z = snap.position[2]
+	e.recent = snap.recent
+	e.frames = snap.frames
+	e.device = Device.info(_full)
+	_remember("bug_report")
+	if not _inited or not enabled:
+		return {"sent": false, "reason": "offline"}
+	flush()  # the session's own events first, so the report's session is there when someone opens it
+	var b := _batch([e])
+	b.direct = true
+	_outbox.append(b)
+	_save_outbox()
+	var http := HTTPRequest.new()
+	http.timeout = 20.0
+	add_child(http)
+	var code := 0
+	if http.request(_intake_url(), ["Content-Type: application/json"], HTTPClient.METHOD_POST, _body(b)) == OK:
+		var r: Array = await http.request_completed
+		code = r[1] if r[0] == HTTPRequest.RESULT_SUCCESS else 0
+	http.queue_free()
+	b.erase("direct")
+	var sent := code >= 200 and code < 300
+	if sent or (code >= 400 and code < 500 and code != 408 and code != 429):  # a rejected report would only be rejected again
+		var i := _outbox_index(b.id)
+		if i >= 0:
+			_outbox.remove_at(i)
+		_save_outbox()
+	if sent:
+		stats.sent += 1
+		return {"sent": true}
+	stats.failed += 1
+	_log("bug report not sent (HTTP %d): it goes with the next batch" % code)
+	return {"sent": false, "reason": "error"}
+
+
+# A game event as a bug report lists it: when, what, and the few fields that say what happened.
+static func _slim(e: Dictionary) -> Dictionary:
+	var out := {"ts": e.ts, "type": e.type, "level": e.get("level")}
+	for k: String in ["name", "cause", "kind", "reason", "duration_s", "score", "duration_ms", "causes", "x", "y", "z"]:
+		if e.get(k) != null:
+			out[k] = e[k]
+	if e.get("message") != null:
+		out.message = str(e.message).substr(0, 200)
+	var attrs: Variant = e.get("attrs")
+	if attrs is Dictionary and not attrs.is_empty() and JSON.stringify(attrs).length() <= 300:
+		out.attrs = attrs
+	return out
+
+
+# A hotkey from options: a Key (KEY_F8), its name ("F8"), or null for none.
+static func _keycode(v: Variant) -> Key:
+	if v is int:
+		return v as Key
+	if v is String and v != "":
+		return OS.find_keycode_from_string(v)
+	return KEY_NONE
 
 
 # ───────────────────────────── sending ─────────────────────────────
@@ -1090,7 +1273,13 @@ func _intake_url() -> String:
 func _send_next() -> void:
 	if _in_flight >= 0 or _outbox.is_empty() or Time.get_ticks_msec() < _retry_at:
 		return
-	var b: Dictionary = _outbox[0]
+	var b: Dictionary = {}
+	for x: Dictionary in _outbox:
+		if not x.get("direct", false):  # a bug report on its own request
+			b = x
+			break
+	if b.is_empty():
+		return
 	var body := _body(b)
 	if _debug:
 		print("[glitchless] sending %d events (%d bytes)" % [b.events.size(), body.length()])
@@ -1209,13 +1398,14 @@ static func _parse_url(url: String) -> Dictionary:
 # when the network is back. In anonymous mode they are saved without the
 # session ID; on the next launch each earlier session's batches go under a new
 # random ID, so nothing written to the device ties two sessions together.
+# Install and full mode keep a stored ID anyway, so they save both IDs.
 func _save_outbox() -> void:
 	if not enabled:
 		return
 	var out: Array[Dictionary] = []
 	for b in _outbox:
 		var saved := {"service": b.service, "env": b.env, "version": b.version, "group": b.group, "events": b.events}
-		if _full:
+		if _privacy != "anonymous":
 			saved.sid = b.sid
 			saved.pid = b.pid
 		out.append(saved)
@@ -1258,7 +1448,7 @@ func _load_outbox() -> void:
 			sid = fresh_ids[group]
 		var b := {
 			"id": _next_batch_id, "service": str(saved.get("service", _service)), "env": str(saved.get("env", _env)),
-			"version": str(saved.get("version", _version)), "sid": sid, "pid": str(saved.get("pid", "")) if _full else "",
+			"version": str(saved.get("version", _version)), "sid": sid, "pid": str(saved.get("pid", "")) if _privacy != "anonymous" else "",
 			"group": group, "events": events,
 		}
 		_next_batch_id += 1

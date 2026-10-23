@@ -23,6 +23,8 @@ export function gameSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
     push({ type: 'session_start', session_type: pick(['user', 'user', 'synthetic']), device: { gpu_tier: pick(['high', 'mid', 'low']), browser: pick(['Chrome', 'Safari']), gpu: pick(['M3', 'RTX 4070', 'UHD 620']) } });
     push({ type: 'load', ttff_ms: 400 + Math.floor(rnd() * 900) });
     let geometries = 40 + Math.floor(rnd() * 20);
+    // Textures and a gauge that only climbs (decals never cleaned up) follow the windows, not rnd().
+    let decals = 0;
     for (const level of ['level-1', 'level-2', 'level-3'].slice(0, 1 + Math.floor(rnd() * 3))) {
       push({ type: 'level_start', level });
       const windows = 3 + Math.floor(rnd() * 30);
@@ -36,6 +38,7 @@ export function gameSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
           sk.add(v);
         }
         geometries += Math.floor(rnd() * 6);
+        decals += 7;
         push({
           type: 'frame_window',
           level,
@@ -50,8 +53,9 @@ export function gameSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
           draw_calls_max: 400 + Math.floor(rnd() * 300),
           triangles: 10_000 + Math.floor(rnd() * 90_000),
           geometries,
+          textures: Math.floor(geometries / 4),
           heap_mb: rnd() < 0.2 ? null : Math.round((40 + rnd() * 200) * 10) / 10,
-          ctx: { particles: Math.floor(rnd() * 500), entities: Math.floor(rnd() * 40) },
+          ctx: { particles: Math.floor(rnd() * 500), entities: Math.floor(rnd() * 40), decals },
         });
         if (hitches) push({ type: 'hitch', level, duration_ms: 60 + Math.floor(rnd() * 300), causes: [pick(['script', 'gc', 'shader_compile'])], ctx: { particles: Math.floor(rnd() * 900) }, recent: [pick(['bone_collected', 'enemy_spawn'])] });
         if (rnd() < 0.3) push({ type: 'pos', level, pts: [[ts, rnd() * 50, 0, rnd() * 50]] });
@@ -64,6 +68,39 @@ export function gameSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
         if (rnd() < 0.06) push({ type: 'death', level, x: rnd() * 50, y: 0, z: rnd() * 50, cause: pick(['fell', 'squirrel']) });
       }
       push({ type: rnd() < 0.7 ? 'level_complete' : 'level_fail', level });
+    }
+    if (rnd() < 0.8) push({ type: 'session_end', reason: 'pagehide' });
+    out.push(events);
+  }
+  return out;
+}
+
+// Sessions of a game with a shop: the paywall, purchases by the convention track('purchase', { amount,
+// currency, item }) with a few in another currency (and some in lower case), and coins per level, a sum that
+// isn't money. Two versions, players that come back.
+export function shopSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_000, sessions = 30, seed = 31, prefix = 'b' }) {
+  const rnd = mulberry32(seed);
+  const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+  const items = [
+    ['gems_500', 4.99],
+    ['gems_1200', 9.99],
+    ['starter_pack', 2.49],
+    ['no_ads', 3.33],
+  ];
+  const out = [];
+  for (let n = 0; n < sessions; n++) {
+    const base = { service, env: pick(['prod', 'prod', 'dev']), version: pick(['1.0.1', '1.1.0']), session_id: `${prefix}_${n}`, player_id: `bp_${Math.floor(rnd() * 24)}`, sdk: 'glitchless-godot/0.2.0', level: null };
+    let ts = start + Math.floor(rnd() * spanMs);
+    const events = [];
+    const push = (e) => events.push({ ...base, ...e, ts: (ts += Math.floor(rnd() * 20_000) + 1) });
+    push({ type: 'session_start', session_type: 'user', device: { gpu_tier: 'mid', browser: 'Godot', gpu: 'Apple A17' } });
+    // Coins carry the level they were won on (as the SDKs send it), without level events of their own.
+    for (const level of ['halcyon', 'glint'].slice(0, 1 + Math.floor(rnd() * 2))) push({ type: 'custom', level, name: 'coins', attrs: { amount: Math.round(rnd() * 4000) / 100, source: pick(['run', 'chest']) } });
+    if (rnd() < 0.6) push({ type: 'custom', name: 'paywall', attrs: { where: pick(['shop', 'settings']) } });
+    for (let k = rnd() < 0.45 ? 1 + Math.floor(rnd() * 2) : 0; k > 0; k--) {
+      const [item, amount] = pick(items);
+      const currency = rnd() < 0.15 ? 'EUR' : rnd() < 0.15 ? 'usd' : 'USD';
+      push({ type: 'custom', name: 'purchase', attrs: { amount, currency, item, store: pick(['ios', 'android']) } });
     }
     if (rnd() < 0.8) push({ type: 'session_end', reason: 'pagehide' });
     out.push(events);

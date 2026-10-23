@@ -9,6 +9,9 @@
 //                     merge the summaries of the range (lake/summaries.js), exactly what the raw events
 //                     would give (server/test/lake.test.js compares the two)
 //   session, playtest read the session files
+//   reports           bug reports never go through Firehose: their records are in DynamoDB and their
+//                     screenshots in S3 (reports/), written at intake and read straight away
+//   source maps       uploaded straight to S3 (sourcemaps/), listed by an item each in DynamoDB
 //   drill-downs       recent hitches, error breadcrumbs and heatmap positions read one project's Parquet
 //                     and not yet compacted gzip files with DuckDB (lake/duck.js)
 //   type=user|…       session-type filters read the raw events of the range with DuckDB
@@ -29,11 +32,13 @@ import { addCell, cellList, MINUTE } from '../rollups.js';
 import { addFactsCell } from '../facts.js';
 import { finalizeSession } from '../session-state.js';
 import { buildContext, sessionContext, wantedCell, errorList, crumbsOf, crumbKey, heatmapLevel } from '../analytics.js';
-import { foldDay, dayFromParts, recentFromParts, mergeDays, sessionDay, UNCAPPED } from '../daily.js';
+import { foldDay, dayFromParts, recentFromParts, mergeDays, sessionDay, withoutRageQuits, noWinRows, UNCAPPED } from '../daily.js';
 import { toRecords } from '../lake/record.js';
 import { decode, expandItems, readSummaries } from '../lake/summaries.js';
 import { LakeTable, currentItems } from '../lake/table.js';
-import { HOUR, DAY, META_PK, hourOf, planOf, retentionDays, PLAN_RETENTION_DAYS, indexPk, servicesPk, mapsPk, dashboardPk, clearPk, summaryPk, dailyPk, seg } from '../lake/layout.js';
+import { HOUR, DAY, META_PK, hourOf, planOf, retentionDays, PLAN_RETENTION_DAYS, indexPk, playersPk, servicesPk, mapsPk, reportsPk, reportKey, dashboardPk, clearPk, summaryPk, dailyPk, seg, sourcemapsPk, sourcemapKey, SOURCEMAP_RETENTION_DAYS } from '../lake/layout.js';
+import { splitReport, decodeScreenshot, encodeScreenshot, MAX_REPORTS } from '../reports.js';
+import { keySeg } from '../sourcemaps.js';
 
 const MAX_RANGE_DAYS = 31;
 // Queries that list the latest sessions: over long ranges they read the days' R items, newest first.
@@ -68,9 +73,11 @@ export class LakeStore {
     checkProject(projectId);
     const plan = planOf(identity.plan);
     const maps = events.filter((e) => e.type === 'map');
-    const rest = events.filter((e) => e.type !== 'map');
+    const reports = events.filter((e) => e.type === 'bug_report');
+    const rest = events.filter((e) => e.type !== 'map' && e.type !== 'bug_report');
     const ttl = Math.floor((this.now() + retentionDays(plan) * DAY) / 1000);
     for (const e of maps) await this.table.put({ pk: mapsPk(projectId, e.service), sk: `${e.level}#${e.version}`, e: JSON.stringify({ ...e, project_id: projectId }), ttl });
+    for (const e of reports) await this.putReport(projectId, plan, e, ttl);
     if (rest.length) await this.firehose.send(toRecords(projectId, plan, rest, this.now()));
     await this.register(projectId, events);
     if (this.compact) {
@@ -109,6 +116,61 @@ export class LakeStore {
     return (await this.table.query(mapsPk(projectId, service))).map((i) => JSON.parse(i.e));
   }
 
+  // The screenshot first, so a listed report always has it: then the record by id, then by time. A screenshot S3
+  // refuses (a bucket policy without reports/) costs the picture, never the player's note.
+  async putReport(projectId, plan, e, ttl) {
+    const { record, screenshot } = splitReport(projectId, e);
+    const shot = decodeScreenshot(screenshot);
+    record.has_screenshot = false;
+    if (shot) {
+      const key = reportKey({ plan, project: projectId, service: e.service, id: record.id, ext: shot.ext });
+      try {
+        await this.bucket.put(key, shot.bytes, { contentType: shot.type });
+        Object.assign(record, { screenshot_key: key, screenshot_type: shot.type, has_screenshot: true });
+      } catch (err) {
+        console.warn('[lake] bug report screenshot not stored:', err.message);
+      }
+    }
+    const r = JSON.stringify(record);
+    const pk = reportsPk(projectId, e.service);
+    await this.table.putAll([
+      { pk, sk: `I#${record.id}`, r, ttl },
+      { pk, sk: `T#${String(record.ts).padStart(13, '0')}#${record.id}`, r, ttl },
+    ]);
+  }
+
+  async reports(projectId, service, { from, to }) {
+    checkProject(projectId);
+    const items = await this.table.query(reportsPk(projectId, service), [`T#${String(Math.max(0, from)).padStart(13, '0')}`, `T#${String(to).padStart(13, '0')}#~`]);
+    return items
+      .map((i) => JSON.parse(i.r))
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, MAX_REPORTS);
+  }
+
+  async getReport(projectId, service, id) {
+    checkProject(projectId);
+    const item = await this.table.get(reportsPk(projectId, service), `I#${id}`);
+    if (!item) return null;
+    const r = JSON.parse(item.r);
+    const bytes = r.screenshot_key ? await this.bucket.get(r.screenshot_key) : null;
+    return { ...r, screenshot: bytes ? encodeScreenshot(r.screenshot_type, bytes) : null };
+  }
+
+  async deleteReport(projectId, service, id) {
+    checkProject(projectId);
+    const pk = reportsPk(projectId, service);
+    const item = await this.table.get(pk, `I#${id}`);
+    if (!item) return false;
+    const r = JSON.parse(item.r);
+    if (r.screenshot_key) await this.bucket.delete([r.screenshot_key]);
+    await this.table.deleteAll([
+      { pk, sk: `T#${String(r.ts).padStart(13, '0')}#${id}` },
+      { pk, sk: `I#${id}` },
+    ]);
+    return true;
+  }
+
   // The game's saved dashboard (board.js): one item per service.
   async getDashboard(projectId, service) {
     checkProject(projectId);
@@ -120,6 +182,41 @@ export class LakeStore {
     checkProject(projectId);
     if (dashboard) await this.table.put({ pk: dashboardPk(projectId), sk: service, b: JSON.stringify(dashboard) });
     else await this.table.delete(dashboardPk(projectId), service);
+  }
+
+  // A web build's source map: its gzip in S3, then the item that lists it (sourcemaps.js).
+  async putSourcemap(projectId, service, version, file, text) {
+    checkProject(projectId);
+    const key = sourcemapKey({ project: projectId, service, version, file });
+    await this.bucket.put(key, zlib.gzipSync(text), { contentType: 'application/gzip' });
+    const at = this.now();
+    await this.table.put({ pk: sourcemapsPk(projectId, service), sk: `F#${keySeg(version)}#${keySeg(file)}`, version, file, size: text.length, at, key, ttl: Math.floor(at / 1000) + SOURCEMAP_RETENTION_DAYS * 86_400 });
+  }
+
+  async getSourcemap(projectId, service, version, file) {
+    checkProject(projectId);
+    const item = await this.table.get(sourcemapsPk(projectId, service), `F#${keySeg(version)}#${keySeg(file)}`);
+    const gz = item ? await this.bucket.get(item.key) : null;
+    return gz ? zlib.gunzipSync(gz).toString('utf8') : null;
+  }
+
+  async sourcemaps(projectId, service) {
+    checkProject(projectId);
+    return (await this.table.query(sourcemapsPk(projectId, service), ['F#', 'F#~'])).map((i) => ({ version: i.version, file: i.file, size: i.size, uploaded_at: i.at }));
+  }
+
+  async deleteSourcemaps(projectId, service, version) {
+    checkProject(projectId);
+    const items = await this.table.query(sourcemapsPk(projectId, service), [`F#${keySeg(version)}#`, `F#${keySeg(version)}#~`]);
+    if (!items.length) return;
+    await this.bucket.delete(items.map((i) => i.key));
+    await this.table.deleteAll(items.map(({ pk, sk }) => ({ pk, sk })));
+  }
+
+  // Players first seen on each UTC day starting in [from, to], from the compactor's first-seen index (FileStore says more).
+  async cohorts(projectId, service, from, to) {
+    checkProject(projectId);
+    return this.table.cohorts(projectId, service, from, to);
   }
 
   // The longest range a reader on `plan` can ask for, in days: its retention (no plan: the longest).
@@ -172,7 +269,10 @@ export class LakeStore {
   async context(projectId, q, name, params = new URLSearchParams()) {
     checkProject(projectId);
     const retention = q.plan ? retentionDays(q.plan) : null;
-    if (retention && q.from < q.to - retention * DAY) q = { ...q, from: q.to - retention * DAY };
+    // Nothing older than the plan keeps, counted from now: a range that ends in the past (a share link pinned
+    // to a jam week) doesn't read days that have aged out, or are waiting for the TTL to remove them.
+    const kept = retention ? this.now() - retention * DAY : null;
+    if (retention && q.from < kept) q = { ...q, from: Math.min(kept, q.to) };
     const long = q.to - q.from > MAX_RANGE_DAYS * DAY && name !== 'session' && !q.sessions;
     const daily = long && name !== 'heatmap' && (!q.type || q.type === 'all');
     const ctx = daily ? await this.dailyContext(projectId, q, name, params) : await this.minuteContext(projectId, q, name, params);
@@ -200,7 +300,12 @@ export class LakeStore {
       if (x < y) days.push(...(await this.hourlyDays(projectId, q.service, x, y, hi)));
     const wanted = wantedCell(q);
     const { cells, facts, daily } = mergeDays(days, (env, version) => wanted({ env, version }));
-    if (RECENT.has(name)) await this.storedRecent(projectId, q.service, a, b, (env, version) => wanted({ env, version }), daily.all.recent);
+    if (RECENT.has(name)) {
+      await this.storedRecent(projectId, q.service, a, b, (env, version) => wanted({ env, version }), daily.all.recent);
+      // A game nobody wins has no rage quits (analytics.js noWin()): decided from the days when they were
+      // read, else from the sessions the list read.
+      if (name === 'sessions' ? noWinRows(daily.all.recent) : daily.no_win) daily.all.recent = withoutRageQuits(daily.all.recent);
+    }
     const ctx = sessionContext({ ...q, from: lo, to: Math.max(lo, hi - 1) }, new Map());
     ctx.daily = daily;
     ctx.cells = cells.filter(({ c }) => wanted(c));
@@ -240,6 +345,7 @@ export class LakeStore {
   // sessions are read from dayOverlapMs before x (to tell which started earlier) to dayOverlapMs past y.
   async hourlyDays(projectId, service, x, y, hi) {
     const { cells, facts, sessions } = await this.summaries(projectId, service, x - this.dayOverlapMs, Math.min(y + this.dayOverlapMs, hi));
+    const cohorts = await this.cohorts(projectId, service, x, y - 1);
     const byDay = new Map();
     const at = (d) => byDay.get(d) || byDay.set(d, { cells: new Map(), facts: new Map(), sessions: [] }).get(d);
     for (const [m, list] of cells) if (m >= x && m < y) at(Math.floor(m / DAY) * DAY).cells.set(m, list);
@@ -249,7 +355,7 @@ export class LakeStore {
       const d = sessionDay(s);
       if (d >= x && d < y) at(d).sessions.push(s);
     }
-    return [...byDay].map(([d, parts]) => foldDay(d, parts, UNCAPPED));
+    return [...byDay].map(([d, parts]) => foldDay(d, { ...parts, newPlayers: cohorts.get(d) || new Set() }, UNCAPPED));
   }
 
   // Ranges of up to 31 days, in whole minutes.
@@ -394,7 +500,7 @@ export class LakeStore {
     return events;
   }
 
-  // Deletes a service's summaries, session files, Parquet, index, maps and registry entry, and marks it
+  // Deletes a service's summaries, session files, Parquet, index, maps, bug reports, source maps and registry entry, and marks it
   // cleared so the compactor drops raw data that arrived before now (raw files expire on their own).
   async clear(projectId, service) {
     checkProject(projectId);
@@ -409,14 +515,16 @@ export class LakeStore {
       const items = await this.table.query(dailyPk(projectId, service, Date.UTC(y, 0, 1)));
       if (items.length) await this.table.deleteAll(items.map(({ pk, sk }) => ({ pk, sk })));
     }
-    for (const pk of [indexPk(projectId, service), mapsPk(projectId, service)]) await this.table.deleteAll((await this.table.query(pk)).map(({ pk: p, sk }) => ({ pk: p, sk })));
+    for (const pk of [indexPk(projectId, service), playersPk(projectId, service), mapsPk(projectId, service), reportsPk(projectId, service), sourcemapsPk(projectId, service)]) await this.table.deleteAll((await this.table.query(pk)).map(({ pk: p, sk }) => ({ pk: p, sk })));
     await this.table.delete(servicesPk(projectId), service);
     for (const plan of Object.keys(PLAN_RETENTION_DAYS)) {
-      for (const top of ['events', 'sessions']) {
+      for (const top of ['events', 'sessions', 'reports']) {
         const keys = (await this.bucket.list(`${top}/plan=${plan}/project=${projectId}/service=${seg(service)}/`)).map((o) => o.key);
         if (keys.length) await this.bucket.delete(keys);
       }
     }
+    const maps = (await this.bucket.list(`sourcemaps/project=${projectId}/service=${seg(service)}/`)).map((o) => o.key);
+    if (maps.length) await this.bucket.delete(maps);
     this.files.clear();
   }
 }

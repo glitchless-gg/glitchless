@@ -1,26 +1,28 @@
 # What Glitchless for Godot sends
 
-This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd` and `device.gd` and checked against what reached a local server in `npm run test:godot`. Keep it in step with those files.
+This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd` and `bug_report.gd` and checked against what reached a local server in `npm run test:godot`. Keep it in step with those files.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
-## The two modes
+## The three modes
 
-`Glitchless.init(..., {"privacy": "anonymous"})` is the default. `"full"` adds the fields marked **full** below.
+`Glitchless.init(..., {"privacy": "anonymous"})` is the default. `"install"` adds a saved player ID, so the game can see how many players come back (retention). `"full"` adds that and the fields marked **full** below. The modes are the same in every Glitchless SDK (`docs/SPEC.md` §4b).
 
-| | anonymous | full |
-| --- | --- | --- |
-| Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go |
-| Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID |
-| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate | adds model, OS version, GPU name, core count, memory |
-| Positions | **not sent**: deaths go without a place, no movement samples | death places and 4 Hz position samples, in game-world units |
-| Saved on the device | unsent batches, without any ID | unsent batches with their IDs, and the player ID |
+| | anonymous | install | full |
+| --- | --- | --- | --- |
+| Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
+| Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID | the same ID as install mode |
+| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, and whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name, core count, memory |
+| Positions | **not sent**: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
+| Saved on the device | unsent batches, without any ID | unsent batches with their IDs, and the player ID | the same as install mode |
 
-`positions: true` turns positions on in anonymous mode. They are places in the game's own world, not the player's location.
+**What install mode adds to anonymous mode:** the player ID, sent in every batch as `player_id` and kept in `user://glitchless/player_id`, so the next launch sends the same ID; and, because that ID is on the device anyway, unsent batches are saved with their session and player IDs. Everything else is sent exactly as in anonymous mode. Install and full mode share the saved ID; anonymous mode deletes one another build left. `Glitchless.reset_install_id()` deletes it: the session in progress keeps sending the ID it started with, and the next launch makes a new one, which nothing links to the old one.
 
-Neither mode reads or sends:
+`positions: true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
-- a name, email, account, or anything the player types
+No mode reads or sends:
+
+- a name, email, account, or anything the player types (except a bug report's note, below)
 - the advertising ID, Apple's identifier for vendors, or Android's ID
 - contacts, location, locale, time zone, or the network address
 
@@ -28,13 +30,13 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), and `sdk` (`glitchless-godot/0.1.1`).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), and `sdk` (`glitchless-godot/0.2.0`).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user` or `synthetic`), `device` (below) | the first batch of a session |
+| `session_start` | `session_type` (`user` or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`background`, `close`, `quit`), `duration_s` | going to the background, closing, quitting |
 | `frame_window` | frame count, fps, refresh rate, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts) | every 5 s |
 | `hitch` | duration, likely causes, draw calls, primitives, timings, pipeline compiles, nodes added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
@@ -45,18 +47,20 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `custom` | `name`, `attrs`: the game's own words via `track()` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key code or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or `positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
+| `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the game's window as it was last drawn), `device` (the same fields as `session_start`, in the same mode), `recent` (the last 20 game events and hitches: when, which, and the few fields above that say what happened), `frames` (fps and p95 of the last frame windows); **full** or `positions`: `x`, `y`, `z` | the player sends one from the form, or the game calls `Glitchless.report_bug()`. Off unless the game turns it on |
 
 `device` in `session_start`:
 
 | field | example | mode |
 | --- | --- | --- |
-| `browser`, `browser_version` | `Godot`, `4.7.2`: the engine, the same for every player of a build | both |
-| `os` | `iOS` | both |
-| `mobile` | `true` | both |
-| `device_tier` | `low` / `mid` / `high`, from core count and memory | both |
-| `gpu_tier` | the same as `device_tier` on phones; on desktops, from the GPU name | both |
-| `renderer`, `driver` | `mobile`, `metal` | both |
-| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120` | both |
+| `browser`, `browser_version` | `Godot`, `4.7.2`: the engine, the same for every player of a build | all |
+| `os` | `iOS`; `SteamOS` on a Steam Deck running it (or one Steam started a Windows build on) | all |
+| `mobile` | `true` | all |
+| `device_tier` | `low` / `mid` / `high`, from core count and memory | all |
+| `gpu_tier` | the same as `device_tier` on phones; `low` on a Steam Deck; on other desktops, from the GPU name | all |
+| `renderer`, `driver` | `mobile`, `metal` | all |
+| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120` | all |
+| `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` on Linux, and through Proton's `Z:` drive on Windows; read on the device and not sent) | all |
 | `model`, `os_version` | `iPhone16,1`, `27.1` | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |
 | `cores`, `memory_gb` | `6`, `8` | **full** |
@@ -67,18 +71,30 @@ The screen size is sent so that an iPhone Duo's open and closed states can be to
 
 **Game words.** `track(event, what)`, level names, death causes and gauges are whatever the game passes. The rule from the games' `Metrics.count` carries over: the game's own words, never anything typed by or particular to the player.
 
+## Bug reports: the player's own words
+
+Bug reports are off until the game turns them on (`"bug_reports"` in the options of `Glitchless.init`, or its own button calling `Glitchless.report_bug()`). A report is the one place the SDK sends text the player typed, and Glitchless sends the note as it is: it can't tell a bug description from a name, an email address, a phone number or anything else a player chooses to write. If your game turns reports on:
+
+- say so in your game's privacy page (a paragraph is below): a report sends the player's note, a screenshot of the game and where they were;
+- don't ask players for contact details in the note. If you want to reply to them, collect that with consent in your own UI;
+- the screenshot is the game's own window, but it shows whatever the game showed: a player's name or chat on screen goes with it;
+- a report that can't be sent waits in `user://glitchless/outbox.json` until it can, like any batch;
+- a developer who opens a report sees all of it. Treat reports like support email: when a player asks, delete their report with the Delete button on it in the dashboard (or `DELETE /v1/report?service=&id=`), which removes the note and the screenshot.
+
+The form tells players what it sends ("your note, the screenshot and where you are in the game").
+
 ## Kept on the device
 
 | file | what | mode |
 | --- | --- | --- |
-| `user://glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above. In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | both |
-| `user://glitchless/player_id` | the random player ID | **full**. Anonymous mode deletes it if a full-mode build left one |
+| `user://glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above, bug reports included. In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
+| `user://glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 
-Deleting the app deletes both.
+Deleting the app deletes them all.
 
 ## Kept on the server
 
-The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item.
+The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The DynamoDB store sets a 30-day expiry on every item. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.
 
 If the server forwards to Datadog (`DD_API_KEY` set), Datadog receives the same events as logs and metrics, sent from the server, not the phone. Datadog then acts as a service provider under its own terms and keeps them for as long as the Datadog plan keeps logs.
 
@@ -96,34 +112,45 @@ A paragraph in the pages' own voice, for anonymous mode:
 > **Performance and error reports**
 > So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many blocks), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. *[If the server forwards to Datadog: We use Datadog, a monitoring service, to store and chart them on our behalf.]* They are deleted after *[30 days]*.
 
+Install mode needs one more sentence:
+
+> The game also saves a random number on your device and sends it with every report, so that we can count how many players come back. It is not linked to your name, account or any other identifier, and deleting the game deletes it.
+
 Full mode would need more than this: a random player ID saved on the device, the device model, and positions in the game world.
+
+If the game turns bug reports on, add:
+
+> **Bug reports**
+> If you send a bug report from the game, it sends what you typed, a picture of the game screen at that moment, the level you were on, what had just happened in the game and the same broad facts about the device. Please don't put personal details in it. Ask us and we will delete a report you sent.
 
 ## For the store forms
 
 **App Store Connect → App Privacy.** Apple counts data as collected when it leaves the device and is kept, anonymous or not. Glitchless's reports match these types:
 
-| Apple's type | from | anonymous mode | full mode |
-| --- | --- | --- | --- |
-| Usage Data → Product Interaction | levels, deaths, `track()` events | collected | collected |
-| Diagnostics → Performance Data | frame times, hitches, load times | collected | collected |
-| Diagnostics → Other Diagnostic Data | errors, device tier, screen, engine counts | collected | collected |
-| Diagnostics → Crash Data | Glitchless sends no crash logs, but script errors that stop a function are close; listing it is the cautious answer | optional | optional |
-| Identifiers → Device ID | the random player ID | not collected | collected |
+| Apple's type | from | anonymous mode | install mode | full mode |
+| --- | --- | --- | --- | --- |
+| Usage Data → Product Interaction | levels, deaths, `track()` events | collected | collected | collected |
+| Diagnostics → Performance Data | frame times, hitches, load times | collected | collected | collected |
+| Diagnostics → Other Diagnostic Data | errors, device tier, screen, engine counts | collected | collected | collected |
+| Diagnostics → Crash Data | Glitchless sends no crash logs, but script errors that stop a function are close; listing it is the cautious answer | optional | optional | optional |
+| Identifiers → Device ID | the random player ID | not collected | collected | collected |
+| User Content → Customer Support | bug reports: the player's note and a screenshot of the game | collected if the game turns bug reports on | the same | the same |
 
 For each type, Apple asks four things:
 
 - **Purposes:** Analytics, and App Functionality if the reports are used to fix bugs.
-- **Linked to you:** No in anonymous mode, since there is no identifier and the session number is never saved. In full mode, answer as Starlift's online player ID is answered; with a saved ID the cautious answer is Yes.
-- **Used for tracking:** No in both modes.
+- **Linked to you:** No in anonymous mode, since there is no identifier and the session number is never saved. In install and full mode, answer as Starlift's online player ID is answered; with a saved ID the cautious answer is Yes.
+- **Used for tracking:** No in every mode: the IDs are random, made by the game, and never shared with other apps or advertisers.
 - **Data Not Collected:** no longer an honest answer once Glitchless sends.
 
 **Google Play → Data safety.**
 
-| Google's type | anonymous mode | full mode |
-| --- | --- | --- |
-| App activity → App interactions | collected | collected |
-| App info and performance → Crash logs (errors), Diagnostics (frame times, device tier), Other app performance data | collected | collected |
-| Device or other IDs | not collected | collected (the random player ID) |
+| Google's type | anonymous mode | install mode | full mode |
+| --- | --- | --- | --- |
+| App activity → App interactions | collected | collected | collected |
+| App info and performance → Crash logs (errors), Diagnostics (frame times, device tier), Other app performance data | collected | collected | collected |
+| Device or other IDs | not collected | collected (the random player ID) | collected (the random player ID) |
+| App activity → Other user-generated content | collected if the game turns bug reports on (the note and screenshot) | the same | the same |
 
 - **Shared:** none. Google doesn't count passing data to a service provider like Datadog as sharing.
 - **Encrypted in transit:** Yes, when the intake URL is `https://`.
@@ -133,7 +160,7 @@ For each type, Apple asks four things:
 
 Read it again when any of these change:
 
-- the events or fields in `glitchless.gd`
+- the events or fields in `glitchless.gd`, or what the bug report form sends (`bug_report.gd`)
 - the device fields in `device.gd`
 - what the server stores (`server/src/ingest.js`, `server/src/stores/`)
 - whether the server forwards to Datadog

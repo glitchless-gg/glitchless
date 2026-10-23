@@ -1,26 +1,43 @@
 // A board: one page of a game's dashboard, panels in the game's own words (server/src/board.js). The coding
 // agent designs the dashboard over MCP (glitchless_set_dashboard); people can edit it here. A game without a
-// saved dashboard gets one made from the data it sends.
+// saved dashboard gets one made from the data it sends. With `readOnly` in the filters (a shared board) it
+// has no editor and no links into the rest of the dashboard.
 import { useState } from 'react';
 import { useFilters } from '../filters.js';
+import { useShell } from '../shell.js';
 import { useQuery } from '../api.js';
 import { saveDashboard, withPage } from '../dashboard.js';
 import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../components.jsx';
-import { fmtNum, fmtPct, fmtDuration, fmtTime, timeAgo, colorFor, causeColor } from '../format.js';
+import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor } from '../format.js';
+import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
 import { SessionsTable } from './Sessions.jsx';
-import { LiveFeed, useLiveEvents } from './Live.jsx';
+import { LiveFeed, useLiveEvents, line as liveLine } from './Live.jsx';
+import { ReportList } from './Reports.jsx';
+import { RetentionTable, RetentionOff } from './Players.jsx';
 
 const SPAN = { s: 3, m: 6, l: 12 };
 
 export function Board({ page }) {
   const f = useFilters();
-  const { data, reload } = useQuery('board', { ...f.params, page: page?.id }, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
+  const { boardActions: Extra } = useShell();
+  const { data, error, reload } = useQuery('board', { ...f.params, page: page?.id }, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
   const [editing, setEditing] = useState(false);
   if (!f.service) return <NoGame />;
-  if (!data) return <div className="loading-bar" />;
+  if (!data) return error ? <div className="empty">{error.message}</div> : <div className="loading-bar" />;
   const board = data.board;
   if (!board) return <div className="empty">{data.error}</div>;
+  if (f.readOnly)
+    return (
+      <div className="grid">
+        <div className="board-head s12">
+          <h2>{board.title}</h2>
+        </div>
+        {board.panels.map((p) => (
+          <Panel key={p.id} p={p} />
+        ))}
+      </div>
+    );
   return (
     <div className="grid">
       <div className="board-head s12">
@@ -30,6 +47,7 @@ export function Board({ page }) {
             : "Made from what this game sends. Ask your coding agent to design this game's dashboard (glitchless_set_dashboard), or change it here."}
         </span>
         <div className="board-actions">
+          {Extra && <Extra board={board} />}
           <button className="btn" onClick={() => setEditing(!editing)}>
             {editing ? 'Close editor' : 'Edit panels'}
           </button>
@@ -69,7 +87,7 @@ function BoardEditor({ board, onSaved }) {
     setBusy(false);
   };
   return (
-    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live">
+    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live, reports, retention">
       <textarea className="board-editor" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
       {error && <div className="err">{error}</div>}
       <div className="row" style={{ marginTop: 8 }}>
@@ -82,40 +100,117 @@ function BoardEditor({ board, onSaved }) {
 }
 
 function Panel({ p }) {
+  const f = useFilters();
   const span = SPAN[p.size] || 6;
-  if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? p.why : p.per ? `${fmtNum(p.count)} of ${fmtNum(p.base)}` : p.note} title={p.note} />;
-  const more = { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events' }[p.type];
+  // Every panel with something on it downloads it as CSV (csv.jsx); a live panel its feed.
+  const csv = !p.empty && p.type !== 'live' && <CsvButton name={p.title} rows={() => panelCsv(p)} />;
+  if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? p.why : statSub(p)} title={p.note} actions={csv} />;
+  if (p.type === 'live' && !p.empty) return <LivePanel p={p} span={span} />;
+  const more = { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events', reports: 'reports', retention: 'players' }[p.type];
   return (
-    <Widget span={span} title={p.title} sub={p.note} flush={['sessions', 'versions', 'live'].includes(p.type) && !p.empty} actions={more && <a href={`#/${more}`}>More →</a>}>
-      {p.empty ? <div className="why">{p.why}</div> : <PanelBody p={p} />}
+    <Widget
+      span={span}
+      title={p.title}
+      sub={p.note}
+      flush={['sessions', 'versions', 'reports', 'retention'].includes(p.type) && !p.empty}
+      actions={
+        (csv || (more && !f.readOnly)) && (
+          <>
+            {csv}
+            {more && !f.readOnly && <a href={`#/${more}`}>More →</a>}
+          </>
+        )
+      }
+    >
+      {p.anonymous ? <RetentionOff /> : p.empty ? <div className="why">{p.why}</div> : <PanelBody p={p} />}
     </Widget>
   );
 }
 
+// Under a stat: what it is out of (conversion, per player), and money sent in another currency, left out.
+function statSub(p) {
+  const of = { $players: 'players', $sessions: 'sessions' }[p.per];
+  const main = p.sum && p.base != null ? `${fmtSum(p.total, p.currency)} over ${fmtNum(p.base)} ${of}` : p.base != null ? `${fmtNum(p.count)} of ${fmtNum(p.base)}${of ? ` ${of}` : ''}` : p.note;
+  if (!p.mismatch?.length) return main;
+  return (
+    <>
+      {main}
+      <div className="warn-t" title="One currency per game: amounts in another currency are not added in.">
+        Left out: {p.mismatch.map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`).join(', ')}
+      </div>
+    </>
+  );
+}
+
 function statValue(p) {
+  if (p.currency) return fmtMoney(p.value, p.currency);
+  if (p.sum) return fmtNum(p.value, 2);
   if (p.unit === 's') return fmtDuration(p.value);
   if (p.unit === '%') return fmtPct(p.value);
   if (p.unit === 'ms') return `${fmtNum(p.value, 1)} ms`;
   return fmtNum(p.value, Number.isInteger(p.value) ? 0 : 2);
 }
 
-function LivePanel({ names }) {
+// A live panel keeps its own feed, so it builds its own widget: the CSV is the events it shows.
+function LivePanel({ p, span }) {
   const f = useFilters();
+  const names = p.events;
   const { events } = useLiveEvents(f.service, names);
-  return <LiveFeed events={events.slice(0, 60)} maxHeight={320} waiting={names?.length ? `Waiting for ${names.join(', ')}…` : undefined} />;
+  const shown = events.slice(0, 60);
+  return (
+    <Widget
+      span={span}
+      title={p.title}
+      sub={p.note}
+      flush
+      actions={
+        <>
+          {shown.length > 0 && <CsvButton name={p.title} rows={() => liveCsv(shown, liveLine)} />}
+          {!f.readOnly && <a href="#/live">More →</a>}
+        </>
+      }
+    >
+      <LiveFeed events={shown} maxHeight={320} waiting={names?.length ? `Waiting for ${names.join(', ')}…` : undefined} />
+    </Widget>
+  );
+}
+
+// Amounts sent in another currency than the game's, left out of a panel's sums.
+function LeftOut({ mismatch }) {
+  if (!mismatch?.length) return null;
+  return (
+    <div className="warn-t" style={{ marginTop: 6 }} title="One currency per game: amounts in another currency are not added in.">
+      Left out: {mismatch.map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`).join(', ')}
+    </div>
+  );
 }
 
 function PanelBody({ p }) {
   const f = useFilters();
   switch (p.type) {
     case 'series':
-      return <TimeSeries ts={p.ts} height={160} bars={p.series.length === 1} series={p.series.map((s, i) => ({ ...s, color: colorFor(s.label, i) }))} />;
-    case 'breakdown':
       return (
         <>
-          <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: `${fmtNum(r.count)} · ${fmtNum(r.sessions)} sessions` }))} />
+          <TimeSeries ts={p.ts} height={160} bars={p.series.length === 1} format={p.currency ? (v) => fmtMoney(v, p.currency, true) : undefined} series={p.series.map((s, i) => ({ ...s, color: colorFor(s.label, i) }))} />
+          <LeftOut mismatch={p.mismatch} />
+        </>
+      );
+    case 'breakdown':
+      if (p.sum)
+        return (
+          <>
+            <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: `${fmtSum(r.sum, p.currency)} · ${fmtNum(r.count)}` }))} />
+            <div className="muted s12" style={{ marginTop: 6 }}>
+              {fmtSum(p.total, p.currency)} from {fmtNum(p.count)} events{p.more > 0 ? ` · ${p.more} more values` : ''}
+            </div>
+            <LeftOut mismatch={p.mismatch} />
+          </>
+        );
+      return (
+        <>
+          <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: r.sessions == null ? fmtNum(r.count) : `${fmtNum(r.count)} · ${fmtNum(r.sessions)} sessions` }))} />
           <div className="muted s12" style={{ marginTop: 6 }}>
-            {fmtNum(p.total)} in {fmtNum(p.sessions)} sessions{p.more > 0 ? ` · ${p.more} more values` : ''}
+            {p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${fmtNum(p.sessions)} sessions`}{p.more > 0 ? ` · ${p.more} more values` : ''}
             {p.avg != null ? ` · average ${fmtNum(p.avg, 1)}` : ''}
           </div>
         </>
@@ -138,8 +233,15 @@ function PanelBody({ p }) {
         <table className="dt">
           <tbody>
             {p.issues.map((i) => (
-              <tr key={i.fingerprint} className="click" onClick={() => f.go(`errors/${i.fingerprint}`)}>
-                <td>{i.message}</td>
+              <tr key={i.fingerprint} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`errors/${i.fingerprint}`)}>
+                <td>
+                  {i.message}
+                  {i.location && (
+                    <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>
+                      {i.location}
+                    </div>
+                  )}
+                </td>
                 <td className="num">{fmtNum(i.count)}</td>
                 <td className="num muted">{fmtNum(i.sessions)} sessions</td>
               </tr>
@@ -152,10 +254,12 @@ function PanelBody({ p }) {
       return <BarList rows={p.rows.map((r) => ({ label: r.level, segments: causes.map((c) => ({ label: c, value: r.causes[c] || 0, color: causeColor(c) })) }))} />;
     }
     case 'findings':
-      return <Findings findings={p.findings} compact onOpen={(link) => f.go(link.fingerprint ? `errors/${link.fingerprint}` : `${link.page}${link.level ? `?level=${encodeURIComponent(link.level)}` : ''}`)} />;
+      return <Findings findings={p.findings} compact onOpen={f.readOnly ? undefined : (link) => f.go(link.fingerprint ? `errors/${link.fingerprint}` : `${link.page}${link.level ? `?level=${encodeURIComponent(link.level)}` : ''}`)} />;
     case 'sessions':
       return <SessionsTable rows={p.sessions} maxHeight={380} />;
-    case 'versions':
+    case 'versions': {
+      // A shared board leaves out sum columns unless its link shows sums (`hidden`).
+      const cols = p.columns.map((c, i) => ({ ...c, i })).filter((c) => !c.hidden);
       return (
         <div className="tablewrap">
           <table className="dt">
@@ -164,10 +268,10 @@ function PanelBody({ p }) {
                 <th>Version</th>
                 <th>First seen</th>
                 <th className="num">Sessions</th>
-                {p.columns.map((c) => (
-                  <th className="num" key={c.title}>
+                {cols.map((c) => (
+                  <th className="num" key={c.title} title={columnHeader(c)}>
                     {c.title}
-                    {c.unit === 'per session' && <span className="muted"> / session</span>}
+                    {c.unit?.startsWith('per ') && !c.per && <span className="muted"> / {c.unit.slice(4)}</span>}
                   </th>
                 ))}
               </tr>
@@ -180,9 +284,9 @@ function PanelBody({ p }) {
                   </td>
                   <td className="muted">{fmtTime(v.first_seen, true)}</td>
                   <td className="num">{fmtNum(v.sessions)}</td>
-                  {p.columns.map((c, i) => (
+                  {cols.map((c) => (
                     <td className="num" key={c.title}>
-                      {v.values[i] == null ? '–' : statValue({ value: v.values[i], unit: c.unit })}
+                      {v.values[c.i] == null ? '–' : statValue({ value: v.values[c.i], unit: c.unit, sum: c.sum, currency: c.currency })}
                     </td>
                   ))}
                 </tr>
@@ -191,8 +295,11 @@ function PanelBody({ p }) {
           </table>
         </div>
       );
-    case 'live':
-      return <LivePanel names={p.events} />;
+    }
+    case 'reports':
+      return <ReportList reports={p.reports} compact />;
+    case 'retention':
+      return <RetentionTable r={p} compact />;
     case 'events':
       return (
         <table className="dt">
@@ -207,7 +314,7 @@ function PanelBody({ p }) {
           </thead>
           <tbody>
             {p.events.map((e) => (
-              <tr key={e.name} className="click" onClick={() => f.go(`events?name=${encodeURIComponent(e.name)}`)}>
+              <tr key={e.name} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`events?name=${encodeURIComponent(e.name)}`)}>
                 <td>
                   <b>{e.name}</b>
                 </td>

@@ -5,9 +5,12 @@ namespace GlitchlessSdk
     public enum Privacy
     {
         /// <summary>The default: no player ID, coarse device facts, no positions unless Positions is set.</summary>
-        Anonymous,
+        Anonymous = 0,
         /// <summary>Adds a random player ID saved on the device, detailed device fields and positions.</summary>
-        Full,
+        Full = 1,
+        /// <summary>Anonymous mode plus the random player ID saved on the device (the one Full uses), so returning players
+        /// can be counted (retention). Glitchless.ResetInstallId() forgets it.</summary>
+        Install = 2,
     }
 
     /// <summary>Everything Glitchless.Init() takes. PRIVACY.md says what each setting changes in what is sent.</summary>
@@ -24,7 +27,7 @@ namespace GlitchlessSdk
         /// <summary>The public client token. It can only send data, so it may ship inside the game.</summary>
         public string ClientToken = "gl_pub_dev";
         public Privacy Privacy = Privacy.Anonymous;
-        /// <summary>Death places and movement samples. Null: on in Full mode only.</summary>
+        /// <summary>Death places and movement samples. Null: on in Full mode only (not Install).</summary>
         public bool? Positions;
         /// <summary>The share of sessions to record, 0 to 1.</summary>
         public double SampleRate = 1;
@@ -53,5 +56,17 @@ namespace GlitchlessSdk
         public bool? Enabled;
         /// <summary>Log each batch as it is sent.</summary>
         public bool Debug = false;
+        /// <summary>Players send bug reports from a form in the game: new BugReportOptions() adds a hotkey (F8) that
+        /// opens it. Null: no hotkey (Glitchless.ReportBug() and Glitchless.OpenBugReport() still work).</summary>
+        public BugReportOptions BugReports;
+    }
+
+    /// <summary>Somewhere to keep the player ID by name ("player_id"), for a platform without a folder of its own: the
+    /// runner uses PlayerPrefs on the web.</summary>
+    public sealed class IdStorage
+    {
+        public Func<string, string> Read;
+        public Action<string, string> Write;
+        public Action<string> Delete;
     }
 }

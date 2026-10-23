@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useFilters } from '../filters.js';
-import { useLive } from '../api.js';
+import { useLive, useQuery } from '../api.js';
 import { Widget, Segmented, Status } from '../components.jsx';
 import { fmtTime, fmtMs, fmtNum } from '../format.js';
 import { NoGame } from './Overview.jsx';
 
-const KIND = { error: 'alert', death: 'warn', hitch: 'warn', level_complete: 'ok', level_start: 'brand', level_fail: 'warn', session_start: 'info', session_end: 'neutral', custom: 'neutral', frame_window: 'neutral', load: 'info' };
+const KIND = { bug_report: 'brand', error: 'alert', death: 'warn', hitch: 'warn', level_complete: 'ok', level_start: 'brand', level_fail: 'warn', session_start: 'info', session_end: 'neutral', custom: 'neutral', frame_window: 'neutral', load: 'info' };
 
-function line(e) {
+// One event's detail as the feed writes it (also its CSV's Detail column).
+export function line(e) {
   switch (e.type) {
     case 'frame_window':
       return `fps=${e.fps} p95=${fmtMs(e.ft_p95)} max=${fmtMs(e.ft_max, 0)} draw_calls=${fmtNum(e.draw_calls)} geometries=${fmtNum(e.geometries)} ${Object.entries(e.ctx || {}).map(([k, v]) => `${k}=${fmtNum(v)}`).join(' ')}`;
@@ -23,6 +24,8 @@ function line(e) {
       return `${e.device?.browser} · ${e.device?.gpu} (${e.device?.gpu_tier})`;
     case 'level_complete':
       return `${e.duration_s}s score=${e.score}`;
+    case 'bug_report':
+      return `"${e.note || ''}"${e.x != null ? ` x=${e.x} y=${e.y}` : ''}`;
     case 'load':
       return e.ttff_ms != null ? `ttff=${e.ttff_ms}ms` : `ttp=${e.ttp_ms}ms`;
     default:
@@ -81,6 +84,7 @@ export function LiveTail({ page }) {
     .map((x) => x.trim())
     .filter(Boolean);
   const live = useLiveEvents(f.service, null);
+  const now = useQuery('players_now', { service: f.service }, { refreshMs: 15000, enabled: !!f.service }).data;
   if (!f.service) return <NoGame />;
   const shown = live.events.filter((e) => matches(e, names) && (filter === 'all' ? true : filter === 'game' ? e.type !== 'frame_window' : filter === 'perf' ? e.type === 'frame_window' || e.type === 'hitch' : e.type === 'error'));
   return (
@@ -92,6 +96,11 @@ export function LiveTail({ page }) {
         flush
         actions={
           <>
+            {now?.players_now != null && (
+              <span className="playing-now" title={`sessions that sent anything in the last ${Math.round(now.window_s / 60)} minutes`}>
+                <span className={`dot ${now.players_now ? 'on' : ''}`} /> {fmtNum(now.players_now)} playing now
+              </span>
+            )}
             <input className="btn live-only" value={only} onChange={(e) => setOnly(e.target.value)} placeholder="Only events named… (buy, error)" title="Event names or types, comma-separated" />
             <Segmented
               value={filter}

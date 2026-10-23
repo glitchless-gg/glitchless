@@ -13,6 +13,7 @@ namespace GlitchlessSdk
     ///   Glitchless.Death(player.position, "fell");
     ///   Glitchless.Track("powerup", "magnet");
     ///   Glitchless.SetContext("enemies", enemies.Count);
+    ///   Glitchless.ReportBug(note); // or BugReports = new BugReportOptions() in the options: F8 opens a form
     ///
     /// Scenes are levels on their own (see GlitchlessOptions.SceneLevels). Every call is safe before Init,
     /// and does nothing outside Play mode.
@@ -81,12 +82,29 @@ namespace GlitchlessSdk
         /// <summary>Reports a problem the game noticed itself.</summary>
         public static void Error(string message, Dictionary<string, object> attrs = null) => Core?.ReportError("manual", message, Environment.StackTrace, attrs, manual: true);
 
+        /// <summary>A player's bug report from the game's own UI: what they typed, a screenshot of the game (taken at
+        /// the end of this frame), where they are and what just happened. It goes on its own straight away, from
+        /// every session. done(sent, reason): reason is "offline" when this build sends nothing, "error" when the
+        /// report waits for a later batch. The note is the player's own words: see PRIVACY.md.</summary>
+        public static void ReportBug(string note, bool screenshot = true, Action<bool, string> done = null) => GlitchlessRunner.ReportBug(note, screenshot, done);
+
+        /// <summary>Opens the bug report form, for a game's own "Report a bug" button. GlitchlessOptions.BugReports
+        /// adds a hotkey for it.</summary>
+        public static void OpenBugReport() => GlitchlessRunner.OpenBugReport();
+
+        /// <summary>The bug report form is open: input the game reads straight from UnityEngine.Input or a device
+        /// should be ignored meanwhile.</summary>
+        public static bool IsBugReportOpen => GlitchlessRunner.IsBugReportOpen;
+
         /// <summary>Frame stats over the next `seconds`: the same numbers as the browser SDK's glitchless_measure.
         /// Json.Serialize(result) turns them into JSON.</summary>
         public static void Measure(float seconds, Action<Dictionary<string, object>> done) => Core?.Measure(seconds, done);
 
         /// <summary>Closes the current frame window and sends what is waiting. Runs by itself every few seconds.</summary>
         public static void Flush() => Core?.Flush();
+        /// <summary>Forgets the player ID saved on the device (Install and Full mode), for a "reset my ID" setting. This
+        /// session keeps sending the ID it started with; the next launch makes a new one, so nothing joins the two.</summary>
+        public static void ResetInstallId() => Core?.ResetInstallId();
 
         public static string SessionId => Core?.SessionId;
         public static bool Enabled => Core?.Enabled ?? false;

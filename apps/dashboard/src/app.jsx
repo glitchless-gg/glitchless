@@ -11,6 +11,7 @@ import { Heatmaps } from './pages/Heatmaps.jsx';
 import { Sessions, SessionDetail } from './pages/Sessions.jsx';
 import { Versions } from './pages/Versions.jsx';
 import { LiveTail } from './pages/Live.jsx';
+import { Reports } from './pages/Reports.jsx';
 import { Agents } from './pages/Agents.jsx';
 import { Setup } from './pages/Setup.jsx';
 import { Pages } from './pages/Pages.jsx';
@@ -40,7 +41,7 @@ export const NAV = [
 ];
 
 // The page component of each built-in view.
-const VIEW_PAGES = { events: Events, performance: Performance, errors: Errors, players: Players, heatmaps: Heatmaps, sessions: Sessions, versions: Versions, live: LiveTail };
+const VIEW_PAGES = { events: Events, performance: Performance, errors: Errors, players: Players, heatmaps: Heatmaps, sessions: Sessions, versions: Versions, live: LiveTail, reports: Reports };
 const DAY = 86400e3;
 
 export function useHashRoute() {

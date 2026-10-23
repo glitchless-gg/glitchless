@@ -557,7 +557,16 @@ async function boot() {
   } catch {
     /* fonts are optional */
   }
-  await initTelemetry({ renderer, scene, camera, THREE });
+  // The bug report form (F8) pauses the game behind it, and leaves it paused if the player had paused it.
+  let pausedForReport = false;
+  const onBugReport = (open) => {
+    if (open) pausedForReport = game.state === 'playing' && agentApi.setPaused(true).paused;
+    else if (pausedForReport) {
+      pausedForReport = false;
+      agentApi.setPaused(false);
+    }
+  };
+  await initTelemetry({ renderer, scene, camera, THREE, onBugReport });
   if (gd.enabled) registerAgentTools(gd, agentApi);
   else document.getElementById('hint-gd')?.remove();
   hud.initTitle(`v${GAME_VERSION} · ${params.env} · ${gd.enabled ? 'instrumented with Glitchless — press ` for the overlay' : 'telemetry off'}`);

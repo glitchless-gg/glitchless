@@ -1,6 +1,6 @@
 # glitchless-playtest
 
-Playtest every change. Autoplay bots play your web game (Three.js, Phaser or plain WebGL) on a saved
+Playtest every change. Autoplay bots play your web game (Three.js, Phaser, Babylon.js, PlayCanvas or plain WebGL) on a saved
 baseline and on the current code, and [Glitchless](https://github.com/glitchless-gg/glitchless) compares
 the two runs: slow frames, render and update time, draw calls, hitches, errors, deaths and level
 completion. A regression exits with code 1, so it can gate a pull request.

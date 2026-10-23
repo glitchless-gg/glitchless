@@ -31,6 +31,7 @@ server isn't running the game still works; the SDK's intake requests fail withou
 | `Esc` / `P` | pause |
 | `M` | mute |
 | `` ` `` | toggle the Glitchless overlay (bottom-right) |
+| `F8` | report a bug: a note and a screenshot go to Glitchless's Bug Reports (the game pauses while you type) |
 
 There are 5 lives per level. Losing them all restarts the level (`levelFail{cause:<last death cause>}`).
 Deaths come from falling (`fell`) or touching an enemy from the side (`squirrel`, `vacuum`).

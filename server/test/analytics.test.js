@@ -118,3 +118,14 @@ test('ingest validates envelopes and flattens them onto events', () => {
   assert.equal(out[0].service, 'zoomies');
   assert.equal(out[0].session_id, 's_1');
 });
+
+test('a bug report keeps its note when its screenshot is too big or not an image', () => {
+  const shot = (n) => 'data:image/jpeg;base64,' + 'A'.repeat(n);
+  const p = parsePayload(JSON.stringify({ service: 'zoomies', session_id: 's_1', events: [
+    { type: 'bug_report', ts: Date.now(), note: 'stuck in the wall', screenshot: shot(1000) },
+    { type: 'bug_report', ts: Date.now(), note: 'too big', screenshot: shot(200_000) },
+    { type: 'bug_report', ts: Date.now(), note: 'not an image', screenshot: 'https://example.com/a.jpg' },
+  ] }), {});
+  const out = normalize(p);
+  assert.deepEqual(out.map((e) => [e.note, typeof e.screenshot]), [['stuck in the wall', 'string'], ['too big', 'undefined'], ['not an image', 'undefined']]);
+});

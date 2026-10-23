@@ -6,7 +6,7 @@
     {
       "name": "glitchless",
       "source": "./plugin/glitchless",
-      "description": "Instrument Three.js, Phaser, Unity and Godot games with Glitchless and let Claude triage and fix performance, stability and design problems from real player telemetry."
+      "description": "Instrument Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot and Unreal games with Glitchless and let Claude triage and fix performance, stability and design problems from real player telemetry."
     }
   ]
 }

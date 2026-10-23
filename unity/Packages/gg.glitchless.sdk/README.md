@@ -6,7 +6,8 @@ Game observability for Unity 2022.3 LTS and Unity 6. Glitchless records how your
 - **Errors.** Uncaught exceptions, `Debug.LogError`, assertions and engine errors, through `Application.logMessageReceivedThreaded`, grouped by the same fingerprint the web and Godot SDKs use, with the game events just before each one.
 - **Levels and players.** Scenes are levels on their own. Deaths, level fails and quits feed the level funnel, death heatmaps and rage-quit detection.
 - **Leaks.** Mesh, material, texture and object counts per level load, where a development build has them.
-- **Anonymous by default.** No player ID, no device identifier, coarse device facts only. [PRIVACY.md](PRIVACY.md) lists every field.
+- **Bug reports from players**, when you turn them on: F8 (or your own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
+- **Anonymous by default.** No player ID, no device identifier, coarse device facts only. `Privacy = Privacy.Install` adds a saved random player ID so retention (D1, D7, D30) can be counted, and nothing else. [PRIVACY.md](PRIVACY.md) lists every field.
 
 It sends the same events as the [browser](https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk) and [Godot](https://github.com/glitchless-gg/glitchless/tree/main/godot/addons/glitchless) SDKs, so the dashboard, the findings and the MCP tools work with a Unity game as they are.
 
@@ -21,7 +22,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.1.0"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.2.0"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
@@ -50,6 +51,8 @@ public class Telemetry : MonoBehaviour
 
 No code: add **Glitchless → Glitchless Bootstrap** to a GameObject in your first scene and fill in the same three fields.
 
+**Retention needs install mode.** In anonymous mode (the default) nothing is kept between launches, so the dashboard can't tell a returning player from a new one. `Privacy = Privacy.Install` (or **Install ID** on the Bootstrap) keeps a random `p_…` player ID in `persistentDataPath/glitchless/player_id` (the one full mode uses; PlayerPrefs in WebGL builds) and sends it with every batch; nothing else changes. The Players page and `retention` board panels then show D1, D7 and D30. `Glitchless.ResetInstallId()` forgets it (for a "reset my ID" setting): this session keeps its ID, the next launch makes a new one. On a Steam Deck, `session_start` carries `steam_deck: true` and, on SteamOS, `os: "SteamOS"` (Linux players and Windows players under Proton).
+
 Glitchless starts itself before the first scene loads, so frame times and errors from the very first frames are kept; nothing is sent until `Init`. Define `GLITCHLESS_DISABLE` in **Player Settings → Scripting Define Symbols** to stop that automatic start.
 
 The Editor and development builds send too, with `Env` set to `dev` unless you set it, so you can check data arrives from Play mode. Release builds default to `prod`.
@@ -66,16 +69,50 @@ The Editor and development builds send too, with `Env` set to `dev` unless you s
 | counts of anything that scales, every frame | `Glitchless.SetContext("enemies", enemies.Count)` |
 | the player's place, every frame | `Glitchless.SetPosition(player.position)` (sent only when positions are on) |
 | an exception you caught | `Glitchless.Error(e)` |
+| a player's bug report from your own UI | `Glitchless.ReportBug(note)`, or `Glitchless.OpenBugReport()` for the built-in form ([below](#bug-reports)) |
 
 Use the game's own words for names, causes and levels, never anything a player typed.
 
 **Your own metrics.** `Track` takes any event: `Glitchless.Track("open", "full")`, `Glitchless.Track("play", "endless")`, or a `Dictionary<string, object>` of attributes. One word becomes the attribute `what`. The dashboard's Events page counts each event over time, breaks it down by attribute and builds funnels between events (`paywall` → `buy=done`), and the game's own dashboard, whose pages your coding agent designs with `glitchless_set_dashboard`, shows the ones that matter. Attributes are strings, numbers or booleans, at most 12 per event.
+
+**Purchases** have one convention in every Glitchless SDK: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` (with Unity IAP, `product.metadata.localizedPrice` as a `double` and `isoCurrencyCode`). Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
 
 **Scenes as levels.** When a scene becomes the active one, it's a level and `level_start` is sent, unless its name reads as a menu, loader, overlay or end screen: `Boot`, `Bootstrap`, `Init`, `Preloader`, `Loading`, `Splash`, `Title`, `MainMenu`, `UI`, `HUD`, `Pause`, `GameOver`, `Settings`, `Credits`, `Shop`, `Empty` and the like (the words are matched after splitting camelCase). The level ends when its scene unloads. A menu made active on top doesn't end it. `SceneManager.LoadScene` of the same scene is a restart. Change it with:
 
 - `LevelForScene = name => name.StartsWith("World") ? name : null` to choose yourself;
 - `SceneLevels = false` to turn it off;
 - any `Glitchless.LevelStart()` call, which turns scene levels off for the rest of the session. Use this when one scene plays many levels.
+
+## Bug reports
+
+Players and playtesters flag a problem where they see it, and you (or your coding agent, with the `glitchless_bug_reports` MCP tool) see it in Glitchless's Bug Reports view with the screenshot and a link to the session's replay. Turn the hotkey on in the options:
+
+```csharp
+Glitchless.Init(new GlitchlessOptions
+{
+    Service = "my-game",
+    Intake = "https://api.glitchless.gg",
+    ClientToken = "gl_pub_…",
+    BugReports = new BugReportOptions(),               // F8 opens the form
+});
+
+Glitchless.OpenBugReport();                            // a pause menu's "Report a bug" (works without BugReports)
+Glitchless.ReportBug(note, done: (sent, reason) => …); // your own form; reason is "offline" or "error" when not sent
+if (Glitchless.IsBugReportOpen) return;                // input you read from UnityEngine.Input while the form is open
+```
+
+| `BugReportOptions` | default | |
+| --- | --- | --- |
+| `Hotkey` | `KeyCode.F8` | opens and closes the form; `KeyCode.None` for no hotkey. Read from the Input System when the game uses it, else from the Input Manager |
+| `PauseGame` | `true` | while the form is open, `Time.timeScale` is 0 and the Input System's enabled actions are off, so the game neither moves nor acts on what the player types. Both come back on close. Set it to `false` if the game pauses itself in `OnOpen` |
+| `Screenshot` | `true` | send a screenshot with each report |
+| `OnOpen`, `OnClose` | | the form opened or closed: pause and resume the game, mute its music |
+
+- **The screenshot** is `ScreenCapture.CaptureScreenshotAsTexture()` at the end of the frame, before the form is drawn, so the form is never in it. It is shrunk until it fits the server's 200,000-character limit: the longer side at most 960 px, then 800, 640, 480 and 320, at lower JPEG quality. The frame that reads it back isn't timed, so it never shows as a hitch. With `-nographics` nothing is drawn, so reports have no screenshot.
+- **The form** is drawn with IMGUI, so the game needs no Canvas or EventSystem, and on top of the game's own `OnGUI`. It reads keys the way uGUI's input field does (`Event.PopEvent`) and clicks from the Input System or the Input Manager, so it works with either, or both. Esc cancels, Ctrl+Enter (Cmd+Enter) sends; on a phone the system keyboard opens. A locked cursor is freed while it's open.
+- **What it can't hold back:** input the game reads straight from `UnityEngine.Input` or a device (`Keyboard.current.spaceKey`), and clicks on a uGUI Canvas behind it. Check `Glitchless.IsBugReportOpen` there, as the Fetch! sample does.
+- **Sending:** a report goes on a request of its own straight away, from every session (`SampleRate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch.
+- **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
 
 ## What it measures, and where
 
@@ -100,7 +137,7 @@ Events are summed up per 5-second frame window and sent every 15 seconds (the fi
 
 When a phone app goes to the background the session ends and the last batch is sent at once, waiting at most 1.5 s, because iOS and Android often stop a backgrounded app without warning. Back within 5 minutes, the session carries on; later, it's a new session. Quitting sends the last batch the same way.
 
-WebGL builds send without gzip and keep nothing on disk. For a web game, the [browser SDK](https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk) also measures the page itself.
+WebGL builds send without gzip and keep nothing on disk (an install or player ID goes in PlayerPrefs). For a web game, the [browser SDK](https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk) also measures the page itself.
 
 ## For coding agents
 
@@ -120,8 +157,8 @@ In the Editor, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))` does t
 
 ## The sample
 
-**Package Manager → Glitchless → Samples → Fetch! → Import** adds a small runner with an autoplay bot and four planted bugs for Glitchless to find: a mesh and material leak on every level load, confetti made of physics cubes that are never destroyed, an exception on the level 3 frisbee, and a jump almost nobody makes. Open `FetchBoot.unity` and press Play; set the intake on the **Fetch** GameObject. A built player takes `--autoplay --seed=7 --skill=0.9 --level=2`.
+**Package Manager → Glitchless → Samples → Fetch! → Import** adds a small runner with an autoplay bot and four planted bugs for Glitchless to find: a mesh and material leak on every level load, confetti made of physics cubes that are never destroyed, an exception on the level 3 frisbee, and a jump almost nobody makes. Open `FetchBoot.unity` and press Play; set the intake on the **Fetch** GameObject. A built player takes `--autoplay --seed=7 --skill=0.9 --level=2`. F8 opens the bug report form; `--bug-report-at=5` sends a report from code five seconds in.
 
 ## Tests
 
-The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK) and PlayMode tests. Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.
+The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking) and PlayMode tests (the runner, and the bug report form pausing the game). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.

@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, Status, BarList } from '../components.jsx';
-import { fmtNum, fmtMs, fmtPct, fmtTime, fmtDuration, frameStatus, PALETTE } from '../format.js';
+import { fmtNum, fmtMs, fmtPct, fmtTime, fmtDuration, fmtMoney, frameStatus, PALETTE } from '../format.js';
 import { NoGame } from './Overview.jsx';
+import { CsvButton, columnHeader } from '../csv.jsx';
 
 // `needs` names what the game has to report for the measure to mean anything (the query's `has`).
 const METRICS = [
@@ -25,8 +26,9 @@ const METRICS = [
   { key: 'geometries_growth_per_level_load', label: 'Geometry growth / level load', fmt: (v) => fmtNum(v), lowerIsBetter: true, needs: 'geometry' },
 ];
 
-function fmtStat(v, unit) {
+function fmtStat(v, unit, currency) {
   if (v == null) return '–';
+  if (currency) return fmtMoney(v, currency);
   if (unit === '%') return fmtPct(v);
   if (unit === 'ms') return fmtMs(v);
   if (unit === 's') return fmtDuration(v);
@@ -57,7 +59,7 @@ export function Versions() {
   const levels = has.frames ? [...new Set(list.flatMap((v) => Object.keys(v.level_p95 || {})))].sort((x, y) => x.localeCompare(y, undefined, { numeric: true })) : [];
   const rows = [
     ...(board.length ? [{ section: "This game's boards" }] : []),
-    ...board.map((s, i) => ({ key: `board${i}`, label: s.unit === 'per session' ? `${s.title} (per session)` : s.title, get: (v) => v.board?.[i], fmt: (x) => fmtStat(x, s.unit), lowerIsBetter: null })),
+    ...board.map((s, i) => ({ key: `board${i}`, label: s.unit?.startsWith('per ') && !s.per ? `${s.title} (${s.unit})` : s.title, csv: columnHeader(s), get: (v) => v.board?.[i], fmt: (x) => fmtStat(x, s.unit, s.currency), lowerIsBetter: null })),
     ...(events.length ? [{ section: 'Its events, per session' }] : []),
     ...events.map((name) => ({ key: `ev:${name}`, label: name, get: (v) => v.events?.[name], fmt: (x) => fmtNum(x, 2), lowerIsBetter: null })),
     ...(builtins.length ? [{ section: 'Built in' }] : []),
@@ -66,7 +68,21 @@ export function Versions() {
 
   return (
     <div className="grid">
-      <Widget span={12} title="Versions" sub="every build that reported in this range" flush>
+      <Widget
+        span={12}
+        title="Versions"
+        sub="every build that reported in this range"
+        flush
+        actions={
+          <CsvButton
+            name="versions"
+            rows={() => [
+              ['Version', 'First seen', 'Sessions', ...board.slice(0, 4).map(columnHeader), ...(has.frames ? ['p95 frame (ms)'] : []), 'Error-free %', ...(has.levels ? ['Level completion %'] : []), ...(has.rage ? ['Rage quits %'] : [])],
+              ...list.map((v) => [v.version, new Date(v.first_seen).toISOString(), v.sessions, ...board.slice(0, 4).map((s, i) => v.board?.[i]), ...(has.frames ? [v.frame_p95] : []), v.error_free_pct, ...(has.levels ? [v.level_completion_pct] : []), ...(has.rage ? [v.rage_quit_pct] : [])]),
+            ]}
+          />
+        }
+      >
         <div className="tablewrap">
           <table className="dt">
             <thead>
@@ -97,7 +113,7 @@ export function Versions() {
                   <td className="num">{fmtNum(v.sessions)}</td>
                   {board.slice(0, 4).map((s, i) => (
                     <td className="num" key={s.title}>
-                      {fmtStat(v.board?.[i], s.unit)}
+                      {fmtStat(v.board?.[i], s.unit, s.currency)}
                     </td>
                   ))}
                   {has.frames && (
@@ -120,6 +136,12 @@ export function Versions() {
         sub="what changed between two builds, in this game's own numbers first"
         actions={
           <>
+            {va && vb && (
+              <CsvButton
+                name={`compare-${a}-${b}`}
+                rows={() => [['Measure', a, b, 'Change'], ...rows.filter((m) => !m.section).map((m) => [m.csv ?? m.label, m.get(va), m.get(vb), m.get(va) != null && m.get(vb) != null ? Math.round((m.get(vb) - m.get(va)) * 1000) / 1000 : null])]}
+              />
+            )}
             <select value={a} onChange={(e) => setA(e.target.value)} className="btn">
               {list.map((v) => (
                 <option key={v.version}>{v.version}</option>

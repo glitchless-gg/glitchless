@@ -1,0 +1,48 @@
+{
+  "name": "glitchless-sourcemaps",
+  "version": "0.1.0",
+  "description": "Upload a web game's source maps to Glitchless, so errors from the minified build show the original function, file and line, and group the same in every build. A CLI for CI and a Vite plugin.",
+  "keywords": [
+    "source-maps",
+    "sourcemaps",
+    "game-observability",
+    "error-tracking",
+    "gamedev",
+    "game-development",
+    "web-games",
+    "vite",
+    "vite-plugin",
+    "threejs",
+    "phaser"
+  ],
+  "homepage": "https://www.glitchless.gg",
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless.git",
+    "directory": "packages/sourcemaps"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./vite": "./src/vite.js"
+  },
+  "bin": {
+    "glitchless-sourcemaps": "bin/glitchless-sourcemaps.js"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
+  }
+}

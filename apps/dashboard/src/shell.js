@@ -11,6 +11,7 @@ export const DEFAULT_SHELL = {
   servicesLabel: null, // a caption over the service picker
   servicesEmpty: 'No games yet',
   className: '',
+  boardActions: null, // a component ({ board }) for more buttons on a board, such as the hosted service's Share
 };
 
 export const Shell = createContext(DEFAULT_SHELL);

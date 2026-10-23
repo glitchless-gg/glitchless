@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Fab gallery image, 1920 x 1080: what a coding agent gets. Made by ../make-agent-page.mjs from a demo run's
+     findings.json and measure.json; edit that script, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>.cards { grid-template-rows: auto 1fr; } pre { font-size: 12px; }</style>
+</head>
+<body>
+  <h1>Your coding agent <em>reads it too</em></h1>
+  <div class="sub">The demo's findings over MCP, and the packaged build measuring itself: the numbers to beat after a fix.</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card">
+      <h2>glitchless_triage · glitchless-unreal-demo</h2>
+<pre>1. <span class="w">[HIGH]</span> Ensure condition failed: Gate != nullptr: The forge has no actor tagged ForgeGate
+2. <span class="k">[MEDIUM]</span> Hitches on forge: 5.41 a minute, from garbage collection and asset loads
+3. <span class="k">[MEDIUM]</span> Hitches on gallery: 9.96 a minute, from pipeline states created on first use and asse…
+4. <span class="k">[MEDIUM]</span> `objects` keeps climbing: median 35,179 → 1,148,174 per session
+
+<span class="c">Hitches on gallery: 9.96 a minute, from pipeline states created on first use an…:</span>
+Keep PSO precaching on (r.PSOPrecaching 1, the default) so components compile theirs while they load, and ship a bundled PSO cache for what precaching misses (materials set at runtime, effects spawned later): play a Development build with -logPSO, turn the recorded files into a cache with the ShaderPipelineCacheTools commandlet…</pre>
+    </div>
+    <div class="card">
+      <h2>GlitchlessDemo -glitchless-warmup=1 -glitchless-measure=15</h2>
+<pre><span class="c">{"glitchless_measure": {</span>
+"frame_ms": {"p50": 9.58, "p95": 18.92, "worst": 482.2},
+"fps": 89.3, "pct_frames_over_budget": 18.9,
+"hitches": [{"ms": 482.2, "level": "gallery",
+  "causes": ["pso_compile","render"], "recent": ["fireworks"]}, …]
+<span class="c">}}</span></pre>
+    </div>
+  </div>
+</body>
+</html>

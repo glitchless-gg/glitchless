@@ -23,6 +23,8 @@ canvas { display: block; width: 248px; height: 46px; margin: 4px 10px 6px; borde
 .ctx { padding: 0 10px 6px; font: 500 10.5px ui-monospace, Menlo, monospace; opacity: .85; }
 .ctx span { display: inline-block; margin-right: 8px; }
 .ftr { display: flex; justify-content: space-between; gap: 6px; padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.08); font-size: 10px; opacity: .75; }
+.bug { display: block; width: calc(100% - 20px); margin: 0 10px 8px; padding: 6px 0; border: 1px solid rgba(46,230,166,.35); border-radius: 6px; background: rgba(46,230,166,.08); color: #eef3fb; font: 600 11px/1.2 inherit; font-family: inherit; cursor: pointer; }
+.bug:hover { background: rgba(46,230,166,.18); }
 .good { color: #2ee6a6; } .warn { color: #f0b429; } .bad { color: #ff6b57; }
 .pill { display: none; align-items: center; gap: 6px; padding: 5px 9px 5px 6px; background: rgba(20,33,61,.92); border: 1px solid rgba(46,230,166,.35); border-radius: 999px; cursor: pointer; font: 700 11px ui-monospace, Menlo, monospace; }
 .pill img { width: 20px; height: auto; }
@@ -58,6 +60,7 @@ export class Overlay {
             <div><div class="l">level</div><div class="v" data-k="level">–</div></div>
           </div>
           <div class="ctx"></div>
+          ${gd.opts.bugReports ? `<button class="bug" type="button">Report a bug${bugHotkey(gd) ? ` (${escapeHtml(bugHotkey(gd))})` : ''}</button>` : ''}
           <div class="ftr"><span data-k="dest"></span><span data-k="mcp"></span></div>
         </div>
         <div class="pill" title="Glitchless — press \` to expand"><img src="${LOGO_DATA_URI}" alt=""><span data-k="pill">–</span></div>
@@ -70,6 +73,7 @@ export class Overlay {
     root.querySelector('.svc').textContent = `${gd.opts.service} ${gd.opts.version}`;
     root.querySelector('.hdr').addEventListener('click', () => this.toggle());
     root.querySelector('.pill').addEventListener('click', () => this.toggle());
+    root.querySelector('.bug')?.addEventListener('click', () => gd.openBugReport());
     window.addEventListener('keydown', (e) => {
       if (e.key === '`' || e.code === 'Backquote') this.toggle();
     });
@@ -175,6 +179,12 @@ function fmt(v) {
   if (v >= 1e6) return (v / 1e6).toFixed(1) + 'M';
   if (v >= 1e4) return (v / 1e3).toFixed(1) + 'k';
   return String(Math.round(v));
+}
+
+// The key that opens the bug report form, as the overlay names it (F8 unless the game picked another or none).
+function bugHotkey(gd) {
+  const o = gd.opts.bugReports;
+  return o && typeof o === 'object' && 'hotkey' in o ? o.hotkey : 'F8';
 }
 
 function escapeHtml(s) {

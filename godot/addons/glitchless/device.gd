@@ -15,19 +15,22 @@ static func info(full: bool) -> Dictionary:
 	var mem_gb := mem / 1073741824.0 if mem > 0 else -1.0
 	var adapter := RenderingServer.get_video_adapter_name()
 	var tier := device_tier(cores, mem_gb)
+	var deck := steam_deck()
 	var d := {
 		"browser": "Godot",  # the runtime, in the field the dashboard groups by
 		"browser_version": "%d.%d.%d" % [Engine.get_version_info().major, Engine.get_version_info().minor, Engine.get_version_info().patch],
-		"os": os_name,
+		"os": "SteamOS" if steam_os() else os_name,
 		"mobile": mobile,
 		"device_tier": tier,
-		# Every phone GPU is "low" next to a desktop one, so on phones the GPU tier is the device tier.
-		"gpu_tier": tier if mobile else gpu_tier(adapter),
+		# Every phone GPU is "low" next to a desktop one, so on phones the GPU tier is the device tier. A Steam
+		# Deck's is "low" too, as the Unreal plugin has it.
+		"gpu_tier": tier if mobile else "low" if deck else gpu_tier(adapter),
 		"renderer": RenderingServer.get_current_rendering_method(),
 		"driver": RenderingServer.get_current_rendering_driver_name(),
 		"screen": screen_size(),
 		"dpr": snappedf(DisplayServer.screen_get_scale(), 0.01),
 		"refresh_hz": refresh_rate(),
+		"steam_deck": deck,
 	}
 	if full:
 		d["model"] = OS.get_model_name()
@@ -37,6 +40,77 @@ static func info(full: bool) -> Dictionary:
 		d["cores"] = cores
 		d["memory_gb"] = roundi(mem_gb) if mem_gb > 0 else null
 	return d
+
+
+static var _facts: Variant = null  # read once a launch
+
+
+static func steam_deck() -> bool:
+	return is_steam_deck(_steam_deck_facts())
+
+
+## A Deck running SteamOS, or one Steam started (a Windows build under Proton
+## runs on SteamOS too): "SteamOS" in place of Linux or Windows, as Unreal says.
+static func steam_os() -> bool:
+	return is_steam_os(_steam_deck_facts())
+
+
+static func is_steam_os(facts: Dictionary) -> bool:
+	return is_steam_deck(facts) and (_os_release_id(str(facts.get("os_release", ""))) == "steamos" or str(facts.get("env", "")) != "")
+
+
+static func _steam_deck_facts() -> Dictionary:
+	if _facts == null:
+		_facts = steam_deck_facts()
+	return _facts
+
+
+## What says a game runs on a Steam Deck: Steam's SteamDeck=1, the board's
+## maker and name, and the OS. A Linux build reads /sys and /etc; a Windows
+## build under Proton reads the same files through Wine's Z: drive.
+static func steam_deck_facts() -> Dictionary:
+	var root := "Z:" if OS.get_name() == "Windows" else ""
+	if OS.get_name() not in ["Linux", "Windows", "FreeBSD"]:
+		return {"env": OS.get_environment("SteamDeck")}
+	return {
+		"env": OS.get_environment("SteamDeck"),
+		"board_vendor": _read_small(root + "/sys/class/dmi/id/board_vendor"),
+		"board_name": _read_small(root + "/sys/class/dmi/id/board_name"),
+		"os_release": _read_small(root + "/etc/os-release"),
+	}
+
+
+## A Steam Deck: Steam says so (SteamDeck=1, under Steam and Proton), the board
+## is Valve's Jupiter (LCD) or Galileo (OLED), or the OS is SteamOS
+## (ID=steamos in os-release). The same rule as the browser SDK's, Unity's and
+## Unreal's.
+static func is_steam_deck(facts: Dictionary) -> bool:
+	if str(facts.get("env", "")).strip_edges() == "1":
+		return true
+	var vendor := str(facts.get("board_vendor", "")).strip_edges().to_lower()
+	var board := str(facts.get("board_name", "")).strip_edges().to_lower()
+	if vendor == "valve" and board in ["jupiter", "galileo"]:
+		return true
+	return _os_release_id(str(facts.get("os_release", ""))) == "steamos"
+
+
+static func _os_release_id(os_release: String) -> String:
+	for line in os_release.split("\n"):
+		if line.strip_edges().begins_with("ID="):
+			return line.strip_edges().substr(3).trim_prefix("\"").trim_suffix("\"").to_lower()
+	return ""
+
+
+static func _read_small(path: String) -> String:
+	if not FileAccess.file_exists(path):
+		return ""
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var out := ""
+	while not f.eof_reached() and out.length() < 4096:
+		out += f.get_line() + "\n"
+	return out
 
 
 ## low / mid / high from cores and memory: coarse enough that it cannot tell

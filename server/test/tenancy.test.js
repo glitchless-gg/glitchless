@@ -11,6 +11,7 @@ import { AuthError, RateLimiter, defaultAuth, envAuth } from '../src/auth.js';
 import { FileStore } from '../src/stores/file.js';
 import { DynamoStore } from '../src/stores/dynamo.js';
 import { buildContext, overview } from '../src/analytics.js';
+import { evaluateBoard } from '../src/board.js';
 import { normalize, parsePayload } from '../src/ingest.js';
 import { FakeDynamo } from './helpers/fake-dynamo.js';
 import { liveLake, hasDuckDB } from './helpers/lake-sim.js';
@@ -120,6 +121,81 @@ for (const [kind, makeStore] of Object.entries(stores)) {
         assert.equal((await app.get(q, KEYS.B.read)).body.sessions.length, 0);
         assert.equal((await app.get(q, KEYS.A.read)).body.sessions.length, 1);
       }
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+// Bug reports are stored apart from the events (reports.js), so they get their own check.
+for (const [kind, makeStore] of Object.entries(stores)) {
+  test(`${kind}: a project's bug reports can't be listed or opened by another project`, async () => {
+    const store = makeStore();
+    const app = await serve({ store, auth: twoProjects });
+    try {
+      // The same session id, time and note in both projects: still two reports, one each.
+      const report = { ...sessionA.at(-1), type: 'bug_report', ts: sessionA.at(-1).ts + 1000, level: 'level-1', note: 'stuck', screenshot: 'data:image/jpeg;base64,AAAA' };
+      assert.equal((await app.send(KEYS.A.ingest, payload([...sessionA, report]))).status, 202);
+      const q = `/v1/query/reports?service=zoomies&from=${now - 7_200_000}&to=${now}`;
+      const [mine] = (await app.get(q, KEYS.A.read)).body.reports;
+      assert.equal(mine.note, 'stuck');
+      assert.deepEqual((await app.get(q, KEYS.B.read)).body.reports, []);
+      assert.equal((await app.get(`/v1/query/report?service=zoomies&id=${mine.id}`, KEYS.B.read)).body.error, 'report not found');
+      assert.equal((await app.get(`/v1/query/report?service=zoomies&id=${mine.id}`, KEYS.A.read)).body.report.screenshot, report.screenshot);
+      assert.equal((await app.get(`/v1/query/report?service=zoomies&id=${mine.id}`, KEYS.A.ingest)).status, 401);
+      assert.equal((await app.send(KEYS.B.ingest, payload([...sessionB, { ...report, version: '9.9.9' }]))).status, 202);
+      const [theirs] = (await app.get(q, KEYS.B.read)).body.reports;
+      assert.notEqual(theirs.id, mine.id);
+      assert.deepEqual((await app.get(q, KEYS.A.read)).body.reports.map((r) => r.id), [mine.id]);
+      assert.equal((await app.get(`/v1/query/report?service=zoomies&id=${theirs.id}`, KEYS.A.read)).body.error, 'report not found');
+      // Nor deleted by it.
+      const del = (id, key) => fetch(`${app.base}/v1/report?service=zoomies&id=${id}`, { method: 'DELETE', headers: { 'x-glitchless-api-key': key } });
+      assert.equal((await del(mine.id, KEYS.B.read)).status, 404);
+      assert.equal((await del(mine.id, KEYS.A.ingest)).status, 401);
+      assert.equal((await app.get(q, KEYS.A.read)).body.reports.length, 1);
+      assert.equal((await del(mine.id, KEYS.A.read)).status, 200);
+      assert.deepEqual((await app.get(q, KEYS.A.read)).body.reports, []);
+      assert.equal((await app.get(q, KEYS.B.read)).body.reports.length, 1);
+    } finally {
+      await app.close();
+    }
+  });
+}
+
+// Source maps are uploaded with a secret key (sourcemaps.js): one project's maps never map, list or leave another's.
+for (const [kind, makeStore] of Object.entries(stores)) {
+  test(`${kind}: a project's source maps can't be listed, used or deleted by another project`, async () => {
+    const store = makeStore();
+    const scoped = { ...twoProjects, async resolveReader(req) {
+      const id = await twoProjects.resolveReader(req);
+      return { ...id, scopes: [...id.scopes, 'sourcemaps'] };
+    } };
+    const app = await serve({ store, auth: scoped });
+    try {
+      const map = JSON.stringify({ version: 3, sources: ['src/weapons.js'], sourcesContent: ['function fireShotgun() {\n  e.hp -= 1;\n}'], names: [], mappings: 'AAAA,IACE' });
+      const up = (key, version = '1.0.0') => fetch(`${app.base}/v1/sourcemaps?service=zoomies&version=${version}&file=assets/index-1.js`, { method: 'POST', body: map, headers: { 'x-glitchless-api-key': key } });
+      assert.equal((await up(KEYS.A.read)).status, 201);
+      // A public ingest token never uploads.
+      assert.equal((await up(KEYS.B.ingest)).status, 401);
+      const listed = async (key) => (await app.get('/v1/sourcemaps?service=zoomies', key)).body.sourcemaps.map((m) => m.version);
+      assert.deepEqual(await listed(KEYS.A.read), ['1.0.0']);
+      assert.deepEqual(await listed(KEYS.B.read), []);
+      // The same game, version and script in both projects: only A's error is mapped.
+      const error = { type: 'error', ts: sessionA[0].ts + 1000, kind: 'js', message: 'TypeError: x', stack: 'TypeError: x\n    at e (https://g.io/assets/index-1.js:1:5)', fn: 'e', source: 'index-1.js', line: 1, col: 5, fingerprint: 'sdk00001' };
+      for (const [k, s] of [[KEYS.A, sessionA], [KEYS.B, sessionB]]) assert.equal((await app.send(k.ingest, payload([s[0], { ...error, version: '1.0.0', session_id: s[0].session_id }].map((e) => ({ ...e, version: '1.0.0' }))))).status, 202);
+      const issues = async (key) => (await app.get(`/v1/query/errors?service=zoomies&version=1.0.0&from=${now - 7_200_000}&to=${now}`, key)).body.issues;
+      const [a] = await issues(KEYS.A.read);
+      const [b] = await issues(KEYS.B.read);
+      assert.equal(a.location, 'fireShotgun (weapons.js:2)');
+      assert.notEqual(a.fingerprint, 'sdk00001');
+      assert.equal(b.location, 'e (index-1.js:1)');
+      assert.equal(b.fingerprint, 'sdk00001');
+      // Nor deleted by it.
+      const del = (key) => fetch(`${app.base}/v1/sourcemaps?service=zoomies&version=1.0.0`, { method: 'DELETE', headers: { 'x-glitchless-api-key': key } });
+      assert.equal((await del(KEYS.B.read)).status, 404);
+      assert.deepEqual(await listed(KEYS.A.read), ['1.0.0']);
+      assert.equal((await del(KEYS.A.read)).status, 200);
+      assert.deepEqual(await listed(KEYS.A.read), []);
     } finally {
       await app.close();
     }
@@ -241,4 +317,137 @@ test('ingest is rate limited per key', async () => {
   t += 1000;
   assert.equal(limiter.take('k', 1), 0);
   assert.equal(limiter.take('k', 0), 0, 'rps 0 means unlimited');
+});
+
+// A share reader (a read-only link anyone may hold) reads one board page of one service, at most 30 days back,
+// with nothing in it that names a session, a player, a device or a line of code.
+test('a share reader reads its one board and nothing else', async () => {
+  const SHARE = { id: 'share-1', service: 'zoomies', page: 'jam' };
+  const readers = {
+    full: { projectId: 'A', scopes: ['read', 'delete', 'dashboard'] },
+    share: { projectId: 'A', scopes: ['read', 'delete', 'dashboard'], share: SHARE, keyId: SHARE.id, rps: 1000 },
+    slow: { projectId: 'A', scopes: ['read'], share: SHARE, keyId: 'slow', rps: 1 },
+    plain: { projectId: 'A', scopes: ['read'], share: SHARE, keyId: 'plain' },
+  };
+  // Pinned links: the first two sessions' minute (t0 is set below), and a window longer than any link may read.
+  const t0 = now - 3_600_000;
+  readers.pinned = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'pin', from: t0 - 7_200_000, to: t0 + 1500 }, keyId: 'pin', rps: 1000 };
+  readers.wide = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'wide', from: now - 60 * 86_400_000, to: now }, keyId: 'wide', rps: 1000 };
+  const auth = {
+    resolveIngest: () => ({ projectId: 'A' }),
+    resolveReader(req) {
+      const reader = readers[req.headers['x-glitchless-api-key']];
+      if (!reader) throw new AuthError(401, 'no');
+      return reader;
+    },
+  };
+  const app = await serve({ store: new FileStore(tmpdir(), { legacyProject: null }), auth });
+  try {
+    for (let i = 0; i < 4; i++) {
+      const base = { service: 'zoomies', env: 'prod', version: '1.0.0', session_id: `secret_session_${i}`, player_id: `secret_player_${i}` };
+      const events = [
+        { type: 'session_start', ts: t0 + i * 1000, session_type: 'user', device: { browser: 'SecretBrowser', os: 'SecretOS', gpu: 'SecretGPU', gpu_tier: 'high' } },
+        { type: 'level_start', ts: t0 + i * 1000 + 10, level: 'level-1' },
+        { type: 'custom', ts: t0 + i * 1000 + 20, level: 'level-1', name: 'opened_secret_door', attrs: { kind: i % 2 ? 'big' : 'small' } },
+        { type: 'error', ts: t0 + i * 1000 + 30, level: 'level-1', kind: 'js', message: 'TypeError: boom', fn: 'tick', source: 'secret-file.js', line: 7, stack: 'TypeError: boom\n    at tick (secret-file.js:7:1)' },
+        { type: 'session_end', ts: t0 + i * 1000 + 40, reason: 'pagehide' },
+      ].map((e) => ({ ...base, ...e }));
+      assert.equal((await app.send('any', payload(events))).status, 202);
+    }
+    assert.equal((await app.send('any', payload([{ service: 'other', env: 'prod', version: '1', session_id: 'o1', player_id: 'o1', type: 'session_start', ts: t0 }]))).status, 202);
+    const board = { id: 'jam', title: 'Jam', panels: [{ type: 'stat', metric: 'sessions' }, { type: 'sessions' }, { type: 'errors' }, { type: 'findings' }, { type: 'live' }, { type: 'breakdown', event: 'opened_secret_door', by: 'kind' }] };
+    const put = await fetch(`${app.base}/v1/dashboard?service=zoomies`, { method: 'PUT', headers: { 'x-glitchless-api-key': 'full' }, body: JSON.stringify({ pages: [board, { id: 'private', title: 'Private', panels: [{ type: 'sessions' }] }, { id: 'errors', view: 'errors' }] }) });
+    assert.equal(put.status, 200);
+
+    // services: its own service only, and ranges up to 30 days.
+    const services = (await app.get('/v1/query/services', 'share')).body;
+    assert.deepEqual(services.services.map((s) => s.service), ['zoomies']);
+    assert.equal(services.max_range_days, 30);
+
+    // The board: its page whatever the request leaves out, and the same answer for the same filters.
+    const shared = await app.get(`/v1/query/board?from=${now - 7_200_000}&to=${now}`, 'share');
+    assert.equal(shared.status, 200);
+    assert.equal(shared.body.board.page, 'jam');
+    const panel = (type) => shared.body.board.panels.find((p) => p.type === type);
+    assert.equal(panel('stat').value, 4);
+    assert.equal(panel('sessions').sessions.length, 4);
+    assert.equal(panel('sessions').sessions[0].version, '1.0.0');
+    assert.equal(panel('errors').issues[0].message, 'TypeError: boom');
+    const stability = panel('findings').findings.find((f) => f.category === 'stability');
+    assert.equal(stability.title, 'TypeError: boom');
+    assert.equal(stability.summary, '4 occurrences in 4 sessions on level-1.');
+    assert.equal(panel('live').empty, true);
+    assert.deepEqual(panel('breakdown').rows.map((r) => r.value).sort(), ['big', 'small']);
+    const text = JSON.stringify(shared.body);
+    for (const secret of ['secret_session', 'secret_player', 'SecretBrowser', 'SecretOS', 'SecretGPU', 'secret-file.js', 'stack', 'breadcrumbs', 'evidence', 'Private'])
+      assert.equal(text.includes(secret), false, `a shared board shows ${secret}`);
+
+    // Members still get the whole board at the same URL, before and after (the query cache keeps them apart).
+    const full = (await app.get(`/v1/query/board?service=zoomies&page=jam&from=${now - 7_200_000}&to=${now}`, 'full')).body;
+    assert.ok(full.board.panels.find((p) => p.type === 'sessions').sessions[0].session_id.startsWith('secret_session'));
+    const again = (await app.get(`/v1/query/board?service=zoomies&page=jam&from=${now - 7_200_000}&to=${now}`, 'share')).body;
+    assert.equal(JSON.stringify(again).includes('secret_session'), false);
+
+    // Filters and ids in the request don't reach the query; ranges stop at 30 days.
+    const narrowed = (await app.get(`/v1/query/board?sessions=secret_session_0&env=dev&version=9&from=${now - 7_200_000}&to=${now}`, 'share')).body;
+    assert.equal(narrowed.board.panels[0].value, 4);
+    const long = (await app.get(`/v1/query/board?from=${now - 400 * 86_400_000}&to=${now}`, 'share')).body;
+    assert.equal(long.meta.to - long.meta.from <= 30 * 86_400_000 + 60_000, true, `range ${long.meta.from}..${long.meta.to}`);
+
+    // A pinned link answers its own window, whatever the request asks; the rolling one is unchanged.
+    const pin = readers.pinned.share;
+    for (const q of ['', `?from=0&to=${now}`, `?from=${now - 86_400_000}&to=${now}&service=zoomies&page=jam`]) {
+      const res = (await app.get(`/v1/query/board${q}`, 'pinned')).body;
+      assert.deepEqual([res.meta.from, res.meta.to], [pin.from, pin.to], q);
+      assert.equal(res.board.panels[0].value, 2, `sessions in the pinned window ${q}`);
+    }
+    assert.deepEqual((await app.get('/v1/query/services', 'pinned')).body.window, { from: pin.from, to: pin.to });
+    assert.equal((await app.get('/v1/query/services', 'share')).body.window, null);
+    assert.equal((await app.get(`/v1/query/services?from=${pin.from}&to=${pin.to}`, 'share')).body.window, null, 'a rolling link asking for the pinned window gets its own answer');
+    assert.equal((await app.get(`/v1/query/board?from=${now - 7_200_000}&to=${now}`, 'share')).body.board.panels[0].value, 4);
+    const wide = (await app.get('/v1/query/board', 'wide')).body.meta;
+    assert.equal(wide.to - wide.from, 30 * 86_400_000, 'a pinned window is cut to 30 days too');
+
+    // Everything else is refused.
+    const refused = [
+      '/v1/query/board?page=private',
+      '/v1/query/board?page=errors',
+      '/v1/query/board?service=other',
+      '/v1/query/overview?service=zoomies',
+      '/v1/query/errors?service=zoomies',
+      '/v1/query/sessions?service=zoomies',
+      '/v1/query/session?service=zoomies&id=secret_session_0',
+      '/v1/query/activity',
+      '/v1/query/events?service=zoomies',
+      '/v1/query/dashboard?service=zoomies',
+      '/v1/query/findings?service=zoomies',
+      '/v1/query/performance?service=zoomies',
+      '/v1/query/players?service=zoomies',
+      '/v1/query/heatmap?service=zoomies',
+      '/v1/query/versions?service=zoomies',
+      '/v1/query/playtest?service=zoomies&sessions=secret_session_0',
+      '/v1/query/nope',
+      '/v1/live?service=zoomies',
+      '/v1/dashboard?service=zoomies',
+      '/v1/nothing',
+    ];
+    for (const p of refused) assert.equal((await app.get(p, 'share')).status, 403, p);
+    for (const [method, p] of [['PUT', '/v1/dashboard?service=zoomies'], ['DELETE', '/v1/dashboard?service=zoomies'], ['DELETE', '/v1/data?service=zoomies'], ['POST', '/v1/query/board']])
+      assert.equal((await fetch(app.base + p, { method, headers: { 'x-glitchless-api-key': 'share' }, body: method === 'PUT' ? JSON.stringify({ pages: [board] }) : undefined })).status, 403, `${method} ${p}`);
+    assert.equal((await app.get('/v1/query/sessions?service=zoomies', 'full')).body.sessions.length, 4, 'nothing was deleted');
+
+    // Share readers are rate limited: by their own rps, or DEFAULT_SHARE_RPS (10/s, bursts of 20).
+    const slow = [];
+    for (let i = 0; i < 3; i++) slow.push((await app.get('/v1/query/services', 'slow')).status);
+    assert.deepEqual(slow, [200, 200, 429]);
+    assert.equal((await app.get('/v1/query/services', 'slow')).res.headers.get('retry-after'), '1');
+    const burst = await Promise.all(Array.from({ length: 30 }, () => app.get('/v1/query/services', 'plain').then((r) => r.status)));
+    assert.ok(burst.filter((s) => s === 429).length >= 5, `statuses: ${burst}`);
+    assert.equal((await app.get('/v1/query/services', 'full')).status, 200, 'members are not limited by a link');
+  } finally {
+    await app.close();
+  }
+  // A kind of panel this list doesn't know yet stays off a shared board until it is added to it.
+  const ctx = buildContext([], { service: 'zoomies', from: now - 3_600_000, to: now, type: 'all' });
+  assert.deepEqual(evaluateBoard(ctx, { panels: [{ type: 'bug_reports' }] }, { shared: true })[0].empty, true);
 });

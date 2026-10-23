@@ -317,6 +317,113 @@ namespace GlitchlessSdk.Tests
         }
 
         [Test]
+        public void InstallModeKeepsThePlayerIdAndSendsWhatAnonymousModeSends()
+        {
+            var first = NewCore();
+            first.Init(Options(Privacy.Install));
+            StringAssert.IsMatch("^p_[a-z0-9]{12}$", first.PlayerId);
+            Assert.AreEqual(first.PlayerId, File.ReadAllText(Path.Combine(dir, "player_id")));
+            first.SetPosition(1, 2, 3);
+            first.Death(1.234, 5.678, 0, "fell");
+            first.Flush();
+            var envelope = (Dictionary<string, object>)Json.Parse(transport.Sent[0]);
+            Assert.AreEqual(first.PlayerId, envelope["player_id"]);
+            var start = transport.Events().First(e => (string)e["type"] == "session_start");
+            Assert.AreEqual("install", start["privacy"]);
+            CollectionAssert.AreEquivalent(DeviceInfo.Collect(false).Keys, ((Dictionary<string, object>)start["device"]).Keys, "the device as anonymous mode sends it");
+            Assert.IsFalse(transport.Events().Single(e => (string)e["type"] == "death").ContainsKey("x"), "no positions");
+            var second = NewCore();
+            second.Init(Options(Privacy.Install));
+            Assert.AreEqual(first.PlayerId, second.PlayerId, "the next launch sends the same ID");
+            var full = NewCore();
+            full.Init(Options(Privacy.Full));
+            Assert.AreEqual(first.PlayerId, full.PlayerId, "full mode keeps the same ID");
+            var anon = NewCore();
+            anon.Init(Options());
+            Assert.IsFalse(File.Exists(Path.Combine(dir, "player_id")), "anonymous mode deletes it");
+        }
+
+        [Test]
+        public void ResetInstallIdForgetsItFromTheNextLaunch()
+        {
+            var first = NewCore();
+            first.Init(Options(Privacy.Install));
+            var id = first.PlayerId;
+            first.ResetInstallId();
+            Assert.AreEqual(id, first.PlayerId, "this session keeps its ID");
+            Assert.IsFalse(File.Exists(Path.Combine(dir, "player_id")));
+            var next = NewCore();
+            next.Init(Options(Privacy.Install));
+            StringAssert.StartsWith("p_", next.PlayerId);
+            Assert.AreNotEqual(id, next.PlayerId);
+        }
+
+        [Test]
+        public void InstallModeOfflineBatchesKeepTheirIds()
+        {
+            var first = NewCore();
+            first.Init(Options(Privacy.Install));
+            transport.Status = 0;
+            first.Track("bone_collected", null);
+            first.Shutdown("quit");
+            StringAssert.Contains(first.PlayerId, File.ReadAllText(Path.Combine(dir, "outbox.json")));
+            transport.Status = 202;
+            var second = NewCore();
+            second.Init(Options(Privacy.Install));
+            second.Flush();
+            var replayed = transport.Sent.Select(b => (Dictionary<string, object>)Json.Parse(b)).First(b => ((List<object>)b["events"]).Cast<Dictionary<string, object>>().Any(e => (string)e["type"] == "custom"));
+            Assert.AreEqual(first.SessionId, replayed["session_id"]);
+            Assert.AreEqual(first.PlayerId, replayed["player_id"]);
+        }
+
+        [Test]
+        public void IdStorageKeepsTheIdWhereThereIsNoFolder()
+        {
+            var prefs = new Dictionary<string, string>();
+            GlitchlessCore Web() => new GlitchlessCore
+            {
+                Transport = transport,
+                SaveDir = null,
+                Ids = new IdStorage { Read = n => prefs.TryGetValue(n, out var v) ? v : null, Write = (n, v) => prefs[n] = v, Delete = n => prefs.Remove(n) },
+                Clock = () => now,
+                Args = () => new string[0],
+                Log = _ => { },
+                IsWeb = true,
+            };
+            var first = Web();
+            first.Init(Options(Privacy.Install));
+            Assert.AreEqual(first.PlayerId, prefs["player_id"]);
+            var second = Web();
+            second.Init(Options(Privacy.Install));
+            Assert.AreEqual(first.PlayerId, second.PlayerId);
+            Web().Init(Options());
+            Assert.IsEmpty(prefs);
+        }
+
+        [Test]
+        public void SteamDeckFromSteamTheBoardOrSteamOs()
+        {
+            const string steamos = "NAME=\"SteamOS\"\nID=steamos\nID_LIKE=arch\nVARIANT_ID=steamdeck\nVERSION_ID=3.7.13\n";
+            const string ubuntu = "NAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nID=ubuntu\nID_LIKE=debian\n";
+            Assert.IsTrue(DeviceInfo.IsSteamDeck(null, "Valve\n", "Jupiter\n", steamos), "SteamOS on the LCD model");
+            Assert.IsTrue(DeviceInfo.IsSteamDeck(null, "Valve\n", "Galileo\n", "ID=bazzite\n"), "the OLED model under another distro");
+            Assert.IsTrue(DeviceInfo.IsSteamDeck("1", null, null, null), "a Windows build under Proton");
+            Assert.IsTrue(DeviceInfo.IsSteamDeck(null, null, null, "ID=\"steamos\"\n"), "SteamOS on its own");
+            Assert.IsFalse(DeviceInfo.IsSteamDeck("", "ASUSTeK COMPUTER INC.\n", "ROG STRIX B650E-F\n", ubuntu), "an Ubuntu desktop");
+            Assert.IsFalse(DeviceInfo.IsSteamDeck(null, "Valve\n", "Fremont\n", ubuntu), "other Valve hardware");
+            Assert.IsFalse(DeviceInfo.IsSteamDeck("0", null, null, null));
+            Assert.IsFalse(DeviceInfo.IsSteamDeck(null, null, null, null));
+            Assert.IsTrue(DeviceInfo.IsSteamOs(null, "Valve\n", "Jupiter\n", steamos), "a Deck on SteamOS reports SteamOS");
+            Assert.IsTrue(DeviceInfo.IsSteamOs("1", null, null, null), "so does a Windows build Steam started on a Deck");
+            Assert.IsFalse(DeviceInfo.IsSteamOs(null, "Valve\n", "Galileo\n", "ID=bazzite\n"), "a Deck under Bazzite stays Linux");
+            Assert.IsFalse(DeviceInfo.IsSteamOs(null, null, null, ubuntu));
+            Assert.IsFalse(DeviceInfo.SteamDeck, "the Editor on this Mac is not a Deck");
+            var device = DeviceInfo.Collect(false);
+            Assert.AreEqual(false, device["steam_deck"], "a boolean, as the Unreal plugin sends it");
+            Assert.AreNotEqual("SteamOS", device["os"]);
+        }
+
+        [Test]
         public void DeathsHaveNoPlaceUnlessPositionsAreOn()
         {
             var core = NewCore();

@@ -1,0 +1,7 @@
+-xc++
+-std=c++17
+-Wall
+-Wextra
+-IPlugins/Glitchless/Source/Glitchless/Private/Core
+-IPlugins/Glitchless/Source/ThirdParty/fdlibm
+-Itest/core

@@ -5,6 +5,7 @@ import { Widget, Status, TimeSeries, Icon, Segmented } from '../components.jsx';
 import { LevelMap } from '../heatmap.jsx';
 import { fmtNum, fmtMs, fmtDuration, fmtTime, timeAgo, frameStatus } from '../format.js';
 import { NoGame } from './Overview.jsx';
+import { CsvButton, sessionsCsv } from '../csv.jsx';
 
 export function Sessions() {
   const f = useFilters();
@@ -61,6 +62,7 @@ export function Sessions() {
                 ...(has.bots ? [{ value: 'synthetic', label: 'Bots' }] : []),
               ]}
             />
+            {rows.length > 0 && <CsvButton name="sessions" rows={() => sessionsCsv(rows, all)} />}
           </>
         }
       >
@@ -78,7 +80,11 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
     levels: all.some((s) => s.levels.length),
     frames: all.some((s) => s.p95 != null),
     deaths: all.some((s) => s.deaths > 0),
+    // A shared board's sessions come without ids and devices (server/src/board.js).
+    ids: all.some((s) => 'session_id' in s),
+    devices: all.some((s) => 'browser' in s),
   };
+  const open = has.ids && !f.readOnly;
   const eventNames = [...new Set(all.flatMap((s) => Object.keys(s.events || {})))];
   return (
     <div className="tablewrap" style={maxHeight ? { maxHeight } : undefined}>
@@ -86,9 +92,9 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
         <thead>
           <tr>
             <th>Started</th>
-            <th>Player</th>
+            {has.ids && <th>Player</th>}
             <th>Version</th>
-            <th>Device</th>
+            {has.devices && <th>Device</th>}
             {eventNames.length > 0 && <th>Events</th>}
             {has.levels && <th>Levels</th>}
             <th className="num">Duration</th>
@@ -99,18 +105,24 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((s) => (
-            <tr key={s.session_id} className="click" onClick={() => f.go(`sessions/${s.session_id}`)}>
-              <td className="muted">{timeAgo(s.start)}</td>
-              <td className="mono" style={{ fontSize: 11.5 }}>
-                {s.player_id.slice(0, 10)} {s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
+          {rows.map((s, i) => (
+            <tr key={s.session_id ?? i} className={open ? 'click' : undefined} onClick={open ? () => f.go(`sessions/${s.session_id}`) : undefined}>
+              <td className="muted">
+                {timeAgo(s.start)} {!has.ids && s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
               </td>
+              {has.ids && (
+                <td className="mono" style={{ fontSize: 11.5 }}>
+                  {s.player_id.slice(0, 10)} {s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
+                </td>
+              )}
               <td>
                 <span className="tag">{s.version}</span>
               </td>
-              <td style={{ fontSize: 12 }}>
-                {[s.browser, s.os, s.gpu].filter(Boolean).join(' · ') || '–'} {s.gpu_tier && <span className="tag">{s.gpu_tier}</span>}
-              </td>
+              {has.devices && (
+                <td style={{ fontSize: 12 }}>
+                  {[s.browser, s.os, s.gpu].filter(Boolean).join(' · ') || '–'} {s.gpu_tier && <span className="tag">{s.gpu_tier}</span>}
+                </td>
+              )}
               {eventNames.length > 0 && (
                 <td>
                   {Object.entries(s.events || {}).map(([n, k]) => (
@@ -172,6 +184,8 @@ function describe(e) {
       return e.ttff_ms != null ? [`First frame`, `${e.ttff_ms}ms after navigation`] : [`First input`, `${e.ttp_ms}ms`];
     case 'session_end':
       return [`Session ended`, `${e.reason} after ${fmtDuration(e.duration_s)}`];
+    case 'bug_report':
+      return [`Bug report: ${e.note ? `"${e.note}"` : '(no note)'}`, e.has_screenshot ? 'with a screenshot' : ''];
     default:
       return [e.type, ''];
   }
@@ -183,6 +197,7 @@ function cls(e) {
   if (e.type === 'hitch') return 'hitch';
   if (e.type.startsWith('level')) return 'level';
   if (e.type === 'custom' && e.name === 'annotation') return 'annotation';
+  if (e.type === 'bug_report') return 'bug';
   return '';
 }
 
@@ -199,9 +214,11 @@ export function SessionDetail({ route }) {
   const t0 = positions[0]?.[0] ?? data?.session?.start;
   const t1 = positions.at(-1)?.[0] ?? t0;
 
+  // #/sessions/<id>?t=<ts> (a bug report's link) opens the replay at that moment.
+  const at = Number(route.query.get('t')) || null;
   useEffect(() => {
-    if (data && t == null) setT(t0);
-  }, [data, t, t0]);
+    if (data && t == null) setT(at ? Math.max(t0, Math.min(t1, at)) : t0);
+  }, [data, t, t0, t1, at]);
   useEffect(() => {
     if (!playing) return;
     const iv = setInterval(() => {
@@ -242,6 +259,7 @@ export function SessionDetail({ route }) {
     ...(t ? [{ ts: t, label: '▶', color: '#14213d' }] : []),
     ...data.timeline.filter((e) => e.type === 'error').slice(0, 5).map((e) => ({ ts: e.ts, label: 'error', color: '#ff6b57' })),
     ...(s.annotations || []).map((a) => ({ ts: a.ts, label: 'agent', color: '#3d8cf5' })),
+    ...data.timeline.filter((e) => e.type === 'bug_report').map((e) => ({ ts: e.ts, label: 'report', color: '#8a5cf6' })),
   ];
 
   return (
@@ -357,6 +375,11 @@ export function SessionDetail({ route }) {
                     <div className="muted" style={{ fontSize: 11.5 }}>
                       {detail}
                     </div>
+                  )}
+                  {e.type === 'bug_report' && (
+                    <a href={`#/reports/${e.id}`} onClick={(ev) => ev.stopPropagation()} style={{ fontSize: 11.5 }}>
+                      Open the report →
+                    </a>
                   )}
                 </span>
               </div>

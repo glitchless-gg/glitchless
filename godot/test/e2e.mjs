@@ -14,6 +14,12 @@
 //   6. long away a trip longer than session_timeout starts a new session
 //   7. focus     losing focus without going to the background (Control Center, a call)
 //                and drawing nothing meanwhile is not a frozen frame
+//   8. bug report  one from code (Glitchless.report_bug), one through the F8 form, and the offline
+//                run's, saved in the outbox and sent on the next launch
+//   9. install   install mode: the random player ID kept in user://, sent as player_id, with the device and
+//                positions as anonymous mode sends them; reset_install_id() and anonymous mode remove it
+// It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys) and test/device_test.gd
+// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -112,15 +118,25 @@ let server;
 try {
   if (!fs.existsSync(path.join(PROJECT, '.godot'))) spawnSync(godot, ['--headless', '--path', PROJECT, '--import'], { stdio: 'ignore' });
   const userDir = runGodot(['--script', 'res://test/user_dir.gd'], 'user dir').match(/^user dir: (.+)$/m)[1].trim();
+  const unit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/bug_report_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of unit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `bug report unit: ${m[2]}`] : ['FAIL', `bug report unit: ${m[2]}`]);
+  check('bug report unit tests ran', () => assert.match(unit.stdout, /bug report tests: 0 failed/, unit.stdout + unit.stderr));
+  const deviceUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/device_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of deviceUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `device unit: ${m[2]}`] : ['FAIL', `device unit: ${m[2]}`]);
+  check('device unit tests ran', () => assert.match(deviceUnit.stdout, /device tests: 0 failed/, deviceUnit.stdout + deviceUnit.stderr));
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });
   const demo = (extra) => ['--', '--autoplay', '--level-seconds=1.5', '--glitchless', ...extra];
 
   // 1. offline
-  runGodot(demo(['--seed=1', `--intake=http://127.0.0.1:${deadPort}`]), 'offline run');
+  const offlineOut = runGodot(demo(['--seed=1', '--bug-report-at=1', `--intake=http://127.0.0.1:${deadPort}`]), 'offline run');
   const saved = fs.existsSync(outbox) ? fs.readFileSync(outbox, 'utf8') : '';
   check('offline: unsent batches are saved in user://glitchless/outbox.json', () => assert.ok(saved.includes('"session_start"') && saved.includes('"session_end"'), 'no session in the outbox'));
+  check('offline: a bug report that could not go is kept in the outbox', () => {
+    assert.match(offlineOut, /bug report from code: \{ "sent": false, "reason": "error" \}/);
+    assert.ok(saved.includes('"bug_report"') && saved.includes('data:image/jpeg;base64,'), 'no report in the outbox');
+  });
   check('offline: anonymous mode saves no session or player ID', () => {
     assert.ok(!/"(sid|pid|session_id|player_id)"/.test(saved), 'an ID was written to disk');
     assert.ok(!fs.existsSync(playerFile), 'player_id file exists');
@@ -187,7 +203,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.1.1'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.2.0'));
   });
   check('engine gauges ride in ctx: level_3 carries the orphan nodes level_2 leaked', () => {
     const peak = (level) => Math.max(...raw.filter((e) => e.type === 'frame_window' && e.level === level).map((w) => w.ctx?.orphan_nodes ?? 0));
@@ -268,14 +284,97 @@ try {
     assert.ok(windows.length && windows.every((w) => !(w.ft_max >= 1300)), `worst frame ${Math.max(...windows.map((w) => w.ft_max))} ms`);
   });
 
+  // 8. bug reports
+  const beforeReports = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  const bugOut = runGodot(demo(['--seed=8', '--bug-report-at=1', '--bug-form-at=2.5', `--intake=http://127.0.0.1:${port}`]), 'bug report run');
+  await new Promise((r) => setTimeout(r, 300));
+  const bugRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeReports.has(s.session_id));
+  const { reports } = await query(port, 'reports');
+  check('bug report: sent from code straight away, and through the form', () => {
+    assert.match(bugOut, /bug report from code: \{ "sent": true \}/);
+    assert.equal(bugRun.length, 1, `${bugRun.length} sessions`);
+    const mine = reports.filter((r) => r.session_id === bugRun[0].session_id);
+    assert.deepEqual(mine.map((r) => r.note).sort(), ['sparks froze the screen', 'the bonus on level_1 never paid out'], 'Esc cancelled the first form, so it sent nothing');
+    for (const r of mine) {
+      assert.match(r.device, /^Godot 4\.\d+/);
+      assert.equal(r.version, '0.1.0');
+    }
+  });
+  check('bug report: the form pauses the game while it is open, and F8 and Esc open and close it', () => {
+    assert.deepEqual(bugOut.match(/bug report form (opened|closed), paused: \w+/g), [
+      'bug report form opened, paused: true',
+      'bug report form closed, paused: false',
+      'bug report form opened, paused: true',
+      'bug report form closed, paused: false',
+    ]);
+  });
+  check('bug report: the offline run\'s report arrived with its session on the next launch', () => {
+    assert.ok(reports.some((r) => r.note === 'the bonus on level_1 never paid out' && anon.some((s) => s.session_id === r.session_id)), JSON.stringify(reports.map((r) => r.session_id)));
+  });
+  const fromCode = reports.find((r) => r.session_id === bugRun[0]?.session_id && r.note.startsWith('the bonus'));
+  const opened = fromCode && (await query(port, 'report', { id: fromCode.id })).report;
+  check('bug report: the screenshot, recent events and frame windows arrive', () => {
+    assert.ok(opened, 'no report from code');
+    assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
+    assert.ok(opened.screenshot.length <= 200_000);
+    assert.equal(opened.sdk, 'glitchless-godot/0.2.0');
+    assert.equal(opened.level, 'level_1');
+    assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
+    assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');
+    assert.ok(opened.frames.length > 0 && opened.frames.every((f) => typeof f.fps === 'number' && typeof f.p95 === 'number'), JSON.stringify(opened.frames));
+  });
+  const timeline = bugRun[0] ? (await query(port, 'session', { id: bugRun[0].session_id })).timeline : [];
+  check('bug report: the session timeline lists both reports', () => assert.equal(timeline.filter((e) => e.type === 'bug_report').length, 2));
+
   const all = (await query(port, 'sessions')).sessions;
-  check('a script error just before the session ends makes it a crash', () => {
-    // Every run quits about half a second after level_3's script error; a session that
-    // went to the background before level_3 never saw it.
-    const scriptError = new Set(raw2().filter((e) => e.type === 'error' && e.kind === 'script').map((e) => e.session_id));
-    for (const s of all) assert.equal(s.crashed, scriptError.has(s.session_id), s.session_id);
+  check('a script error is a crash only when nothing in the game happens after it', () => {
+    // SPEC §4: a session crashed when the run broke at the end, not when the player played on. Runs quit
+    // soon after level_3's script error; whether level_3 still completes in between decides which it is.
+    const events = raw2();
+    const sdkOwn = new Set(['rage_input', 'screen_change', 'app_resume', 'webgl_context_restored', 'annotation', 'assets_loaded']);
+    const play = (e) => ['level_start', 'level_complete', 'level_fail', 'death'].includes(e.type) || (e.type === 'custom' && !sdkOwn.has(e.name));
+    const broke = new Set();
+    for (const err of events.filter((e) => e.type === 'error' && e.kind === 'script')) {
+      if (!events.some((e) => e.session_id === err.session_id && e.ts > err.ts && play(e))) broke.add(err.session_id);
+    }
+    for (const s of all) assert.equal(s.crashed, broke.has(s.session_id), s.session_id);
     assert.ok(all.some((s) => !s.crashed));
   });
+
+  // 9. install mode
+  const beforeInstall = new Set(all.map((s) => s.session_id));
+  const intake = `--intake=http://127.0.0.1:${port}`;
+  runGodot(demo(['--seed=9', '--privacy=install', intake]), 'install run');
+  const firstId = fs.existsSync(playerFile) ? fs.readFileSync(playerFile, 'utf8') : '';
+  check('install: a random player ID is saved in user://glitchless/player_id, as in full mode', () => assert.match(firstId, /^p_[a-z0-9]{12}$/));
+  runGodot(demo(['--seed=10', '--privacy=install', '--reset-install-id', intake]), 'install reset run');
+  check('install: reset_install_id() deletes the saved ID', () => assert.ok(!fs.existsSync(playerFile), 'player_id still there'));
+  runGodot(demo(['--seed=11', '--privacy=install', intake]), 'install run after the reset');
+  const secondId = fs.existsSync(playerFile) ? fs.readFileSync(playerFile, 'utf8') : '';
+  await new Promise((r) => setTimeout(r, 300));
+  const installRuns = (await query(port, 'sessions')).sessions.filter((s) => !beforeInstall.has(s.session_id)).sort((a, b) => a.start - b.start);
+  check('install: each session sends the saved ID; the one that reset it keeps its own, the next launch has a new one', () => {
+    assert.deepEqual(installRuns.map((s) => s.player_id), [firstId, firstId, secondId]);
+    assert.match(secondId, /^p_[a-z0-9]{12}$/);
+    assert.notEqual(secondId, firstId);
+  });
+  const installDevice = installRuns[0] && (await detail(installRuns[0].session_id)).device;
+  check('install: the device as anonymous mode sends it, and deaths without a place', () => {
+    for (const k of ['model', 'gpu', 'os_version', 'cores', 'memory_gb']) assert.ok(!(k in installDevice), `install sent ${k}`);
+    assert.deepEqual(Object.keys(installDevice).sort(), Object.keys(anonDevice).sort());
+    const mine = new Set(installRuns.map((s) => s.session_id));
+    const deaths = raw2().filter((e) => e.type === 'death' && mine.has(e.session_id));
+    assert.ok(deaths.length > 0 && deaths.every((d) => !('x' in d)), `${deaths.length} deaths`);
+    const start = raw2().find((e) => e.type === 'session_start' && e.session_id === installRuns[0].session_id);
+    assert.equal(start.privacy, 'install');
+  });
+  const { retention } = await query(port, 'players');
+  check('install: the players query counts retention over the sessions with an ID', () => {
+    assert.equal(retention.status, 'ok');
+    assert.ok(retention.id_sessions_pct > 0 && retention.id_sessions_pct < 100, `${retention.id_sessions_pct}%`);
+  });
+  runGodot(demo(['--seed=12', intake]), 'anonymous run after install');
+  check('install: anonymous mode deletes the ID an install-mode build left', () => assert.ok(!fs.existsSync(playerFile), 'player_id still there'));
 } finally {
   server?.kill();
   fs.rmSync(tmp, { recursive: true, force: true });

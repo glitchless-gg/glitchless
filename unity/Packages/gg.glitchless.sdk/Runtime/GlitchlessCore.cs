@@ -40,7 +40,7 @@ namespace GlitchlessSdk
         void Send(string url, byte[] body, string contentType, Action<long> done);
         /// <summary>Sends and waits at most timeoutMs, for when the game is closing. Returns the status, or 0.</summary>
         long SendNow(string url, byte[] body, string contentType, int timeoutMs);
-        /// <summary>Gives up on the request Send started, if it's still going.</summary>
+        /// <summary>Gives up on the requests Send started that are still going.</summary>
         void Abort();
     }
 
@@ -57,7 +57,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.1.0";
+        public const string SdkVersion = "0.2.0";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -73,6 +73,9 @@ namespace GlitchlessSdk
         const long MaxOutboxAgeMs = 6L * 86400 * 1000; // the server files anything over 7 days old under "now"
         public const int SendDeadlineMs = 1500; // how long closing or going to the background may wait on the network
         const int RingSize = 240;
+        public const int MaxNote = 2000; // characters of a bug report's note the server keeps
+        const int BugRecent = 20; // game events and hitches a bug report carries
+        const int BugFrames = 6; // frame windows a bug report carries
         const string IdChars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
         static readonly Regex NotALevel = new Regex(@"\b(boot|bootstrap|init|startup|preload(er)?|load(er|ing)?|splash|intro|title|menu|main ?menu|ui|hud|overlay|pause[d]?|game ?over|settings|options|credits|leaderboard|shop|empty)\b", RegexOptions.IgnoreCase);
@@ -83,7 +86,8 @@ namespace GlitchlessSdk
         public Func<long> UnixNow = () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         public Func<double> Clock; // milliseconds, only ever compared with itself; default: a Stopwatch
         public ITransport Transport;
-        public string SaveDir; // where the outbox and player ID live; null writes nothing to disk
+        public string SaveDir; // where the outbox and the player ID live; null writes nothing to disk
+        public IdStorage Ids; // keeps the player ID elsewhere (PlayerPrefs on the web); null: files in SaveDir
         public Func<bool, Dictionary<string, object>> Device = full => new Dictionary<string, object>();
         public Func<Dictionary<string, object>> Engine; // mesh, texture, object counts and memory, where Unity has them
         public Func<double> StartupMs; // time since the app started, for time to first frame
@@ -113,10 +117,13 @@ namespace GlitchlessSdk
         public readonly Dictionary<string, double> Ctx = new Dictionary<string, double>();
 
         string service = "unknown-game", version = "0.0.0", env = "dev", intake = "", sessionType = "user";
-        bool full, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
+        bool full, storesId, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
         long startedAt;
         double levelStartedAt;
         readonly List<(string name, double t)> recent = new List<(string, double)>();
+        readonly List<Dictionary<string, object>> history = new List<Dictionary<string, object>>(); // the last game events, slimmed, for bug reports
+        readonly List<Dictionary<string, object>> recentHitches = new List<Dictionary<string, object>>();
+        readonly List<Dictionary<string, object>> recentWindows = new List<Dictionary<string, object>>(); // {ts, level, fps, p95}
         List<Dictionary<string, object>> queue = new List<Dictionary<string, object>>();
         readonly List<Batch> outbox = new List<Batch>();
         int nextBatchId = 1, inFlight = -1;
@@ -150,6 +157,7 @@ namespace GlitchlessSdk
             public string Service, Env, Version, Sid, Pid;
             public long Group;
             public List<string> Events;
+            public bool Direct; // a bug report on a request of its own
         }
 
         sealed class Window
@@ -205,6 +213,7 @@ namespace GlitchlessSdk
             var flagIntake = FlagValue("--glitchless-intake");
             intake = (flagIntake ?? Options.Intake ?? "").TrimEnd('/');
             full = Options.Privacy == Privacy.Full;
+            storesId = full || Options.Privacy == Privacy.Install; // the modes that send a stored ID
             positionsOn = Options.Positions ?? full;
             rageInputOn = Options.RageInput ?? !IsMobile;
             sceneLevels = Options.SceneLevels;
@@ -221,14 +230,12 @@ namespace GlitchlessSdk
                 Debug("off (no intake, or turned off)");
                 return;
             }
-            if (SaveDir != null)
-            {
-                TryIo(() => Directory.CreateDirectory(SaveDir));
-                if (full) PlayerId = LoadPlayerId();
-                else TryIo(() => File.Delete(PlayerPath)); // left by a full-mode build: anonymous mode keeps no ID
-                LoadOutbox();
-            }
-            Debug($"on: {service} {version} {env} -> {intake} ({(full ? "full" : "anonymous")}, {sessionType})");
+            if (SaveDir != null) TryIo(() => Directory.CreateDirectory(SaveDir));
+            // Install and full mode share one saved ID (SPEC §4b); anonymous mode deletes one another build left.
+            if (storesId) PlayerId = LoadId(PlayerIdName, "p_");
+            else TryIo(() => DeleteId(PlayerIdName));
+            if (SaveDir != null) LoadOutbox();
+            Debug($"on: {service} {version} {env} -> {intake} ({PrivacyName}, {sessionType})");
         }
 
         public void LevelStart(string levelId) => StartLevel(levelId, fromScene: false);
@@ -583,6 +590,8 @@ namespace GlitchlessSdk
                     ["window"] = window,
                     ["ctx"] = new Dictionary<string, double>(w.Ctx),
                 });
+                recentWindows.Add(new Dictionary<string, object> { ["ts"] = w.StartedAt, ["level"] = Level, ["fps"] = Sketch.Round(n / secs, 1), ["p95"] = Round(s.Quantile(0.95), 2) });
+                if (recentWindows.Count > 12) recentWindows.RemoveAt(0);
             }
             if (posBuffer.Count > 0)
             {
@@ -590,7 +599,12 @@ namespace GlitchlessSdk
                 posBuffer.Clear();
             }
             pendingHitches.Sort((a, b) => ((double)b["duration_ms"]).CompareTo((double)a["duration_ms"]));
-            for (var i = 0; i < Math.Min(MaxHitchEventsPerWindow, pendingHitches.Count); i++) QueueEvent(pendingHitches[i]);
+            for (var i = 0; i < Math.Min(MaxHitchEventsPerWindow, pendingHitches.Count); i++)
+            {
+                QueueEvent(pendingHitches[i]);
+                recentHitches.Add(Slim(pendingHitches[i]));
+            }
+            if (recentHitches.Count > BugRecent) recentHitches.RemoveRange(0, recentHitches.Count - BugRecent);
             pendingHitches.Clear();
         }
 
@@ -810,6 +824,7 @@ namespace GlitchlessSdk
             startedAt = UnixNow();
             sessionStartSent = false;
             recent.Clear();
+            history.Clear();
             errorCounts.Clear();
         }
 
@@ -847,6 +862,9 @@ namespace GlitchlessSdk
             if (!e.ContainsKey("ts")) e["ts"] = UnixNow();
             if (!e.ContainsKey("level")) e["level"] = Level;
             QueueEvent(e);
+            if ((string)e["type"] == "session_end") return;
+            history.Add(Slim(e));
+            if (history.Count > BugRecent) history.RemoveAt(0);
         }
 
         void QueueEvent(Dictionary<string, object> e)
@@ -886,11 +904,99 @@ namespace GlitchlessSdk
             ["ts"] = startedAt,
             ["level"] = null,
             ["session_type"] = sessionType,
-            ["privacy"] = full ? "full" : "anonymous",
+            ["privacy"] = PrivacyName,
             ["device"] = Device(full),
             ["page"] = null,
             ["nav_ms"] = null,
         };
+
+        // ───────────────────────────── bug reports ─────────────────────────────
+
+        /// <summary>What the player is doing right now, for a bug report (SPEC §2 bug_report): when, the level,
+        /// where they stand (when positions are on), the last game events and hitches, and the last frame windows.</summary>
+        public Dictionary<string, object> BugSnapshot()
+        {
+            var now = UnixNow();
+            var snap = new Dictionary<string, object> { ["ts"] = now, ["level"] = Level };
+            if (positionsOn && position != null)
+            {
+                snap["x"] = Sketch.Round(position[0], 2);
+                snap["y"] = Sketch.Round(position[1], 2);
+                snap["z"] = Sketch.Round(position[2], 2);
+            }
+            // The last game events and hitches, oldest first.
+            var events = new List<Dictionary<string, object>>(history);
+            foreach (var h in recentHitches)
+                if (now - Convert.ToInt64(h["ts"], CultureInfo.InvariantCulture) < 60000) events.Add(h);
+            foreach (var h in pendingHitches) events.Add(Slim(h));
+            events.Sort((a, b) => Convert.ToInt64(a["ts"], CultureInfo.InvariantCulture).CompareTo(Convert.ToInt64(b["ts"], CultureInfo.InvariantCulture)));
+            snap["recent"] = events.GetRange(Math.Max(0, events.Count - BugRecent), Math.Min(events.Count, BugRecent));
+            // Frame rate and p95 of the last windows, and of the one still open.
+            var frames = new List<Dictionary<string, object>>(recentWindows);
+            if (win.Frames > 0)
+            {
+                var secs = Math.Max((Ticks - win.StartedTicks) / 1000, 0.001);
+                frames.Add(new Dictionary<string, object> { ["ts"] = win.StartedAt, ["level"] = Level, ["fps"] = Sketch.Round(win.Frames / secs, 1), ["p95"] = Round(win.Sketch.Quantile(0.95), 2) });
+            }
+            snap["frames"] = frames.GetRange(Math.Max(0, frames.Count - BugFrames), Math.Min(frames.Count, BugFrames));
+            return snap;
+        }
+
+        /// <summary>Sends a bug report on a request of its own, straight away and from every session (sampling
+        /// doesn't apply). It waits in the outbox meanwhile, so if the send fails, or the game closes first, it
+        /// goes with a later batch. `screenshot` is a JPEG data URL or null. done(sent, reason): reason is
+        /// "offline" when this build sends nothing, "error" when it will go later.</summary>
+        public void SendBugReport(Dictionary<string, object> snapshot, string note, string screenshot, Action<bool, string> done)
+        {
+            note = note ?? "";
+            var e = new Dictionary<string, object>(snapshot) { ["type"] = "bug_report", ["note"] = note.Length > MaxNote ? note.Substring(0, MaxNote) : note };
+            if (screenshot != null) e["screenshot"] = screenshot;
+            e["device"] = Device(full);
+            Remember("bug_report");
+            if (!Inited || !Enabled || Transport == null)
+            {
+                done?.Invoke(false, "offline");
+                return;
+            }
+            Flush(); // the session's own events first, so the report's session is there when someone opens it
+            var b = NewBatch(new List<string> { Json.Serialize(e) });
+            b.Direct = true;
+            outbox.Add(b);
+            SaveOutbox();
+            Debug("sending a bug report");
+            Transport.Send(IntakeUrl, Encode(Body(b)), "text/plain", status =>
+            {
+                b.Direct = false;
+                var sent = status >= 200 && status < 300;
+                if (sent || (status >= 400 && status < 500 && status != 408 && status != 429)) // a rejected report would only be rejected again
+                {
+                    outbox.Remove(b);
+                    SaveOutbox();
+                }
+                if (sent)
+                {
+                    Stats.Sent++;
+                    done?.Invoke(true, null);
+                    return;
+                }
+                Stats.Failed++;
+                Debug($"bug report not sent ({(status == 0 ? "network error" : $"HTTP {status}")}): it goes with the next batch");
+                done?.Invoke(false, "error");
+            });
+        }
+
+        static readonly string[] SlimKeys = { "name", "cause", "kind", "reason", "duration_s", "score", "duration_ms", "causes", "x", "y", "z" };
+
+        /// <summary>A game event as a bug report lists it: when, what, and the few fields that say what happened.</summary>
+        internal static Dictionary<string, object> Slim(Dictionary<string, object> e)
+        {
+            var o = new Dictionary<string, object> { ["ts"] = e["ts"], ["type"] = e["type"], ["level"] = e.TryGetValue("level", out var l) ? l : null };
+            foreach (var k in SlimKeys)
+                if (e.TryGetValue(k, out var v) && v != null) o[k] = v;
+            if (e.TryGetValue("message", out var m) && m is string msg) o["message"] = msg.Length > 200 ? msg.Substring(0, 200) : msg;
+            if (e.TryGetValue("attrs", out var a) && a is System.Collections.ICollection attrs && attrs.Count > 0 && Json.Serialize(a).Length <= 300) o["attrs"] = a;
+            return o;
+        }
 
         // ───────────────────────────── sending ─────────────────────────────
 
@@ -1007,7 +1113,8 @@ namespace GlitchlessSdk
         void SendNext()
         {
             if (inFlight >= 0 || outbox.Count == 0 || Ticks < retryAt || Transport == null) return;
-            var b = outbox[0];
+            var b = outbox.Find(x => !x.Direct);
+            if (b == null) return;
             var body = Encode(Body(b));
             Debug($"sending {b.Events.Count} events ({body.Length} bytes)");
             inFlight = b.Id;
@@ -1087,11 +1194,35 @@ namespace GlitchlessSdk
         // ───────────────────────────── saved batches ─────────────────────────────
 
         string OutboxPath => Path.Combine(SaveDir, "outbox.json");
-        string PlayerPath => Path.Combine(SaveDir, "player_id");
+        const string PlayerIdName = "player_id"; // install and full mode
+        string PrivacyName => full ? "full" : storesId ? "install" : "anonymous";
+
+        /// <summary>Forgets the player ID saved on the device. This session keeps the ID it started with.</summary>
+        public void ResetInstallId() => TryIo(() => DeleteId(PlayerIdName));
+
+        string ReadId(string name)
+        {
+            if (Ids != null) return Ids.Read(name);
+            var path = SaveDir == null ? null : Path.Combine(SaveDir, name);
+            return path != null && File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+
+        void WriteId(string name, string id)
+        {
+            if (Ids != null) Ids.Write(name, id);
+            else if (SaveDir != null) File.WriteAllText(Path.Combine(SaveDir, name), id);
+        }
+
+        void DeleteId(string name)
+        {
+            if (Ids != null) Ids.Delete(name);
+            else if (SaveDir != null) File.Delete(Path.Combine(SaveDir, name));
+        }
 
         // Batches that couldn't be sent are saved, so a game played offline is sent when the network is
         // back. In anonymous mode they are saved without the session ID; on the next launch each earlier
         // session's batches go under a new random ID, so nothing written to the device ties two sessions.
+        // Install and full mode keep a stored ID anyway, so they save both IDs.
         void SaveOutbox()
         {
             if (!Enabled || SaveDir == null || IsWeb) return;
@@ -1108,7 +1239,7 @@ namespace GlitchlessSdk
                     var events = new List<object>();
                     foreach (var e in b.Events) events.Add(new Json.Raw(e));
                     var saved = new Dictionary<string, object> { ["service"] = b.Service, ["env"] = b.Env, ["version"] = b.Version, ["group"] = b.Group, ["events"] = events };
-                    if (full)
+                    if (storesId)
                     {
                         saved["sid"] = b.Sid;
                         saved["pid"] = b.Pid;
@@ -1144,7 +1275,7 @@ namespace GlitchlessSdk
                         if (!freshIds.TryGetValue(group, out sid)) freshIds[group] = sid = NewId("s_", 16);
                     }
                     long.TryParse(group, NumberStyles.Integer, CultureInfo.InvariantCulture, out var groupId);
-                    outbox.Add(new Batch { Id = nextBatchId++, Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = full ? Str(saved, "pid", "") : "", Group = groupId, Events = events });
+                    outbox.Add(new Batch { Id = nextBatchId++, Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Group = groupId, Events = events });
                 }
                 Debug($"{outbox.Count} saved batches from earlier launches");
             });
@@ -1156,21 +1287,20 @@ namespace GlitchlessSdk
             return v is double n ? n.ToString("R", CultureInfo.InvariantCulture) : v.ToString();
         }
 
-        string LoadPlayerId()
+        // The random ID install and full mode send as player_id, made on first launch and kept by name. With nowhere to
+        // keep it, it lasts this launch.
+        string LoadId(string name, string prefix)
         {
             string id = null;
             TryIo(() =>
             {
-                if (File.Exists(PlayerPath))
-                {
-                    var saved = File.ReadAllText(PlayerPath).Trim();
-                    if (saved.StartsWith("p_", StringComparison.Ordinal)) id = saved;
-                }
+                var saved = ReadId(name)?.Trim();
+                if (saved != null && saved.StartsWith(prefix, StringComparison.Ordinal)) id = saved;
             });
             if (id != null) return id;
-            id = NewId("p_", 12);
+            id = NewId(prefix, 12);
             var made = id;
-            TryIo(() => File.WriteAllText(PlayerPath, made));
+            TryIo(() => WriteId(name, made));
             return id;
         }
 

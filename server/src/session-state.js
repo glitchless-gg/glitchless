@@ -13,14 +13,28 @@
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, MINUTE, OTHER, ATTRS } from './rollups.js';
 
-// 'script' is a Godot GDScript runtime error and 'exception' an unhandled Unity exception: the function
-// stops part way, like an uncaught JS exception. 'game_loop_stopped' is a Phaser game whose loop died
-// on an uncaught error: the screen froze, so the session crashed whatever the player did next.
-export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script', 'exception', 'game_loop_stopped']);
-const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception']);
-const HALT_KINDS = new Set(['game_loop_stopped']);
+// 'script' is a Godot GDScript runtime error, an Unreal Blueprint runtime error, and 'exception' an
+// unhandled Unity exception: the function stops part way, like an uncaught JS exception.
+// 'game_loop_stopped' is a Phaser or Babylon.js game whose loop died on an uncaught error: the screen froze, so the
+// session crashed whatever the player did next. 'crash' is a game that died (the Unreal plugin writes it
+// down as the game goes and sends it on the next launch). An Unreal 'ensure' is an error, not fatal.
+export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script', 'exception', 'game_loop_stopped', 'crash']);
+const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception', 'crash']);
+const HALT_KINDS = new Set(['game_loop_stopped', 'crash']);
 const RAGE_QUIT_WINDOW_MS = 20_000;
+const CRASH_WINDOW_MS = 10_000;
 const NODE_COUNTS = ['nodes', 'orphan_nodes'];
+// Custom events the SDKs send by themselves: not the game being played (see last_play).
+const SDK_CUSTOM = new Set(['rage_input', 'screen_change', 'app_resume', 'webgl_context_restored', 'annotation', 'assets_loaded']);
+// Context gauges (setContext) followed per session, to find counts that keep climbing (a leak). They are
+// the game's own words, so capped.
+const GAUGE_KEYS = 16;
+// A gauge climbs when it ends within this share of its peak and its low point (the last time it was
+// there) comes in the first half of its course: enemies go back to none between waves, a leak doesn't.
+// Kept as first, last, peak and low point so states merge the same in any order.
+const GAUGE_PEAK = 0.9;
+const GAUGE_WINDOWS = 3; // frame windows (about 15 s) before a gauge's course says anything
+const GAUGE_CLIMB = 50; // and how far it must climb, at least, to be a leak rather than a few objects
 
 // Level and death events, in order: { ts, k: kind, level, cause, x, y, z, d: duration_s } (objects, so a
 // missing field stays missing through JSON).
@@ -55,6 +69,9 @@ export function newSession(e) {
     fatal_errors: 0,
     last_unhandled: null,
     halted: false, // the game stopped running (see HALT_KINDS)
+    last_play: null, // ts of the last thing the game did (a level, a death, one of its own events)
+    fwAt: null, // ts of the latest frame window, and whether it had a frozen frame
+    fwFrozen: false,
     ctxAt: null, // last webgl context loss or restore
     context_lost: false,
     rage_inputs: 0,
@@ -65,6 +82,8 @@ export function newSession(e) {
     frames: 0,
     cell: newCell(), // this session's frame windows, for device breakdowns and its own p50/p95
     geo: null, // { first, firstAt, last, lastAt, max }
+    tex: null, // textures, the same shape as geo
+    gauges: {}, // { [key]: { first, firstAt, last, lastAt, max, min, minAt, windows } }
     nodes: {}, // { [key]: { first, firstAt, last, lastAt } }
     ttffAt: null,
     ttff: null,
@@ -93,9 +112,11 @@ export function addToSession(s, e) {
     case 'level_complete':
     case 'level_fail':
       s.marks.push({ ts: e.ts, k: MARK_OF[e.type], level: e.level, cause: e.cause, d: e.duration_s });
+      played(s, e.ts);
       break;
     case 'death':
       s.marks.push({ ts: e.ts, k: MARK.death, level: e.level, cause: e.cause, x: e.x, y: e.y, z: e.z });
+      played(s, e.ts);
       break;
     case 'error':
       s.errors++;
@@ -108,6 +129,7 @@ export function addToSession(s, e) {
       if (e.name === 'webgl_context_restored') setContext(s, e.ts, false);
       if (e.name === 'rage_input') s.rage_inputs++;
       if (e.name === 'annotation') s.annotations.push({ ts: e.ts, note: e.attrs?.note });
+      if (!SDK_CUSTOM.has(e.name)) played(s, e.ts);
       addCustom(s, e);
       break;
     case 'frame_window':
@@ -116,13 +138,13 @@ export function addToSession(s, e) {
       s.hitches += e.hitches || 0;
       s.frozen += e.frozen || 0;
       s.fwLevels.add(e.level);
-      if (e.geometries != null) {
-        if (!s.geo) s.geo = { first: e.geometries, firstAt: e.ts, last: e.geometries, lastAt: e.ts, max: Math.max(0, e.geometries) };
-        else {
-          s.geo.last = e.geometries;
-          s.geo.lastAt = e.ts;
-          s.geo.max = Math.max(s.geo.max, e.geometries);
-        }
+      if (s.fwAt == null || e.ts >= s.fwAt) [s.fwAt, s.fwFrozen] = [e.ts, (e.frozen || 0) > 0];
+      if (e.geometries != null) s.geo = addCount(s.geo, e.geometries, e.ts);
+      if (isNum(e.textures)) s.tex = addCount(s.tex, e.textures, e.ts);
+      for (const [k, v] of Object.entries(e.ctx || {})) {
+        if (!isNum(v)) continue;
+        if (s.gauges[k]) s.gauges[k] = mergeGauge(s.gauges[k], gaugeAt(v, e.ts));
+        else if (Object.keys(s.gauges).length < GAUGE_KEYS) s.gauges[k] = gaugeAt(v, e.ts);
       }
       // The Godot SDK sends scene-tree counts instead of three.js geometries.
       for (const k of NODE_COUNTS) {
@@ -138,6 +160,39 @@ export function addToSession(s, e) {
       break;
   }
   return s;
+}
+
+function played(s, ts) {
+  if (s.last_play == null || ts > s.last_play) s.last_play = ts;
+}
+
+// A count that is read once per frame window (geometries, textures): its first, last and highest value.
+function addCount(c, v, ts) {
+  if (!c) return { first: v, firstAt: ts, last: v, lastAt: ts, max: Math.max(0, v) };
+  [c.last, c.lastAt, c.max] = [v, ts, Math.max(c.max, v)];
+  return c;
+}
+
+function mergeCount(a, b) {
+  if (!b) return a;
+  if (!a) return { ...b };
+  if (b.firstAt < a.firstAt) [a.first, a.firstAt] = [b.first, b.firstAt];
+  if (b.lastAt >= a.lastAt) [a.last, a.lastAt] = [b.last, b.lastAt];
+  a.max = Math.max(a.max, b.max);
+  return a;
+}
+
+// One frame window's value of a gauge, and two parts of a gauge's course merged: the earliest value, the
+// latest (the later part on a tie), the peak, and the low point with the last time it was there.
+function gaugeAt(v, ts) {
+  return { first: v, firstAt: ts, last: v, lastAt: ts, max: v, min: v, minAt: ts, windows: 1 };
+}
+
+function mergeGauge(a, b) {
+  const [first, firstAt] = b.firstAt < a.firstAt ? [b.first, b.firstAt] : [a.first, a.firstAt];
+  const [last, lastAt] = b.lastAt >= a.lastAt ? [b.last, b.lastAt] : [a.last, a.lastAt];
+  const [min, minAt] = b.min < a.min ? [b.min, b.minAt] : a.min < b.min ? [a.min, a.minAt] : [a.min, Math.max(a.minAt, b.minAt)];
+  return { first, firstAt, last, lastAt, max: Math.max(a.max, b.max), min, minAt, windows: a.windows + b.windows };
 }
 
 function setContext(s, ts, lost) {
@@ -210,6 +265,8 @@ export function mergeSession(a, b) {
   if (b.last_unhandled != null && (a.last_unhandled == null || b.last_unhandled > a.last_unhandled)) a.last_unhandled = b.last_unhandled;
   if (b.ctxAt != null && (a.ctxAt == null || b.ctxAt >= a.ctxAt)) setContext(a, b.ctxAt, b.context_lost);
   a.halted = !!(a.halted || b.halted);
+  if (b.last_play != null && (a.last_play == null || b.last_play > a.last_play)) a.last_play = b.last_play;
+  if (b.fwAt != null && (a.fwAt == null || b.fwAt >= a.fwAt)) [a.fwAt, a.fwFrozen] = [b.fwAt, b.fwFrozen];
   a.rage_inputs += b.rage_inputs;
   a.annotations = mergeByTs(a.annotations, b.annotations, (x) => x.ts);
   mergeCustom((a.ev ||= {}), b.ev);
@@ -217,13 +274,11 @@ export function mergeSession(a, b) {
   a.frozen += b.frozen;
   a.frames += b.frames;
   mergeCell(a.cell, b.cell);
-  if (b.geo) {
-    if (!a.geo) a.geo = { ...b.geo };
-    else {
-      if (b.geo.firstAt < a.geo.firstAt) [a.geo.first, a.geo.firstAt] = [b.geo.first, b.geo.firstAt];
-      if (b.geo.lastAt >= a.geo.lastAt) [a.geo.last, a.geo.lastAt] = [b.geo.last, b.geo.lastAt];
-      a.geo.max = Math.max(a.geo.max, b.geo.max);
-    }
+  a.geo = mergeCount(a.geo, b.geo);
+  a.tex = mergeCount(a.tex, b.tex);
+  for (const [k, g] of Object.entries(b.gauges || {})) {
+    if (a.gauges[k]) a.gauges[k] = mergeGauge(a.gauges[k], g);
+    else if (Object.keys(a.gauges).length < GAUGE_KEYS) a.gauges[k] = { ...g };
   }
   for (const [k, n] of Object.entries(b.nodes)) {
     const m = a.nodes[k];
@@ -265,25 +320,42 @@ export function finalizeSession(s) {
       s.last_fail = null;
     } else if (kind === MARK.fail) {
       s.fails++;
-      s.last_fail = { ts, level, cause, x: s.last_fail?.x, y: s.last_fail?.y, z: s.last_fail?.z };
+      // A fail takes its place from the death before it; `dts` says which death that was, so a rage quit
+      // can be put on the map where it happened even when the game sent a level_fail after the death.
+      s.last_fail = { ts, level, cause, x: s.last_fail?.x, y: s.last_fail?.y, z: s.last_fail?.z, dts: s.last_fail?.dts };
     } else {
       s.deaths++;
-      s.last_fail = { ts, level, cause, x, y, z };
+      s.last_fail = { ts, level, cause, x, y, z, dts: ts };
     }
   }
   s.sketch = s.cell.ft;
   s.geo_first = s.geo ? s.geo.first : null;
   s.geo_last = s.geo ? s.geo.last : null;
   s.geo_max = s.geo ? s.geo.max : null;
+  s.tex_first = s.tex ? s.tex.first : null;
+  s.tex_last = s.tex ? s.tex.last : null;
+  // Gauges followed long enough to judge, and those that only climbed: ending at their peak, far above where
+  // they started, without going back to their low after the first half. Enemies come and go; a leak grows.
+  s.gauge_seen = [];
+  s.gauge_climbs = {};
+  for (const [k, g] of Object.entries(s.gauges || {})) {
+    if (g.windows < GAUGE_WINDOWS) continue;
+    s.gauge_seen.push(k);
+    const lowEarly = g.minAt - g.firstAt <= (g.lastAt - g.firstAt) / 2;
+    if (lowEarly && g.last >= g.max * GAUGE_PEAK && g.last >= Math.max(g.first * 4, g.first + GAUGE_CLIMB)) s.gauge_climbs[k] = { first: g.first, last: g.last };
+  }
   s.node_counts = Object.fromEntries(Object.entries(s.nodes).map(([k, n]) => [k, { first: n.first, last: n.last }]));
   const start = s.start ?? s.first_ts;
   const end = s.end ?? s.last_ts;
   s.duration_s = Math.max(0, (end - start) / 1000);
   s.rage_quit = !!(s.ended && s.last_fail && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
   s.rage = s.rage_quit ? s.last_fail : null;
-  // Game-aware crash: the run actually broke — context lost for good, a frozen frame, a game loop that
-  // stopped, or an unhandled error right before the session ended.
-  s.crashed = s.context_lost || !!s.halted || s.frozen > 0 || !!(s.last_unhandled && s.ended && end - s.last_unhandled <= 10_000);
+  // Game-aware crash: the run actually broke. The WebGL context was lost for good, the game loop stopped,
+  // the session ended inside a frozen frame, or an unhandled error came right before the end with nothing
+  // played after it. A long frame the game recovered from (a shader compile, a level load) is a hitch, and
+  // an error the player kept playing through (a weapon that throws on some shots) didn't end the session.
+  const brokeAtEnd = !!(s.last_unhandled && s.ended && end - s.last_unhandled <= CRASH_WINDOW_MS && !(s.last_play > s.last_unhandled));
+  s.crashed = s.context_lost || !!s.halted || !!(s.ended && s.fwFrozen) || brokeAtEnd;
   s.p95 = s.sketch.quantile(0.95);
   s.p50 = s.sketch.quantile(0.5);
   return s;
@@ -310,6 +382,7 @@ export function sessionFromJSON(o) {
   const { cell, fwLevels, m0, mins, ...rest } = o;
   return {
     ...rest,
+    gauges: o.gauges || {},
     marks: o.marks || [],
     annotations: o.annotations || [],
     ev: o.ev || {},

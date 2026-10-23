@@ -10,6 +10,7 @@ It reports:
 - **Errors** through Godot 4.5's custom loggers, with script backtraces and the last game events as breadcrumbs.
 - **Play events:** the level funnel, deaths, game events and gauges.
 - **The device:** a coarse tier, renderer, screen size and refresh rate. The screen size also shows whether an iPhone Duo is open or closed.
+- **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 
 It also has an agent flag, `--glitchless-measure=SECONDS`, which prints frame stats as JSON and quits. It's the native version of the browser SDK's `glitchless_measure` tool.
 
@@ -43,6 +44,8 @@ Glitchless.set_context({"blocks": blocks.size()})     # at the end of the frame'
 Glitchless.set_position(player.position)              # ignored unless positions are on
 Glitchless.error("save slot unreadable", {"slot": 2}) # an error the game caught itself
 var stats := await Glitchless.measure(5.0)            # what --glitchless-measure prints
+Glitchless.open_bug_report()                          # the bug report form, from a pause menu
+await Glitchless.report_bug(note)                     # or a report from the game's own form
 ```
 
 `track` is for the game's own metrics, whatever they are: `track("open", "full")`, `track("play", "endless")`,
@@ -51,11 +54,14 @@ event over time, breaks it down by attribute and builds funnels between events, 
 pages designed by your coding agent with `glitchless_set_dashboard`) shows the ones that matter. Attributes are strings, numbers or
 booleans, at most 12 per event.
 
+Purchases have one convention in every Glitchless SDK:
+`Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`. Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
+
 `init(service, version, env, intake, options)` options. Every one is optional.
 
 | option | default | |
 | --- | --- | --- |
-| `privacy` | `"anonymous"` | or `"full"`; see [PRIVACY.md](PRIVACY.md) |
+| `privacy` | `"anonymous"` | `"install"` adds a random player ID kept in `user://`, so retention can be counted; `"full"` that, device detail and positions. See [PRIVACY.md](PRIVACY.md) |
 | `positions` | on in full mode only | death places and 4 Hz position samples |
 | `client_token` | `"gl_pub_dev"` | the server's `GLITCHLESS_CLIENT_TOKENS` |
 | `sample_rate` | `1.0` | the share of sessions that send |
@@ -68,12 +74,40 @@ booleans, at most 12 per event.
 | `rage_input` | off on phones | the same key or tap four times in a second; fast tapping is normal play in a phone game |
 | `enabled` | off in debug builds | force sending on or off |
 | `debug` | `false` | print each batch |
+| `bug_reports` | `false` | `true`, or `{"hotkey": KEY_F8, "pause": true, "screenshot": true}`: F8 opens the [bug report form](#bug-reports) |
 
 Frame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings.
+
+### Retention needs install mode
+
+In anonymous mode (the default) nothing is kept between launches, so the dashboard can't tell a returning player from a new one. `{"privacy": "install"}` keeps a random `p_…` player ID in `user://glitchless/player_id` (the one full mode uses) and sends it with every batch; nothing else changes. The Players page and `retention` board panels then show D1, D7 and D30. `Glitchless.reset_install_id()` forgets it (for a "reset my ID" setting): this session keeps its ID, the next launch makes a new one. On a Steam Deck, `session_start` carries `steam_deck: true` and, on SteamOS, `os: "SteamOS"` (Linux builds and Windows builds under Proton).
 
 ### Off in debug builds
 
 As with the `Metrics` autoload in Linebreakers and Starlift, a debug build (the editor, or an export with debug on) sends nothing unless it is run with `--glitchless`. That keeps a developer's phone and the agents' bot runs out of the players' numbers. Release exports send by default.
+
+### Bug reports
+
+Players and playtesters flag a problem where they see it, and you (or your coding agent, with the `glitchless_bug_reports` MCP tool) see it in Glitchless's Bug Reports view with the screenshot and a link to the session's replay.
+
+```gdscript
+Glitchless.init("starlift", "", "prod", intake, {"bug_reports": true})   # F8 opens the form
+Glitchless.init("starlift", "", "prod", intake, {"bug_reports": {"hotkey": KEY_F1, "pause": false}})
+Glitchless.bug_report_opened.connect(_pause)          # bug_report_closed too; for games that pause themselves
+Glitchless.open_bug_report()                          # a pause menu's "Report a bug" (works without bug_reports)
+var result := await Glitchless.report_bug(note)       # the game's own form: {"sent": true}, or {"sent": false, "reason": "offline" | "error"}
+```
+
+| `bug_reports` key | default | |
+| --- | --- | --- |
+| `hotkey` | `KEY_F8` | a `Key`, its name (`"F1"`), or `null` for none. It opens and closes the form |
+| `pause` | `true` | pause the tree while the form is open, so the game neither runs nor reads what the player types (nodes set to always process still do). The pause state the game had comes back on close. Use `false` and the signals if the game has its own pause |
+| `screenshot` | `true` | send a screenshot with each report |
+
+- **The screenshot** is the root viewport's last frame, read before the form shows, so the form is never in it. It is shrunk until it fits the server's 200,000-character limit: the longer side at most 960 px, then 800, 640, 480 and 320, at lower JPEG quality. The frames that read it back and draw the form aren't timed, so they never show as hitches. A headless run draws nothing, so its reports have no screenshot; `report_bug(note, image)` sends an `Image` you pass, and `report_bug(note, false)` none.
+- **The form** is a `CanvasLayer` on layer 128 with the note box, Send and Cancel. Esc cancels, Ctrl+Enter (Cmd+Enter) sends, and a captured mouse is set free while it is open.
+- **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so.
+- **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
 
 ### Flags
 
@@ -173,7 +207,7 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.1.1"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.2.0"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
 
 ## Limits
 
@@ -190,5 +224,5 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 
 From the repo root:
 
-- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, and `--glitchless-measure`.
+- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names.
 - `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.

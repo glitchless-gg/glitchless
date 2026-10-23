@@ -1,0 +1,32 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "Glitchless's Unreal demo: two short levels with three planted problems (a first-use PSO hitch, a periodic garbage-collection spike, an ensure) for Glitchless to find. unreal/demo/run.mjs builds it, plays it and checks the findings.",
+	"Modules": [
+		{
+			"Name": "GlitchlessDemo",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Glitchless",
+			"Enabled": true
+		},
+		{
+			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		}
+	],
+	"AdditionalPluginDirectories": [
+		"../../Plugins"
+	]
+}

@@ -20,6 +20,8 @@ namespace GlitchlessSdk
         public string env = "";
         [Tooltip("Adds a random player ID saved on the device, detailed device fields and positions. Your privacy policy must say so.")]
         public bool fullPrivacy;
+        [Tooltip("Adds a random player ID saved on the device, so returning players (retention) can be counted; nothing else changes. Your privacy policy must say so. Full privacy wins when both are on.")]
+        public bool installId;
         [Tooltip("Death places and movement samples for heatmaps, in anonymous mode too.")]
         public bool positions;
         [Tooltip("Report each scene as a level.")]
@@ -33,7 +35,7 @@ namespace GlitchlessSdk
                 Intake = intake,
                 ClientToken = clientToken,
                 Env = env,
-                Privacy = fullPrivacy ? Privacy.Full : Privacy.Anonymous,
+                Privacy = fullPrivacy ? Privacy.Full : installId ? Privacy.Install : Privacy.Anonymous,
                 Positions = positions ? true : (bool?)null,
                 SceneLevels = sceneLevels,
             });

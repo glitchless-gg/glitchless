@@ -13,6 +13,10 @@
 //   2. online    the saved batches go out under a new random ID, then this run's session
 //   3. full      full mode: a saved player ID and the device model
 //   4. measure   --glitchless-measure writes frame stats as JSON and quits
+//   5. install   install mode: the saved player ID sent as player_id (full mode's, kept), the device as anonymous
+//                mode sends it
+// The offline and online runs each send a bug report from code (--bug-report-at): the offline one waits in the
+// outbox and goes on the next launch.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -135,9 +139,13 @@ try {
   fs.rmSync(dataDir, { recursive: true, force: true });
 
   // 1. offline
-  play(['--level=3', '--skill=0.95', '--seed=1', `--glitchless-intake=http://127.0.0.1:${deadPort}`], 'offline');
+  const offlineLog = play(['--level=3', '--skill=0.95', '--seed=1', '--bug-report-at=3', `--glitchless-intake=http://127.0.0.1:${deadPort}`], 'offline');
   const saved = fs.existsSync(outbox) ? fs.readFileSync(outbox, 'utf8') : '';
   check('offline: unsent batches are saved in the persistent data folder', () => assert.ok(saved.includes('"session_start"') && saved.includes('"session_end"') && saved.includes('KeyNotFoundException'), 'the session is not in the outbox'));
+  check('offline: a bug report that could not go is kept in the outbox', () => {
+    assert.match(offlineLog, /bug report from code: sent=False reason=error/);
+    assert.ok(saved.includes('"bug_report"') && saved.includes('the pup ran into something invisible'), 'no report in the outbox');
+  });
   check('offline: anonymous mode saves no session or player ID', () => {
     assert.ok(!/"(sid|pid|session_id|player_id)"/.test(saved), 'an ID was written to disk');
     assert.ok(!fs.existsSync(playerFile), 'player_id file exists');
@@ -145,7 +153,7 @@ try {
 
   // 2. online
   server = await startServer(port, path.join(tmp, 'data'));
-  play(['--level=2', '--skill=0.7', '--seed=2', '--quit-after=40', `--glitchless-intake=http://127.0.0.1:${port}`], 'online');
+  const onlineLog = play(['--level=2', '--skill=0.7', '--seed=2', '--quit-after=40', '--bug-report-at=3', `--glitchless-intake=http://127.0.0.1:${port}`], 'online');
   check('online: the outbox is empty once everything is sent', () => assert.ok(!fs.existsSync(outbox), 'outbox.json still there'));
 
   // 3. full mode
@@ -160,7 +168,7 @@ try {
     assert.ok(m.frames > 30, `frames ${m.frames}`);
     for (const k of ['p50', 'p95', 'p99', 'worst']) assert.equal(typeof m.frame_ms[k], 'number', `frame_ms.${k}`);
     for (const k of ['fps', 'frame_budget_ms', 'pct_frames_over_budget', 'hitch_count', 'update_cpu_ms', 'physics_ms', 'memory_delta', 'new_errors']) assert.ok(k in m, k);
-    assert.equal(m.sdk, 'glitchless-unity/0.1.0');
+    assert.equal(m.sdk, 'glitchless-unity/0.2.0');
   });
 
   await new Promise((r) => setTimeout(r, 300));
@@ -199,7 +207,7 @@ try {
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
       for (const k of ['process_ms', 'physics_ms', 'render_ms']) assert.equal(typeof w[k], 'number', k);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.1.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.2.0'));
     assert.ok(windows.some((w) => typeof w.geometries === 'number'), 'no mesh count (a development build has it)');
   });
   check('the confetti bodies show up in the physics time', () => {
@@ -220,12 +228,47 @@ try {
     assert.match(issue.location, /FetchGame\.CatchToy \(FetchGame\.cs:\d+\)/);
     assert.ok(issue.sessions >= 2, `${issue.sessions} sessions`);
   });
+  const { reports } = await query(port, 'reports');
+  check('bug reports: sent from code straight away, and the offline one on the next launch', () => {
+    assert.match(onlineLog, /bug report from code: sent=True reason=none/);
+    assert.equal(reports.length, 2, JSON.stringify(reports.map((r) => r.note)));
+    for (const r of reports) {
+      assert.match(r.note, /^the pup ran into something invisible on level-[123]$/);
+      assert.ok(anon.some((s) => s.session_id === r.session_id), 'in its anonymous session');
+      assert.match(r.device, /^Unity \d{4}\.\d+/);
+      assert.equal(typeof r.position?.x, 'number', 'the sample turns positions on');
+    }
+  });
+  const opened = reports[0] && (await query(port, 'report', { id: reports[0].id })).report;
+  check('bug reports: recent events and frame windows arrive (no screenshot in -nographics)', () => {
+    assert.ok(opened, 'no report');
+    assert.equal(opened.sdk, 'glitchless-unity/0.2.0');
+    assert.ok(opened.recent.some((e) => e.type === 'level_start'), JSON.stringify(opened.recent));
+    assert.ok(opened.frames.length > 0 && opened.frames.every((f) => typeof f.fps === 'number'), JSON.stringify(opened.frames));
+    assert.equal(opened.screenshot, null);
+  });
   const { findings } = await query(port, 'findings');
   check('findings speak Unity', () => {
     const f = findings.find((x) => x.evidence?.kind === 'exception');
     assert.ok(f, 'no finding for the exception');
     assert.match(f.summary, /Unity skipped the rest of that callback/);
     assert.match(f.suggestion, /GetComponent|Destroy/);
+  });
+
+  // 5. install mode
+  const beforeInstall = new Set(sessions.map((s) => s.session_id));
+  const fullId = fs.readFileSync(playerFile, 'utf8');
+  play(['--level=1', '--skill=1', '--seed=5', '--privacy=install', '--quit-after=20', `--glitchless-intake=http://127.0.0.1:${port}`], 'install');
+  const installId = fs.existsSync(playerFile) ? fs.readFileSync(playerFile, 'utf8') : '';
+  check("install: the player ID full mode saved is kept and sent", () => assert.equal(installId, fullId));
+  await new Promise((r) => setTimeout(r, 300));
+  const installRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeInstall.has(s.session_id));
+  const installDevice = installRun[0] && (await detail(installRun[0].session_id)).device;
+  check('install: the session sends the saved ID, with the device as anonymous mode sends it', () => {
+    assert.deepEqual(installRun.map((s) => s.player_id), [installId]);
+    assert.deepEqual(Object.keys(installDevice).sort(), Object.keys(anonDevice).sort());
+    const raw5 = fs.readdirSync(path.join(tmp, 'data')).filter((f) => f.startsWith('events-')).flatMap((f) => fs.readFileSync(path.join(tmp, 'data', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+    assert.equal(raw5.find((e) => e.type === 'session_start' && e.session_id === installRun[0].session_id).privacy, 'install');
   });
 } catch (err) {
   results.push(['FAIL', 'run', err.message]);

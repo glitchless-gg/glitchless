@@ -7,11 +7,12 @@
 
 # Glitchless
 
-Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js and Phaser games in the browser, and Godot 4.5+ and Unity (2022.3 LTS and 6) games on phones and desktops.
+Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (2022.3 LTS and 6) and Unreal Engine 5.8 games on phones and desktops.
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.
 - **Where players give up.** Level funnels, death heatmaps and rage-quit detection.
+- **What players tell you.** Playtesters press F8 in a web game to send a note with a screenshot, the level and the session behind it (opt-in).
 - **Your coding agent.** An MCP server for production data, WebMCP tools exposed by the running game, and autoplay bots that check a fix before it ships.
 
 It's open source and runs anywhere: one Node server with a file store on a laptop, or Lambda and DynamoDB in your own AWS account. It's anonymous by default ([what it sends](packages/sdk/PRIVACY.md)), and it can pass the same data on to Datadog or any OpenTelemetry backend.
@@ -28,19 +29,27 @@ It's open source and runs anywhere: one Node server with a file store on a lapto
 
 | Path | What |
 | --- | --- |
-| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js and Phaser (3 and 4) adapters, overlay, WebMCP tools, Datadog RUM bridge. ~85 KB as one `<script>` |
+| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js, Phaser (3 and 4), Babylon.js and PlayCanvas adapters, overlay, WebMCP tools, Datadog RUM bridge. ~120 KB as one `<script>` (about 38 KB gzipped) |
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
 | [`unity`](unity) | Glitchless for **Unity 2022.3 LTS and Unity 6** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
+| [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
 | [`server`](server) | Intake, query API and findings. Runs locally (`npm run server`) or on **AWS Lambda Web Functions** + DynamoDB ([`server/web/deploy.js`](server/web/deploy.js)) |
-| [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
+| [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Bug Reports, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
 | [`apps/zoomies`](apps/zoomies) | **Zoomies!**, a vibe-coded Three.js platformer that ships with four realistic bugs for the demo |
 | [`apps/phaser-demo`](apps/phaser-demo) | **Fetch!**, a small Phaser runner (Phaser 3 or 4) with planted bugs, an autoplay bot and a playtest config (`npm run game:phaser`) |
-| [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_death_hotspots`, `glitchless_compare_versions`, … |
+| [`apps/babylon-demo`](apps/babylon-demo) | **Comet Garden**, a small Babylon.js game with planted bugs (a shader per shard, a crash that stops the render loop), an autoplay bot and a playtest config (`npm run game:babylon`) |
+| [`apps/playcanvas-demo`](apps/playcanvas-demo) | **Spark Run**, a small PlayCanvas runner with planted bugs (a mesh per spark, a script error), an autoplay bot and a playtest config (`npm run game:playcanvas`) |
+| [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_death_hotspots`, `glitchless_compare_versions`, `glitchless_bug_reports`, … |
 | [`packages/playtest`](packages/playtest) | `glitchless-playtest`: autoplay bots play every change and Glitchless compares it with a saved baseline. Also the `glitchless_playtest` MCP tool |
-| [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard` and `/glitchless:triage` skills + both MCP servers |
+| [glitchless-deck](https://github.com/glitchless-gg/glitchless-deck) (its own repo) | `glitchless-deck`: send a Godot, Unity, Unreal or web build from macOS, Windows or Linux to a Steam Deck on your network, start it, and measure it there against a saved baseline. Also the `glitchless_deck_send` and `glitchless_deck_measure` MCP tools and the `/glitchless:deck` skill |
+| [`packages/sourcemaps`](packages/sourcemaps) | `glitchless-sourcemaps`: a CLI and a Vite plugin that upload a web build's source maps, so errors from minified builds show the original function, file and line |
+| [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard`, `/glitchless:triage` and `/glitchless:deck` skills + both MCP servers |
 | [`datadog`](datadog) | Datadog dashboard + monitors JSON and a setup script |
 | [`scripts/seed.js`](scripts/seed.js) | Simulated player history generated from the game's real level data (tagged `simulated`) |
 | [`docs`](docs) | [Technical spec](docs/SPEC.md), [set-up prompt for any coding agent](docs/agent-setup-prompt.md) |
+
+More demos in other genres (an arena shooter, an arcade racer, a tower defense game and a metroidvania), each with
+its own events, planted problems, autoplay bot and dashboard, live in their own repo: [**The Glitch Arcade**](https://github.com/glitchless-gg/glitch-arcade).
 
 ## Quickstart (local, no cloud)
 
@@ -86,6 +95,17 @@ const game = new Phaser.Game(config);
 instrumentPhaser(glitchless, { game, Phaser });
 ```
 
+For Babylon.js, hand over the engine and the first scene (a scene with `metadata.level` set is that level); for
+PlayCanvas, the app. Both adapters time frames from the engine's own loop and give engine-specific fix advice:
+
+```js
+import { instrumentBabylon } from 'glitchless/babylon';
+instrumentBabylon(glitchless, { engine, scene, BABYLON });
+
+import { instrumentPlayCanvas } from 'glitchless/playcanvas';
+instrumentPlayCanvas(glitchless, { app, pc });
+```
+
 For a Godot game, copy [`godot/addons/glitchless`](godot/addons/glitchless) into it, add the `Glitchless` autoload and call `Glitchless.init("my-game", "", "prod", "http://localhost:7777")`. See its [README](godot/addons/glitchless/README.md).
 
 For a Unity game, add the package by git URL (**Package Manager → + → Add package from git URL**):
@@ -95,6 +115,8 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 ```
 
 then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake = "http://localhost:7777" })` in the `Awake` of your first scene (`using GlitchlessSdk;`). See its [README](unity/Packages/gg.glitchless.sdk/README.md).
+
+For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless) into the project's `Plugins` folder, enable it in **Edit → Plugins**, and fill in **Service** and **Intake** in **Project Settings → Plugins → Glitchless**; no code is needed. See its [README](unreal/Plugins/Glitchless/README.md), and [`unreal/demo`](unreal/demo) for a small game with planted problems.
 
 ## Connect your coding agent
 
@@ -148,7 +170,7 @@ The server can send every game's telemetry on to other backends. Switch on eithe
 How Glitchless maps onto OpenTelemetry:
 
 - **Resource:** the game build: `service.name`, `service.version` and `deployment.environment.name`, plus a `service.instance.id` for the Glitchless server process.
-- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot` or `unity`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
+- **Metric attributes:** `game.level`, `game.gpu_tier`, `user_agent.name` (the browser, or `godot`, `unity` or `unreal`) and `game.session_type`. Deaths add `game.cause` and errors add `error.type`. Sessions aren't metric attributes, because one stream per session would swamp any backend.
 - **Log records:** `session.id` and `user.id`, then the event's own fields under `game.*`, with event names like `glitchless.death`. Errors are `ERROR` records with `exception.type`, `exception.message` and `exception.stacktrace`.
 
 The standard variables work as they do in any OpenTelemetry SDK:
@@ -176,6 +198,17 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 ```
 
 `npm run test:otlp` checks the exporter end to end against a real Collector (`otel/opentelemetry-collector` in Docker, with the debug exporter), or against a small local OTLP receiver when Docker isn't running. The exporters live in [`server/src/exporters`](server/src/exporters). Each takes plain JSON settings, so a hosted server could build them per project from stored settings.
+
+## Alerts in Discord or Slack
+
+Set `GLITCHLESS_ALERT_WEBHOOK` to a Discord or Slack incoming-webhook URL and `npm run server` checks the game every 15 minutes. It posts once when:
+
+- a new error reaches 3 sessions within a day of first appearing;
+- the newest version's crash-free sessions fall 2 points below the version before, with 20 sessions or more of each and a drop too big to be chance;
+- the newest version's p95 frame time is 20% (and 2 ms) worse than the version before;
+- `glitchless_triage` has a new high or critical finding.
+
+Each message says what changed, gives its numbers and a link to the dashboard page, and ends with a line to paste into your coding agent, such as `Use glitchless_triage on zoomies, then look at finding error-3f9a1c`. Problems that were already there when the server started don't post, and an alert doesn't repeat while its problem lasts. The state is kept in memory, so a restart starts over. For a Slack-compatible webhook on another host (Mattermost, for one), add `GLITCHLESS_ALERT_FORMAT=slack`. The rules are in [`server/src/alerts.js`](server/src/alerts.js), and [SPEC §3e](docs/SPEC.md) has the numbers.
 
 ## Deploy to AWS (Lambda Web Functions + DynamoDB)
 

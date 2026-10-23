@@ -34,7 +34,7 @@ export const COMBINE_BYTES = 16_000;
 export function foldBlocks(events) {
   const groups = new Map();
   for (const e of events) {
-    if (e.type === 'map') continue;
+    if (e.type === 'map' || e.type === 'bug_report') continue;
     const key = blockKey(e.project_id, e.service, hourOf(e.ts));
     let g = groups.get(key);
     if (!g) groups.set(key, (g = { project: e.project_id, service: e.service, hour: hourOf(e.ts), events: [] }));

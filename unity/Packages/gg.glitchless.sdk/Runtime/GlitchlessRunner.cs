@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -60,6 +61,7 @@ namespace GlitchlessSdk
         ProfilerRecorder drawCalls, triangles, setPass, batches, gcUsed, gcReserved, systemUsed, meshes, textures, materials, objects, gameObjects, gcAlloc, shaderCompile;
         float measureSeconds, measureAt;
         bool measureStarted;
+        BugReportForm bugForm;
 #if GLITCHLESS_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
         IDisposable inputListener;
 #endif
@@ -102,6 +104,13 @@ namespace GlitchlessSdk
             {
                 Transport = new UnityTransport(),
                 SaveDir = web ? null : Path.Combine(Application.persistentDataPath, "glitchless"),
+                // The web has no folder to keep the player ID in; PlayerPrefs is the browser's localStorage there.
+                Ids = web ? new IdStorage
+                {
+                    Read = name => PlayerPrefs.HasKey("glitchless." + name) ? PlayerPrefs.GetString("glitchless." + name) : null,
+                    Write = (name, id) => { PlayerPrefs.SetString("glitchless." + name, id); PlayerPrefs.Save(); },
+                    Delete = name => { PlayerPrefs.DeleteKey("glitchless." + name); PlayerPrefs.Save(); },
+                } : null,
                 Device = DeviceInfo.Collect,
                 Engine = SampleEngine,
                 StartupMs = () => Time.realtimeSinceStartupAsDouble * 1000,
@@ -226,6 +235,8 @@ namespace GlitchlessSdk
         {
             if (Core == null) return;
             if (accountedFrame != Time.frameCount) Account(); // the player loop markers are missing: someone replaced the loop
+            var bugs = Core.Options.BugReports;
+            if (bugs != null && bugs.Hotkey != KeyCode.None && BugReportForm.KeyDown(bugs.Hotkey)) BugForm().Toggle();
             PollInput();
             if (measureSeconds > 0 && !measureStarted && Time.realtimeSinceStartup >= measureAt)
             {
@@ -327,6 +338,48 @@ namespace GlitchlessSdk
             Mb("gc_reserved_mb", gcReserved);
             Mb("system_mb", systemUsed);
             return e;
+        }
+
+        // ───────────────────────────── bug reports ─────────────────────────────
+
+        BugReportForm BugForm()
+        {
+            if (!bugForm) bugForm = gameObject.AddComponent<BugReportForm>();
+            bugForm.Core = Core;
+            if (Core.Options.BugReports != null) bugForm.Options = Core.Options.BugReports;
+            return bugForm;
+        }
+
+        internal static bool IsBugReportOpen => instance && instance.bugForm && instance.bugForm.IsOpen;
+
+        internal static void OpenBugReport()
+        {
+            if (EnsureRunning() != null) instance.BugForm().Open();
+        }
+
+        internal static void ReportBug(string note, bool screenshot, Action<bool, string> done)
+        {
+            if (EnsureRunning() == null)
+            {
+                done?.Invoke(false, "offline");
+                return;
+            }
+            instance.StartCoroutine(instance.Report(Core.BugSnapshot(), note, screenshot, done));
+        }
+
+        IEnumerator Report(Dictionary<string, object> snap, string note, bool screenshot, Action<bool, string> done)
+        {
+            string shot = null;
+            if (screenshot && BugScreenshot.CanCapture)
+            {
+                yield return new WaitForEndOfFrame(); // the frame as drawn
+                var tex = BugScreenshot.Capture();
+                shot = BugScreenshot.Fit(tex);
+                if (tex) Destroy(tex);
+                Core?.SkipNextFrame(); // reading the screen back stalls this frame: that isn't the game stuttering
+            }
+            if (Core == null) done?.Invoke(false, "offline");
+            else Core.SendBugReport(snap, note, shot, done);
         }
 
         // ───────────────────────────── errors ─────────────────────────────
@@ -530,16 +583,16 @@ namespace GlitchlessSdk
     /// <summary>Sends batches with UnityWebRequest, which works on every platform including WebGL.</summary>
     sealed class UnityTransport : ITransport
     {
-        UnityWebRequest current;
+        readonly List<UnityWebRequest> live = new List<UnityWebRequest>(); // a batch, and any bug report on its own
 
         public void Send(string url, byte[] body, string contentType, Action<long> done)
         {
             var req = Make(url, body, contentType, 10);
-            current = req;
+            live.Add(req);
             req.SendWebRequest().completed += _ =>
             {
                 var status = Status(req);
-                if (current == req) current = null;
+                live.Remove(req);
                 req.Dispose();
                 done(status);
             };
@@ -564,9 +617,7 @@ namespace GlitchlessSdk
 
         public void Abort()
         {
-            var req = current;
-            current = null;
-            req?.Abort();
+            foreach (var req in live.ToArray()) req.Abort();
         }
 
         static UnityWebRequest Make(string url, byte[] body, string contentType, int timeoutS) =>

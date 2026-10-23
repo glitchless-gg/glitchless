@@ -9,14 +9,22 @@
 // then the built-in views it has data for (no Performance without frame times, no Heatmaps without
 // positions).
 //
-//   { pages: [{ id, title, icon, panels: [...] } | { id, title, icon, view, options }] }
+//   { currency?, pages: [{ id, title, icon, panels: [...] } | { id, title, icon, view, options }] }
+//
+// `currency` (ISO 4217, e.g. "USD") is the game's one currency for money (sums.js): without it, the one most
+// of its events were sent in.
 //
 // Board panels each take { type, title, note, size: 's' | 'm' | 'l' }:
 //
 //   stat        one number: `metric` (a built-in, see STATS), or `event` (a count of matching events),
-//               optionally `per` another event, which makes it a percentage ("buy=done" per "paywall")
-//   series      an event's count over time, optionally split `by` an attribute (top `limit` values)
-//   breakdown   how an event's attribute values compare (`event`, `by`, `limit`)
+//               optionally `per` another event, which makes it a percentage ("buy=done" per "paywall"), or
+//               `per` $players or $sessions: the share of them that sent the event (conversion). With `sum`
+//               (a numeric attribute, e.g. "amount") it adds that up instead (revenue), and `per` $players or
+//               $sessions divides it by them (revenue per player); metric players_now is the sessions playing
+//               now, whatever the range
+//   series      an event's count over time, optionally split `by` an attribute (top `limit` values); with
+//               `sum`, the attribute's sum over time
+//   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
 //               (`by` can also be $version or $level, which every event has: purchases by version)
 //   funnel      sessions that went through `steps` in order ("paywall,buy=tapped,buy=done")
 //   levels      starts, completions, fails and deaths per level; `label` is what the game calls a level
@@ -26,15 +34,19 @@
 //   events      every custom event the game sends, with counts and sessions
 //   findings    the ranked findings (`limit`)
 //   sessions    recent sessions, optionally only those that `sent` an event (`limit`)
+//   reports     the latest bug reports players sent, with their notes (`limit`)
+//   retention   D1, D7 and D30 by the day players were first seen (the latest `limit` days); needs player IDs
 //   versions    this page's stat panels, version by version
 //   live        events as they arrive, optionally only `events` (names or types)
 //
 // Events are written as funnel steps are (analytics.js parseFunnel): "name", "name=value" or "name:key=value".
 
-import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, cellsOf, round } from './analytics.js';
+import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, retention, cellsOf, round } from './analytics.js';
 import { findings } from './findings.js';
+import { reportSummary } from './reports.js';
+import { sumsBy, senders } from './sums.js';
 
-export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live'];
+export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention'];
 export const SIZES = { s: 3, m: 6, l: 12 };
 // Built-in numbers a stat panel can show, from the overview's KPIs.
 export const STATS = {
@@ -49,7 +61,10 @@ export const STATS = {
   errors: { label: 'Errors' },
   deaths: { label: 'Deaths' },
   rage_quit_pct: { label: 'Rage quits', unit: '%' },
+  players_now: { label: 'Playing now' },
 };
+// Stats of this moment rather than the range: no version has a value of them.
+const LIVE_STATS = new Set(['players_now']);
 // The built-in views a page can be, with their default title and icon.
 export const VIEWS = {
   events: { title: 'Events', icon: 'events' },
@@ -60,12 +75,15 @@ export const VIEWS = {
   sessions: { title: 'Sessions', icon: 'sessions' },
   versions: { title: 'Versions', icon: 'versions' },
   live: { title: 'Live Tail', icon: 'live' },
+  reports: { title: 'Bug Reports', icon: 'bug' },
 };
-export const ICONS = ['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock'];
+export const ICONS = ['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock', 'bug'];
 const MAX_PANELS = 24;
 const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
 const DIMENSIONS = ['version', 'level'];
+// What a stat's `per` can be besides an event: every player or session in the window.
+const PER = { $players: 'player', $sessions: 'session' };
 
 export class BoardError extends Error {
   constructor(message) {
@@ -81,6 +99,8 @@ export function validateDashboard(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BoardError('a dashboard is an object: { pages: [...] }');
   if (!Array.isArray(input.pages) || !input.pages.length) throw new BoardError('pages must be a non-empty array');
   if (input.pages.length > MAX_PAGES) throw new BoardError(`at most ${MAX_PAGES} pages`);
+  const currency = input.currency == null ? null : String(input.currency).trim().toUpperCase();
+  if (currency != null && !/^[A-Z]{3}$/.test(currency)) throw new BoardError('currency is a three-letter ISO 4217 code, e.g. "USD"');
   const ids = new Set();
   const pages = input.pages.map((p, i) => {
     const at = `pages[${i}]`;
@@ -98,7 +118,7 @@ export function validateDashboard(input) {
     if (p.view) return { ...page, view: p.view, ...viewOptions(p, at) };
     return { ...page, ...validateBoard({ panels: p.panels }, at) };
   });
-  return { pages };
+  return { ...(currency ? { currency } : {}), pages };
 }
 
 function viewOptions(p, at) {
@@ -108,7 +128,8 @@ function viewOptions(p, at) {
   return {};
 }
 
-// The dashboard of a game that has saved none: an Overview board, then the built-in views it has data for.
+// The dashboard of a game that has saved none: an Overview board, then the built-in views it has data for
+// (Bug Reports once players have sent some: ctx.reports).
 export function autoDashboard(ctx) {
   const k = kpis(ctx);
   const own = customEvents(ctx).events.filter((e) => !e.sdk);
@@ -120,6 +141,7 @@ export function autoDashboard(ctx) {
       ...(own.length ? [view('events')] : []),
       ...(k.frame_p95 != null ? [view('performance')] : []),
       view('errors'),
+      ...(ctx.reports?.length ? [view('reports')] : []),
       view('players'),
       ...(positions ? [view('heatmaps')] : []),
       view('sessions'),
@@ -169,25 +191,45 @@ function validatePanel(p, at) {
     if (!Number.isInteger(p.limit) || p.limit < 1 || p.limit > max) throw new BoardError(`${at}.limit must be 1 to ${max}`);
     out.limit = p.limit;
   };
+  const sum = () => {
+    if (p.sum == null) return;
+    const v = text(p.sum, 64);
+    if (!v || v.startsWith('$')) throw new BoardError(`${at}.sum is a numeric attribute of the event to add up, e.g. "amount"`);
+    out.sum = v;
+  };
+  // Sums are kept per name and one attribute value, so a sum split by an attribute takes the event by name.
+  const sumSplit = () => {
+    if (out.sum && out.by && !out.by.startsWith('$') && parseFunnel(out.event)[0].value != null) throw new BoardError(`${at}: with sum and by an attribute, event is a name only ("purchase", not "purchase=done")`);
+  };
   switch (p.type) {
     case 'stat':
       if ((p.metric == null) === (p.event == null)) throw new BoardError(`${at} (stat) needs either metric (${Object.keys(STATS).join(', ')}) or event`);
       if (p.metric != null) {
         if (!STATS[p.metric]) throw new BoardError(`${at}.metric must be one of ${Object.keys(STATS).join(', ')}`);
+        if (p.sum != null) throw new BoardError(`${at}.sum goes with event, not metric`);
         out.metric = p.metric;
       } else {
         out.event = event('event');
-        if (p.per != null) out.per = event('per');
+        sum();
+        if (p.per != null) {
+          if (PER[p.per]) out.per = p.per;
+          else if (out.sum) throw new BoardError(`${at}.per with sum is $players or $sessions (revenue per player or per session)`);
+          else out.per = event('per');
+        }
       }
       break;
     case 'series':
       out.event = event('event');
+      sum();
       by(false);
+      sumSplit();
       limit(8);
       break;
     case 'breakdown':
       out.event = event('event');
+      sum();
       by(true);
+      sumSplit();
       limit(20);
       break;
     case 'funnel': {
@@ -201,7 +243,11 @@ function validatePanel(p, at) {
       break;
     case 'errors':
     case 'findings':
+    case 'reports':
       limit(20);
+      break;
+    case 'retention':
+      limit(90);
       break;
     case 'sessions':
       limit(50);
@@ -242,22 +288,72 @@ export function autoBoard(ctx) {
 
 // Each panel with its data. A panel whose data isn't there yet (an event the game hasn't sent in this
 // window) gets `empty: true` and a line saying why, never zeros that look like a measurement. `maps` are
-// the game's level maps (for findings).
-export function evaluateBoard(ctx, board, { maps = [] } = {}) {
+// the game's level maps (for findings), `currency` the dashboard's. `shared`: for a share link's reader
+// (app.js; its share, or true), see forShare.
+export function evaluateBoard(ctx, board, { maps = [], shared = false, currency = null } = {}) {
   return board.panels.map((p, id) => {
-    const data = panelData(ctx, p, board, maps);
+    const data = shared ? forShare(p, ctx, board, maps, currency, shared) : panelData(ctx, p, board, maps, currency);
     return { id, ...p, size: p.size || defaultSize(p), title: p.title || defaultTitle(p), ...data };
   });
 }
 
-function panelData(ctx, p, board, maps) {
+// A panel as a share link shows it to anyone who has the link: sessions without session or player ids or
+// devices, errors and findings without stacks, code locations or breadcrumbs, and no live events. Fields
+// are kept by name and panels by type, so whatever is added later stays out until it is listed here.
+// Sums (revenue) are a game's business: hidden unless the link was made to show them (`shared.sums`).
+// Conversion stays: it is a share, not an amount.
+const SHARED_AS_IS = new Set(['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'deaths', 'events', 'versions', 'retention']);
+const SHARED_SESSION = ['version', 'env', 'session_type', 'start', 'duration_s', 'levels', 'completed', 'deaths', 'errors', 'hitches', 'p50', 'p95', 'crashed', 'rage_quit', 'ended', 'ttff_ms', 'events'];
+const SHARED_ISSUE = ['fingerprint', 'message', 'kind', 'count', 'sessions', 'last_seen', 'levels'];
+const SHARED_FINDING = ['id', 'severity', 'category', 'title', 'summary', 'suggestion', 'impact', 'impact_pct'];
+function forShare(p, ctx, board, maps, currency, shared) {
+  const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings';
+  if (!SHARED_AS_IS.has(p.type) && !redacted) return { empty: true, why: `${p.type === 'live' ? 'Live events are' : 'This panel is'} not shown on a shared board.` };
+  const sums = shared?.sums === true;
+  if (p.sum && !sums) return { empty: true, why: 'Sums such as revenue are not shown on this shared board.' };
+  const data = panelData(ctx, p, board, maps, currency);
+  if (p.type === 'versions' && !data.empty && !sums) {
+    const hidden = data.columns.map((c) => !!c.sum);
+    return { ...data, columns: data.columns.map((c, i) => (hidden[i] ? { ...c, hidden: true } : c)), rows: data.rows.map((r) => ({ ...r, values: r.values.map((v, i) => (hidden[i] ? null : v)) })) };
+  }
+  if (data.empty || !redacted) return data;
+  if (p.type === 'sessions') return { sessions: data.sessions.map((s) => ({ ...pick(s, SHARED_SESSION), rage: s.rage ? { level: s.rage.level } : null })) };
+  if (p.type === 'errors') return { issues: data.issues.map((i) => pick(i, SHARED_ISSUE)) };
+  // An error's summary names its breadcrumbs and its suggested fix its code location, and a bug report's
+  // quotes what players typed: say how often instead.
+  return {
+    findings: data.findings.map((f) => {
+      if (f.category === 'stability') return { ...pick(f, SHARED_FINDING), summary: errorLine(f.evidence), suggestion: null };
+      if (f.category === 'reports') return { ...pick(f, SHARED_FINDING), summary: reportLine(f.evidence), suggestion: null };
+      return pick(f, SHARED_FINDING);
+    }),
+  };
+}
+
+function reportLine(e = {}) {
+  return `${e.reports} bug reports from ${e.sessions} ${e.sessions === 1 ? 'session' : 'sessions'} on ${e.level}.`;
+}
+
+function errorLine(e = {}) {
+  return `${e.count} occurrences in ${e.sessions} sessions${e.levels?.length ? ` on ${e.levels.join(', ')}` : ''}.`;
+}
+
+function pick(o, keys) {
+  return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
+}
+
+function panelData(ctx, p, board, maps, currency) {
   switch (p.type) {
     case 'stat': {
+      // Counted by the server as batches arrive (app.js), not from the range.
+      if (p.metric === 'players_now') return ctx.playersNow == null ? { empty: true, why: 'This server does not count players now.' } : { value: ctx.playersNow, unit: null };
       if (p.metric) {
         const value = kpis(ctx)[p.metric];
         return value == null ? { empty: true, why: `No ${STATS[p.metric].label.toLowerCase()} in this window.` } : { value, unit: STATS[p.metric].unit || null };
       }
       const [f] = parseFunnel(p.event);
+      if (p.sum) return sumStat(ctx, p, f, currency);
+      if (PER[p.per]) return conversion(ctx, p, f);
       const count = eventCount(ctx, f);
       if (!p.per) return count || hasEvent(ctx, f.name) ? { value: count, unit: null } : missing(f.name);
       const [g] = parseFunnel(p.per);
@@ -267,6 +363,7 @@ function panelData(ctx, p, board, maps) {
     case 'series': {
       const [f] = parseFunnel(p.event);
       if (!hasEvent(ctx, f.name)) return missing(f.name);
+      if (p.sum) return sumSeries(ctx, p, f, currency);
       if (!p.by) return { ts: ctx.buckets, series: [{ label: p.event, values: eventCount(ctx, f, 'series') }] };
       let values;
       if (p.by.startsWith('$')) values = eventsBy(ctx, f, p.by.slice(1));
@@ -283,6 +380,7 @@ function panelData(ctx, p, board, maps) {
     }
     case 'breakdown': {
       const [f] = parseFunnel(p.event);
+      if (p.sum) return sumBreakdown(ctx, p, f, currency);
       if (p.by.startsWith('$')) {
         const rows = eventsBy(ctx, f, p.by.slice(1)).map(({ series, ...r }) => r);
         if (!rows.length) return missing(f.name);
@@ -314,7 +412,7 @@ function panelData(ctx, p, board, maps) {
     }
     case 'errors': {
       const issues = errorIssues(ctx).slice(0, p.limit || 5);
-      return issues.length ? { issues: issues.map(({ fingerprint, message, kind, count, sessions, last_seen, levels }) => ({ fingerprint, message, kind, count, sessions, last_seen, levels })) } : { empty: true, why: 'No errors in this window.' };
+      return issues.length ? { issues: issues.map(({ fingerprint, message, kind, location, count, sessions, last_seen, levels }) => ({ fingerprint, message, kind, location, count, sessions, last_seen, levels })) } : { empty: true, why: 'No errors in this window.' };
     }
     case 'deaths': {
       const rows = levelFunnel(ctx).filter((l) => l.deaths);
@@ -335,16 +433,100 @@ function panelData(ctx, p, board, maps) {
     }
     case 'versions': {
       // This page's stat panels, version by version: what a release changed, in this page's terms.
-      const stats = board.panels.filter((x) => x.type === 'stat');
+      const stats = board.panels.filter((x) => x.type === 'stat' && !LIVE_STATS.has(x.metric)).map((x) => withCurrency(x, currency));
       const list = versions(ctx, { stats, events: 0 });
       if (!list.length) return { empty: true, why: 'No versions in this window.' };
       if (!stats.length) return { empty: true, why: 'This page has no stat panels to compare.' };
-      return { columns: versionColumns(stats), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, values: v.board })) };
+      return { columns: versionColumns(stats, ctx), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, values: v.board })) };
     }
     case 'live':
       return { live: true };
+    case 'reports': {
+      const list = (ctx.reports || []).slice(0, p.limit || 5).map((r) => reportSummary(r, ctx));
+      return list.length ? { reports: list, total: ctx.reports.length } : { empty: true, why: 'No bug reports in this window.' };
+    }
+    case 'retention': {
+      const r = retention(ctx);
+      // Not zeros: an anonymous game can't see anyone come back, which is not the same as nobody coming back.
+      if (r.status === 'anonymous') return { empty: true, anonymous: true, why: "This game sends no player IDs, so returning players can't be counted. Turn on install mode (privacy: 'install') to see retention." };
+      if (!r.cohorts.length) return { empty: true, why: r.status === 'empty' ? 'No sessions in this window.' : 'No new players in this window: a cohort is the day players were first seen.' };
+      const cohorts = r.cohorts.slice(-(p.limit || 14));
+      return { d1: r.d1, d7: r.d7, d30: r.d30, new_players: r.new_players, id_sessions_pct: r.id_sessions_pct, cohorts, more: r.cohorts.length - cohorts.length };
+    }
   }
   return {};
+}
+
+// ── sums and conversion (sums.js) ──
+
+// Money panels say their currency, and name the events sent in another one rather than adding them up.
+function money(s) {
+  return { currency: s.currency, ...(s.mismatch.length ? { mismatch: s.mismatch } : {}) };
+}
+
+function noSum(p) {
+  return { empty: true, why: `"${parseFunnel(p.event)[0].name}" events have no "${p.sum}" in this window.` };
+}
+
+function sumStat(ctx, p, f, currency) {
+  const e = eventIndex(ctx).get(f.name);
+  if (!e) return missing(f.name);
+  if (!e.attrs.has(p.sum)) return noSum(p);
+  const s = sumsBy(ctx, f, p.sum, { currency });
+  const g = s.groups.get('');
+  const total = g?.sum ?? 0;
+  if (!p.per) return { value: total, unit: null, ...money(s), events: g?.events ?? 0 };
+  const base = kpis(ctx)[p.per === '$players' ? 'players' : 'sessions'];
+  return base ? { value: round(total / base, 2), unit: null, ...money(s), total, base } : { empty: true, why: `No ${PER[p.per]}s in this window.` };
+}
+
+// The share of players or sessions that sent an event.
+function conversion(ctx, p, f) {
+  if (!hasEvent(ctx, f.name)) return missing(f.name);
+  const base = kpis(ctx)[p.per === '$players' ? 'players' : 'sessions'];
+  const count = senders(ctx, f, p.per);
+  if (count == null) return { empty: true, why: 'Over more than 31 days players are counted per event, not per attribute value: use $sessions, or a shorter range.' };
+  return base ? { value: round((count / base) * 100, 1), unit: '%', count, base } : { empty: true, why: `No ${PER[p.per]}s in this window.` };
+}
+
+function sumSeries(ctx, p, f, currency) {
+  if (!eventIndex(ctx).get(f.name).attrs.has(p.sum)) return noSum(p);
+  const s = sumsBy(ctx, f, p.sum, { split: p.by || null, currency });
+  if (!p.by) return { ts: ctx.buckets, series: [{ label: p.sum, values: s.groups.get('')?.series ?? ctx.buckets.map(() => 0) }], ...money(s) };
+  const values = [...s.groups.values()].sort((a, b) => b.sum - a.sum || (a.value < b.value ? -1 : 1));
+  if (!values.length) return p.by.startsWith('$') ? noSum(p) : { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
+  const top = values.slice(0, p.limit || 5);
+  const rest = values.slice(top.length);
+  const series = top.map((x) => ({ label: x.value, values: x.series }));
+  if (rest.length) series.push({ label: 'other', values: ctx.buckets.map((_, i) => round(rest.reduce((t, x) => t + x.series[i], 0), 2)) });
+  return { ts: ctx.buckets, series, ...money(s) };
+}
+
+// A breakdown by sum: each value's sum, with its count and sessions as the breakdown by count has them.
+function sumBreakdown(ctx, p, f, currency) {
+  const e = eventIndex(ctx).get(f.name);
+  if (!e) return missing(f.name);
+  if (!e.attrs.has(p.sum)) return noSum(p);
+  let counts;
+  if (p.by.startsWith('$')) counts = eventsBy(ctx, f, p.by.slice(1));
+  else {
+    const a = customEvents(ctx, { name: f.name, sdk: true }).events[0].attrs.find((x) => x.key === p.by);
+    if (!a) return { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
+    counts = a.values;
+  }
+  const s = sumsBy(ctx, f, p.sum, { split: p.by, currency });
+  const byValue = new Map(counts.map((x) => [String(x.value), x]));
+  const rows = [...new Set([...s.groups.keys(), ...byValue.keys()])]
+    .map((value) => ({ value, count: byValue.get(value)?.count ?? 0, sessions: byValue.get(value)?.sessions ?? null, sum: s.groups.get(value)?.sum ?? 0 }))
+    .sort((a, b) => b.sum - a.sum || b.count - a.count || (a.value < b.value ? -1 : 1));
+  if (!rows.length) return missing(f.name);
+  const top = rows.slice(0, p.limit || 10);
+  return { total: round(rows.reduce((t, r) => t + r.sum, 0), 2), count: rows.reduce((t, r) => t + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null, ...money(s) };
+}
+
+// A sum stat with the dashboard's currency, for versions() (sums.js versionStat).
+function withCurrency(p, currency) {
+  return p.sum && currency ? { ...p, currency } : p;
 }
 
 // The stat panels of every board on a dashboard, once each: what versions are compared on.
@@ -352,18 +534,26 @@ export function dashboardStats(dashboard) {
   const seen = new Set();
   const out = [];
   for (const p of dashboard.pages.flatMap((page) => page.panels || [])) {
-    const key = p.type === 'stat' && (p.metric || `${p.event}/${p.per || ''}`);
+    const key = p.type === 'stat' && !LIVE_STATS.has(p.metric) && (p.metric || `${p.event}/${p.sum || ''}/${p.per || ''}`);
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(p);
+    out.push(withCurrency(p, dashboard.currency));
   }
   return out.slice(0, 12);
 }
 
 // Stat panels as the columns of a version comparison. Versions are compared per session, so a count of
-// events (or errors, or deaths) is shown per session there.
-export function versionColumns(stats) {
-  return stats.map((s) => ({ title: s.title || defaultTitle(s), unit: s.metric ? (PER_SESSION.has(s.metric) ? 'per session' : STATS[s.metric].unit || null) : s.per ? '%' : 'per session', metric: s.metric, event: s.event, per: s.per }));
+// events (or errors, or deaths) is shown per session there, and a sum per session unless it says per player.
+// A sum's column says its currency when it is money (with `ctx`).
+export function versionColumns(stats, ctx = null) {
+  return stats.map((s) => ({
+    title: s.title || defaultTitle(s),
+    unit: s.metric ? (PER_SESSION.has(s.metric) ? 'per session' : STATS[s.metric].unit || null) : s.sum ? `per ${PER[s.per] || 'session'}` : s.per ? '%' : 'per session',
+    metric: s.metric,
+    event: s.event,
+    per: s.per,
+    ...(s.sum ? { sum: s.sum, currency: ctx ? sumsBy(ctx, parseFunnel(s.event)[0], s.sum, { currency: s.currency }).currency : null } : {}),
+  }));
 }
 const PER_SESSION = new Set(['errors', 'deaths']);
 
@@ -377,11 +567,14 @@ function defaultTitle(p) {
   const by = (k) => (k?.startsWith('$') ? k.slice(1) : k);
   switch (p.type) {
     case 'stat':
-      return p.metric ? STATS[p.metric].label : p.per ? `${p.event} per ${p.per}` : p.event;
+      if (p.metric) return STATS[p.metric].label;
+      if (p.sum) return `${p.event} ${p.sum}${p.per ? ` per ${PER[p.per]}` : ''}`;
+      if (PER[p.per]) return p.per === '$players' ? `Players who sent ${p.event}` : `Sessions that sent ${p.event}`;
+      return p.per ? `${p.event} per ${p.per}` : p.event;
     case 'series':
-      return p.by ? `${p.event} by ${by(p.by)}` : p.event;
+      return `${p.event}${p.sum ? ` ${p.sum}` : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'breakdown':
-      return `${p.event} by ${by(p.by)}`;
+      return `${p.event}${p.sum ? ` ${p.sum}` : ''} by ${by(p.by)}`;
     case 'funnel':
       return p.steps
         .split(',')
@@ -399,6 +592,10 @@ function defaultTitle(p) {
       return 'All events';
     case 'findings':
       return 'Findings';
+    case 'reports':
+      return 'Bug reports';
+    case 'retention':
+      return 'Retention';
     case 'sessions':
       return p.sent ? `Sessions that sent ${p.sent}` : 'Recent sessions';
     case 'versions':

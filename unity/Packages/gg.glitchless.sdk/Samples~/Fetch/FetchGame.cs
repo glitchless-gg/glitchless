@@ -18,8 +18,10 @@ namespace GlitchlessSamples.Fetch
     /// reports levels with no extra code.
     ///
     /// It has four planted bugs for Glitchless to find, each marked GLITCHLESS-DEMO. Don't fix them.
+    /// F8 opens the bug report form.
     ///
-    /// Command line (a built player): --autoplay --seed=7 --skill=0.9 --level=2 --privacy=full --quit-after=60
+    /// Command line (a built player): --autoplay --seed=7 --skill=0.9 --level=2 --privacy=full (or install) --quit-after=60
+    /// --bug-report-at=5 (send a bug report from code, as a "Report a bug" button would)
     /// </summary>
     public sealed class FetchGame : MonoBehaviour
     {
@@ -54,7 +56,7 @@ namespace GlitchlessSamples.Fetch
         float lastGrounded = -1, jumpAt = -1, boostUntil, respawnUntil, checkpoint, levelStartedAt;
         int lives, score, confetti, attempt;
         string banner, lastBurst;
-        float quitAfter;
+        float quitAfter, bugReportAt;
         FetchBot bot;
         Camera cam;
         Material baseMaterial;
@@ -65,7 +67,7 @@ namespace GlitchlessSamples.Fetch
 
         void Awake()
         {
-            ReadArgs(out var full);
+            ReadArgs(out var privacy);
             Application.targetFrameRate = 60;
             Time.fixedDeltaTime = 1 / 60f;
             Glitchless.Init(new GlitchlessOptions
@@ -73,9 +75,10 @@ namespace GlitchlessSamples.Fetch
                 Service = service,
                 Intake = intake,
                 ClientToken = clientToken,
-                Privacy = full ? Privacy.Full : Privacy.Anonymous,
+                Privacy = privacy,
                 Positions = true, // anonymous, plus death places and movement for the heatmap
                 SessionType = autoplay ? "synthetic" : "",
+                BugReports = new BugReportOptions(), // F8 opens a form players send bug reports from; it pauses the game
             });
             if (autoplay) bot = new FetchBot(skill, seed);
 
@@ -92,17 +95,19 @@ namespace GlitchlessSamples.Fetch
             StartCoroutine(LoadLevel(Mathf.Clamp(startLevel, 1, FetchLevel.All.Length) - 1));
         }
 
-        void ReadArgs(out bool full)
+        void ReadArgs(out Privacy privacy)
         {
-            full = false;
+            privacy = Privacy.Anonymous;
             foreach (var a in Environment.GetCommandLineArgs())
             {
                 if (a == "--autoplay") autoplay = true;
                 else if (a.StartsWith("--seed=")) int.TryParse(a.Substring(7), out seed);
                 else if (a.StartsWith("--skill=")) float.TryParse(a.Substring(8), NumberStyles.Float, CultureInfo.InvariantCulture, out skill);
                 else if (a.StartsWith("--level=")) int.TryParse(a.Substring(8), out startLevel);
-                else if (a == "--privacy=full") full = true;
+                else if (a == "--privacy=full") privacy = Privacy.Full;
+                else if (a == "--privacy=install") privacy = Privacy.Install;
                 else if (a.StartsWith("--quit-after=")) float.TryParse(a.Substring(13), NumberStyles.Float, CultureInfo.InvariantCulture, out quitAfter);
+                else if (a.StartsWith("--bug-report-at=")) float.TryParse(a.Substring(16), NumberStyles.Float, CultureInfo.InvariantCulture, out bugReportAt);
             }
         }
 
@@ -208,6 +213,11 @@ namespace GlitchlessSamples.Fetch
         void Update()
         {
             if (quitAfter > 0 && !finished && Time.realtimeSinceStartup > quitAfter) Done("Time's up.");
+            if (bugReportAt > 0 && Time.realtimeSinceStartup > bugReportAt)
+            {
+                bugReportAt = 0;
+                Glitchless.ReportBug($"the pup ran into something invisible on {level?.Id}", done: (sent, reason) => Debug.Log($"bug report from code: sent={sent} reason={reason ?? "none"}"));
+            }
             if (WantsJumpKey()) jumpAt = Time.time;
             if (dog != null) dog.position = new Vector3(pos.x, pos.y + 0.12f, 0);
             if (cam != null) cam.transform.SetPositionAndRotation(new Vector3(pos.x + 2.4f, 1.4f, -7.5f), Quaternion.Euler(4, 0, 0));
@@ -215,6 +225,7 @@ namespace GlitchlessSamples.Fetch
 
         static bool WantsJumpKey()
         {
+            if (Glitchless.IsBugReportOpen) return false; // the player is typing a bug report
 #if ENABLE_INPUT_SYSTEM && !ENABLE_LEGACY_INPUT_MANAGER
             var k = UnityEngine.InputSystem.Keyboard.current;
             var p = UnityEngine.InputSystem.Pointer.current;

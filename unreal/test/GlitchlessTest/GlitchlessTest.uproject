@@ -1,0 +1,26 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "The Glitchless plugin's test game. unreal/test/e2e.mjs packages it and plays it against a local Glitchless server.",
+	"Modules": [
+		{
+			"Name": "GlitchlessTest",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{
+			"Name": "Glitchless",
+			"Enabled": true
+		},
+		{
+			"Name": "GlitchlessToolset",
+			"Enabled": true
+		}
+	],
+	"AdditionalPluginDirectories": [
+		"../../Plugins"
+	]
+}

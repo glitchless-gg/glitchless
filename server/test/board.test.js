@@ -178,6 +178,9 @@ test("versions compare the board's own numbers, and a board can split any event 
   assert.deepStrictEqual(byVersion.rows.map((r) => [r.value, r.count, r.sessions]), [['1.1', 3, 3], ['1.0', 1, 1]]);
   assert.equal(byVersion.title, 'buy=done by version');
   assert.deepStrictEqual(series.series.map((s) => s.label).sort(), ['1.0', '1.1']);
+  // Per level, sessions can't be known from the cells: unknown, not zero.
+  const [byLevel] = evaluateBoard(ctxOf(mobile, 'starlift'), validateBoard({ panels: [{ type: 'breakdown', event: 'play', by: '$level' }] }));
+  assert.ok(byLevel.rows.length && byLevel.rows.every((r) => r.sessions === null), JSON.stringify(byLevel.rows));
   assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$device' }] }), /\$version or \$level/);
 });
 

@@ -12,6 +12,7 @@ export const VIEWS = {
   sessions: { title: 'Sessions', icon: 'sessions', about: 'every session, with its replay' },
   versions: { title: 'Versions', icon: 'versions', about: 'releases compared on the stats of every board' },
   live: { title: 'Live Tail', icon: 'live', about: 'events as they arrive' },
+  reports: { title: 'Bug Reports', icon: 'bug', about: 'what players reported from inside the game, with screenshots' },
 };
 
 // The pages of a game that has sent nothing yet.
@@ -28,9 +29,9 @@ export async function resetDashboard(f) {
   f.dashboard.reload();
 }
 
-// The dashboard with one page changed.
+// The dashboard with one page changed (its currency kept).
 export function withPage(spec, id, change) {
-  return { pages: spec.pages.map((p) => (p.id === id ? { ...p, ...change } : p)) };
+  return { ...spec, pages: spec.pages.map((p) => (p.id === id ? { ...p, ...change } : p)) };
 }
 
 // Adds a panel to a board (`id`, or the first board; a new "Board" page when the dashboard has none) and
@@ -39,6 +40,6 @@ export async function addToBoard(f, panel, id = null) {
   const pages = f.dashboard.spec.pages;
   const target = pages.find((p) => p.id === id && p.panels) || pages.find((p) => p.panels);
   const next = target ? pages.map((p) => (p === target ? { ...p, panels: [...p.panels, panel] } : p)) : [{ id: 'board', title: 'Board', panels: [panel] }, ...pages];
-  await saveDashboard(f, { pages: next });
+  await saveDashboard(f, { ...f.dashboard.spec, pages: next });
   return target?.id || 'board';
 }

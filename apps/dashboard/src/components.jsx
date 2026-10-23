@@ -29,6 +29,8 @@ const ICONS = {
   bolt: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',
   flag: 'M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7',
+  bug: 'M8 2l1.9 1.9M14.1 3.9L16 2M9 7.1v-1a3 3 0 116 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 014-4h4a4 4 0 014 4v3c0 3.3-2.7 6-6 6M12 20v-9M6.5 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M21 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4',
+  image: 'M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM21 15l-5-5L5 21',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
 };
 
@@ -57,11 +59,14 @@ export function Widget({ title, sub, actions, children, span = 6, flush, classNa
   );
 }
 
-export function QueryValue({ label, value, unit, status = 'neutral', sub, span = 2, title }) {
+export function QueryValue({ label, value, unit, status = 'neutral', sub, span = 2, title, actions }) {
   return (
     <section className={`widget s${span}`} title={title}>
       <div className={`qv ${status}`}>
-        <div className="label">{label}</div>
+        <div className="label">
+          {label}
+          {actions && <span className="qa">{actions}</span>}
+        </div>
         <div className="value">
           {value ?? '–'}
           {unit && value != null && <small>{unit}</small>}
@@ -127,8 +132,9 @@ function useWidth(ref) {
  * Timeseries via uPlot.
  * series: [{ label, values, color, fill, dash, width }]
  * thresholds: [{ value, color, label }]  markers: [{ ts, label, color }]  (deployments, annotations)
+ * format: how a value is written (money), instead of a number followed by `unit`
  */
-export function TimeSeries({ ts, series, height = 180, unit = '', thresholds = [], markers = [], yMin, onPick, bars = false }) {
+export function TimeSeries({ ts, series, height = 180, unit = '', format, thresholds = [], markers = [], yMin, onPick, bars = false }) {
   const wrap = useRef(null);
   const plot = useRef(null);
   const width = useWidth(wrap);
@@ -137,7 +143,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', thresholds = [
   useEffect(() => {
     if (!wrap.current || !width || !hasData) return;
     const data = [ts.map((t) => t / 1000), ...series.map((s) => s.values)];
-    const fmt = (v) => (v == null ? '' : `${fmtNum(v, v < 10 ? 1 : 0)}${unit}`);
+    const fmt = (v) => (v == null ? '' : format ? format(v) : `${fmtNum(v, v < 10 ? 1 : 0)}${unit}`);
     const opts = {
       width,
       height,
@@ -338,7 +344,11 @@ export function Findings({ findings, onOpen, compact }) {
           {!compact && <div className="fs">{f.summary}</div>}
           <div className="fx">
             {compact && <div style={{ marginBottom: 6 }}>{f.summary}</div>}
-            <b>Suggested fix:</b> {f.suggestion}
+            {f.suggestion && (
+              <>
+                <b>Suggested fix:</b> {f.suggestion}
+              </>
+            )}
             {onOpen && f.link && (
               <div style={{ marginTop: 6 }}>
                 <a

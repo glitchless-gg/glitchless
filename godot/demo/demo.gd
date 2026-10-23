@@ -8,20 +8,23 @@ extends Node2D
 ##            carries 2500 orphan nodes (a leak)
 ##   level_3  a bonus calls a method on a missing node (a script error)
 ## Each level opens with the same four events (power-up, pickup, death, bonus),
-## then plays at random.
+## then plays at random. F8 opens the bug report form.
 ##
 ## Flags (after "--"):
 ##   --autoplay           play by itself and quit after the last level
 ##   --seed=N             which run to play (the same seed plays the same way)
 ##   --level-seconds=S    how long each level lasts (default 4)
 ##   --intake=URL         the Glitchless server (default http://localhost:7777)
-##   --privacy=full       send in full mode instead of anonymous
+##   --privacy=full       send in full mode instead of anonymous (or install)
+##   --reset-install-id   call Glitchless.reset_install_id() once the game starts
 ##   --background-at=S    pretend the phone sent the game to the background S
 ##                        seconds in, and back after --background-for=S (default 1)
 ##   --focus-away-at=S    pretend the player pulled down Control Center (or the
 ##                        notification shade) S seconds in: the game loses focus and
 ##                        draws nothing for --focus-away-for=S (default 1.5)
 ##   --session-timeout=S  Glitchless's session_timeout (default 300)
+##   --bug-report-at=S    send a bug report from code (Glitchless.report_bug) S seconds in
+##   --bug-form-at=S      S seconds in, press F8 and Esc, then F8, type a note into the form and press Ctrl+Enter
 ##   --glitchless            send even though this is a debug build
 ## e.g. godot --path godot -- --autoplay --seed=3 --glitchless
 
@@ -41,6 +44,8 @@ var _background_at := -1.0
 var _background_for := 1.0
 var _focus_away_at := -1.0
 var _focus_away_for := 1.5
+var _bug_report_at := -1.0
+var _bug_form_at := -1.0
 var _bonus_target = null  # untyped: in a release export a call on a typed null crashes the game outright
 
 
@@ -48,6 +53,7 @@ func _ready() -> void:
 	var intake := "http://localhost:7777"
 	var privacy := "anonymous"
 	var timeout := 300.0
+	var reset_id := false
 	for a in OS.get_cmdline_user_args():
 		if a == "--autoplay":
 			_autoplay = true
@@ -59,6 +65,8 @@ func _ready() -> void:
 			intake = a.get_slice("=", 1)
 		elif a.begins_with("--privacy="):
 			privacy = a.get_slice("=", 1)
+		elif a == "--reset-install-id":
+			reset_id = true
 		elif a.begins_with("--background-at="):
 			_background_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--background-for="):
@@ -69,12 +77,22 @@ func _ready() -> void:
 			_focus_away_for = float(a.get_slice("=", 1))
 		elif a.begins_with("--session-timeout="):
 			timeout = float(a.get_slice("=", 1))
+		elif a.begins_with("--bug-report-at="):
+			_bug_report_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--bug-form-at="):
+			_bug_form_at = float(a.get_slice("=", 1))
 	print("user dir: ", OS.get_user_data_dir())
-	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout})
+	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout, "bug_reports": true})
+	if reset_id:
+		Glitchless.reset_install_id()
 	if _background_at >= 0.0:
 		_pretend_background()
 	if _focus_away_at >= 0.0:
 		_pretend_focus_away()
+	if _bug_report_at >= 0.0:
+		_report_from_code()
+	if _bug_form_at >= 0.0:
+		_report_from_form()
 	_next_level()
 
 
@@ -161,6 +179,45 @@ func _pretend_focus_away() -> void:
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_FOCUS_OUT)
 	OS.delay_msec(int(_focus_away_for * 1000.0))
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_FOCUS_IN)
+
+
+# A game's own "Report a bug" button would do this.
+func _report_from_code() -> void:
+	await get_tree().create_timer(_bug_report_at).timeout
+	var shot: Variant = true
+	if DisplayServer.get_name() == "headless":  # nothing is drawn to read back: send a picture made here
+		shot = Image.create_empty(540, 960, false, Image.FORMAT_RGB8)
+		shot.fill(Color(0.3, 0.3, 0.3))
+	var result := await Glitchless.report_bug("the bonus on %s never paid out" % LEVELS[_level], shot)
+	print("bug report from code: ", result)
+
+
+# A player pressing F8, typing a note and pressing Ctrl+Enter, as input events.
+func _report_from_form() -> void:
+	await get_tree().create_timer(_bug_form_at).timeout
+	Glitchless.bug_report_opened.connect(func() -> void: print("bug report form opened, paused: ", get_tree().paused))
+	Glitchless.bug_report_closed.connect(func() -> void: print("bug report form closed, paused: ", get_tree().paused))
+	_press(KEY_F8)
+	await get_tree().process_frame
+	_press(KEY_ESCAPE)  # changed their mind: nothing is sent
+	await get_tree().process_frame
+	_press(KEY_F8)
+	await get_tree().process_frame
+	for c in "sparks froze the screen":
+		_press(OS.find_keycode_from_string(c.to_upper()) if c != " " else KEY_SPACE, c.unicode_at(0))
+	await get_tree().process_frame
+	_press(KEY_ENTER, 0, true)
+
+
+func _press(key: Key, unicode: int = 0, ctrl: bool = false) -> void:
+	for pressed in [true, false]:
+		var e := InputEventKey.new()
+		e.keycode = key
+		e.physical_keycode = key
+		e.unicode = unicode if pressed else 0
+		e.ctrl_pressed = ctrl
+		e.pressed = pressed
+		get_viewport().push_input(e)
 
 
 # The planted stutter: a bubble sort, so far-away sparks draw first.

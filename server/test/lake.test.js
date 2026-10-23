@@ -7,11 +7,12 @@ import assert from 'node:assert/strict';
 import zlib from 'node:zlib';
 import { buildContext, overview, performance, versions, players, customEvents, eventFunnel, parseFunnel, errorIssues, sessionsList, sessionDetail, heatmap, heatmapLevels, playtestSummary } from '../src/analytics.js';
 import { findings } from '../src/findings.js';
-import { autoBoard, autoDashboard, evaluateBoard } from '../src/board.js';
+import { autoBoard, autoDashboard, evaluateBoard, validateBoard } from '../src/board.js';
+import { eventSums } from '../src/sums.js';
 import { foldSessions, finalizeSession, mergeSession, sessionToJSON, sessionFromJSON } from '../src/session-state.js';
 import { toRecords } from '../src/lake/record.js';
 import { rawErrorsPrefix, dayOf, hourLabel } from '../src/lake/layout.js';
-import { gameSessions } from './helpers/game-data.js';
+import { gameSessions, shopSessions } from './helpers/game-data.js';
 import { lakeSim, arrivals, hasDuckDB, needsDuckDB } from './helpers/lake-sim.js';
 
 const HOUR = 3_600_000;
@@ -21,7 +22,7 @@ const START = T0 + 17_123;
 const P = 'proj_a';
 const SERVICE = 'zoomies';
 
-const sessions = gameSessions({ start: START, spanMs: 2.5 * HOUR, sessions: 50 });
+const sessions = [...gameSessions({ start: START, spanMs: 2.5 * HOUR, sessions: 50 }), ...shopSessions({ start: START, spanMs: 2.5 * HOUR, sessions: 40 })];
 const batches = arrivals(sessions, { project: P, late: 0.04 });
 // A small game alongside: its summary blocks are small enough to be stored as one item each.
 const TINY = 'proj_tiny';
@@ -55,7 +56,23 @@ const QUERIES = {
   events: (ctx) => ({ ...customEvents(ctx), funnel: eventFunnel(ctx, parseFunnel('enemy_spawn,bone_collected=big,enemy_spawn:boss=true')) }),
   board: (ctx) => evaluateBoard(ctx, autoBoard(ctx)),
   dashboard: (ctx) => autoDashboard(ctx).pages.map(({ panels, ...p }) => p),
+  sums: (ctx) => ({ board: evaluateBoard(ctx, SUMS), versions: versions(ctx, { stats: SUMS.panels.filter((p) => p.type === 'stat') }).map((v) => v.board), events: [...eventSums(ctx)] }),
 };
+// Revenue, revenue per player, conversion and sums split by item, version and level, over time.
+const SUMS = validateBoard({
+  panels: [
+    { type: 'stat', event: 'purchase', sum: 'amount' },
+    { type: 'stat', event: 'purchase', sum: 'amount', per: '$players' },
+    { type: 'stat', event: 'purchase', per: '$players' },
+    { type: 'stat', event: 'purchase:item=gems_500', per: '$sessions' },
+    { type: 'stat', event: 'purchase:store=ios', sum: 'amount' },
+    { type: 'series', event: 'purchase', sum: 'amount', by: 'item' },
+    { type: 'breakdown', event: 'purchase', sum: 'amount', by: 'item' },
+    { type: 'breakdown', event: 'purchase', sum: 'amount', by: '$version' },
+    { type: 'series', event: 'bone_collected', sum: 'points', by: '$level' },
+    { type: 'breakdown', event: 'enemy_spawn', sum: 'points', by: 'boss' },
+  ],
+});
 
 let sim;
 before(async () => {

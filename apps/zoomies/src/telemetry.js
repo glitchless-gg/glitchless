@@ -40,9 +40,9 @@ for (const m of METHODS) {
 
 /**
  * Load + init the SDK and instrument the Three.js renderer. Resolves once telemetry is ready (or
- * definitely unavailable). Never rejects.
+ * definitely unavailable). Never rejects. `onBugReport(open)` pauses the game while the F8 form is open.
  */
-export async function initTelemetry({ renderer, scene, camera, THREE }) {
+export async function initTelemetry({ renderer, scene, camera, THREE, onBugReport = null }) {
   if (params.nogd) {
     console.info('[zoomies] Glitchless disabled (?nogd=1)');
     return gd;
@@ -63,6 +63,8 @@ export async function initTelemetry({ renderer, scene, camera, THREE }) {
       privacy: 'full', // the demo shows heatmaps, replays and player counts, which need positions and a player ID
       sessionType: params.autoplay ? 'synthetic' : 'user',
       dashboardUrl: params.dashboard || 'http://localhost:7777',
+      // F8 (or the overlay's button): players and playtesters send a note and a screenshot from where they are.
+      bugReports: { hotkey: 'F8', onOpen: () => onBugReport?.(true), onClose: () => onBugReport?.(false) },
     });
     instrumentThree(real, { renderer, scene, camera, THREE });
     gd.enabled = true;

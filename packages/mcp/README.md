@@ -69,7 +69,10 @@ above go in its environment.
 | `glitchless_set_dashboard` | Save the game's pages: boards of panels in its own words, and the built-in views it keeps. Needs a key with the dashboard scope |
 | `glitchless_compare_versions` | Two or more versions side by side, in the game's own stats first, to confirm a fix with real players |
 | `glitchless_session` | One play session in detail, with its whole event timeline |
+| `glitchless_bug_reports` | Bug reports players sent from inside the game: their notes, levels, positions and sessions, and one report's screenshot when asked |
 | `glitchless_playtest` | Autoplay bots play the game and compare with a saved baseline ([glitchless-playtest](https://www.npmjs.com/package/glitchless-playtest); needs Playwright in the game project) |
+| `glitchless_deck_send` | Build the game, send it to the paired Steam Deck, add it to the Deck's library and optionally start it ([glitchless-deck](https://www.npmjs.com/package/glitchless-deck); pair once with `npx glitchless-deck pair`) |
+| `glitchless_deck_measure` | Measure a Unity, Godot or Unreal build on the Steam Deck and compare it with a saved run |
 
 To let the agent drive the running game as well (measure frame times, inspect the scene, load a
 level), add the WebMCP server beside this one: `npx -y @jason.today/webmcp@latest --mcp`.

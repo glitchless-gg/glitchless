@@ -4,8 +4,9 @@ import { Overlay } from './overlay.js';
 import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
+import { BugReportForm, snapshot, sendReport } from './bugreport.js';
 
-export const SDK_VERSION = '0.2.2';
+export const SDK_VERSION = '0.3.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)
@@ -29,12 +30,13 @@ const DEFAULTS = {
   positionHz: 4,
   windowMs: 5000, // frame stats are summarised per window; the dashboard's time resolution
   flushIntervalMs: 15000, // how often batches are sent; sends happen on a window boundary
-  privacy: 'anonymous', // or 'full': adds a stored player ID, detailed device fields and positions (see PRIVACY.md)
-  positions: undefined, // default: on in 'full' mode; set true to send positions in anonymous mode
+  privacy: 'anonymous', // 'install' adds a random player ID kept on the device, for retention; 'full' that and detailed device fields and positions (see PRIVACY.md)
+  positions: undefined, // default: on in 'full' mode; set true to send positions in anonymous or install mode
   datadog: null,
   webmcp: undefined, // default: on outside prod. true | false | { bridge, standard, position }
   dashboardUrl: null,
   sessionType: 'user', // 'synthetic' for bots / autoplay, so they can be filtered out of player metrics
+  bugReports: null, // { hotkey: 'F8' } (or true): players open a form in the game to send a bug report (see reportBug)
   debug: false,
 };
 
@@ -58,9 +60,9 @@ export class Glitchless {
     this.sessionId = 's_' + randomId(16); // per page load, kept in memory only
     this.sdk = SDK; // engine adapters name themselves here (glitchless-phaser/…), so fix advice fits the engine
     this.engine = null; // { name, version, renderer }, set by an engine adapter
-    this.privacy = this.opts.privacy === 'full' ? 'full' : 'anonymous';
+    this.privacy = PRIVACY_LEVELS.includes(this.opts.privacy) ? this.opts.privacy : 'anonymous';
     this.positionsOn = this.opts.positions ?? this.privacy === 'full';
-    this.playerId = this.privacy === 'full' ? loadPlayerId() : forgetPlayerId();
+    this.playerId = storedId(this.privacy);
     this.lastFlushAt = 0;
     this.sampled = Math.random() < this.opts.sampleRate;
     this.startedAt = Date.now();
@@ -83,6 +85,7 @@ export class Glitchless {
     this.history = []; // recent gameplay events, for agents (WebMCP) and the overlay
     this.errorLog = new Map(); // fingerprint → grouped error, for agents
     this.recentHitches = [];
+    this.recentWindows = []; // fps and p95 of the last frame windows, for bug reports
     this.customTools = [];
     this.probes = new Set();
     this.ring = new Float32Array(240);
@@ -101,6 +104,8 @@ export class Glitchless {
     this.installErrorHandlers();
     this.installLifecycle();
     this.installObservers();
+    // Before the input tracking (and the game's own listeners): the form holds input back from them while open.
+    if (this.opts.bugReports) this.bugForm = new BugReportForm(this, this.opts.bugReports === true ? {} : this.opts.bugReports);
     this.installInputTracking();
     // One timer: close a frame window every windowMs, and send when flushIntervalMs has passed (or
     // straight away for the first batch, so a session shows up within one window).
@@ -180,6 +185,26 @@ export class Glitchless {
   captureMap(levelId, opts) {
     if (this.render?.captureMap) return this.render.captureMap(levelId, opts);
     this.log('captureMap ignored: no engine adapter installed');
+  }
+
+  // A player's bug report: `note` is what they typed. Sends a screenshot (screenshot: false leaves it out), where
+  // they are and what just happened. Resolves { sent: true }, or { sent: false, reason: 'offline' | 'error' }.
+  async reportBug({ note = '', screenshot = true } = {}) {
+    return sendReport(this, await snapshot(this, { screenshot }), note);
+  }
+
+  // Forgets the player ID kept on the device (install and full mode), for a game's "reset my ID" setting. This session
+  // keeps sending the ID it started with; the next one (the next page load) makes a new ID, so nothing joins the two.
+  resetInstallId() {
+    forgetPlayerId();
+  }
+
+  // Opens the bug report form (bugReports in init adds a hotkey and an overlay button for it), for a game's own
+  // "Report a bug" menu item.
+  openBugReport() {
+    if (typeof window === 'undefined') return;
+    if (!this.bugForm) this.bugForm = new BugReportForm(this, { hotkey: null, ...(typeof this.opts.bugReports === 'object' ? this.opts.bugReports : {}) });
+    this.bugForm.open();
   }
 
   // Expose a game-specific tool to coding agents over WebMCP, e.g. "load_level" or "spawn_enemy",
@@ -552,6 +577,7 @@ export class Glitchless {
 
   installInputTracking() {
     const onInput = (code) => {
+      if (this.bugForm?.isOpen) return; // typing a bug report is not playing
       const now = performance.now();
       if (!this.firstInputAt && this.firstFrameAt) {
         this.firstInputAt = now;
@@ -651,6 +677,8 @@ export class Glitchless {
         ctx: w.ctx,
       });
       this.datadog?.frameWindow(this.queue[this.queue.length - 1]);
+      this.recentWindows.push({ ts: w.startedAt, level: this.level, fps: round(w.frames / ((Date.now() - w.startedAt) / 1000), 1), p95: round(s.quantile(0.95), 2) });
+      if (this.recentWindows.length > 12) this.recentWindows.shift();
     }
     if (this.posBuffer.length) {
       this.queue.push({ type: 'pos', ts: this.posBuffer[0][0], level: this.level, pts: this.posBuffer });
@@ -696,13 +724,14 @@ export class Glitchless {
     }
     const events = this.queue;
     this.queue = [];
-    // Large events (map thumbnails) go in their own request so batches stay under beacon limits.
-    const big = events.filter((e) => e.type === 'map');
-    const small = events.filter((e) => e.type !== 'map');
+    // Large events (map thumbnails, bug reports) go in their own request so batches stay under beacon limits.
+    const big = events.filter((e) => e.type === 'map' || e.type === 'bug_report');
+    const small = events.filter((e) => e.type !== 'map' && e.type !== 'bug_report');
     for (const chunk of chunkBySize(small, BEACON_LIMIT)) this.send(chunk, beacon);
     for (const e of big) this.send([e], false);
   }
 
+  // Resolves true once the intake took the events (a beacon: once the browser queued it).
   send(events, beacon) {
     const body = JSON.stringify({
       service: this.opts.service,
@@ -717,22 +746,24 @@ export class Glitchless {
     if (beacon && navigator.sendBeacon && body.length < BEACON_LIMIT) {
       const ok = navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
       if (ok) this.stats.sent += events.length;
-      return;
+      return Promise.resolve(ok);
     }
     // Regular sends are gzipped (about 5x smaller). Content-Type stays text/plain, a CORS-safelisted
     // value, so cross-origin intake needs no preflight request; the server spots gzip by its magic bytes.
-    gzip(body)
+    return gzip(body)
       .then((payload) => fetch(url, { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain' }, keepalive: (payload.byteLength ?? payload.length) < BEACON_LIMIT }))
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         this.stats.sent += events.length;
         this.stats.lastStatus = 'ok';
+        return true;
       })
       .catch((err) => {
         this.stats.failed += events.length;
         this.stats.lastStatus = 'error';
         this.log('send failed', err.message);
         if (this.queue.length < MAX_QUEUE / 2) this.queue.unshift(...events.filter((e) => e.type !== 'pos'));
+        return false;
       });
   }
 
@@ -784,7 +815,14 @@ async function gzip(body) {
   }
 }
 
-// Anonymous mode keeps no ID: remove one a full-mode build may have stored.
+// Install and full mode keep one random player ID in localStorage and send it as player_id (SPEC §4b), the same one,
+// so a game that moves between them keeps its players. Anonymous mode keeps none, and removes one a build left.
+const PRIVACY_LEVELS = ['anonymous', 'install', 'full'];
+
+function storedId(privacy) {
+  return privacy === 'anonymous' ? forgetPlayerId() : loadPlayerId();
+}
+
 function forgetPlayerId() {
   try {
     localStorage.removeItem('glitchless.pid');
@@ -806,10 +844,11 @@ export function scrubUrls(text) {
   return String(text).replace(/(https?:\/\/[^\s?#)'"]+)[?#][^\s)'"]*?(?=(?::\d+){1,2}(?=[\s)'"]|$)|[\s)'"]|$)/gm, '$1');
 }
 
+// Without localStorage (blocked, or a private window that refuses writes) the ID lasts this page load.
 function loadPlayerId() {
   try {
     let id = localStorage.getItem('glitchless.pid');
-    if (!id) {
+    if (!id?.startsWith('p_')) {
       id = 'p_' + randomId(12);
       localStorage.setItem('glitchless.pid', id);
     }

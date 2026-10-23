@@ -5,7 +5,8 @@
 //   2. folds their events into per-hour summary blocks (summaries.js) and writes them to DynamoDB as
 //      this run's items (C: minute cells and facts, F: per-minute session states, H: per-hour states);
 //   3. keeps the events of sessions still in progress in a spill file, and writes one session file per
-//      finished session (session_end, or nothing new for a while) for session detail and replay;
+//      finished session (session_end, or nothing new for a while) for session detail and replay; notes
+//      when each player with an ID was first seen (the first-seen index retention reads);
 //   4. once an hour has closed, consolidates its summary items into one set and rewrites its events as
 //      Parquet for the drill-downs (late events reopen the hour and are folded in the same way);
 //   5. once a day has closed, folds it into daily rollups (daily.js) for ranges of more than 31 days: the
@@ -49,6 +50,9 @@ import {
   dailyPk,
   dailySk,
   indexPk,
+  playersPk,
+  playerSk,
+  cohortSk,
   servicesPk,
   clearPk,
   planOf,
@@ -177,6 +181,7 @@ export class Compactor {
       const s = await this.sessions(events, planOfProject, now);
       stats.sessionsWritten = s.written;
       stats.lateSessions = s.late;
+      stats.players = await this.players(events, planOfProject);
       state.openSessions = s.open;
       state.nextFinish = s.nextFinish;
       await this.services(events);
@@ -240,7 +245,8 @@ export class Compactor {
     for (const r of rows) {
       if (Number(r.a) <= (cleared.get(`${r.project}\n${r.service}`) ?? -Infinity)) continue;
       const e = toEvent(r);
-      if (e.type === 'map' || typeof e.ts !== 'number') continue;
+      // Maps and bug reports are stored at intake (stores/lake.js); neither belongs in summaries or Parquet.
+      if (e.type === 'map' || e.type === 'bug_report' || typeof e.ts !== 'number') continue;
       e.__order = [Number(r.a), Number(r.n), Number(r.i), Number(r.w)];
       srcOf.set(e, keyOfPath.get(r.src));
       planOfProject.set(r.project, planOf(r.plan));
@@ -375,7 +381,8 @@ export class Compactor {
     const x = this.opt.dayOverlapMs;
     const { cells, facts, sessions } = await readSummaries(this.table, d.project, d.service, d.day - x, d.day + DAY + x);
     for (const s of sessions.values()) finalizeSession(s);
-    const day = foldDay(d.day, { cells, facts, sessions: sessions.values() }, this.opt.dayCaps);
+    const newPlayers = (await this.table.cohorts(d.project, d.service, d.day, d.day)).get(d.day) || new Set();
+    const day = foldDay(d.day, { cells, facts, sessions: sessions.values(), newPlayers }, this.opt.dayCaps);
     const old = (await Promise.all(['D', 'R'].map((f) => this.table.dailyItems(d.project, d.service, d.day, d.day, f)))).flat();
     let written = 0;
     if (day.cells.size || day.facts.size || day.groups.size) {
@@ -418,6 +425,47 @@ export class Compactor {
     } finally {
       await this.table.delete(META_PK, 'lease', { ConditionExpression: '#o = :o', ExpressionAttributeNames: { '#o': 'owner' }, ExpressionAttributeValues: { ':o': owner } }).catch(() => {});
     }
+  }
+
+  // ── first-seen index ──
+
+  // Players with an ID (install or full mode; ingest files an anonymous session under its session ID), per project
+  // and service (layout.js P#<p>#N#<s>): an I item per player with the first time seen (f) and the last day seen
+  // (l), and a D item under the day first seen, which queries read to tell who is new (LakeTable.cohorts). Both
+  // expire with the plan's retention: a player gone longer than that is new again when they come back. Taking the
+  // earliest and latest is idempotent, so a run that dies and is redone changes nothing twice; a late event that
+  // moves a player's first day earlier moves their D item. → items written.
+  async players(events, planOfProject) {
+    const seen = new Map(); // `${pk}\n${player}` → { pk, id, first, last, plan }
+    for (const e of events) {
+      if (e.player_id == null || e.player_id === e.session_id) continue;
+      const pk = playersPk(e.project_id, e.service);
+      const k = `${pk}\n${e.player_id}`;
+      const p = seen.get(k);
+      if (!p) seen.set(k, { pk, id: e.player_id, first: e.ts, last: e.ts, plan: planOfProject.get(e.project_id) });
+      else {
+        p.first = Math.min(p.first, e.ts);
+        p.last = Math.max(p.last, e.ts);
+      }
+    }
+    if (!seen.size) return 0;
+    const have = new Map((await this.table.getAll([...seen.values()].map((p) => ({ pk: p.pk, sk: playerSk(p.id) })))).map((it) => [`${it.pk}\n${it.sk.slice(2)}`, it]));
+    const puts = [];
+    const gone = [];
+    const ttl = (day, plan) => Math.floor((day + DAY + retentionDays(plan) * DAY) / 1000);
+    for (const [k, p] of seen) {
+      const it = have.get(k);
+      const first = Math.min(p.first, it?.f ?? Infinity);
+      const last = Math.max(dayStart(p.last), it?.l ?? -Infinity);
+      if (it && it.f === first && it.l === last) continue;
+      puts.push({ pk: p.pk, sk: playerSk(p.id), f: first, l: last, ttl: ttl(last, p.plan) });
+      if (it && dayStart(it.f) === dayStart(first)) continue;
+      puts.push({ pk: p.pk, sk: cohortSk(dayStart(first), p.id), ttl: ttl(dayStart(first), p.plan) });
+      if (it) gone.push({ pk: p.pk, sk: cohortSk(dayStart(it.f), p.id) });
+    }
+    await this.table.putAll(puts);
+    await this.table.deleteAll(gone);
+    return puts.length;
   }
 
   // ── sessions ──

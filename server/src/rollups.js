@@ -11,20 +11,26 @@ import { Sketch } from '../../packages/sdk/src/sketch.js';
 export const MINUTE = 60_000;
 
 // Fixed-point scales for summed fields: integers add exactly in any order.
-export const FIXED = { sec: 1e6, render: 1e6, heap: 1e6, calls: 1e3, tris: 1, geo: 1 };
+export const FIXED = { sec: 1e6, render: 1e6, heap: 1e6, calls: 1e3, tris: 1, geo: 1, ev: 1e3 };
 
 // Custom event names, attribute keys and values are the game's own, so a cell counts at most this many
 // names (ev) and name × attribute × value triples (evv); the rest go under OTHER.
 export const MAX_EVENT_NAMES = 200;
 export const MAX_EVENT_VALUES = 400;
+// Numeric attributes of custom events are summed as well (revenue, coins, seconds…) as [sum, events]: per
+// name, attribute and currency in evs, and per string or boolean attribute value of the event too in evx
+// (revenue by item); at most this many of each per cell. An event's `currency` attribute (the purchase convention)
+// keeps each currency's sums apart; events without one sum under ''. See sumKey.
+export const MAX_EVENT_SUMS = 400;
 export const OTHER = '(other)';
 // The attributes of a custom event that counts and breakdowns use (see smallAttrs).
 export const ATTRS = { keys: 12, valueLength: 64 };
 const SEP = '\u0001';
 
 // One cell: n counts events by type, ev custom events by name and evv by name, attribute and value (keys
-// joined by SEP; see attrKey); the rest covers frame windows only. t0 is the first frame window's ts,
-// which orders versions and levels the way the raw events would.
+// joined by SEP; see attrKey), and evs and evx sum numeric attributes (MAX_EVENT_SUMS; only cells that have
+// some carry them); the rest covers frame windows only. t0 is the first frame window's ts, which orders
+// versions and levels the way the raw events would.
 export function newCell(env = null, version = null, level = null) {
   return {
     env,
@@ -73,7 +79,9 @@ export function addEvent(c, e) {
   if (e.type === 'custom' && typeof e.name === 'string' && e.name) {
     const name = eventName(e.name);
     countName(c.ev, name, 1, MAX_EVENT_NAMES);
-    for (const [k, v] of Object.entries(smallAttrs(e.attrs))) countName(c.evv, attrKey(name, k, v), 1, MAX_EVENT_VALUES);
+    const attrs = smallAttrs(e.attrs);
+    for (const [k, v] of Object.entries(attrs)) countName(c.evv, attrKey(name, k, v), 1, MAX_EVENT_VALUES);
+    addSums(c, name, attrs, currencyOf(e.attrs));
   }
   if (e.type !== 'frame_window') return;
   if (c.t0 == null || e.ts < c.t0) c.t0 = e.ts;
@@ -98,6 +106,8 @@ export function mergeCell(into, c) {
   for (const [t, k] of Object.entries(c.n)) into.n[t] = (into.n[t] || 0) + k;
   for (const [name, k] of Object.entries(c.ev || {})) countName(into.ev, name, k, MAX_EVENT_NAMES);
   for (const [key, k] of Object.entries(c.evv || {})) countName(into.evv, key, k, MAX_EVENT_VALUES);
+  if (c.evs) for (const [key, v] of Object.entries(c.evs)) addSum((into.evs ??= {}), key, v);
+  if (c.evx) for (const [key, v] of Object.entries(c.evx)) addSum((into.evx ??= {}), key, v);
   if (c.t0 != null && (into.t0 == null || c.t0 < into.t0)) into.t0 = c.t0;
   into.fw += c.fw;
   into.frames += c.frames;
@@ -199,6 +209,44 @@ export function attrKey(name, key, value) {
 export function splitAttrKey(k) {
   const [name, key, ...rest] = k.split(SEP);
   return { name, key, value: rest.join(SEP) };
+}
+
+// The sum of a numeric attribute (`sum`) of a named event in one currency: evs's key, and evx's with the
+// event's attribute `key` = `value` in front (attrKey). And back: OTHER (past a cap) has no `sum`.
+export function sumKey(name, sum, currency, key = null, value = null) {
+  return `${key == null ? name : attrKey(name, key, value)}${SEP}${sum}${SEP}${currency}`;
+}
+
+export function splitSumKey(k) {
+  const parts = k.split(SEP);
+  if (parts.length < 3) return { name: parts[0] };
+  const [name, ...rest] = parts;
+  const currency = rest.pop();
+  const sum = rest.pop();
+  return rest.length ? { name, key: rest[0], value: rest.slice(1).join(SEP), sum, currency } : { name, sum, currency };
+}
+
+// The currency an event's amounts are in: its `currency` attribute, upper-cased ('' without one).
+export function currencyOf(attrs) {
+  const c = attrs?.currency;
+  return typeof c === 'string' ? c.trim().toUpperCase().slice(0, 8) : '';
+}
+
+function addSums(c, name, attrs, currency) {
+  const entries = Object.entries(attrs);
+  for (const [k, v] of entries) {
+    if (typeof v !== 'number') continue;
+    const x = fixed(v, FIXED.ev);
+    addSum((c.evs ??= {}), sumKey(name, k, currency), [x, 1]);
+    for (const [g, gv] of entries) if (typeof gv !== 'number') addSum((c.evx ??= {}), sumKey(name, k, currency, g, gv), [x, 1]);
+  }
+}
+
+// Add [sum, events] under its key, or under OTHER once the cell has MAX_EVENT_SUMS keys.
+function addSum(sums, key, [s, n]) {
+  const k = key in sums || Object.keys(sums).length < MAX_EVENT_SUMS ? key : OTHER;
+  const have = sums[k];
+  sums[k] = have ? [have[0] + s, have[1] + n] : [s, n];
 }
 
 function countName(counts, name, k, cap) {

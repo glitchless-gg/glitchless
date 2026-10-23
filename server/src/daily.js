@@ -10,8 +10,9 @@
 //   groups         per (env, version), the sessions that started that day, folded into what the
 //                  session-level answers need: counts (sessions, crashes, rage quits…), sums (duration,
 //                  errors, deaths…), quantile maps (session length, time to first frame, memory growth),
-//                  device breakdowns, the level funnel, custom events per session, players, the latest
-//                  sessions and rage quits, deaths with coordinates
+//                  device breakdowns, the level funnel, custom events per session, players, the players
+//                  first seen that day (new players, for retention), the latest sessions and rage quits,
+//                  deaths with coordinates
 //   sample         sessions that sent custom events, with their occurrences, for ordered funnels: all of
 //                  them, or a uniform sample of CAPS.sample once a day has more
 //
@@ -25,7 +26,8 @@
 //   exact while small, then estimated (meta.approximate names them)
 //                  distinct players (overall, per level, per event, per error) and error sessions:
 //                  Distinct and Sample sketches (sketches.js); returning players: the same sample of players
-//                  across days; medians of per-session values: quantile maps; ordered funnels: the day's
+//                  across days; retention: each day's sample of new players against the samples of players
+//                  active on the days after it; medians of per-session values: quantile maps; ordered funnels: the day's
 //                  sample, weighted by its sampling rate; GPUs past the top CAPS.gpus a day; difficulty
 //                  hotspots past CAPS.deaths deaths a level a day; attribute values past their caps
 //   not at day resolution (stores/lake.js answers them over the last 31 days and says so in meta)
@@ -35,7 +37,7 @@ import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, budgetMedian, me
 import { newFacts, addFactsCell } from './facts.js';
 import { MARK } from './session-state.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct } from './analytics.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, RETENTION_DAYS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -74,8 +76,8 @@ export function sessionDay(s) {
 
 // One day's summary from what the hourly summaries hold: `cells` and `facts` (Map<minute, Map<key, …>>,
 // any minutes: only the day's are kept) and finalized session states (any: only those that started that
-// day are kept).
-export function foldDay(day, { cells = new Map(), facts = new Map(), sessions = [] }, caps = CAPS) {
+// day are kept). `newPlayers`: the ids first seen that day, from the store's first-seen index.
+export function foldDay(day, { cells = new Map(), facts = new Map(), sessions = [], newPlayers = null }, caps = CAPS) {
   const out = { day, cells: new Map(), facts: new Map(), groups: new Map(), sample: { theta: null, list: [] } };
   const inDay = (m) => m >= day && m < day + DAY;
   const dayCells = new Map();
@@ -90,7 +92,7 @@ export function foldDay(day, { cells = new Map(), facts = new Map(), sessions = 
     const key = groupKey(s.env, s.version);
     let g = out.groups.get(key);
     if (!g) out.groups.set(key, (g = newGroup(s.env, s.version, caps)));
-    addSession(g, s, day, caps);
+    addSession(g, s, day, caps, newPlayers);
     if (Object.keys(s.ev || {}).length) sample.push({ h: hashId(s.session_id), env: s.env ?? null, version: s.version ?? null, o: Object.fromEntries(Object.entries(s.ev).map(([n, v]) => [n, v.o])) });
   }
   for (const g of out.groups.values()) seal(g, caps);
@@ -122,6 +124,8 @@ function newGroup(env, version, caps) {
     last: null, // the latest event
     pl: new Sample(caps.players),
     px: new Map(), // day → Sample: players active on days other than the one their session started
+    id: 0, // sessions with a player ID (install or full mode)
+    nw: new Sample(caps.players), // players first seen this day (the store's first-seen index): new players
     ri: 0, // rage inputs
     er: 0, // errors
     de: 0, // deaths
@@ -132,8 +136,10 @@ function newGroup(env, version, caps) {
     ttff: q(),
     ttp: q(),
     mem: { n: 0, g: q(), f: q(), l: q() }, // geometry growth per level load, first, last
+    tex: { n: 0, g: q(), f: q(), l: q() }, // texture growth per level load, first, last
+    ga: new Map(), // context gauge → { n: sessions that followed it, c: sessions it only climbed in, f, l: their first and last }
     nodes: { n: 0, og: q(), of: q(), ol: q(), ng: q(), nf: q(), nl: q() }, // orphan and live node growth, first, last
-    dev: { t: new Map(), b: new Map(), g: new Map() }, // GPU tier, browser, GPU → { n, cell }
+    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map() }, // GPU tier, browser, GPU, platform → { n, cell }
     fwl: new Map(), // level (or '(menu)') → sessions that sent frame windows there
     lv: new Map(), // level → funnel row
     dc: {}, // death causes
@@ -147,8 +153,12 @@ function newGroup(env, version, caps) {
   };
 }
 
-function addSession(g, s, day, caps) {
+function addSession(g, s, day, caps, newPlayers = null) {
   g.n++;
+  if (hasPlayerId(s)) {
+    g.id++;
+    if (newPlayers?.has(s.player_id)) g.nw.add(s.player_id);
+  }
   if (s.cell.fw) g.fw++;
   if (s.crashed) g.crashed++;
   if (s.errors > 0) g.errored++;
@@ -184,6 +194,19 @@ function addSession(g, s, day, caps) {
     g.mem.f.add(s.geo_first);
     g.mem.l.add(s.geo_last);
   }
+  if (s.tex_first != null && s.level_loads >= 2) {
+    g.tex.n++;
+    g.tex.g.add((s.tex_last - s.tex_first) / Math.max(1, s.level_loads - 1));
+    g.tex.f.add(s.tex_first);
+    g.tex.l.add(s.tex_last);
+  }
+  for (const k of s.gauge_seen || []) gaugeRow(g, k, caps).n++;
+  for (const [k, c] of Object.entries(s.gauge_climbs || {})) {
+    const x = gaugeRow(g, k, caps);
+    x.c++;
+    x.f.add(c.first);
+    x.l.add(c.last);
+  }
   const orphans = s.node_counts?.orphan_nodes;
   if (orphans && s.level_loads >= 2) {
     const loads = s.level_loads - 1;
@@ -203,6 +226,7 @@ function addSession(g, s, day, caps) {
       [g.dev.t, dev.gpu_tier || 'unknown'],
       [g.dev.b, dev.browser || 'unknown'],
       [g.dev.g, dev.gpu || 'unknown'],
+      [g.dev.p, platformOf(dev)],
     ]) {
       let x = map.get(key);
       if (!x) map.set(key, (x = { n: 0, cell: newCell() }));
@@ -219,7 +243,7 @@ function addSession(g, s, day, caps) {
       g.dc[cause] = (g.dc[cause] || 0) + 1;
       if (level && isNum(x)) {
         if (!g.dx.has(level)) g.dx.set(level, []);
-        g.dx.get(level).push([hashId([s.session_id, ts]), { ts, level, cause, x, y, z, rage_quit: !!(s.rage_quit && s.rage?.level === level && s.rage.ts === ts) }]);
+        g.dx.get(level).push([hashId([s.session_id, ts]), { ts, level, cause, x, y, z, rage_quit: !!(s.rage_quit && s.rage?.level === level && rageDeathTs(s.rage) === ts) }]);
       }
     }
     if (!level) continue;
@@ -267,6 +291,19 @@ function addSession(g, s, day, caps) {
       }
     }
   }
+}
+
+// A context gauge's row; the gauges are the game's own words, so a group keeps at most 16 of them.
+function gaugeRow(g, key, caps) {
+  let x = g.ga.get(key);
+  if (!x) {
+    if (g.ga.size >= 16) {
+      g.cut.add('gauges');
+      return { n: 0, c: 0, f: new QMap(caps.quantiles), l: new QMap(caps.quantiles) };
+    }
+    g.ga.set(key, (x = { n: 0, c: 0, f: new QMap(caps.quantiles), l: new QMap(caps.quantiles) }));
+  }
+  return x;
 }
 
 function levelRow(g, level, caps) {
@@ -437,6 +474,8 @@ function groupToJSON(g) {
     last: g.last,
     pl: g.pl.toJSON(),
     px: [...g.px].map(([d, s]) => [d, s.toJSON()]),
+    id: g.id,
+    nw: g.nw.toJSON(),
     ri: g.ri,
     er: g.er,
     de: g.de,
@@ -445,6 +484,8 @@ function groupToJSON(g) {
     fa: g.fa,
     hi: g.hi,
     mem: qs(g.mem),
+    tex: qs(g.tex),
+    ga: [...g.ga].map(([k, x]) => [k, x.n, x.c, x.f.toJSON(), x.l.toJSON()]),
     nodes: qs(g.nodes),
     dev: Object.fromEntries(Object.entries(g.dev).map(([k, map]) => [k, [...map].map(([key, x]) => [key, x.n, cellToJSON(x.cell)])])),
     fwl: [...g.fwl],
@@ -469,9 +510,15 @@ function groupFromJSON(o) {
     ttp: q(o.ttp),
     pl: Sample.from(o.pl),
     px: new Map(o.px.map(([d, s]) => [d, Sample.from(s)])),
+    // Days stored before retention have no new players or ID counts.
+    id: o.id ?? 0,
+    nw: Sample.from(o.nw),
     mem: qs(o.mem),
+    // Days stored before textures and gauges were kept have none.
+    tex: o.tex ? qs(o.tex) : { n: 0, g: q(), f: q(), l: q() },
+    ga: new Map((o.ga || []).map(([k, n, c, f, l]) => [k, { n, c, f: q(f), l: q(l) }])),
     nodes: qs(o.nodes),
-    dev: Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])),
+    dev: { p: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
     lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl) }])),
     recent: [],
@@ -489,7 +536,7 @@ function groupFromJSON(o) {
 // players of each day for the players-per-day series and returning players. `keep(env, version)` is
 // the query's env and version filter.
 export function mergeDays(days, keep) {
-  const daily = { all: null, byVersion: new Map(), players: new Map(), active: new Map(), samples: [], cut: new Set() };
+  const daily = { all: null, byVersion: new Map(), players: new Map(), active: new Map(), new: new Map(), samples: [], cut: new Set(), no_win: false };
   const cells = [];
   const facts = [];
   for (const d of [...days].sort((a, b) => a.day - b.day)) {
@@ -503,6 +550,7 @@ export function mergeDays(days, keep) {
       players.merge(g.pl);
       addActive(daily.active, d.day, g.pl);
       for (const [day, s] of g.px) addActive(daily.active, day, s);
+      addActive(daily.new, d.day, g.nw);
     }
     daily.players.set(d.day, players);
     const list = d.sample.list.filter((x) => keep(x.env, x.version));
@@ -511,7 +559,33 @@ export function mergeDays(days, keep) {
   daily.all ||= newGroup(null, null, UNCAPPED);
   daily.all.recent = newestFirst(daily.all.recent);
   daily.all.rq = newestFirst(daily.all.rq);
+  // A game that never completes a level has no rage quits (analytics.js noWin(), as sessionContext does).
+  const all = daily.all;
+  daily.no_win = noWin({ sessions: all.n, starts: all.at, completes: all.co, fails: all.fa + all.de });
+  if (daily.no_win) for (const g of [all, ...daily.byVersion.values()]) dropRageQuits(g);
   return { cells, facts, daily };
+}
+
+function dropRageQuits(g) {
+  g.rage = 0;
+  g.rq = [];
+  for (const l of g.lv.values()) l.rq = 0;
+  // Fresh lists: the sessions and deaths are shared with the day groups they came from.
+  g.recent = withoutRageQuits(g.recent);
+  g.dx = new Map([...g.dx].map(([level, list]) => [level, list.map(([k, d]) => [k, { ...d, rage_quit: false }])]));
+}
+
+// Session rows ([start, summary]) with their rage quits cleared, as fresh rows.
+export function withoutRageQuits(rows) {
+  return rows.map(([start, row]) => [start, row.rage_quit ? { ...row, rage_quit: false, rage: null } : row]);
+}
+
+// The no-win rule over session rows, for a sessions list that reads no days. A row has no level or fail
+// counts: a session that played a level stands for its starts, one that died or rage-quit for its fails
+// (the rule only clears rage quits, and a rage quit always follows a death or a fail).
+export function noWinRows(rows) {
+  const count = (f) => rows.filter(([, r]) => f(r)).length;
+  return noWin({ sessions: rows.length, starts: count((r) => r.levels.length), completes: count((r) => r.completed.length), fails: count((r) => r.deaths || r.rage_quit) });
 }
 
 function addActive(active, day, sample) {
@@ -522,18 +596,26 @@ function addActive(active, day, sample) {
 // Merge group `g` into `into` (null: a fresh copy of g's shape).
 function mergeGroup(into, g) {
   if (!into) into = newGroup(g.env, g.version, UNCAPPED);
-  for (const k of ['n', 'fw', 'crashed', 'errored', 'rage', 'syn', 'sim', 'ms', 'ri', 'er', 'de', 'at', 'co', 'fa', 'hi']) into[k] += g[k];
+  for (const k of ['n', 'fw', 'crashed', 'errored', 'rage', 'syn', 'sim', 'ms', 'ri', 'er', 'de', 'at', 'co', 'fa', 'hi', 'id']) into[k] += g[k];
   g.len.forEach((n, i) => (into.len[i] += n));
   for (const k of ['dur', 'ttff', 'ttp']) into[k].merge(g[k]);
   if (g.start != null && (into.start == null || g.start < into.start)) into.start = g.start;
   if (g.last != null && (into.last == null || g.last > into.last)) into.last = g.last;
   into.pl.merge(g.pl);
+  into.nw.merge(g.nw);
   for (const [d, s] of g.px) {
     if (!into.px.has(d)) into.px.set(d, new Sample(Infinity));
     into.px.get(d).merge(s);
   }
-  for (const part of ['mem', 'nodes']) for (const [k, v] of Object.entries(g[part])) typeof v === 'number' ? (into[part][k] += v) : into[part][k].merge(v);
-  for (const k of ['t', 'b', 'g']) {
+  for (const part of ['mem', 'tex', 'nodes']) for (const [k, v] of Object.entries(g[part])) typeof v === 'number' ? (into[part][k] += v) : into[part][k].merge(v);
+  for (const [k, x] of g.ga) {
+    const y = gaugeRow(into, k, into.caps);
+    y.n += x.n;
+    y.c += x.c;
+    y.f.merge(x.f);
+    y.l.merge(x.l);
+  }
+  for (const k of ['t', 'b', 'g', 'p']) {
     for (const [key, x] of g.dev[k]) {
       const y = into.dev[k].get(key);
       if (!y) into.dev[k].set(key, { n: x.n, cell: mergeCell(newCell(), x.cell) });
@@ -668,6 +750,7 @@ export function dailyPerformance(ctx) {
   p.by_gpu = list(g.dev.g)
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
+  p.by_platform = list(g.dev.p).sort((a, b) => b.sessions - a.sessions);
   approximate(ctx, 'gpus', g.cut.has('gpus'));
   for (const l of p.by_level) l.sessions = g.fwl.get(l.key) || 0;
   for (const v of p.by_version) v.sessions = ctx.daily.byVersion.get(v.key)?.fw || 0;
@@ -682,6 +765,14 @@ export function dailyPerformance(ctx) {
       .map(([version, v]) => {
         approximate(ctx, 'memory', v.mem.g.approx || v.mem.f.approx || v.mem.l.approx);
         return [version, { sessions: v.mem.n, geometries_growth_per_level_load: v.mem.g.quantile(0.5), median_first: v.mem.f.quantile(0.5), median_last: v.mem.l.quantile(0.5) }];
+      }),
+  );
+  p.texture_growth = Object.fromEntries(
+    versions
+      .filter(([, v]) => v.tex.n)
+      .map(([version, v]) => {
+        approximate(ctx, 'memory', v.tex.g.approx || v.tex.f.approx || v.tex.l.approx);
+        return [version, { sessions: v.tex.n, textures_growth_per_level_load: v.tex.g.quantile(0.5), median_first: v.tex.f.quantile(0.5), median_last: v.tex.l.quantile(0.5) }];
       }),
   );
   p.node_growth = Object.fromEntries(
@@ -755,7 +846,36 @@ export function dailyPlayers(ctx) {
     session_length: { labels: ['<30s', '30s–1m', '1–2m', '2–5m', '5–10m', '10–20m', '20m+'], counts: g.len },
     death_causes: g.dc,
     rage_quits: rageQuits,
+    retention: dailyRetention(ctx),
   };
+}
+
+// retention() at day resolution: each day's new players (a Sample, exact while small) against the players active on
+// the 1st, 7th and 30th day after it (daily.active), counted over the hashes both samples keep. Sessions count on the
+// day they started, as in retention().
+export function dailyRetention(ctx) {
+  const cohorts = new Map();
+  for (const [day, fresh] of ctx.daily.new) {
+    const players = fresh.count();
+    if (!players) continue;
+    approximate(ctx, 'retention', fresh.approx);
+    const returned = RETENTION_DAYS.map((n) => {
+      const active = ctx.daily.active.get(day + n * DAY);
+      if (!active) return 0;
+      approximate(ctx, 'retention', active.approx);
+      const theta = Math.min(fresh.theta, active.theta);
+      let kept = 0;
+      let back = 0;
+      for (const h of fresh.h) {
+        if (h >= theta) continue;
+        kept++;
+        if (active.h.has(h)) back++;
+      }
+      return kept ? Math.round((players * back) / kept) : 0;
+    });
+    cohorts.set(day, { players, returned });
+  }
+  return retentionAnswer(ctx, { sessions: ctx.daily.all.n, withId: ctx.daily.all.id, cohorts, firstSeen: 'index' });
 }
 
 // eventIndex() with the session parts (sessions and players per event, sessions per attribute value,
@@ -852,6 +972,13 @@ export function dailyDeaths(ctx, level = undefined) {
   const out = [];
   for (const [lvl, list] of ctx.daily.all.dx) if (level === undefined || lvl === level) for (const [, d] of list) out.push(d);
   return out.sort((a, b) => a.ts - b.ts);
+}
+
+// Context gauges that only climb (analytics.js gaugeClimbs()), from the range's merged day groups.
+export function dailyGaugeClimbs(ctx) {
+  const g = ctx.daily.all;
+  approximate(ctx, 'gauges', g.cut.has('gauges'));
+  return [...g.ga].map(([key, x]) => ({ key, sessions: x.n, climbing: x.c, median_first: x.f.quantile(0.5), median_last: x.l.quantile(0.5) }));
 }
 
 // Sessions per SDK, for findings' engine-specific advice.

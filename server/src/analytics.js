@@ -13,7 +13,8 @@ import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf
 import { foldSessions, finalizeSession, MARK, FATAL_KINDS } from './session-state.js';
 import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysBySeen, valueQuantile, valueCount } from './facts.js';
 import { idCount } from './facts.js';
-import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, sessionTotal, approximate } from './daily.js';
+import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, dailyGaugeClimbs, dailyRetention, sessionTotal, approximate } from './daily.js';
+import { versionStat } from './sums.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
 
@@ -43,8 +44,31 @@ export function sessionContext(q, sessions) {
     return true;
   };
   for (const [id, s] of sessions) if (!keep(s)) sessions.delete(id);
+  let starts = 0;
+  let completes = 0;
+  let fails = 0;
+  for (const s of sessions.values()) {
+    starts += s.level_loads;
+    completes += s.completes;
+    fails += s.fails + s.deaths;
+  }
+  if (noWin({ sessions: sessions.size, starts, completes, fails })) {
+    for (const s of sessions.values()) {
+      s.rage_quit = false;
+      s.rage = null;
+    }
+  }
   const bucketMs = pickBucket(q.to - q.from);
   return { q, sessions, from: q.from, to: q.to, bucketMs, buckets: makeBuckets(q.from, q.to, bucketMs) };
+}
+
+// A game that never completes a level (an endless runner, a flappy game) ends every run in a death or a
+// fail, so leaving after one is the end of a run, not a rage quit. Decided over the range once there are
+// enough sessions to tell: one level nobody beats (a wall) doesn't make a game endless while others are
+// completed. daily.js mergeDays() applies the same rule to day groups.
+export const NO_WIN_SESSIONS = 5;
+export function noWin({ sessions, starts, completes, fails }) {
+  return sessions >= NO_WIN_SESSIONS && starts > 0 && completes === 0 && fails > 0;
 }
 
 // Cells and facts are per (env, version, level); the env and version filters apply to them directly.
@@ -118,6 +142,7 @@ export function sessionSummary(s) {
     duration_s: round(s.duration_s, 1),
     browser: s.device ? `${s.device.browser} ${s.device.browser_version || ''}`.trim() : null,
     os: s.device?.os ?? null,
+    steam_deck: s.device?.steam_deck === true,
     gpu: s.device?.gpu ?? null,
     gpu_tier: s.device?.gpu_tier ?? null,
     levels: naturalSort([...s.levels]),
@@ -236,6 +261,7 @@ export function performance(ctx) {
   const byTier = new Map();
   const byBrowser = new Map();
   const byGpu = new Map();
+  const byPlatform = new Map();
   const bucketSketch = Array.from({ length: nb }, () => new Sketch());
   const bucketCalls = Array.from({ length: nb }, () => [0, 0]);
   const bucketGeo = Array.from({ length: nb }, () => [0, 0]);
@@ -273,7 +299,7 @@ export function performance(ctx) {
   // known from its session_start), in the order the sessions' first frame windows arrived.
   for (const s of sessionsByFirstWindow(ctx)) {
     const dev = s.device || {};
-    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown']]) {
+    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)]]) {
       const g = group(map, key);
       mergeCell(g, s.cell);
       g.sessions.add(s.session_id);
@@ -349,6 +375,7 @@ export function performance(ctx) {
     by_gpu_tier: [...byTier.values()].map(summarize).sort((a, b) => tierRank(a.key) - tierRank(b.key)),
     by_browser: [...byBrowser.values()].map(summarize).sort((a, b) => b.frames - a.frames),
     by_gpu: [...byGpu.values()].map(summarize).sort((a, b) => b.sessions - a.sessions).slice(0, 10),
+    by_platform: [...byPlatform.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     hitch_causes: { ...mergedFacts(ctx).hc },
     hitch_context: hitchContext(ctx),
     hitches: recentHitches(ctx).map((h) => ({
@@ -364,6 +391,7 @@ export function performance(ctx) {
       recent: h.recent,
     })),
     memory: memoryGrowth(sessions),
+    texture_growth: textureGrowth(sessions),
     node_growth: nodeGrowth(sessions),
     load: Object.fromEntries(Object.entries(loadByVersion).map(([v, arr]) => [v, { p50: quantile(arr, 0.5), p95: quantile(arr, 0.95), n: arr.length }])),
   };
@@ -428,6 +456,47 @@ export function hitchCount(ctx, level = undefined) {
   return n;
 }
 
+// Renderer textures (three.js) or texture keys (Phaser) per level load, per version: like geometries, a
+// count that keeps rising with every level is something made and never disposed.
+function textureGrowth(sessions) {
+  const byVersion = {};
+  for (const s of sessions) {
+    if (s.tex_first == null || s.level_loads < 2) continue;
+    (byVersion[s.version] ||= []).push({ growth: (s.tex_last - s.tex_first) / Math.max(1, s.level_loads - 1), first: s.tex_first, last: s.tex_last });
+  }
+  return Object.fromEntries(
+    Object.entries(byVersion).map(([v, arr]) => [
+      v,
+      {
+        sessions: arr.length,
+        textures_growth_per_level_load: quantile(arr.map((a) => a.growth), 0.5),
+        median_first: quantile(arr.map((a) => a.first), 0.5),
+        median_last: quantile(arr.map((a) => a.last), 0.5),
+      },
+    ]),
+  );
+}
+
+// Context gauges (setContext) per key: how many sessions followed it long enough to judge, how many saw it
+// keep climbing (session-state.js gauge_climbs), and where those started and ended. A gauge that keeps
+// climbing in most sessions is a leak in the game's own words, whether or not it has slowed frames yet.
+export function gaugeClimbs(ctx) {
+  if (ctx.daily) return dailyGaugeClimbs(ctx);
+  const by = new Map();
+  const get = (k) => {
+    if (!by.has(k)) by.set(k, { n: 0, f: [], l: [] });
+    return by.get(k);
+  };
+  for (const s of ctx.sessions.values()) {
+    for (const k of s.gauge_seen || []) get(k).n++;
+    for (const [k, c] of Object.entries(s.gauge_climbs || {})) {
+      get(k).f.push(c.first);
+      get(k).l.push(c.last);
+    }
+  }
+  return [...by].map(([key, g]) => ({ key, sessions: g.n, climbing: g.l.length, median_first: quantile(g.f, 0.5), median_last: quantile(g.l, 0.5) }));
+}
+
 function memoryGrowth(sessions) {
   const byVersion = {};
   for (const s of sessions) {
@@ -477,8 +546,9 @@ function nodeGrowth(sessions) {
 
 // ───────────────────────────── errors ─────────────────────────────
 
+// ctx.symbolicate (sourcemaps.js prepare): the original location and stack of a minified web build's issue.
 export function errorIssues(ctx) {
-  return errorList(ctx).map((i) => ({ ...i, breadcrumbs: breadcrumbs(ctx, i.sample_session, i.sample_ts) }));
+  return errorList(ctx).map((i) => ({ ...(ctx.symbolicate ? ctx.symbolicate(i) : i), breadcrumbs: breadcrumbs(ctx, i.sample_session, i.sample_ts) }));
 }
 
 // Issues by fingerprint, most sessions first, without breadcrumbs (a store fetches those for the
@@ -648,6 +718,90 @@ export function players(ctx) {
     session_length: { labels: lengthLabels, counts: lengths },
     death_causes: causes,
     rage_quits: rageQuits,
+    retention: retention(ctx),
+  };
+}
+
+// ───────────────────────────── retention ─────────────────────────────
+
+// Returning players by first-seen day (SPEC §3, players.retention): of the players first seen on a day (a cohort),
+// the share that played again on the 1st, 7th and 30th day after it, in UTC days (D1 is the next day). Only players
+// with an ID count, from install or full mode: an anonymous session is filed under its own ID and never returns.
+// Who is new comes from the store's first-seen index (ctx.cohorts: UTC day → ids first seen that day, over all the
+// store keeps); without one, a player is new on the first day the range has them. A player belongs to a cohort when
+// a session of theirs in this selection (env, version) started on that day, as daily.js counts sessions on the day
+// they started. A cohort is a whole day of the range, and its Dn is null until day n has ended inside the range.
+export const RETENTION_DAYS = [1, 7, 30];
+const DAY_MS = 86_400_000;
+
+export function retention(ctx) {
+  if (ctx.daily) return dailyRetention(ctx);
+  const players = new Map(); // id → { started: days its sessions started on, active: days it played on }
+  let withId = 0;
+  for (const s of ctx.sessions.values()) {
+    if (!hasPlayerId(s)) continue;
+    withId++;
+    let p = players.get(s.player_id);
+    if (!p) players.set(s.player_id, (p = { started: new Set(), active: new Set() }));
+    p.started.add(utcDay(s.start ?? s.first_ts));
+    for (const m of s.minutes) p.active.add(utcDay(m));
+  }
+  const firstDay = new Map();
+  for (const [day, ids] of ctx.cohorts || []) for (const id of ids) firstDay.set(id, day);
+  const cohorts = new Map();
+  for (const [id, p] of players) {
+    const day = ctx.cohorts ? firstDay.get(id) : Math.min(...p.started);
+    if (day == null || !p.started.has(day)) continue; // first seen before the range, or not in this selection that day
+    let c = cohorts.get(day);
+    if (!c) cohorts.set(day, (c = { players: 0, returned: RETENTION_DAYS.map(() => 0) }));
+    c.players++;
+    RETENTION_DAYS.forEach((n, i) => p.active.has(day + n * DAY_MS) && c.returned[i]++);
+  }
+  return retentionAnswer(ctx, { sessions: ctx.sessions.size, withId, cohorts, firstSeen: ctx.cohorts ? 'index' : 'range' });
+}
+
+// Whether a session's player has an ID of their own (install or full mode): ingest files an anonymous session under
+// its session ID.
+export function hasPlayerId(s) {
+  return s.player_id != null && s.player_id !== s.session_id;
+}
+
+export function utcDay(ts) {
+  return Math.floor(ts / DAY_MS) * DAY_MS;
+}
+
+// The answer, from cohorts (day → { players, returned: one count per RETENTION_DAYS }) of either path. status says
+// why there is nothing to show: 'anonymous' when no session in the range has a player ID.
+export function retentionAnswer(ctx, { sessions, withId, cohorts, firstSeen }) {
+  const end = ctx.to + 1;
+  const rows = [...cohorts]
+    .filter(([day]) => day >= ctx.from && day < end)
+    .sort((a, b) => a[0] - b[0])
+    .map(([day, c]) => {
+      const row = { day: new Date(day).toISOString().slice(0, 10), players: c.players };
+      const returned = {};
+      RETENTION_DAYS.forEach((n, i) => {
+        const ended = day + (n + 1) * DAY_MS <= end;
+        row[`d${n}`] = ended ? pct(c.returned[i], c.players) : null;
+        returned[`d${n}`] = ended ? c.returned[i] : null;
+      });
+      return { ...row, returned };
+    });
+  const overall = {};
+  for (const n of RETENTION_DAYS) {
+    const done = rows.filter((r) => r.returned[`d${n}`] != null);
+    overall[`d${n}`] = pct(
+      done.reduce((a, r) => a + r.returned[`d${n}`], 0),
+      done.reduce((a, r) => a + r.players, 0),
+    );
+  }
+  return {
+    status: !sessions ? 'empty' : !withId ? 'anonymous' : 'ok',
+    id_sessions_pct: pct(withId, sessions),
+    new_players: rows.reduce((a, r) => a + r.players, 0),
+    ...overall,
+    cohorts: rows,
+    first_seen: firstSeen,
   };
 }
 
@@ -755,7 +909,8 @@ export function eventsBy(ctx, f, dim) {
     if (!n) continue;
     const value = String(c[dim] ?? '(none)');
     let x = out.get(value);
-    if (!x) out.set(value, (x = { value, count: 0, sessions: 0, series: new Array(nb).fill(0) }));
+    // Sessions per version come from the sessions; per level they can't be known (cells carry no session IDs).
+    if (!x) out.set(value, (x = { value, count: 0, sessions: dim === 'version' ? 0 : null, series: new Array(nb).fill(0) }));
     x.count += n;
     x.series[bucketIndex(ctx, m)] += n;
   }
@@ -844,7 +999,7 @@ export function heatmap(ctx, level, maps) {
   const pick = (x, y, z) => (axis === 'xy' ? [x, y] : [x, z]);
   const deaths = [];
   const rageSessions = new Map();
-  for (const s of ctx.sessions.values()) if (s.rage_quit && s.rage?.level === level) rageSessions.set(s.session_id, s.rage.ts);
+  for (const s of ctx.sessions.values()) if (s.rage_quit && s.rage?.level === level) rageSessions.set(s.session_id, rageDeathTs(s.rage));
   // Deaths without coordinates (the Godot SDK's anonymous mode leaves them out) can't be placed.
   for (const d of deathsOf(ctx, level)) {
     if (isNum(d.x)) deaths.push({ x: d.x, y: d.y, z: d.z, cause: d.cause, version: d.version, session_id: d.session_id, ts: d.ts, rage_quit: rageSessions.get(d.session_id) === d.ts });
@@ -884,8 +1039,18 @@ export function heatmap(ctx, level, maps) {
     deaths: deaths.slice(-3000),
     hotspots: deathHotspots(deaths, axis),
     density,
-    stats: funnel(ctx).find((f) => f.level === level) || null,
+    stats: levelStats(ctx, level),
   };
+}
+
+// The heatmap's level row, and whether the game is one nobody wins (no_win: an endless or flappy game), so
+// the page shows its runs rather than a completion rate of 0%.
+function levelStats(ctx, level) {
+  const fun = funnel(ctx);
+  const row = fun.find((f) => f.level === level);
+  if (!row) return null;
+  const sum = (f) => fun.reduce((n, l) => n + (f(l) || 0), 0);
+  return { ...row, no_win: noWin({ sessions: sessionCount(ctx), starts: sum((l) => l.attempts), completes: sum((l) => l.completed), fails: sum((l) => l.fails + l.deaths) }) };
 }
 
 // The levels a heatmap can show (captured maps, levels with deaths), and the one it shows.
@@ -921,13 +1086,20 @@ function pickMap(maps, level, version) {
   return forLevel.find((m) => m.version === version) || forLevel.sort((a, b) => b.ts - a.ts)[0];
 }
 
+// The death a rage quit happened at (session-state.js keeps it as `dts` when a level_fail came after it).
+export function rageDeathTs(rage) {
+  return rage?.dts ?? rage?.ts;
+}
+
+// Clusters of deaths. A side view (xy) bins taller than wide, since height matters less than where along
+// the level; a top-down map (xz) uses square bins, both axes being places.
 export function deathHotspots(deaths, axis = 'xz', binSize = 2) {
   deaths = deaths.filter((d) => isNum(d.x));
   if (!deaths.length) return [];
   const bins = new Map();
   for (const d of deaths) {
     const a = Math.floor(d.x / binSize);
-    const b = Math.floor((axis === 'xy' ? d.y : d.z) / (binSize * 2));
+    const b = Math.floor((axis === 'xy' ? d.y : d.z) / (axis === 'xy' ? binSize * 2 : binSize));
     const key = `${a}|${b}`;
     let bin = bins.get(key);
     if (!bin) bins.set(key, (bin = { a, b, count: 0, causes: {}, rage_quits: 0, xs: [], ys: [] }));
@@ -954,6 +1126,7 @@ export function deathHotspots(deaths, axis = 'xz', binSize = 2) {
       x: round(quantile(xs, 0.5), 1),
       [axis === 'xy' ? 'y' : 'z']: round(quantile(ys, 0.5), 1),
       x_range: [round(Math.min(...xs), 1), round(Math.max(...xs), 1)],
+      [axis === 'xy' ? 'y_range' : 'z_range']: [round(Math.min(...ys), 1), round(Math.max(...ys), 1)],
       deaths: count,
       share: round(count / deaths.length, 3),
       top_cause: Object.entries(causes).sort((p, q) => q[1] - p[1])[0][0],
@@ -1034,6 +1207,8 @@ export function versions(ctx, { stats = [], events = 8 } = {}) {
     v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
     v.board = stats.map((p) => {
       if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
+      // Sums (revenue per session or player) and conversion (per $players or $sessions): sums.js.
+      if (p.sum || p.per?.startsWith('$')) return versionStat(ctx, p, v, cells, p.currency);
       if (!p.per) return round(count(p.event) / n, 2);
       const base = count(p.per);
       return base ? round((count(p.event) / base) * 100, 1) : null;
@@ -1203,6 +1378,12 @@ export function naturalSort(arr) {
 
 function naturalSortBy(arr, key) {
   return arr.sort((a, b) => String(a[key]).localeCompare(String(b[key]), undefined, { numeric: true }));
+}
+
+// The platform a session ran on, for the performance breakdown: a Steam Deck (the SDKs' steam_deck tag) on its own,
+// whatever OS the build is for (a Windows build runs on a Deck under Proton), else the OS.
+export function platformOf(dev) {
+  return dev?.steam_deck === true ? 'Steam Deck' : dev?.os || 'unknown';
 }
 
 function tierRank(t) {

@@ -1,7 +1,7 @@
 {
   "name": "glitchless-playtest",
   "version": "0.2.0",
-  "description": "Playtest bots for game observability: autoplay bots play your web game (Three.js, Phaser) on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
+  "description": "Playtest bots for game observability: autoplay bots play your web game (Three.js, Phaser, Babylon.js, PlayCanvas) on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
   "keywords": [
     "playtesting",
     "playtest",

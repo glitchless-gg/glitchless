@@ -1,0 +1,8 @@
+{
+  "game": "http://localhost:5179/",
+  "scenarios": [
+    { "name": "expert", "params": { "autoplay": 1, "seed": 7, "skill": 0.95, "level": 1 }, "max_s": 120 },
+    { "name": "average on the nebula", "params": { "autoplay": 1, "seed": 21, "skill": 0.75, "level": 2 }, "max_s": 90 }
+  ],
+  "done_when": "window.__GLITCHLESS_PLAYTEST_DONE__ || window.cometGarden?.won || window.cometGarden?.quit"
+}

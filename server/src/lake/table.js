@@ -4,7 +4,7 @@
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, UpdateCommand, BatchWriteCommand, BatchGetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
-import { HOUR, DAY, summaryPk, summarySk, dailyPk, dailySk } from './layout.js';
+import { HOUR, DAY, summaryPk, summarySk, dailyPk, dailySk, playersPk, cohortSk } from './layout.js';
 
 export class LakeTable {
   constructor({ table, region = 'us-east-1', doc = null }) {
@@ -97,6 +97,19 @@ export class LakeTable {
       const [fam, hour, run, chunk] = item.sk.split('#');
       return { ...item, family: fam, hour: Number(hour), run, chunk: Number(chunk) };
     });
+  }
+
+  // Players first seen on each UTC day that starts in [from, to] (the compactor's first-seen index): day → Set of ids.
+  async cohorts(project, service, from, to) {
+    const out = new Map();
+    const lo = Math.ceil(from / DAY) * DAY;
+    if (lo > to) return out;
+    for (const it of await this.query(playersPk(project, service), [cohortSk(lo), cohortSk(Math.floor(to / DAY) * DAY, '~')])) {
+      const [, day, ...id] = it.sk.split('#');
+      const d = Number(day);
+      (out.get(d) || out.set(d, new Set()).get(d)).add(id.join('#'));
+    }
+    return out;
   }
 
   // Daily rollup items of one family (D or R) of the days [fromDay, toDay], with their day as `hour`, so

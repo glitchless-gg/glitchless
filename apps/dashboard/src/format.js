@@ -5,6 +5,22 @@ export function fmtNum(v, d = 0) {
   return Number(v).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: 0 });
 }
 
+// Money in its currency, with the symbol and two decimals ("$1,234.50", "€4.99"); `short` for chart axes
+// ("$1.2K"). A code the browser doesn't know is written after the number.
+export function fmtMoney(v, currency, short = false) {
+  if (v == null || Number.isNaN(v)) return '–';
+  try {
+    return Number(v).toLocaleString('en-US', short ? { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 } : { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } catch {
+    return `${short ? fmtNum(v, 1) : Number(v).toFixed(2)} ${currency}`;
+  }
+}
+
+// A sum (server/src/sums.js): money when it has a currency, else a number with up to two decimals.
+export function fmtSum(v, currency) {
+  return currency ? fmtMoney(v, currency) : fmtNum(v, 2);
+}
+
 export function fmtMs(v, d = 1) {
   if (v == null) return '–';
   if (v >= 1000) return (v / 1000).toFixed(2) + 's';

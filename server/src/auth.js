@@ -10,9 +10,14 @@
 //     (defaults to the token itself; pass a hash or database id instead of keeping raw tokens around).
 //     `rps` overrides the per-key ingest rate (requests per second, per server process; 0 = unlimited).
 //
-//   resolveReader(req) → { projectId, scopes }
-//     For every other /v1/ route except /v1/health. Scopes: 'read' (queries and the live tail) and
-//     'delete' (DELETE /v1/data).
+//   resolveReader(req) → { projectId, scopes, keyId?, rps?, share? }
+//     For every other /v1/ route except /v1/health. Scopes: see SCOPES below. `rps` rate-limits the
+//     reader per `keyId`, as for ingest. `share: { service, page, from?, to? }` makes it a share reader: a
+//     read-only link to one board page that anyone may hold. It may only GET that board and the `services`
+//     query (its service only), over at most SHARE_MAX_DAYS, with session and player ids, devices, stacks,
+//     breadcrumbs and live events left out of the board's panels; it is rate limited (DEFAULT_SHARE_RPS) by
+//     default. With `from` and `to` (ms) the link is pinned: it always answers that window, whatever the
+//     request asks for.
 //
 // Two optional hooks let a host put limits on intake (the hosted service uses them for its plans):
 //
@@ -33,9 +38,14 @@
 import crypto from 'node:crypto';
 
 export const DEFAULT_PROJECT = 'default';
-// read: queries; delete: clear a game's data; dashboard: save or reset a game's dashboard (board.js).
-export const SCOPES = ['read', 'delete', 'dashboard'];
+// read: queries; delete: clear a game's data; dashboard: save or reset a game's dashboard (board.js);
+// sourcemaps: upload a web build's source maps, so its errors show original files and lines.
+export const SCOPES = ['read', 'delete', 'dashboard', 'sourcemaps'];
 export const DEFAULT_INGEST_RPS = 1000;
+// Requests per second for a share reader that names no `rps` of its own (per keyId, per process).
+export const DEFAULT_SHARE_RPS = 10;
+// The longest window a share reader reads, in days (pinned or not).
+export const SHARE_MAX_DAYS = 30;
 
 export class AuthError extends Error {
   constructor(status, message) {

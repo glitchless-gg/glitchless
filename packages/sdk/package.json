@@ -1,7 +1,7 @@
 {
   "name": "glitchless",
-  "version": "0.2.2",
-  "description": "Game observability SDK for web games (Three.js, Phaser 3 and 4, or plain WebGL): frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
+  "version": "0.3.0",
+  "description": "Game observability SDK for web games (Three.js, Phaser 3 and 4, Babylon.js, PlayCanvas, or plain WebGL): frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
   "keywords": [
     "game-observability",
     "observability",
@@ -13,6 +13,9 @@
     "phaser",
     "phaser3",
     "phaser4",
+    "babylonjs",
+    "babylon.js",
+    "playcanvas",
     "webgl",
     "web-games",
     "performance",
@@ -41,6 +44,8 @@
     ".": "./src/index.js",
     "./three": "./src/three.js",
     "./phaser": "./src/phaser.js",
+    "./babylon": "./src/babylon.js",
+    "./playcanvas": "./src/playcanvas.js",
     "./sketch": "./src/sketch.js"
   },
   "files": [
@@ -54,6 +59,8 @@
     "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@babylonjs/core": "~9.30.0",
+    "esbuild": "^0.28.2",
+    "playcanvas": "~2.23.2"
   }
 }

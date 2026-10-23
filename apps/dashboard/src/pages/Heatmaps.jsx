@@ -70,7 +70,12 @@ export function Heatmaps({ route }) {
           )}
         </div>
       </Widget>
-      <QueryValue span={3} label="Completion rate" value={fmtPct(st.completion_pct, 0)} status={pctStatus(st.completion_pct, 75, 50)} sub={`${fmtNum(st.completed)} of ${fmtNum(st.sessions)} sessions`} />
+      {st.no_win ? (
+        // A run is a start of the level (or, for a game that never sends starts, a death that ends one).
+        <QueryValue span={3} label="Runs" value={fmtNum(st.attempts || st.deaths)} sub={`in ${fmtNum(st.sessions)} sessions; nobody wins`} />
+      ) : (
+        <QueryValue span={3} label="Completion rate" value={fmtPct(st.completion_pct, 0)} status={pctStatus(st.completion_pct, 75, 50)} sub={`${fmtNum(st.completed)} of ${fmtNum(st.sessions)} sessions`} />
+      )}
       {deaths && <QueryValue span={3} label="Deaths" value={fmtNum(st.deaths)} sub={`${fmtNum(st.deaths_per_session, 1)} per session`} />}
       {deaths && <QueryValue span={3} label="Rage quits here" value={fmtNum(st.rage_quits)} status={pctStatus(st.rage_quit_pct, 5, 12, false)} sub={`${fmtPct(st.rage_quit_pct)} of sessions`} />}
       <QueryValue span={3} label="Position samples" value={fmtNum(data.density?.samples)} sub="4 Hz per player" />

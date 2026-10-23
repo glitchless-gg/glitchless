@@ -1,17 +1,25 @@
 // Device + GPU fingerprinting. Game perf is dominated by the GPU, so "Chrome on macOS"
 // is not a useful segment — "Intel UHD 620" vs "Apple M3 Pro" is.
 
-// Anonymous mode: what's common to many players. No GPU model string, core count or memory size.
+// Anonymous (and install) mode: what's common to many players. No GPU model string, core count or memory size.
 export function anonymizeDevice(device) {
   if (!device) return null;
   const major = device.browser_version ? String(device.browser_version).split('.')[0] : null;
-  return { browser: device.browser, browser_version: major, os: device.os, mobile: device.mobile, gpu_tier: device.gpu_tier, webgl: device.webgl, screen: device.screen, dpr: device.dpr };
+  return { browser: device.browser, browser_version: major, os: device.os, mobile: device.mobile, gpu_tier: device.gpu_tier, webgl: device.webgl, screen: device.screen, dpr: device.dpr, ...(device.steam_deck ? { steam_deck: true } : {}) };
+}
+
+// A Steam Deck, as far as a browser can tell: a user agent that names it, or the GPU, AMD's Van Gogh APU, which was
+// made for the Deck ("AMD Custom GPU 0405" in the LCD model, "0932" in the OLED; Chrome adds "vangogh"). Browsers
+// that hide the GPU (Firefox, Safari) say nothing, and then neither does this: false means "not known to be one".
+export function isSteamDeck({ userAgent = '', gpu = '' } = {}) {
+  return /steam ?deck/i.test(userAgent) || /\bvangogh\b|custom gpu 0(405|932)\b/i.test(gpu);
 }
 
 export function collectDevice(gl) {
   const nav = typeof navigator !== 'undefined' ? navigator : {};
   const { browser, browserVersion, os, mobile } = parseUserAgent(nav);
   const gpu = gl ? readGpu(gl) : probeGpu();
+  const deck = isSteamDeck({ userAgent: nav.userAgent, gpu: gpu.renderer });
   return {
     browser,
     browser_version: browserVersion,
@@ -19,12 +27,13 @@ export function collectDevice(gl) {
     mobile,
     gpu: gpu.renderer,
     gpu_vendor: gpu.vendor,
-    gpu_tier: classifyGpu(gpu.renderer),
+    gpu_tier: deck ? 'low' : classifyGpu(gpu.renderer), // a Deck is "low", as the engine SDKs have it
     webgl: gpu.webgl,
     cores: nav.hardwareConcurrency || null,
     memory_gb: nav.deviceMemory || null,
     screen: typeof screen !== 'undefined' ? [screen.width, screen.height] : null,
     dpr: typeof devicePixelRatio !== 'undefined' ? round2(devicePixelRatio) : 1,
+    ...(deck ? { steam_deck: true } : {}),
   };
 }
 

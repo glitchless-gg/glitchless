@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- Fab gallery image, 1920 x 1080: setting it up. The settings and calls are the plugin's own (GlitchlessSettings.h,
+     Glitchless.h, GlitchlessBlueprintLibrary.h). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>.cards { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; } .wide { grid-column: 1 / 3; }</style>
+</head>
+<body>
+  <h1>Three settings, <em>no code</em> to start</h1>
+  <div class="sub">Project Settings → Plugins → Glitchless. Then name what matters, from Blueprint or C++.</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card">
+      <h2>Config/DefaultGame.ini</h2>
+<pre><span class="c">[/Script/Glitchless.GlitchlessSettings]</span>
+<span class="k">Service</span>=my-game
+<span class="k">Intake</span>=https://api.glitchless.gg
+<span class="k">ClientToken</span>=gl_pub_…
+<span class="k">Privacy</span>=Anonymous
+<span class="k">BugReportKey</span>=F8</pre>
+    </div>
+    <div class="card">
+      <h2>What it catches on its own</h2>
+      <table>
+        <tr><td>Frame time</td><td>game, render, RHI, GPU</td></tr>
+        <tr><td>Hitch causes</td><td>PSO, GC, map and asset loads</td></tr>
+        <tr><td>Errors</td><td>UE_LOG, ensure, Blueprint, crash</td></tr>
+        <tr><td>Levels</td><td>every map that reads as one</td></tr>
+        <tr><td>Leaks</td><td>UObjects, actors, memory</td></tr>
+      </table>
+    </div>
+    <div class="card wide">
+      <h2>Tell it about your game: Blueprint node, or C++</h2>
+      <table>
+        <tr><td>Level Start · Level Complete · Level Fail</td><td><code>FGlitchless::LevelComplete(TEXT(""), Score);</code></td></tr>
+        <tr><td>Death</td><td><code>FGlitchless::Death(GetActorLocation(), TEXT("lava"));</code></td></tr>
+        <tr><td>Track Event (What)</td><td><code>FGlitchless::Track(TEXT("powerup"), TEXT("magnet"));</code></td></tr>
+        <tr><td>Set Context</td><td><code>FGlitchless::SetContext(TEXT("enemies"), Enemies.Num());</code></td></tr>
+        <tr><td>Show Bug Report Dialog · Report Bug</td><td><code>FGlitchless::ReportBug(Note);</code></td></tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

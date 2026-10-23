@@ -3,6 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { createApp } from './app.js';
 import { ROOT, loadEnv, createStore, createForwarder, appOptions } from './config.js';
+import { watchAlerts } from './alerts.js';
 
 loadEnv();
 const port = Number(process.env.PORT || 7777);
@@ -21,8 +22,13 @@ const handler = createApp({
   ],
 });
 
+// Alerts (alerts.js) to one Discord or Slack webhook, checked every 15 minutes while this server runs.
+const alertWebhook = process.env.GLITCHLESS_ALERT_WEBHOOK;
+if (alertWebhook) watchAlerts({ store, url: alertWebhook, format: process.env.GLITCHLESS_ALERT_FORMAT || null, appUrl: `http://localhost:${port}` });
+
 http.createServer(handler).listen(port, () => {
   console.log(`🐶 Glitchless listening on http://localhost:${port}`);
   console.log(`   store: ${store.kind}${store.events ? ` (${store.events.length} events loaded)` : ''}`);
   console.log(`   exporters: ${forwarder.status().map((x) => `${x.kind} → ${x.target}`).join(', ') || 'none'}`);
+  console.log(`   alerts: ${alertWebhook ? `to ${new URL(alertWebhook).host}, every 15 minutes` : 'off (GLITCHLESS_ALERT_WEBHOOK)'}`);
 });

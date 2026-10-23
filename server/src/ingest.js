@@ -32,6 +32,8 @@ const EVENT_TYPES = new Set([
   'pos',
   'custom',
   'map',
+  // A player's bug report: their note, and a JPEG screenshot as a data URL (SPEC §2 bug_report).
+  'bug_report',
 ]);
 
 const MAX_EVENTS = 500;
@@ -79,6 +81,8 @@ export function normalize({ envelope, events }, now = Date.now()) {
     // Clamp client clocks: anything more than 1h in the future or 7d in the past is "now".
     if (typeof e.ts !== 'number' || e.ts > now + 3_600_000 || e.ts < now - 7 * 86_400_000) e.ts = now;
     if (e.type === 'map' && (typeof e.image !== 'string' || e.image.length > 120_000)) continue;
+    // A report keeps the player's note even when its screenshot is too big or not an image.
+    if (e.type === 'bug_report' && e.screenshot != null && (typeof e.screenshot !== 'string' || !e.screenshot.startsWith('data:image/') || e.screenshot.length > 200_000)) delete e.screenshot;
     out.push({ ...e, ...envelope, level: e.level ?? null, received: now });
   }
   return out;

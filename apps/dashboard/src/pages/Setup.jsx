@@ -55,7 +55,7 @@ glitchless.captureMap('level-1', { axis: 'xy', bounds: { min: [0, -5], max: [200
       </Widget>
       <Widget span={12} title="Engines" sub="the same telemetry model across engines">
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {['three.js · supported', 'React Three Fiber · supported', 'Godot 4.5+ · supported', 'Babylon.js · next', 'PlayCanvas · next', 'Phaser / Pixi (2D) · next'].map((e) => (
+          {['three.js · supported', 'React Three Fiber · supported', 'Phaser 3 and 4 · supported', 'Godot 4.5+ · supported', 'Unity 2022.3+ · supported', 'Unreal Engine 5.8 · supported', 'Babylon.js 5+ · supported', 'PlayCanvas 2 · supported'].map((e) => (
             <span key={e} className="tag" style={{ fontSize: 12, padding: '3px 8px' }}>
               {e}
             </span>

@@ -11,12 +11,15 @@ export function Pages() {
   const f = useFilters();
   const d = f.dashboard;
   const [draft, setDraft] = useState(null);
+  const [currency, setCurrency] = useState(null);
   const [json, setJson] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
   if (!f.service) return <NoGame />;
   if (!d.spec) return <div className="loading-bar" />;
   const pages = draft || d.spec.pages;
+  // The game's one currency for money on its boards; empty: the one most of its events are sent in.
+  const money = currency ?? d.spec.currency ?? '';
   const set = (next) => {
     setDraft(next);
     setNote(null);
@@ -39,6 +42,7 @@ export function Pages() {
     try {
       await fn();
       setDraft(null);
+      setCurrency(null);
       setJson(null);
       setNote({ ok: true, text: done });
     } catch (err) {
@@ -48,7 +52,7 @@ export function Pages() {
   };
   const save = () =>
     run(async () => {
-      let spec = { pages };
+      let spec = { ...(money.trim() ? { currency: money.trim().toUpperCase() } : {}), pages };
       if (json != null) {
         try {
           spec = JSON.parse(json);
@@ -58,7 +62,7 @@ export function Pages() {
       }
       await saveDashboard(f, spec);
     }, 'Saved.');
-  const changed = draft != null || json != null;
+  const changed = draft != null || json != null || currency != null;
 
   return (
     <div className="grid">
@@ -122,7 +126,7 @@ export function Pages() {
             </button>
           )}
           {changed && (
-            <button className="btn" disabled={busy} onClick={() => (setDraft(null), setJson(null), setNote(null))}>
+            <button className="btn" disabled={busy} onClick={() => (setDraft(null), setCurrency(null), setJson(null), setNote(null))}>
               Discard
             </button>
           )}
@@ -138,12 +142,17 @@ export function Pages() {
           <code>glitchless_set_dashboard</code>.
         </p>
         <p className="muted">The first page opens first. To change a board&rsquo;s panels, open it and choose Edit panels.</p>
-        <button className="btn" onClick={() => setJson(json == null ? JSON.stringify({ pages }, null, 2) : null)}>
+        <label className="muted pages-currency">
+          Money is in{' '}
+          <input className="input" value={money} maxLength={3} placeholder="USD" onChange={(e) => (setCurrency(e.target.value), setNote(null))} aria-label="Currency" />{' '}
+          <span title="Revenue panels add up purchases in this currency and name the ones sent in another. Empty: the currency most purchases are sent in.">(ISO code; empty: from the events)</span>
+        </label>
+        <button className="btn" onClick={() => setJson(json == null ? JSON.stringify({ ...(money.trim() ? { currency: money.trim().toUpperCase() } : {}), pages }, null, 2) : null)}>
           {json == null ? 'Edit as JSON' : 'Close JSON'}
         </button>
       </Widget>
       {json != null && (
-        <Widget span={12} title="The whole dashboard as JSON" sub="pages: { id, title, icon, panels } for a board, { id, title, view, options } for a built-in view">
+        <Widget span={12} title="The whole dashboard as JSON" sub="currency (optional, e.g. USD), and pages: { id, title, icon, panels } for a board, { id, title, view, options } for a built-in view">
           <textarea className="board-editor" spellCheck={false} value={json} onChange={(e) => (setJson(e.target.value), setNote(null))} />
         </Widget>
       )}

@@ -80,6 +80,72 @@ namespace GlitchlessSdk.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheBugReportFormPausesTheGameWhileItIsOpen()
+        {
+            int opened = 0, closed = 0;
+            GlitchlessRunner.Core.Options.BugReports = new BugReportOptions { OnOpen = () => opened++, OnClose = () => closed++ };
+            try
+            {
+                Time.timeScale = 1;
+                Glitchless.OpenBugReport();
+                for (var i = 0; i < 3; i++) yield return null; // the screenshot is taken at the end of the frame
+                Assert.IsTrue(Glitchless.IsBugReportOpen);
+                Assert.AreEqual(0, Time.timeScale, "the game is paused");
+                Assert.AreEqual(1, opened);
+                GameObject.Find("Glitchless").GetComponent<BugReportForm>().Close();
+                Assert.IsFalse(Glitchless.IsBugReportOpen);
+                Assert.AreEqual(1, Time.timeScale, "and runs again");
+                Assert.AreEqual(1, closed);
+            }
+            finally
+            {
+                GlitchlessRunner.Core.Options.BugReports = null;
+                Time.timeScale = 1;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TheFormTakesTypingSendsOnCtrlEnterAndClosesOnEsc()
+        {
+            var go = new GameObject("form test");
+            var form = go.AddComponent<BugReportForm>();
+            form.Core = GlitchlessRunner.Core;
+            form.Options = new BugReportOptions { PauseGame = false, Screenshot = false };
+            try
+            {
+                form.Open();
+                yield return null;
+                Assert.AreEqual("Form", form.Status);
+                Event Char(char c) => new Event { type = EventType.KeyDown, character = c };
+                foreach (var c in "stuck!") form.OnKey(Char(c));
+                form.OnKey(Event.KeyboardEvent("backspace"));
+                form.OnKey(new Event { type = EventType.KeyDown, keyCode = KeyCode.Return, character = '\n' });
+                form.OnKey(Char('x'));
+                form.OnKey(new Event { type = EventType.KeyDown, keyCode = KeyCode.F8 }); // the runner's hotkey: never typed
+                form.OnKey(Char('\t'));
+                Assert.AreEqual("stuck\nx", form.Note);
+                form.OnKey(Event.KeyboardEvent("^return"));
+                Assert.AreEqual("Offline", form.Status, "Ctrl+Enter sent it; without Init nothing goes");
+                Assert.IsTrue(form.IsOpen, "the result shows for a moment");
+                form.OnKey(Event.KeyboardEvent("escape"));
+                Assert.IsFalse(form.IsOpen);
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(go);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ABugReportBeforeInitSaysOffline()
+        {
+            (bool sent, string reason)? result = null;
+            Glitchless.ReportBug("before init", done: (sent, reason) => result = (sent, reason));
+            for (var i = 0; i < 3 && result == null; i++) yield return null;
+            Assert.AreEqual((false, "offline"), result);
+        }
+
+        [UnityTest]
         public IEnumerator MeasureCountsRealFrames()
         {
             Dictionary<string, object> result = null;

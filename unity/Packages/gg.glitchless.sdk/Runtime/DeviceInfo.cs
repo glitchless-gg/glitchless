@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -10,6 +12,7 @@ namespace GlitchlessSdk
     ///
     /// Anonymous mode sends only coarse facts that many thousands of devices share: the OS name, a
     /// low / mid / high tier, the render pipeline and graphics API, the screen size and refresh rate.
+    /// Every mode says whether it is a Steam Deck (steam_deck), and a Deck on SteamOS is os "SteamOS".
     /// Full mode adds the model, OS version, GPU name, core count and memory. Never sent in either mode:
     /// SystemInfo.deviceUniqueIdentifier and SystemInfo.deviceName (often the owner's name).
     /// PRIVACY.md lists every field; keep the two in step.
@@ -22,21 +25,24 @@ namespace GlitchlessSdk
             var cores = SystemInfo.processorCount;
             var memGb = SystemInfo.systemMemorySize > 0 ? SystemInfo.systemMemorySize / 1024.0 : -1;
             var tier = DeviceTier(cores, memGb);
+            var deck = SteamDeck;
             var d = new Dictionary<string, object>
             {
                 ["browser"] = "Unity", // the runtime, in the field the dashboard groups by
                 ["browser_version"] = Application.unityVersion,
-                ["os"] = OsName(),
+                ["os"] = SteamOs ? "SteamOS" : OsName(),
                 ["mobile"] = mobile,
                 ["device_tier"] = tier,
-                // Every phone GPU is "low" next to a desktop one, so on phones the GPU tier is the device tier.
-                ["gpu_tier"] = mobile ? tier : GpuTier(SystemInfo.graphicsDeviceName),
+                // Every phone GPU is "low" next to a desktop one, so on phones the GPU tier is the device tier. A Steam
+                // Deck's is "low" too, as the Unreal plugin has it.
+                ["gpu_tier"] = mobile ? tier : deck ? "low" : GpuTier(SystemInfo.graphicsDeviceName),
                 ["renderer"] = RenderPipeline(),
                 ["driver"] = SystemInfo.graphicsDeviceType.ToString(),
                 ["screen"] = ScreenSize(),
                 ["dpr"] = null,
                 ["refresh_hz"] = RefreshRate(),
             };
+            d["steam_deck"] = deck;
             if (full)
             {
                 d["model"] = SystemInfo.deviceModel;
@@ -64,6 +70,59 @@ namespace GlitchlessSdk
                 case RuntimePlatform.Switch: return "Switch";
                 case RuntimePlatform.GameCoreXboxOne: case RuntimePlatform.GameCoreXboxSeries: return "Xbox";
                 default: return SystemInfo.operatingSystemFamily.ToString();
+            }
+        }
+
+        static (string env, string vendor, string board, string osRelease)? facts; // read once a launch
+
+        static (string env, string vendor, string board, string osRelease) Facts => facts ??= (Environment.GetEnvironmentVariable("SteamDeck"), Dmi("board_vendor"), Dmi("board_name"), Small(Root + "/etc/os-release"));
+
+        public static bool SteamDeck => IsSteamDeck(Facts.env, Facts.vendor, Facts.board, Facts.osRelease);
+
+        /// <summary>A Deck running SteamOS, or one Steam started (a Windows build under Proton runs on SteamOS too): "SteamOS"
+        /// in place of Linux or Windows, as the Unreal plugin says.</summary>
+        public static bool SteamOs => IsSteamOs(Facts.env, Facts.vendor, Facts.board, Facts.osRelease);
+
+        public static bool IsSteamOs(string env, string boardVendor, string boardName, string osRelease) =>
+            IsSteamDeck(env, boardVendor, boardName, osRelease) && (OsReleaseId(osRelease) == "steamos" || !string.IsNullOrEmpty(env));
+
+        /// <summary>A Steam Deck: Steam says so (SteamDeck=1, under Steam and Proton), the board is Valve's Jupiter (LCD)
+        /// or Galileo (OLED), or the OS is SteamOS (ID=steamos in os-release). The same rule as the browser SDK's, Godot's
+        /// and Unreal's.</summary>
+        public static bool IsSteamDeck(string env, string boardVendor, string boardName, string osRelease)
+        {
+            if ((env ?? "").Trim() == "1") return true;
+            var board = (boardName ?? "").Trim().ToLowerInvariant();
+            if ((boardVendor ?? "").Trim().ToLowerInvariant() == "valve" && (board == "jupiter" || board == "galileo")) return true;
+            return OsReleaseId(osRelease) == "steamos";
+        }
+
+        static string OsReleaseId(string osRelease)
+        {
+            foreach (var raw in (osRelease ?? "").Split('\n'))
+            {
+                var line = raw.Trim();
+                if (line.StartsWith("ID=", StringComparison.Ordinal)) return line.Substring(3).Trim('"').ToLowerInvariant();
+            }
+            return "";
+        }
+
+        // A Linux build reads /sys and /etc; a Windows build under Proton reads the same files through Wine's Z: drive.
+        static string Root => Application.platform == RuntimePlatform.WindowsPlayer ? "Z:" : "";
+
+        static string Dmi(string name) => Small(Root + "/sys/class/dmi/id/" + name);
+
+        static string Small(string path)
+        {
+            var p = Application.platform;
+            if (p != RuntimePlatform.LinuxPlayer && p != RuntimePlatform.WindowsPlayer) return null;
+            try
+            {
+                return File.Exists(path) ? File.ReadAllText(path) : null;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

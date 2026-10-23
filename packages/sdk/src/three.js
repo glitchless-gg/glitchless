@@ -180,8 +180,9 @@ export function inspectScene(scene, { top = 10 } = {}) {
 // Counts what each frame sends to the GPU by wrapping the context's upload calls: texture uploads (and
 // re-uploads: a CanvasTexture redrawn every frame), geometry buffers and shader programs linked. Three.js
 // keeps no per-frame counters for these, and they are what a spawn burst costs. Counters are per frame
-// (gd.frameId), so when a frame turns out to be a hitch, hitchDetail() reads the work of that frame.
-function watchGl(gl, gd) {
+// (gd.frameId), so when a frame turns out to be a hitch, hitchDetail() reads the work of that frame. The Babylon.js
+// and PlayCanvas adapters count WebGL uploads with it too.
+export function watchGl(gl, gd) {
   const work = { frame: -1, textures: 0, pixels: 0, buffers: 0, bufferBytes: 0, linked: 0 };
   const here = () => {
     if (work.frame === gd.frameId) return work;

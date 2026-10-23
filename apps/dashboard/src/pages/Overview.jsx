@@ -37,7 +37,7 @@ export function IssuesTable({ issues, onClick, selected }) {
                   <Status kind={i.fatal ? 'alert' : 'warn'}>{i.kind}</Status>
                   <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.message}</b>
                 </div>
-                <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>
+                <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }} title={i.minified ? `minified: ${i.minified.location}` : undefined}>
                   {i.location}
                 </div>
               </td>

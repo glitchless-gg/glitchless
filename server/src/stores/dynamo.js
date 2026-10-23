@@ -4,6 +4,10 @@
 //   pk = "P#<project>#<service>#<YYYY-MM-DDTHH>"  sk = "<ts>#<session>#<batch><seq>" → events, hour-partitioned
 //   pk = "P#<project>#MAP#<service>"             sk = "<level>#<version>"             → level map thumbnails
 //   pk = "P#<project>#SVC"                       sk = "<service>"                     → versions / envs / last_seen
+//   pk = "P#<project>#BUG#<service>"             sk = "T#<ts>#<id>"                   → bug report records, to list
+//                                                sk = "I#<id>"                        → a record with its screenshot
+//   pk = "P#<project>#SMAP#<service>"            sk = "F#<version>#<file>"            → a source map: size, upload time,
+//                                                sk = "C#<version>#<file>#<upload>#<n>" its gzip in chunks (sourcemaps.js)
 //   pk = "P#<project>#R#<service>#<YYYY-MM-DD>"   sk = "<minute>#<writer>"             → rollup cells (rollups.js)
 //   pk = "P#<project>#META"                      sk = "rollups#<service>"             → since: rollups complete from here
 //
@@ -14,16 +18,20 @@
 // Hour partitions keep hot writes spread out and make time-range reads a fan-out of small Queries.
 // Rollups have one writer per item: each process keeps a running rollup per (project, service, minute)
 // and rewrites its own item for that minute after every batch, so no locking is needed and a query
-// merges the items of all writers. Items expire via TTL after 30 days.
+// merges the items of all writers. Items expire via TTL after 30 days, source maps after RETENTION_DAYS.
 
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, BatchWriteCommand, QueryCommand, UpdateCommand, PutCommand, GetCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { semverCompare } from './file.js';
 import { DEFAULT_PROJECT, isProjectId } from '../auth.js';
 import { rollup, addCell, cellList, cellToJSON, cellFromJSON, minuteOf, MINUTE } from '../rollups.js';
+import { splitReport, MAX_REPORTS } from '../reports.js';
+import { keySeg, RETENTION_DAYS } from '../sourcemaps.js';
 
 const TTL_DAYS = 30;
+const CHUNK = 300_000; // base64 characters of a source map's gzip per item (items hold 400 KB)
 const MAX_RANGE_HOURS = 24 * 7;
 const HOUR = 3_600_000;
 // Servers that predate rollups may still be writing (events up to 1 h in the future) while the first new
@@ -70,6 +78,15 @@ export class DynamoStore {
       services.set(e.service, svc);
       if (e.type === 'map') {
         await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk: `P#${projectId}#MAP#${e.service}`, sk: `${e.level}#${e.version}`, e: JSON.stringify(e), ttl } }));
+        continue;
+      }
+      if (e.type === 'bug_report') {
+        // A screenshot is at most 200,000 characters, so a record and its screenshot fit one item (400 KB).
+        const { record, screenshot } = splitReport(projectId, e);
+        const pk = `P#${projectId}#BUG#${e.service}`;
+        const r = JSON.stringify(record);
+        await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk, sk: `I#${record.id}`, r, ...(screenshot ? { s: screenshot } : {}), ttl } }));
+        await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk, sk: `T#${pad(record.ts)}#${record.id}`, r, ttl } }));
         continue;
       }
       stored.push(e);
@@ -231,6 +248,30 @@ export class DynamoStore {
     return [...bySk.values()];
   }
 
+  async reports(projectId, service, { from, to }) {
+    checkProject(projectId);
+    const items = await this.queryAll(`P#${projectId}#BUG#${service}`, 'sk BETWEEN :a AND :b', { ':a': `T#${pad(Math.max(0, from))}`, ':b': `T#${pad(to)}#~` });
+    return items
+      .map((i) => JSON.parse(i.r))
+      .sort((a, b) => b.ts - a.ts)
+      .slice(0, MAX_REPORTS);
+  }
+
+  async getReport(projectId, service, id) {
+    checkProject(projectId);
+    const res = await this.doc.send(new GetCommand({ TableName: this.table, Key: { pk: `P#${projectId}#BUG#${service}`, sk: `I#${id}` } }));
+    return res.Item ? { ...JSON.parse(res.Item.r), screenshot: res.Item.s ?? null } : null;
+  }
+
+  async deleteReport(projectId, service, id) {
+    const r = await this.getReport(projectId, service, id);
+    if (!r) return false;
+    const pk = `P#${projectId}#BUG#${service}`;
+    await this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk, sk: `T#${pad(r.ts)}#${id}` } }));
+    await this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk, sk: `I#${id}` } }));
+    return true;
+  }
+
   // The game's saved dashboard (board.js): one item per service.
   async getDashboard(projectId, service) {
     checkProject(projectId);
@@ -243,6 +284,58 @@ export class DynamoStore {
     const Key = { pk: `P#${projectId}#DASH`, sk: service };
     if (dashboard) await this.doc.send(new PutCommand({ TableName: this.table, Item: { ...Key, b: JSON.stringify(dashboard) } }));
     else await this.doc.send(new DeleteCommand({ TableName: this.table, Key }));
+  }
+
+  // A source map: its gzip (base64) in chunks under a new upload id, then the item that names them, then the
+  // chunks of the upload it replaces. A reader always finds a whole upload.
+  async putSourcemap(projectId, service, version, file, text) {
+    checkProject(projectId);
+    const pk = `P#${projectId}#SMAP#${service}`;
+    const at = Date.now();
+    const ttl = Math.floor(at / 1000) + RETENTION_DAYS * 86_400;
+    const name = `${keySeg(version)}#${keySeg(file)}`;
+    const upload = crypto.randomBytes(4).toString('hex');
+    const data = zlib.gzipSync(text).toString('base64');
+    const chunks = Math.max(1, Math.ceil(data.length / CHUNK));
+    const old = await this.getSourcemapItem(pk, name);
+    for (let i = 0; i < chunks; i++) await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk, sk: `C#${name}#${upload}#${String(i).padStart(4, '0')}`, d: data.slice(i * CHUNK, (i + 1) * CHUNK), ttl } }));
+    await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk, sk: `F#${name}`, version, file, size: text.length, at, upload, chunks, ttl } }));
+    if (old) await this.deleteChunks(pk, name, old.upload);
+  }
+
+  async getSourcemapItem(pk, name) {
+    return (await this.doc.send(new GetCommand({ TableName: this.table, Key: { pk, sk: `F#${name}` } }))).Item ?? null;
+  }
+
+  async getSourcemap(projectId, service, version, file) {
+    checkProject(projectId);
+    const pk = `P#${projectId}#SMAP#${service}`;
+    const name = `${keySeg(version)}#${keySeg(file)}`;
+    const item = await this.getSourcemapItem(pk, name);
+    if (!item) return null;
+    const parts = await this.queryAll(pk, 'sk BETWEEN :a AND :b', { ':a': `C#${name}#${item.upload}#`, ':b': `C#${name}#${item.upload}#~` });
+    if (parts.length !== item.chunks) return null;
+    return zlib.gunzipSync(Buffer.from(parts.map((p) => p.d).join(''), 'base64')).toString('utf8');
+  }
+
+  async sourcemaps(projectId, service) {
+    checkProject(projectId);
+    const items = await this.queryAll(`P#${projectId}#SMAP#${service}`, 'sk BETWEEN :a AND :b', { ':a': 'F#', ':b': 'F#~' });
+    return items.map((i) => ({ version: i.version, file: i.file, size: i.size, uploaded_at: i.at }));
+  }
+
+  async deleteSourcemaps(projectId, service, version) {
+    checkProject(projectId);
+    const pk = `P#${projectId}#SMAP#${service}`;
+    const v = keySeg(version);
+    const items = [...(await this.queryAll(pk, 'sk BETWEEN :a AND :b', { ':a': `F#${v}#`, ':b': `F#${v}#~` })), ...(await this.queryAll(pk, 'sk BETWEEN :a AND :b', { ':a': `C#${v}#`, ':b': `C#${v}#~` }))];
+    await mapLimit(items, 8, ({ sk }) => this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk, sk } })));
+  }
+
+  async deleteChunks(pk, name, upload) {
+    for (const { sk } of await this.queryAll(pk, 'sk BETWEEN :a AND :b', { ':a': `C#${name}#${upload}#`, ':b': `C#${name}#${upload}#~` })) {
+      await this.doc.send(new DeleteCommand({ TableName: this.table, Key: { pk, sk } }));
+    }
   }
 
   async services(projectId) {

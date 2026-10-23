@@ -5,14 +5,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody } from './ingest.js';
 import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary } from './analytics.js';
-import { findings } from './findings.js';
+import { findings, gameEngine } from './findings.js';
 import { validateDashboard, autoDashboard, evaluateBoard, versionColumns, dashboardStats, VIEWS, BoardError } from './board.js';
-import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, isProjectId } from './auth.js';
+import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
+import { reportsOf, reportSummary, reportDetail, reportTimeline } from './reports.js';
+import { createSourcemaps, MAX_UPLOAD_BYTES } from './sourcemaps.js';
+import { eventSums } from './sums.js';
+import { Presence, PLAYERS_NOW_MS } from './presence.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
 // Queries whose frame-time and count sections can come from per-minute rollups.
 const ROLLUP_QUERIES = new Set(['overview', 'performance', 'versions', 'findings', 'events', 'dashboard', 'board']);
+// Queries that show or rank bug reports (reports.js): they read the range's reports as ctx.reports.
+const REPORT_QUERIES = new Set(['reports', 'overview', 'findings', 'dashboard', 'board', 'session']);
+// Queries that show error issues: a web build with source maps gets their original frames (sourcemaps.js).
+const SOURCEMAP_QUERIES = new Set(['errors', 'overview', 'findings', 'board', 'playtest']);
+// Queries that show retention: they read who is new from the store's first-seen index (ctx.cohorts).
+const RETENTION_QUERIES = new Set(['players', 'board']);
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -33,12 +43,19 @@ const MIME = {
 };
 
 // `auth` is { resolveIngest, resolveReader } (see auth.js); the default is the open-source single project.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console }) {
+// maxUploadBytes: the largest source map upload this host takes (a host behind a smaller body limit, such as
+// Lambda's 6 MB, passes less, so a big map gets a clear 413 rather than the host's own error).
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
   const limiter = new RateLimiter();
+  const readLimiter = new RateLimiter();
   const counters = { received: 0, requests: 0, startedAt: Date.now() };
+  const sourcemaps = createSourcemaps(store, { logger });
+  // Players now, counted in this process unless the host counts them itself (auth.playersNow).
+  const presence = auth.playersNow ? null : new Presence();
+  const playersNow = (projectId, service) => (auth.playersNow ? auth.playersNow(projectId, service) : presence.count(projectId, service));
 
   async function handle(req, res) {
     counters.requests++;
@@ -65,8 +82,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
         const events = admitted.events;
         if (events.length) {
+          await sourcemaps.refingerprint(writer.projectId, events);
           await store.put(writer.projectId, events, writer);
           counters.received += events.length;
+          presence?.record(writer.projectId, events);
           clearCache(writer.projectId);
           if (auth.recordIntake) await Promise.resolve(auth.recordIntake(writer, events)).catch((err) => logger.warn('[intake] record', err.message));
         }
@@ -79,6 +98,15 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
       // Everything else under /v1/ reads (or deletes) one project's data, never the intake token's.
       const reader = p.startsWith('/v1/') ? checkIdentity(await auth.resolveReader(req)) : null;
+      if (reader) {
+        const wait = readLimiter.take(`${reader.projectId}\n${reader.keyId ?? ''}`, reader.rps ?? (reader.share ? DEFAULT_SHARE_RPS : 0));
+        if (wait) {
+          res.setHeader('Retry-After', String(wait));
+          return json(res, 429, { error: 'rate limit exceeded' });
+        }
+        const refused = reader.share && shareOnly(req, url, reader.share);
+        if (refused) return json(res, 403, { error: refused });
+      }
       const allow = (scope) => reader.scopes?.includes(scope) || json(res, 403, { error: `this key lacks the ${scope} scope` });
 
       if (p === '/v1/live') return allow('read') && live(req, res, url, reader.projectId);
@@ -115,13 +143,13 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         const { projectId } = reader;
         const name = p.slice('/v1/query/'.length);
         const client = req.headers['x-glitchless-client'];
-        if (client && client !== 'dashboard') {
+        if (client && client !== 'dashboard' && !reader.share) {
           const params = Object.fromEntries(url.searchParams);
           delete params.api_key;
           activity.push({ projectId, ts: Date.now(), client, query: name, params });
           if (activity.length > 200) activity.shift();
         }
-        const key = `${projectId}\n${p}?${withoutKey(url.searchParams)}`;
+        const key = `${projectId}\n${reader.share ? `${pinned(reader.share) ? 'pinned' : 'share'}${reader.share.sums ? '+sums' : ''}\n` : ''}${p}?${withoutKey(url.searchParams)}`;
         const hit = cache.get(key);
         if (hit && Date.now() - hit.at < 4000) return json(res, 200, hit.body);
         const body = await query(projectId, name, url.searchParams, reader);
@@ -131,6 +159,26 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return json(res, 200, body);
       }
 
+      // A web build's source maps (sourcemaps.js), one per POST: the body is the .map file (or its gzip), `file` the
+      // minified script's path in the build (default: the map's own "file"). GET lists them, DELETE drops a version's.
+      if (p === '/v1/sourcemaps') {
+        const service = url.searchParams.get('service')?.toLowerCase();
+        const version = url.searchParams.get('version');
+        if (!service || service.length > 128 || (version != null && (!version || version.length > 128))) return json(res, 400, { error: 'service (and version, to upload or delete) are required' });
+        if (req.method === 'GET') return allow('read') && json(res, 200, { service, sourcemaps: (await sourcemaps.list(reader.projectId, service)).filter((m) => version == null || m.version === version) });
+        if (req.method !== 'POST' && req.method !== 'DELETE') return json(res, 405, { error: 'GET, POST or DELETE' });
+        if (!allow('sourcemaps')) return;
+        if (!version) return json(res, 400, { error: 'version is required: the version the game passes to Glitchless.init' });
+        if (req.method === 'DELETE') {
+          if (!(await sourcemaps.remove(reader.projectId, service, version))) return json(res, 404, { error: `no source maps for ${service} ${version}` });
+          clearCache(reader.projectId);
+          return json(res, 200, { service, deleted: version });
+        }
+        const stored = await sourcemaps.upload(reader.projectId, { service, version, file: url.searchParams.get('file') }, await readBody(req, maxUploadBytes));
+        clearCache(reader.projectId);
+        return json(res, 201, stored);
+      }
+
       if (p === '/v1/data' && req.method === 'DELETE') {
         if (!allow('delete')) return;
         const service = url.searchParams.get('service');
@@ -138,6 +186,17 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         await store.clear(reader.projectId, service);
         clearCache(reader.projectId);
         return json(res, 200, { cleared: service });
+      }
+
+      // One bug report, screenshot and all: what a player who asks for their report to go away needs.
+      if (p === '/v1/report' && req.method === 'DELETE') {
+        if (!allow('delete')) return;
+        const service = url.searchParams.get('service');
+        const id = url.searchParams.get('id');
+        if (!service || !id) return json(res, 400, { error: 'service and id are required' });
+        if (!store.deleteReport || !(await store.deleteReport(reader.projectId, service, id))) return json(res, 404, { error: 'report not found' });
+        clearCache(reader.projectId);
+        return json(res, 200, { deleted: id });
       }
 
       if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p, staticRoutes);
@@ -153,7 +212,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
   // `reader` (the auth hook's identity) may carry the project's `plan`: ranges stop at its retention.
   async function query(projectId, name, params, reader = {}) {
     // max_range_days: the longest range this store answers for the reader (null: no limit).
-    if (name === 'services') return { services: await store.services(projectId), max_range_days: store.maxRangeDays ? store.maxRangeDays(reader.plan) : null };
+    if (name === 'services') {
+      const services = await store.services(projectId);
+      const max = store.maxRangeDays ? store.maxRangeDays(reader.plan) : null;
+      if (reader.share) return { services: services.filter((s) => s.service === reader.share.service), max_range_days: Math.min(max ?? SHARE_MAX_DAYS, SHARE_MAX_DAYS), window: pinned(reader.share) ? { from: reader.share.from, to: reader.share.to } : null };
+      return { services, max_range_days: max };
+    }
     if (name === 'activity') return { activity: activity.filter((a) => a.projectId === projectId).reverse().map(({ projectId: _, ...a }) => a) };
     const services = await store.services(projectId);
     const service = params.get('service') || services.sort((a, b) => b.last_seen - a.last_seen)[0]?.service;
@@ -161,6 +225,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     const now = Date.now();
     const to = num(params.get('to')) ?? now;
     const from = num(params.get('from')) ?? (name === 'session' ? now - 7 * DAY : now - DAY);
+    if (name === 'report') {
+      // One bug report by id, with its screenshot (screenshot=0 leaves it out): no range to read.
+      const r = params.get('id') && store.getReport ? await store.getReport(projectId, service, params.get('id')) : null;
+      return r ? { meta: { service }, report: reportDetail(r, null, { screenshot: params.get('screenshot') !== '0' }) } : { meta: { service }, error: 'report not found' };
+    }
+    if (name === 'players_now') return { meta: { service }, players_now: await playersNow(projectId, service), window_s: PLAYERS_NOW_MS / 1000 };
     if (name === 'dashboard') {
       // A saved dashboard needs no data: only the automatic one is made from what the game sent.
       const saved = await store.getDashboard(projectId, service);
@@ -177,6 +247,11 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions ? await store.rollups(projectId, { service, from, to }) : null;
       ctx = buildContext(raw, q, rollups);
     }
+    // Reports are kept apart from the events (stored as they arrive), so they answer for the range as asked.
+    ctx.reports = REPORT_QUERIES.has(name) && store.reports ? reportsOf(await store.reports(projectId, service, { from, to }), ctx) : [];
+    if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
+    // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
+    if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
     // A store's own notes (ctx.meta): resolution 'day' and what is approximate, for long ranges.
     const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
     switch (name) {
@@ -190,7 +265,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return { meta, ...players(ctx) };
       case 'events': {
         const steps = parseFunnel(params.get('funnel'));
-        return { meta, ...customEvents(ctx, { name: params.get('name') || null, sdk: params.get('sdk') === '1' }), ...(steps.length ? { funnel: eventFunnel(ctx, steps) } : {}) };
+        // Each event with the sums of its numeric attributes, per currency (sums.js).
+        const own = customEvents(ctx, { name: params.get('name') || null, sdk: params.get('sdk') === '1' });
+        const sums = eventSums(ctx);
+        return { meta, ...own, events: own.events.map((e) => ({ ...e, sums: sums.get(e.name) || [] })), ...(steps.length ? { funnel: eventFunnel(ctx, steps) } : {}) };
       }
       case 'dashboard': {
         // The game's pages, in order: what the dashboard's sidebar shows. Boards are evaluated one at a time (board).
@@ -203,10 +281,11 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         const boards = spec.pages.filter((x) => x.panels);
         const id = params.get('page');
         const page = id ? spec.pages.find((x) => x.id === id) : boards[0];
-        if (!page) return { meta, error: id ? `no page "${id}" on this dashboard` : 'this dashboard has no boards', pages: spec.pages.map((x) => x.id) };
+        if (!page) return { meta, error: id ? `no page "${id}" on this dashboard` : 'this dashboard has no boards', ...(reader.share ? {} : { pages: spec.pages.map((x) => x.id) }) };
         if (!page.panels) return { meta, error: `"${page.id}" is the built-in ${page.view} view, not a board`, view: page.view };
         const maps = page.panels.some((x) => x.type === 'findings') ? await store.getMaps(projectId, service) : [];
-        return { meta, board: { page: page.id, title: page.title, source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { panels: page.panels }, panels: evaluateBoard(ctx, page, { maps }) } };
+        if (page.panels.some((x) => x.metric === 'players_now')) ctx.playersNow = await playersNow(projectId, service);
+        return { meta, board: { page: page.id, title: page.title, source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { panels: page.panels }, panels: evaluateBoard(ctx, page, { maps, shared: reader.share || false, currency: spec.currency }) } };
       }
       case 'heatmap': {
         const maps = await store.getMaps(projectId, service);
@@ -217,8 +296,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return { meta, sessions: sessionsList(ctx) };
       case 'session': {
         const detail = sessionDetail(ctx, params.get('id'), await store.getMaps(projectId, service));
+        if (detail) detail.timeline = [...(await sourcemaps.timeline(projectId, service, detail.session.version, detail.timeline)), ...reportTimeline(ctx.reports, params.get('id'))].sort((a, b) => a.ts - b.ts);
         return detail ? { meta, ...detail } : { meta, error: 'session not found' };
       }
+      case 'reports':
+        // Players' bug reports, newest first, without their screenshots (report?id= above gives one with it).
+        return { meta, reports: ctx.reports.map((r) => reportSummary(r, ctx)), engine: gameEngine(ctx) };
       case 'versions': {
         // Compared per version: the numbers on the game's boards (their stat panels), then its own events.
         const { spec } = await dashboardOf(projectId, service, ctx);
@@ -231,7 +314,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           fails: list.some((v) => v.level_fails > 0),
           geometry: list.some((v) => v.geometries_growth_per_level_load != null),
         };
-        return { meta, versions: list, has, board: versionColumns(stats) };
+        return { meta, versions: list, has, board: versionColumns(stats, ctx) };
       }
       case 'playtest':
         // Only meaningful for an explicit set of sessions (the ones a playtest run produced).
@@ -246,7 +329,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
   function dashboardBody(meta, spec, saved) {
     const pages = spec.pages.map(({ panels, view, options, ...p }) => ({ ...p, icon: p.icon || (view ? VIEWS[view].icon : 'board'), ...(view ? { view, ...(options ? { options } : {}) } : { panels: panels.length }) }));
-    return { meta, dashboard: { source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { pages: spec.pages }, pages } };
+    return { meta, dashboard: { source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { ...(spec.currency ? { currency: spec.currency } : {}), pages: spec.pages }, pages } };
   }
 
   // The game's dashboard: the saved one, or the automatic one made from what it sends.
@@ -274,7 +357,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (sub.projectId !== projectId) continue;
       const mine = events.filter((e) => (!sub.service || e.service === sub.service) && e.type !== 'map' && e.type !== 'pos');
       if (!mine.length) continue;
-      const slim = mine.map(({ ft, stack, received, ...e }) => e);
+      const slim = mine.map(({ ft, stack, received, screenshot, ...e }) => e);
       sub.res.write(`data: ${JSON.stringify(slim)}\n\n`);
     }
   }
@@ -284,6 +367,23 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
   }
 
   return handle;
+}
+
+// A share reader (`share: { service, page, from?, to? }` from the auth hook, a read-only link anyone may hold)
+// may GET the `board` query for its page and `services` (its service only), over at most SHARE_MAX_DAYS. A
+// pinned link (`from` and `to`) answers its own window whatever the request asks; any other link answers the
+// request's range, cut to SHARE_MAX_DAYS. Everything else is refused. The request's parameters become exactly
+// those, so no other filter or id reaches a query. (The store still cuts a range to the reader's retention.)
+const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services']);
+const pinned = (share) => Number.isFinite(share.from) && Number.isFinite(share.to);
+function shareOnly(req, url, share) {
+  const q = url.searchParams;
+  const other = (k) => q.get(k) != null && q.get(k) !== share[k];
+  if (req.method !== 'GET' || !SHARE_QUERIES.has(url.pathname) || other('service') || other('page')) return 'a share link shows one board and nothing else';
+  const to = pinned(share) ? share.to : (num(q.get('to')) ?? Date.now());
+  const from = Math.max(pinned(share) ? share.from : (num(q.get('from')) ?? to - DAY), to - SHARE_MAX_DAYS * DAY);
+  url.search = new URLSearchParams({ service: share.service, page: share.page, from, to }).toString();
+  return null;
 }
 
 // Hooks are written elsewhere (the hosted control plane), so check what they return before trusting it.
@@ -299,7 +399,7 @@ function withoutKey(params) {
 }
 
 function emptyFor(name) {
-  return { meta: null, empty: true, ...(name === 'sessions' ? { sessions: [] } : {}), ...(name === 'errors' ? { issues: [] } : {}), ...(name === 'findings' ? { findings: [] } : {}), ...(name === 'events' ? { events: [] } : {}), ...(name === 'dashboard' ? { dashboard: null } : {}) };
+  return { meta: null, empty: true, ...(name === 'sessions' ? { sessions: [] } : {}), ...(name === 'reports' ? { reports: [] } : {}), ...(name === 'errors' ? { issues: [] } : {}), ...(name === 'findings' ? { findings: [] } : {}), ...(name === 'events' ? { events: [] } : {}), ...(name === 'dashboard' ? { dashboard: null } : {}) };
 }
 
 function serveStatic(res, pathname, routes) {
@@ -345,16 +445,22 @@ function send(res, status, body, type = 'text/plain') {
   res.end(body);
 }
 
-function readBody(req) {
+// Past `max` the request is refused (413), and the rest of the body is read and dropped so the client gets that
+// answer instead of a closed socket; one that keeps sending past twice the limit is cut off.
+function readBody(req, max = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let refused = false;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size <= max) return void chunks.push(c);
+      if (!refused) {
+        refused = true;
+        chunks.length = 0;
         reject(new IntakeError(413, 'payload too large'));
-        req.destroy();
-      } else chunks.push(c);
+      }
+      if (size > max * 2) req.destroy();
     });
     req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
