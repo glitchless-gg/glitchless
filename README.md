@@ -80,7 +80,8 @@ you, the coding agent, read that data, fix what players hit and check that the f
    Use these settings:
    - intake URL: http://localhost:7777
    - client token: gl_pub_dev (it's public and can only send data, so it's fine inside the game
-     build)
+     build). On Glitchless Cloud without a token for this game, do the sign-in in step 3 first and
+     make the game with the glitchless_create_game tool: it returns the token.
    - privacy: keep the default anonymous mode. Ask me before turning on install mode (what
      retention, D1/D7/D30, needs) or full mode, because either needs a line in the game's privacy
      policy.
@@ -104,9 +105,12 @@ you, the coding agent, read that data, fix what players hit and check that the f
      Glitchless Cloud, connect it to my workspace once: run `npx -y glitchless-mcp login` in a
      terminal (or, once the server is loaded, call its glitchless_sign_in tool), show me the link
      and the code it gives, and wait while I approve it. That saves a workspace key that reaches
-     every game I have, so name this game in its tools (game: "<the game's name>"). If I'd rather
-     give you a secret key for this one game, it's GLITCHLESS_API_KEY in my environment: set that
-     instead. Never put a key in the game, in a file that gets committed, or in your reply.
+     every game I have, so name this game in its tools (game: "<the game's name>"). Signed in, you
+     can do the rest of this setup yourself with its tools: glitchless_create_game makes a game and
+     returns its client token, glitchless_set_dashboard saves its dashboard, and
+     glitchless_share_board makes a read-only link to a board. If I'd rather give you a secret key
+     for this one game, it's GLITCHLESS_API_KEY in my environment: set that instead. Never put a key
+     in the game, in a file that gets committed, or in your reply.
    - webmcp, for a game that runs in a browser (Three.js, Phaser, Babylon.js, PlayCanvas): command
      `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game:
      measure frame times, inspect the scene and reproduce problems. Unity, Godot, Unreal and
@@ -136,11 +140,12 @@ you, the coding agent, read that data, fix what players hit and check that the f
    ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my
    players (where they get stuck, which modes they play, whether they come back, what they buy), add
    the events that answer it, then save pages that fit this game with the glitchless_set_dashboard
-   tool.
+   tool (with game set to this game's name if you're signed in to a workspace).
 
 7. Tell me what you changed, file by file, the events you track, and anything you weren't sure
    about. If I use Glitchless Cloud, also tell me I can turn on alerts (Discord, Slack or email) in
-   Settings → Alerts, and share a board with a read-only link. On my own server, alerts go to a
+   Settings → Alerts, and that you can make a read-only link to any board with
+   glitchless_share_board, for a dev log or a "Live stats" button. On my own server, alerts go to a
    Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
 ```
 <!-- setup-prompt:end -->
