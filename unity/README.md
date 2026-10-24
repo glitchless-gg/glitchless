@@ -6,7 +6,7 @@
   - `make-fixtures.mjs` writes the fixture the EditMode tests check the C# sketch and fingerprints against.
 - [`PUBLISHING.md`](PUBLISHING.md): releasing a version (git tags, OpenUPM, the Asset Store).
 
-This folder is itself a Unity 2022.3 project that embeds the package; `Assets/Editor/SampleBuilder.cs` imports the sample and builds it.
+This folder is itself a Unity project on the current LTS (Unity 6.3, 6000.3.27f1) that embeds the package; `Assets/Editor/SampleBuilder.cs` imports the sample and builds it.
 
 ## Try it
 
@@ -14,7 +14,7 @@ This folder is itself a Unity 2022.3 project that embeds the package; `Assets/Ed
 npm run server                                   # Glitchless on http://localhost:7777
 ```
 
-Open this folder in Unity 2022.3.62f3 (or Unity 6), choose **Glitchless → Import the Fetch! sample**, open `Assets/Samples/Glitchless/Fetch/FetchBoot.unity`, tick **Autoplay** on the **Fetch** GameObject and press Play. Then open http://localhost:7777.
+Open this folder in Unity 6000.3.27f1 (or a later Unity 6), choose **Glitchless → Import the Fetch! sample**, open `Assets/Samples/Glitchless/Fetch/FetchBoot.unity`, tick **Autoplay** on the **Fetch** GameObject and press Play. Then open http://localhost:7777.
 
 ## Tests
 

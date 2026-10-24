@@ -14,7 +14,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `glitchless/player_id` in the save area, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
 | Device | OS name, the runner (VM or YYC), the graphics API, screen size, refresh rate, a GPU tier where the runner names the GPU, whether it is a Steam Deck | the same as anonymous | adds the OS version, the GPU's name and vendor, and which Steam Deck |
 | Positions | **not sent** unless `positions: true`: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in room coordinates |
-| Saved on the device | unsent batches, without any ID | unsent batches with their IDs, and the player ID | the same as install |
+| Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install |
 
 `positions: true` turns positions on in anonymous and install mode. They are places in the game's own rooms, not the player's location.
 
@@ -29,7 +29,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), and `sdk` (`glitchless-gamemaker/0.1.0`).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-gamemaker/0.1.0`) and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level or room name, or null).
 
@@ -38,10 +38,11 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `session_start` | `session_type` (`user` or `synthetic`), `privacy`, `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`quit`, `measure`, `crash`), `duration_s` | quitting, the end of a measure run, a crash (sent on the next launch) |
 | `frame_window` | frame count, fps, game speed, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, Step and draw ms, garbage collections and their ms, texture pages loaded, the runner's memory MB, the instance, surface, DS list, DS map and buffer counts, `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts) | every 5 s |
-| `hitch` | duration, likely causes, the same timings and counts for that one frame, instances added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
-| `load` | `ttff_ms` (game start to first frame), `ttp_ms` (to the first key, click or gamepad button) | once |
+| `hitch` | duration, likely causes (`gpu_or_os` when Step and draw time don't explain the frame), the same timings and counts for that one frame, instances added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
+| `load` | when the first frame was drawn, `ttff_ms` (game start to first frame), `first_launch` (whether this is the first launch of this game version on the device), `ttp_ms` (to the first key, click or gamepad button) | once |
 | `error` | `kind` (`crash` or `manual`), `message`, `stack` (GameMaker's names for the code: objects, events, scripts, lines), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `glitchless_error`), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session; a crash is sent on the next launch |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a room that reads as a level starts | the game calls them, or a room starts |
+| `level_abandon` | `duration_s`; `reason` (`quit`, `measure`) when Glitchless sends it | the game calls it, or the game quits mid-level |
 | `death` | `cause`; **full** or `positions`: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `glitchless_track` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key code or `pointer`, count; off on phones} | as they happen |
@@ -85,8 +86,9 @@ In the game's save area (`game_save_id`: `~/Library/Application Support/<game>` 
 
 | file | what | mode |
 | --- | --- | --- |
-| `glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or a crash): the events above, bug reports included. In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
+| `glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or a crash): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id`; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
 | `glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
+| `glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 | `glitchless/measure.json` | the last `-glitchless-measure` result | only when run with that flag |
 
 Uninstalling the game may leave the save area; deleting it removes them.
@@ -100,7 +102,7 @@ The Glitchless server stores events as they arrive, each with its envelope and t
 A paragraph for anonymous mode:
 
 > **Performance and error reports**
-> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you quit, it sends these to our servers. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the computer: its system, its screen size and refresh rate, and how fast its graphics chip is. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. Reports carry no player ID, no device identifier, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
+> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you quit, it sends these to our servers. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the computer: its system, its screen size and refresh rate, and how fast its graphics chip is. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your computer which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
 
 Install mode needs one more sentence: a random number is saved with the game, so we can tell how many players come back; it is not linked to your account. Full mode needs that, the graphics chip's name, and positions in the game world.
 

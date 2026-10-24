@@ -8,6 +8,8 @@
 // 4. Whole sessions against a real Glitchless server (server/src/local.js on a port of its own): offline and the
 //    outbox, full and install mode, a crash sent on the next launch, hitches and their causes, rooms as levels, bug
 //    reports, measure. They check what the server reads back, through the same /v1/query API the dashboard uses.
+// 5. What the Starlift audit found: a batch sent again stored once (batch_id), an abandon at quit, the load event at
+//    the first frame with first_launch, and gpu_or_os.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -550,4 +552,152 @@ test('a run of long frames (a hidden window) is dropped; one frozen frame betwee
   const counted = game.g.win.frozen + game.g.queue.filter((e) => e.type === 'frame_window').reduce((n, w) => n + w.frozen, 0);
   assert.equal(counted, 1, 'only the lone frozen frame counts');
   assert.ok(game.g.stats.hitches === 1, `hitches ${game.g.stats.hitches} ${pending}`);
+});
+
+// ───────────────────────────── 5. what the Starlift audit found ─────────────────────────────
+// A batch whose reply never came was sent again (after 20 s, or from the outbox on the next launch) and stored
+// twice: every batch now names itself (batch_id) and the server stores it once. Leaving a level is an abandon, not a
+// fail. The load event happened at the first frame, and says whether it was a version's first launch. A long frame
+// nothing measured explains is gpu_or_os.
+
+// Passes each request on to the server, so it is stored, but holds back the reply to the `hold`th intake request for
+// good: what a phone that stalled, or a game that ended mid-request, sees. Each reply the server sent is in `replies`.
+function holdingFetch(hold = 1) {
+  let n = 0;
+  const replies = [];
+  const impl = async (url, init) => {
+    const r = await fetch(url, init);
+    const body = await r.text();
+    if (url.includes('/v1/intake')) {
+      replies.push(JSON.parse(body));
+      if (++n === hold) return new Promise(() => {});
+    }
+    return new Response(body, { status: r.status });
+  };
+  return { impl, replies };
+}
+
+const storedTwice = (sid) => {
+  const seen = new Set();
+  const twice = [];
+  for (const e of rawEvents().filter((x) => x.session_id === sid)) {
+    const key = JSON.stringify({ ...e, received: 0 });
+    if (seen.has(key)) twice.push(e.type);
+    seen.add(key);
+  }
+  return twice;
+};
+
+test('a batch whose reply never came goes again under its batch_id, and the server stores it once', async () => {
+  const held = holdingFetch(1);
+  const game = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS, fetchImpl: held.impl });
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, game.struct({}));
+  game.roomGoto(1);
+  await game.frames(180); // the first batch goes at 2 s; its reply never comes
+  await new Promise((r) => setTimeout(r, 100));
+  const first = game.g.outbox[0]?.batch_id;
+  assert.match(first, /^b_[a-z0-9]{16}$/);
+  await game.frames(1500); // 20 s without a reply: tried again, later, under the same ID
+  await game.settle();
+  assert.ok(held.replies.some((r) => r.duplicate === true), JSON.stringify(held.replies));
+  assert.deepEqual(storedTwice(game.g.session_id), []);
+  assert.ok(!game.g.outbox.some((b) => b.batch_id === first), 'the repeat was answered, so it left the outbox');
+});
+
+test('a batch the server took as the game ended goes again on the next launch, and is not stored twice', async () => {
+  const save = newSave();
+  const held = holdingFetch(2);
+  const first = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS, fetchImpl: held.impl });
+  first.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, first.struct({}));
+  await first.frames(130);
+  first.call('glitchless_quit'); // the last batch is taken, but its reply never comes before the game ends
+  for (let i = 0; i < 200 && !first.state.ended; i++) await first.frame();
+  await new Promise((r) => setTimeout(r, 100));
+  const saved = JSON.parse(fs.readFileSync(outbox(save), 'utf8')).batches;
+  assert.equal(saved.length, 1);
+  assert.match(saved[0].batch_id, /^b_[a-z0-9]{16}$/, 'saved with its ID, in anonymous mode too');
+  assert.ok(!/"(sid|pid)"/.test(JSON.stringify(saved)), 'and still no session or player ID');
+
+  const next = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS });
+  next.state.timer += 1_234_567; // a real launch's clock is never where the last one's was: new IDs
+  next.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, next.struct({}));
+  assert.equal(next.g.outbox[0].batch_id, saved[0].batch_id);
+  await next.frames(200);
+  await next.settle();
+  assert.ok(!fs.existsSync(outbox(save)) || !fs.readFileSync(outbox(save), 'utf8').includes(saved[0].batch_id), 'answered, so gone');
+  const ends = rawEvents().filter((e) => e.type === 'session_end' && e.reason === 'quit' && e.ts === saved[0].events.find((x) => x.type === 'session_end')?.ts);
+  assert.equal(ends.length, 1, 'the ending batch is stored once, not again under the replay\'s new session ID');
+});
+
+test('quitting mid-level sends an abandon before the end, and drops a fail the game sends for that level after it', async () => {
+  const game = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS });
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, game.struct({}));
+  game.call('glitchless_level_start', 'cave_1');
+  await game.frames(30);
+  game.call('glitchless_level_abandon'); // the player went back to the menu
+  game.call('glitchless_level_start', 'cave_2');
+  await game.frames(30);
+  game.call('glitchless_quit');
+  game.call('glitchless_level_fail', 'cave_2', 'left'); // a game's own Clean Up event, after Glitchless ended the session
+  for (let i = 0; i < 200 && !game.state.ended; i++) await game.frame();
+  await game.settle();
+  const sid = game.g.session_id;
+  const events = rawEvents().filter((e) => e.session_id === sid && ['level_abandon', 'level_fail', 'session_end'].includes(e.type));
+  assert.deepEqual(events.map((e) => [e.type, e.level, e.reason ?? e.cause ?? null]), [
+    ['level_abandon', 'cave_1', null],
+    ['level_abandon', 'cave_2', 'quit'],
+    ['session_end', 'cave_2', 'quit'],
+  ]);
+  const session = (await sessionsNow()).find((s) => s.session_id === sid);
+  assert.deepEqual(session.abandoned, ['cave_1', 'cave_2']);
+  assert.equal(session.rage_quit, false);
+  // A room level ended by its room (back in the menu) has nothing to abandon at quit.
+  const roomy = await play();
+  assert.deepEqual(rawEvents().filter((e) => e.session_id === roomy.g.session_id && e.type === 'level_abandon'), []);
+});
+
+test('the load event is stamped at the first frame, and says whether this was the version\'s first launch here', async () => {
+  const save = newSave();
+  const runs = [];
+  for (const [i, version] of ['1.2.0', '1.2.0', '1.3.0'].entries()) {
+    const game = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS });
+    game.state.timer += i * 1_234_567; // a real launch's clock is never where the last one's was: new IDs
+    game.call('glitchless_init', SERVICE, version, 'dev', `http://127.0.0.1:${port}`, game.struct({}));
+    await game.frames(200);
+    await game.settle();
+    const sid = game.g.session_id;
+    const start = rawEvents().find((e) => e.session_id === sid && e.type === 'session_start');
+    const load = rawEvents().filter((e) => e.session_id === sid && e.type === 'load' && e.ttff_ms != null).at(-1);
+    assert.ok(load.ts - start.ts < 100, `load ${load.ts - start.ts} ms after the start: the first frame, not the first flush at 2 s`);
+    runs.push(load.first_launch);
+  }
+  assert.deepEqual(runs, [true, false, true], 'the first launch of 1.2.0, a later one, the first of 1.3.0');
+  assert.equal(fs.readFileSync(path.join(save, 'glitchless/launched'), 'utf8'), '1.3.0');
+});
+
+test('a long frame that step and draw time don\'t explain is gpu_or_os; one they explain is not', () => {
+  const game = launch({ saveDir: newSave() });
+  const g = game.call('__glitchless');
+  const f = (extra) => game.struct({ dt: 66.7, step: 0.4, draw: 0.6, gc_ms: 0, gc_collected: 0, instances_added: 0, texture_loads: 0, room_changed: false, ...extra });
+  assert.deepEqual([...game.call('__glitchless_causes', g, f({}))], ['gpu_or_os']);
+  assert.deepEqual([...game.call('__glitchless_causes', g, f({ step: 40 }))], ['script']);
+  assert.deepEqual([...game.call('__glitchless_causes', g, f({ step: undefined }))], [], 'nothing measured, nothing said');
+  assert.deepEqual([...game.call('__glitchless_causes', g, f({ dt: 900 }))], ['gpu_or_os', 'frozen']);
+});
+
+test('a batch sent before the first frame (focus lost as the game opened) does not lose the load event', async () => {
+  const game = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS });
+  game.state.timer += 7_654_321;
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, game.struct({}));
+  game.state.focus = false; // the first tick sees focus gone and sends what there is: the session's start
+  await game.frame();
+  game.state.focus = true;
+  await game.frames(400); // to the next batch, 5 s on
+  await game.settle();
+  const sid = game.g.session_id;
+  const types = rawEvents().filter((e) => e.session_id === sid).map((e) => e.type);
+  assert.equal(types[0], 'session_start');
+  const load = rawEvents().find((e) => e.session_id === sid && e.type === 'load' && e.ttff_ms != null);
+  assert.ok(load, types.join(' '));
+  assert.equal(load.first_launch, true);
 });

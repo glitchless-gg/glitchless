@@ -32,7 +32,8 @@ glitchless_init("caverun", "", "prod", "https://glitchless.example.com"); // "" 
 
 glitchless_level_start("cave_3");               // only if rooms aren't your levels (see below)
 glitchless_level_complete(undefined, score);    // undefined: the current level; duration measured since it started
-glitchless_level_fail(undefined, "lost");
+glitchless_level_fail(undefined, "lost");          // lost it: died, ran out of time
+glitchless_level_abandon();                     // left it: the menu, a restart. Never a fail
 glitchless_death(x, y, "spikes");               // the place is sent only when positions are on
 glitchless_track("play", "endless");            // one word, a number, or a struct
 glitchless_set_context({ enemies: instance_number(obj_enemy) }); // in an End Step event
@@ -51,6 +52,7 @@ glitchless_quit();                              // the Quit button: sends the la
 | `glitchless_init(service, version, env, intake, options)` | who the game is and where to send. Nothing is measured or sent before it |
 | `glitchless_level_start(level)` | closes the current frame window, so a window never spans two levels. The first call turns rooms as levels off |
 | `glitchless_level_complete([level], [score], [duration_s])`, `glitchless_level_fail([level], [cause])` | |
+| `glitchless_level_abandon([level])` | the player left the level before it ended (the menu, a restart): never counted as a fail or a rage quit. Quitting mid-level sends one by itself, before the session's end, and a `glitchless_level_fail` or `glitchless_level_abandon` for that level after that (from a Clean Up event, say) is dropped. A room level that ends with its room (back in a menu) closes without one |
 | `glitchless_death(x, y, [cause], [z])` | |
 | `glitchless_track(name, [what])` | |
 | `glitchless_set_context(struct)` | numbers that describe what is going on: the largest value in each window is sent, and the current ones go with each hitch |
@@ -181,6 +183,7 @@ Run the same seed before and after a change to compare.
 | `object_spawn` | 50 or more instances were added |
 | `script` | Step events took 40% of the frame. `obj_glitchless` is drawn first and `obj_glitchless_tail` last, so the time from the frame's start to the first Pre-Draw is every Step event, and from there to the last Draw GUI End is every draw event |
 | `render` | draw events took 40% of the frame |
+| `gpu_or_os` | none of the above, and Step and draw time (with any collection) add up to under 40% of the frame: the time went to the GPU, to presenting the frame or to the OS, none of which GameMaker times |
 | `frozen` | over 700 ms |
 
 Each hitch also has `process_ms`, `render_ms`, `gc_ms`, `instances_added` and `texture_loads`. Each frame window adds `process_ms`, `render_ms`, `gc_collections`, `gc_ms`, `texture_loads`, `heap_mb` (`debug_event("DumpMemory")`), `instances`, `surfaces`, `ds_lists`, `ds_maps` and `buffers` (`debug_event("ResourceCounts")`). With `engine_gauges` the counts also go in `ctx`, where the findings compare a slow level with the smoothest one: *"`instances` sits at 2,540 for this whole level vs 33 on rm_level_1, so objects created earlier are never cleaned up"*.
@@ -199,7 +202,7 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 ## Quitting, offline and crashes
 
 - **`glitchless_quit()`** ends the session, gives the network up to 1.5 s to take the last batch, then calls `game_end()`. GameMaker can't wait on a request while the game closes, so a game that quits with `game_end()` or the window's close button saves its last batch, and the next launch sends it.
-- **Offline**, batches are saved to `glitchless/outbox.json` in the save area and sent on a later launch, as is a crash. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID.
+- **Offline**, batches are saved to `glitchless/outbox.json` in the save area and sent on a later launch, as is a crash. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID. Each batch keeps its own `batch_id` through every try and launch, so the server stores it once even when a reply was lost: one the game closed on, or one that never came within 20 s.
 - **On a phone**, coming back from the background within `session_timeout` carries on the session with an `app_resume` event; later than that starts a new session.
 
 ## What goes on the wire
@@ -212,14 +215,13 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 - **No draw calls, triangles or GPU time.** GameMaker doesn't report them to the game. The debug overlay (`show_debug_overlay(true)`) shows texture swaps and vertex batches.
 - **Web and GX.games builds** are untested. They send plain JSON.
 - **Phones** are untested beyond the background rule above.
-- **A batch can arrive twice** if the game closes while the server is answering it: it stays in the outbox until the reply comes.
 
 ## Tests
 
 From the repo root:
 
-- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure.
-- `npm run test:gamemaker` builds the demo with GameMaker's Igor (a VM build for the mac target, in `gamemaker/.build`) and plays it against a local server: see [the demo](#the-demo). First the runner computes the sketch, fingerprints, gzip and JSON numbers of the JavaScript fixture (`-glitchless-selftest`), then come offline and the outbox, full and install mode, measure, the planted crash sent on the next launch, and bug reports from code and the F8 form, 29 checks in all. The bug report's screenshot is saved as `gamemaker/.build/bug-report.png`. Each run starts the runtime's YoYo Runner with its flags on the command line and its output in a `-debugoutput` file, so it opens a game window for a few seconds and needs a logged-in macOS desktop.
+- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`.
+- `npm run test:gamemaker` builds the demo with GameMaker's Igor (a VM build for the mac target, in `gamemaker/.build`) and plays it against a local server: see [the demo](#the-demo). First the runner computes the sketch, fingerprints, gzip and JSON numbers of the JavaScript fixture (`-glitchless-selftest`), then come offline and the outbox, full and install mode, measure, the planted crash sent on the next launch, and bug reports from code and the F8 form, 32 checks in all (with batch IDs in the outbox, nothing stored twice, and the load event at the first frame). The bug report's screenshot is saved as `gamemaker/.build/bug-report.png`. Each run starts the runtime's YoYo Runner with its flags on the command line and its output in a `-debugoutput` file, so it opens a game window for a few seconds and needs a logged-in macOS desktop.
 - `npm test` includes `server/test/gamemaker-findings.test.js`: GameMaker sessions get GameMaker's fixes.
 
 ### Setting up GameMaker for the end-to-end test

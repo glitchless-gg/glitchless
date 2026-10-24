@@ -316,14 +316,14 @@ function __glitchless_words(_name) {
 /// A random ID such as "s_k3f9…": `_length` characters from a SHA-1 of the clock, the time since
 /// the game started and a counter. GameMaker's random() starts from the same seed in every run
 /// unless the game calls randomize(), and Glitchless must not move the game's own random sequence,
-/// so it never touches the random functions.
-function __glitchless_new_id(_prefix, _length) {
+/// so it never touches the random functions. `_salt` goes into the hash too (a batch ID's session).
+function __glitchless_new_id(_prefix, _length, _salt = "") {
     if (!variable_global_exists("__glitchless_ids")) global.__glitchless_ids = 0;
     global.__glitchless_ids += 1;
     var _count = global.__glitchless_ids;
     var _chars = "abcdefghijklmnopqrstuvwxyz0123456789";
     var _seed = string(date_current_datetime()) + "|" + string(get_timer()) + "|" + string(current_time) + "|" + string(_count) + "|" + string(display_mouse_get_x()) + "," + string(display_mouse_get_y());
-    var _hex = sha1_string_utf8(_seed + "|" + game_save_id);
+    var _hex = sha1_string_utf8(_seed + "|" + game_save_id + "|" + _salt);
     _hex += sha1_string_utf8(_hex + _seed);
     var _out = _prefix;
     for (var _i = 0; _i < _length; _i++) {

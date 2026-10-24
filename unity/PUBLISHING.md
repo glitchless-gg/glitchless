@@ -5,10 +5,10 @@ The package is `gg.glitchless.sdk`, in `unity/Packages/gg.glitchless.sdk` of the
 ## Each release
 
 1. Set the new version in three places: `version` in `Packages/gg.glitchless.sdk/package.json`, `SdkVersion` in `Runtime/GlitchlessCore.cs`, and the `sdk` value in `PRIVACY.md`. Add a section to `CHANGELOG.md`. Update the version in `test/e2e.mjs`'s checks and the pinned URL in the package README.
-2. Run the tests on the oldest and newest supported Editors:
+2. Run the tests on the current LTS (the project's Editor), and on the newest Unity 6 if it's installed:
    ```bash
    npm run test:unity
-   UNITY=/Applications/Unity/Hub/Editor/6000.3.5f2/Unity.app/Contents/MacOS/Unity npm run test:unity
+   UNITY=/Applications/Unity/Hub/Editor/6000.5.9f1/Unity.app/Contents/MacOS/Unity npm run test:unity
    ```
    and the EditMode and PlayMode tests in each (see the dev project's README).
 3. Once the change is in the public repo, tag it there. The tag names the package, so Unity tags stay apart from any other tags in the repo:

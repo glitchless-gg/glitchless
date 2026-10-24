@@ -85,6 +85,8 @@ function __glitchless_new_state() {
         started_at: 0,
         epoch_ms: 0,
         level_started: 0,
+        level_open: false, // a level started and not yet completed, failed or abandoned
+        left_level: undefined, // the level abandoned for the game as the session ended
         ctx: {},
         recent: [],
         queue: [],
@@ -121,7 +123,9 @@ function __glitchless_new_state() {
         skip_frame: true,
         pending_long: undefined,
         throttled: false,
-        first_frame_ms: 0,
+        first_frame_ms: 0, // current_time: from the game's start
+        first_frame_at: 0, // unix ms, the load event's ts
+        first_launch: undefined, // the first launch of this game version on this device (the load event)
         first_input_ms: 0,
         key_history: {},
         position: undefined,
@@ -231,6 +235,7 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
         return;
     }
     directory_create("glitchless");
+    _g.first_launch = __glitchless_note_launch(_g);
     if (_g.keeps_ids) {
         _g.player_id = __glitchless_load_player_id();
     } else if (file_exists("glitchless/player_id")) {
@@ -246,6 +251,8 @@ function __glitchless_level_start(_level, _manual) {
     __glitchless_close_window(_g, false); // so a frame window never spans two levels
     _g.level = string(_level);
     _g.level_started = current_time;
+    _g.level_open = true;
+    _g.left_level = undefined;
     __glitchless_push(_g, { type: "level_start" });
     __glitchless_remember(_g, "level_start");
 }
@@ -254,6 +261,7 @@ function __glitchless_level_complete(_level, _score, _duration_s) {
     var _g = __glitchless();
     var _lvl = is_undefined(_level) ? _g.level : string(_level);
     var _secs = _duration_s >= 0 ? _duration_s : (current_time - _g.level_started) / 1000;
+    _g.level_open = false;
     var _e = { type: "level_complete", level: _lvl, duration_s: __glitchless_round(_secs, 0.01) };
     _e[$ "score"] = _score; // `score` is also one of GameMaker's built-in variables: the accessor keeps it a field
     __glitchless_push(_g, _e);
@@ -263,8 +271,39 @@ function __glitchless_level_complete(_level, _score, _duration_s) {
 function __glitchless_level_fail(_level, _cause) {
     var _g = __glitchless();
     var _lvl = is_undefined(_level) ? _g.level : string(_level);
+    if (__glitchless_outcome_sent(_g, _lvl)) return;
+    _g.level_open = false;
     __glitchless_push(_g, { type: "level_fail", level: _lvl, cause: _cause != "" ? _cause : undefined });
     __glitchless_remember(_g, "level_fail");
+}
+
+function __glitchless_level_abandon(_level) {
+    var _g = __glitchless();
+    var _lvl = is_undefined(_level) ? _g.level : string(_level);
+    if (__glitchless_outcome_sent(_g, _lvl)) return;
+    __glitchless_abandon(_g, _lvl, "");
+}
+
+/// `_reason` is the session_end's when Glitchless sends the abandon itself, "" when the game calls it.
+function __glitchless_abandon(_g, _lvl, _reason) {
+    _g.level_open = false;
+    var _e = { type: "level_abandon", level: _lvl, duration_s: __glitchless_round((current_time - _g.level_started) / 1000, 0.01) };
+    if (_reason != "") _e.reason = _reason;
+    __glitchless_push(_g, _e);
+    __glitchless_remember(_g, "level_abandon");
+}
+
+/// A game often ends its level as it closes (in a Clean Up or Game End event, say), after the session ended and
+/// Glitchless already sent the abandon: that attempt has its outcome.
+function __glitchless_outcome_sent(_g, _lvl) {
+    return _g.ended && !is_undefined(_g.left_level) && !is_undefined(_lvl) && _lvl == _g.left_level;
+}
+
+/// The session ends with a level still going: the player left it (SPEC §2 level_abandon).
+function __glitchless_end_level(_g, _reason) {
+    if (!_g.level_open || is_undefined(_g.level)) return;
+    _g.left_level = _g.level;
+    __glitchless_abandon(_g, _g.level, _reason);
 }
 
 /// A death at a place in the room. The place is sent only when positions are on (full mode, or the
@@ -539,7 +578,10 @@ function __glitchless_on_frame(_g, _f) {
     _g.ring[_g.ring_idx] = _dt;
     _g.ring_idx = (_g.ring_idx + 1) % __GLITCHLESS_RING_SIZE;
     _g.ring_count = min(_g.ring_count + 1, __GLITCHLESS_RING_SIZE);
-    if (_g.first_frame_ms == 0) _g.first_frame_ms = current_time;
+    if (_g.first_frame_ms == 0) {
+        _g.first_frame_ms = current_time;
+        _g.first_frame_at = __glitchless_now(_g); // the load event happened now, whenever the first batch goes
+    }
     if (_g.frame_id % 16 == 0 && _g.ring_count >= 30) _g.recent_median = __glitchless_median(__glitchless_last_frames(_g, 60));
 
     // A hitch is a stutter: over 50 ms and well above what this device usually does. A device that
@@ -593,6 +635,9 @@ function __glitchless_causes(_g, _f) {
     if (_f.instances_added >= __GLITCHLESS_SPAWN_BURST) array_push(_out, "object_spawn");
     if (!is_undefined(_f.step) && _f.step >= _share) array_push(_out, "script");
     if (!is_undefined(_f.draw) && _f.draw >= _share) array_push(_out, "render");
+    // None of those, and the step and draw time measured (with any collection) add up to under that share: the time
+    // went where nothing here measures it, to the GPU, presenting the frame, or the OS.
+    if (array_length(_out) == 0 && !is_undefined(_f.step) && !is_undefined(_f.draw) && _f.step + _f.draw + _f.gc_ms < _share) array_push(_out, "gpu_or_os");
     if (_f.dt > __GLITCHLESS_FROZEN_MS) array_push(_out, "frozen");
     return _out;
 }
@@ -758,6 +803,7 @@ function __glitchless_check_room(_g) {
         _g.level_room = -1;
         __glitchless_close_window(_g, false);
         _g.level = undefined; // back in a menu: frames there have no level
+        _g.level_open = false; // a room level ends with its room, and nothing says whether it was beaten or left
     }
 }
 
@@ -1018,6 +1064,7 @@ function __glitchless_new_session(_g) {
     _g.started_at = __glitchless_now(_g);
     _g.session_start_sent = false;
     _g.ended = false;
+    _g.left_level = undefined;
     _g.recent = [];
     _g.history = [];
     _g.error_counts = {};
@@ -1027,6 +1074,7 @@ function __glitchless_shutdown(_g, _reason) {
     if (_g.shut) return;
     _g.shut = true;
     if (_g.inited && _g.enabled && !_g.ended) {
+        __glitchless_end_level(_g, _reason);
         _g.ended = true;
         __glitchless_push(_g, __glitchless_session_end(_g, _reason));
     }

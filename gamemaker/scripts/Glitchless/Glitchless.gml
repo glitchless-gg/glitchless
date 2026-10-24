@@ -5,6 +5,7 @@
 ///
 ///   glitchless_init("caverun", "1.4.0", "prod", "https://glitchless.example.com");
 ///   glitchless_level_start("cave_3");          // rooms that read as levels start one by themselves
+///   glitchless_level_abandon();                // the player went to the menu mid-level: not a fail
 ///   glitchless_track("play", "endless");
 ///   glitchless_death(x, y, "spikes");
 ///   glitchless_set_context({ enemies: instance_number(obj_enemy) });
@@ -51,8 +52,16 @@ function glitchless_level_complete(_level = undefined, _score = undefined, _dura
     __glitchless_level_complete(_level, _score, _duration_s);
 }
 
+/// The player lost the level (died, ran out of time). Leaving it is glitchless_level_abandon.
 function glitchless_level_fail(_level = undefined, _cause = "") {
     __glitchless_level_fail(_level, _cause);
+}
+
+/// The player left the level before it ended: went to the menu, restarted it, closed the game. Never counted
+/// as a fail. Quitting mid-level (glitchless_quit, or the game ending) sends one by itself (SPEC §2 level_abandon).
+/// @param level  undefined: the current level
+function glitchless_level_abandon(_level = undefined) {
+    __glitchless_level_abandon(_level);
 }
 
 /// A death at a place in the room. The place is sent only when positions are on (full mode, or the

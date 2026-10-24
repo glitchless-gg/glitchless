@@ -659,7 +659,8 @@ thing in it, or crashes go unreported.
 - **Levels:** a room that reads as a level (`rm_cave_2`, not `rm_main_menu` or `rm_title`) starts that level on its
   own. A game whose levels aren't rooms calls `glitchless_level_start(id)` (the first call turns the rooms off), and
   every game calls `glitchless_level_complete(undefined, score)` and `glitchless_level_fail(undefined, cause)` where
-  a level ends.
+  a level ends, and `glitchless_level_abandon()` where the player leaves one mid-level (the menu, a restart): never a
+  fail. Quitting mid-level sends the abandon by itself.
 - **Deaths:** `glitchless_death(x, y, cause)` where the player dies.
 - **Gauges:** `glitchless_set_context({ enemies: instance_number(obj_enemy), bullets: instance_number(obj_bullet) })`
   in a controller's End Step: whatever is created in bulk. The SDK already sends `instances`, `surfaces`, `ds_maps`,

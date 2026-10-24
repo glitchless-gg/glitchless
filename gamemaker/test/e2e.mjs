@@ -174,7 +174,7 @@ try {
   build();
   // The runner's save area (every GameMaker game run from the IDE shares it): only Glitchless's own files go.
   const runnerSave = path.join(os.homedir(), 'Library/Application Support/com.yoyogames.macyoyorunner/glitchless');
-  for (const f of ['selftest.json', 'measure.json', 'outbox.json', 'outbox.json.tmp', 'player_id', 'args.txt']) fs.rmSync(path.join(runnerSave, f), { force: true });
+  for (const f of ['selftest.json', 'measure.json', 'outbox.json', 'outbox.json.tmp', 'player_id', 'args.txt', 'launched']) fs.rmSync(path.join(runnerSave, f), { force: true });
   // 0. selftest
   runGame(['-glitchless-selftest'], 'selftest');
   const self = JSON.parse(fs.readFileSync(inSave('glitchless/selftest.json'), 'utf8'));
@@ -221,6 +221,11 @@ try {
     assert.ok(!/"(sid|pid|session_id|player_id)"/.test(saved), 'an ID was written to disk');
     assert.ok(!fs.existsSync(playerFile), 'player_id file exists');
   });
+  check('offline: each saved batch keeps its own batch ID, for the server to spot a repeat', () => {
+    const ids = JSON.parse(saved).batches.map((b) => b.batch_id);
+    assert.ok(ids.length > 0 && ids.every((id) => /^b_[a-z0-9]{16}$/.test(id)), JSON.stringify(ids));
+    assert.equal(new Set(ids).size, ids.length);
+  });
 
   // 2. online
   server = await startServer(port, dataDir);
@@ -258,6 +263,25 @@ try {
   });
   check('anonymous sessions carry no player ID', () => {
     for (const s of anon) assert.equal(s.player_id, s.session_id);
+  });
+  check('load: stamped at the first frame, and first_launch only on the first launch of the version here', () => {
+    const loads = [];
+    for (const s of sessions) {
+      const start = raw().find((e) => e.session_id === s.session_id && e.type === 'session_start');
+      const load = raw().find((e) => e.session_id === s.session_id && e.type === 'load' && e.ttff_ms != null);
+      assert.ok(start && load, `${s.session_id}: ${raw().filter((e) => e.session_id === s.session_id && !['frame_window', 'hitch', 'custom'].includes(e.type)).map((e) => e.type + (e.type === 'load' ? JSON.stringify({ ttff_ms: e.ttff_ms, ttp_ms: e.ttp_ms }) : '')).join(' ')}`);
+      assert.ok(load.ts - start.ts < 1500, `load ${load.ts - start.ts} ms after the start: the first frame, not the first flush at 2 s`);
+      loads.push(load.first_launch);
+    }
+    assert.deepEqual(loads.sort(), [false, false, true]);
+  });
+  check('nothing is stored twice: every batch carried its batch_id', () => {
+    const seen = new Set();
+    for (const e of raw()) {
+      const key = JSON.stringify({ ...e, received: 0 });
+      assert.ok(!seen.has(key), `stored twice: ${e.type} in ${e.session_id}`);
+      seen.add(key);
+    }
   });
   const detail = async (id) => (await query(port, 'session', { id })).session;
   const anonDevice = (await detail(anon[0].session_id)).device;

@@ -25,10 +25,12 @@ function __glitchless_flush(_g) {
     if (!_g.session_start_sent) {
         array_insert(_g.queue, 0, __glitchless_session_start_event(_g));
         _g.session_start_sent = true;
-        if (_g.first_frame_ms > 0 && !_g.load_sent) {
-            _g.load_sent = true;
-            array_push(_g.queue, { type: "load", ts: __glitchless_now(_g), level: _g.level, ttff_ms: _g.first_frame_ms, assets: undefined });
-        }
+    }
+    // Once a launch, with the first batch after the first frame: a batch can go before it (the window lost focus
+    // as the game opened), and the load would be lost if it only went with the session's start.
+    if (_g.first_frame_ms > 0 && !_g.load_sent) {
+        _g.load_sent = true;
+        array_push(_g.queue, { type: "load", ts: _g.first_frame_at, level: _g.level, ttff_ms: _g.first_frame_ms, assets: undefined, first_launch: _g.first_launch });
     }
     if (!_g.sampled) {
         _g.queue = [];
@@ -66,8 +68,13 @@ function __glitchless_add_batches(_g, _events) {
     }
 }
 
+/// `batch_id` is the batch's own random ID (SPEC §2 batch_id). It goes with every try of the batch and is saved with
+/// it, so the server stores a batch once however many times it is sent: after a reply that never came, or a launch
+/// that sends what the last one saved (a crash's batches too). It names the batch, not the player or the session, so
+/// anonymous mode saves it too. `bid` is only this launch's handle for it. The session ID goes into the hash: two
+/// players' first batches, cut seconds into their sessions, must never share an ID (the server would drop one).
 function __glitchless_batch(_g, _events) {
-    var _b = { bid: _g.next_bid, service: _g.service, env: _g.env, version: _g.version, sid: _g.session_id, pid: _g.player_id, group: _g.started_at, events: _events, direct: false };
+    var _b = { bid: _g.next_bid, batch_id: __glitchless_new_id("b_", 16, _g.session_id), service: _g.service, env: _g.env, version: _g.version, sid: _g.session_id, pid: _g.player_id, group: _g.started_at, events: _events, direct: false };
     _g.next_bid += 1;
     return _b;
 }
@@ -80,6 +87,7 @@ function __glitchless_body(_b) {
         session_id: _b.sid,
         player_id: _b.pid != "" ? _b.pid : undefined, // the server uses the session ID in its place
         sdk: GLITCHLESS_SDK,
+        batch_id: _b.batch_id,
         events: _b.events
     });
 }
@@ -257,13 +265,15 @@ function __glitchless_gzip_works() {
 
 /// Batches that have not been sent are saved, so a game played offline sends when the network is back.
 /// In anonymous mode they are saved without the session ID; on the next launch each earlier session's
-/// batches go under a new random ID, so nothing written to the device ties two sessions together.
+/// batches go under a new random ID, so nothing written to the device ties two sessions together. Every
+/// mode saves each batch's own ID, so a batch the server took just before the game closed is not stored
+/// twice when the next launch sends it.
 function __glitchless_save_outbox(_g) {
     if (!_g.enabled) return;
     var _out = [];
     for (var _i = 0; _i < array_length(_g.outbox); _i++) {
         var _b = _g.outbox[_i];
-        var _saved = { service: _b.service, env: _b.env, version: _b.version, group: _b.group, events: _b.events };
+        var _saved = { batch_id: _b.batch_id, service: _b.service, env: _b.env, version: _b.version, group: _b.group, events: _b.events };
         if (_g.keeps_ids) {
             _saved.sid = _b.sid;
             _saved.pid = _b.pid;
@@ -309,8 +319,10 @@ function __glitchless_load_outbox(_g) {
             if (is_undefined(_fresh_ids[$ _group])) _fresh_ids[$ _group] = __glitchless_new_id("s_", 16);
             _sid = _fresh_ids[$ _group];
         }
+        var _batch_id = is_string(_saved[$ "batch_id"]) ? _saved.batch_id : "";
         array_push(_g.outbox, {
             bid: _g.next_bid,
+            batch_id: string_copy(_batch_id, 1, 2) == "b_" ? _batch_id : __glitchless_new_id("b_", 16), // saved before batch IDs: a new one
             service: is_string(_saved[$ "service"]) ? _saved.service : _g.service,
             env: is_string(_saved[$ "env"]) ? _saved.env : _g.env,
             version: is_string(_saved[$ "version"]) ? _saved.version : _g.version,
@@ -323,6 +335,16 @@ function __glitchless_load_outbox(_g) {
         _g.next_bid += 1;
     }
     __glitchless_log(_g, string(array_length(_g.outbox)) + " saved batches from earlier launches");
+}
+
+/// Whether this is the first launch of this game version on this device. The first after an install or an update
+/// starts cold (empty texture and file caches), which shows in the time to the first frame. The file holds only the
+/// version, the same on every player's device, so it ties no two sessions together.
+function __glitchless_note_launch(_g) {
+    var _last = __glitchless_trim(__glitchless_read_text("glitchless/launched"));
+    if (_last == _g.version) return false;
+    __glitchless_write_text("glitchless/launched", _g.version);
+    return true;
 }
 
 function __glitchless_load_player_id() {
