@@ -86,6 +86,10 @@ export function panelCsv(p) {
         head.push('Left out (other currencies)');
         row.push(p.mismatch.map((m) => `${m.events} in ${m.currency}: ${m.sum}`).join('; '));
       }
+      if (p.sandbox) {
+        head.push('Left out (sandbox purchases)');
+        row.push(p.sandbox);
+      }
       return [head, row];
     }
     case 'series':

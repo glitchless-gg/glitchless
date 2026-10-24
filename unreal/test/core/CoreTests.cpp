@@ -309,7 +309,7 @@ TEST(KeepsEverythingUntilInitThenSendsSessionStartFirst)
 	EXPECT_EQ(Env.Find("service")->AsString(), "fetch"); // service is lowercased
 	EXPECT_EQ(Env.Find("version")->AsString(), "1.2.3"); // the project's version
 	EXPECT_EQ(Env.Find("env")->AsString(), "dev"); // dev in the editor and development builds
-	EXPECT_EQ(Env.Find("sdk")->AsString(), "glitchless-unreal/0.3.0");
+	EXPECT_EQ(Env.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
 	EXPECT(Env.Find("player_id")->IsNull()); // anonymous mode has no player ID
 	EXPECT(Text::StartsWith(Env.Find("session_id")->AsString(), "s_"));
 	EXPECT_EQ(OfType(Events, "error").at(0).Find("fn")->AsString(), "LogTemp");
@@ -886,7 +886,7 @@ TEST(MeasureReportsTheNextSeconds)
 	EXPECT_EQ(Result.Find("frames")->AsInt(), 60);
 	EXPECT_EQ(Result.Find("frame_budget_ms")->AsNumber(), 16.67);
 	EXPECT_EQ(Result.Find("draw_calls")->Find("avg")->AsInt(), 40);
-	EXPECT_EQ(Result.Find("sdk")->AsString(), "glitchless-unreal/0.3.0");
+	EXPECT_EQ(Result.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
 	EXPECT_EQ(Result.Find("session_id")->AsString(), Core->GetSessionId());
 	EXPECT_EQ(Result.Find("update_cpu_ms")->Find("p50")->AsNumber(), 4.0);
 	EXPECT_EQ(Result.Find("render_cpu_ms")->Find("p50")->AsNumber(), 3.0);
@@ -1145,6 +1145,89 @@ TEST(DeviceTiersAndSteamDecks)
 	EXPECT(!DeviceFacts::IsSteamDeck(Desktop));
 }
 
+TEST(WhereAnIosBuildCameFromIsReadFromItsReceiptAndProfile)
+{
+	const std::string Phone = "/private/var/mobile/Containers/Data/Application/BE5EB9FD-3704-488D-96E8-ADB805300ED7";
+	const std::string Mac = "/Users/dev/Library/Containers/AB12/Data";
+	auto Where = [](const std::string& Home, bool Receipt, bool SandboxReceipt, bool Provisioned) {
+		DeviceFacts::FIosInstallFacts F;
+		F.Home = Home;
+		F.Receipt = Receipt;
+		F.SandboxReceipt = SandboxReceipt;
+		F.Provisioned = Provisioned;
+		return DeviceFacts::IosDistribution(F);
+	};
+	EXPECT_EQ(Where(Phone, true, false, false), "app_store");
+	EXPECT_EQ(Where(Phone, false, false, false), "testflight"); // Apple writes a receipt with every App Store install
+	EXPECT_EQ(Where(Phone.substr(8), false, false, false), "testflight");
+	EXPECT_EQ(Where(Phone, false, true, false), "testflight"); // a sandbox receipt, after a TestFlight purchase
+	EXPECT_EQ(Where(Phone, false, true, true), "development"); // a provisioning profile in the bundle
+	EXPECT_EQ(Where("/Users/dev/Library/Developer/CoreSimulator/Devices/1F2E/data/Containers/Data/Application/AB12", false, false, false), "development");
+	EXPECT_EQ(Where(Mac, false, false, false), ""); // an iPad app on a Mac without a receipt can't tell
+	EXPECT_EQ(Where("", false, false, false), "");
+	EXPECT_EQ(Where(Mac, true, false, false), "app_store");
+	EXPECT_EQ(Where(Mac, false, true, false), "testflight");
+	EXPECT(DeviceFacts::IsSandbox("testflight") && DeviceFacts::IsSandbox("development"));
+	EXPECT(!DeviceFacts::IsSandbox("app_store") && !DeviceFacts::IsSandbox(""));
+}
+
+TEST(TestFlightSessionsAreTestersAndTheirPurchasesSayTheyreSandboxOnes)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Distribution = []() { return std::string("testflight"); };
+	Core->Init(FHarness::Options());
+	FValue Buy = FValue::Object();
+	Buy.Set("amount", 4.99);
+	Buy.Set("currency", "USD");
+	Buy.Set("item", "full_version");
+	Core->Track("purchase", Buy);
+	FValue Unlock = FValue::Object();
+	Unlock.Set("price", 2);
+	Unlock.Set("currency", "EUR");
+	Core->Track("unlock", Unlock);
+	FValue Pick = FValue::Object();
+	Pick.Set("what", "forge");
+	Core->Track("level_pick", Pick);
+	FValue Set = FValue::Object();
+	Set.Set("sandbox", false);
+	Core->Track("purchase", Set);
+	Core->Flush();
+	const std::vector<FValue> Events = H.Transport->Events();
+	EXPECT_EQ(Events.at(0).Find("session_type")->AsString(), "tester");
+	const std::vector<FValue> Custom = OfType(Events, "custom");
+	EXPECT(Custom.at(0).Find("attrs")->Find("sandbox")->AsBool());
+	EXPECT(Custom.at(1).Find("attrs")->Find("sandbox")->AsBool()); // any event with a currency
+	EXPECT(!Custom.at(2).Find("attrs")->Has("sandbox"));
+	EXPECT(!Custom.at(3).Find("attrs")->Find("sandbox")->AsBool()); // a sandbox the game set stays
+
+	FHarness Store;
+	auto App = Store.NewCore();
+	App->Distribution = []() { return std::string("app_store"); };
+	App->Init(FHarness::Options());
+	App->Track("purchase", Buy);
+	App->Flush();
+	const std::vector<FValue> Sold = Store.Transport->Events();
+	EXPECT_EQ(Sold.at(0).Find("session_type")->AsString(), "user");
+	EXPECT(!OfType(Sold, "custom").at(0).Find("attrs")->Has("sandbox"));
+
+	FHarness Bot;
+	auto Autoplay = Bot.NewCore({"-autoplay"});
+	Autoplay->Distribution = []() { return std::string("testflight"); };
+	Autoplay->Init(FHarness::Options());
+	Autoplay->Flush();
+	EXPECT_EQ(Bot.Transport->Events().at(0).Find("session_type")->AsString(), "synthetic"); // a bot on a TestFlight build is a bot
+
+	FHarness Chosen;
+	auto Player = Chosen.NewCore();
+	Player->Distribution = []() { return std::string("testflight"); };
+	FOptions O = FHarness::Options();
+	O.SessionType = "user";
+	Player->Init(O);
+	Player->Flush();
+	EXPECT_EQ(Chosen.Transport->Events().at(0).Find("session_type")->AsString(), "user"); // a type the game set wins
+}
+
 TEST(LiveSaysWhatIsGoingOn)
 {
 	FHarness H;
@@ -1159,7 +1242,7 @@ TEST(LiveSaysWhatIsGoingOn)
 	H.Frames(*Core, 1); // the frame that finishes the hitch
 	Core->ReportError("log_error", "boom", "", FValue(), false, "LogTemp");
 	const FValue L = Core->Live();
-	EXPECT_EQ(L.Find("sdk")->AsString(), "glitchless-unreal/0.3.0");
+	EXPECT_EQ(L.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
 	EXPECT_EQ(L.Find("level")->AsString(), "Arena");
 	EXPECT_EQ(L.Find("session_id")->AsString(), Core->GetSessionId());
 	EXPECT(L.Find("frames")->Size() >= 2);

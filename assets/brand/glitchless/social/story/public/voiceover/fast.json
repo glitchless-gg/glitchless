@@ -1,0 +1,50 @@
+[
+ {
+  "text": "Same",
+  "startMs": 0,
+  "endMs": 320,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "run.",
+  "startMs": 400,
+  "endMs": 720,
+  "timestampMs": 400,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Sixty",
+  "startMs": 1120,
+  "endMs": 1360,
+  "timestampMs": 1120,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "frames",
+  "startMs": 1440,
+  "endMs": 1680,
+  "timestampMs": 1440,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "a",
+  "startMs": 1720,
+  "endMs": 1760,
+  "timestampMs": 1720,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "second.",
+  "startMs": 1840,
+  "endMs": 2560,
+  "timestampMs": 1840,
+  "confidence": null,
+  "phrase": 1
+ }
+]

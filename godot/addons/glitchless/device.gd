@@ -32,6 +32,9 @@ static func info(full: bool) -> Dictionary:
 		"refresh_hz": refresh_rate(),
 		"steam_deck": deck,
 	}
+	var where := distribution()
+	if where != "":
+		d["distribution"] = where
 	if full:
 		d["model"] = OS.get_model_name()
 		d["os_version"] = OS.get_version()
@@ -184,6 +187,59 @@ static func _test_lab_setting() -> Variant:
 	if context == null or settings == null:
 		return null
 	return settings.getString(context.getContentResolver(), "firebase.test.lab")
+
+
+static var _distribution: Variant = null  # read once a launch
+
+
+## Where an iOS build was installed from: "app_store", "testflight" (TestFlight,
+## and App Review, which installs the same way), "development" (from Xcode, an
+## ad hoc or enterprise profile, or the Simulator), or "" when it can't tell and
+## on every other OS. Read from files the app can already see, so no plugin is
+## needed; only the answer is sent, never a path.
+static func distribution() -> String:
+	if _distribution == null:
+		_distribution = ios_distribution(_ios_install_facts()) if OS.get_name() == "iOS" else ""
+	return _distribution
+
+
+## TestFlight and development installs buy in Apple's sandbox, for free: their
+## sessions are testers', and their purchases aren't revenue.
+static func is_sandbox(where: String) -> bool:
+	return where == "testflight" or where == "development"
+
+
+## The rule, from what the files say (SPEC §4b). Apple writes an App Store
+## receipt, StoreKit/receipt in the app's data container, with every App Store
+## install; a TestFlight install has none until a sandbox purchase writes
+## StoreKit/sandboxReceipt; a build signed for development carries its profile,
+## embedded.mobileprovision, in the bundle. So no receipt on an iPhone or iPad
+## is TestFlight; on a Mac (an iPad app there) it says nothing.
+static func ios_distribution(facts: Dictionary) -> String:
+	var home := str(facts.get("home", ""))
+	if facts.get("receipt", false):
+		return "app_store"
+	if facts.get("provisioned", false) or home.contains("/CoreSimulator/"):
+		return "development"
+	if facts.get("sandbox_receipt", false):
+		return "testflight"
+	if home.begins_with("/var/mobile/Containers/Data/Application/") or home.begins_with("/private/var/mobile/Containers/Data/Application/"):
+		return "testflight"
+	return ""
+
+
+static func _ios_install_facts() -> Dictionary:
+	# The data container: $HOME on iOS, and user:// is its Documents folder.
+	var home := OS.get_environment("HOME")
+	if home == "":
+		home = OS.get_user_data_dir().get_base_dir()
+	var bundle := OS.get_executable_path().get_base_dir()
+	return {
+		"home": home,
+		"receipt": FileAccess.file_exists(home + "/StoreKit/receipt") or FileAccess.file_exists(bundle + "/StoreKit/receipt"),
+		"sandbox_receipt": FileAccess.file_exists(home + "/StoreKit/sandboxReceipt") or FileAccess.file_exists(bundle + "/StoreKit/sandboxReceipt"),
+		"provisioned": FileAccess.file_exists(bundle + "/embedded.mobileprovision"),
+	}
 
 
 static func _has(s: String, pattern: String) -> bool:

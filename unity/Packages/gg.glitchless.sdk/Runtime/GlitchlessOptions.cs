@@ -37,7 +37,8 @@ namespace GlitchlessSdk
         /// <summary>How often batches are sent, on a window boundary. The first goes after 2 s.</summary>
         public float FlushIntervalSeconds = 15;
         public float PositionHz = 4;
-        /// <summary>"user" or "synthetic" (bots). Empty: synthetic in batch mode or with --autoplay.</summary>
+        /// <summary>"user", "tester" or "synthetic" (bots). Empty: synthetic in batch mode or with --autoplay, tester on
+        /// a TestFlight or development install on iOS.</summary>
         public string SessionType = "";
         /// <summary>Seconds in the background after which coming back starts a new session.</summary>
         public float SessionTimeoutSeconds = 300;

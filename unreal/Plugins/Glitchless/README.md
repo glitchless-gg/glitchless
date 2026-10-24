@@ -15,7 +15,7 @@ It sends the same events as the browser, Unity and Godot SDKs, so the dashboard,
 
 From Fab: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is.
 
-From GitHub: download `glitchless-unreal-0.3.0.zip` from the [glitchless-unreal 0.3.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.3.0) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
+From GitHub: download `glitchless-unreal-0.3.1.zip` from the [glitchless-unreal 0.3.1 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.3.1) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
 
 ## Set it up
 
@@ -61,7 +61,7 @@ A packaged game starts capturing when the plugin loads, so frame times and error
 
 Bug reports are off until the game turns them on: set **Bug Report Key** (F8, as in the other SDKs) in the settings, or call Show Bug Report Dialog from the game's own menu. The box takes the game's input while it is open (the mouse is freed) and pauses the game (**Pause For Bug Report**, on by default; a game paused already stays paused).
 
-A purchase is sent when the store confirms it: `amount` goes in the numbers (a number in the currency's units, 4.99, not 499) and `currency` is the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
+A purchase is sent when the store confirms it: `amount` goes in the numbers (a number in the currency's units, 4.99, not 499) and `currency` is the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS is a free sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. On Android, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat's `isSandbox`).
 
 Every call is safe before Init and from any thread. Positions are taken in Unreal units (centimetres, Z up) and sent as every SDK sends them, metres with y up: x = X/100, y = Z/100, z = Y/100.
 
@@ -106,6 +106,8 @@ It waits for the first map plus the warmup, measures for the given seconds, prin
 
 On a phone, launch it from a Mac with the flags after the bundle ID, and the line comes back on the console: `xcrun devicectl device process launch --console --device <phone> <bundle id> -glitchless-measure=10`.
 
+Testers are not players either. A TestFlight build is a Shipping build like the App Store's and reports `prod`, so on iOS the plugin tells them apart by the receipt Apple writes with every App Store install (and the provisioning profile a development build carries): a TestFlight or development install's session is `tester`, which findings and share links leave out, unless the game sets a session type or a flag above makes it a bot's.
+
 ## Builds that can't reach the network
 
 - **Shipping Mac builds** are signed with `Sandbox.NoNet.entitlements` by default (Project Settings → Platforms → Xcode Projects → Shipping Specific Mac Entitlements): no network at all, so Glitchless can't send. Set it to `/Game/Build/Mac/Resources/Sandbox.Client.entitlements` (copied from `Engine/Build/Mac/Resources`), or `Sandbox.Server`, which Development builds already use.
@@ -127,7 +129,7 @@ Enable **Unreal MCP**, **All Toolsets** (or just Toolset Registry) and **Glitchl
 
 ## For the Glitchless server and docs (SPEC §5c)
 
-The envelope's `sdk` is `glitchless-unreal/0.3.0`. Differences from the browser SDK on the wire:
+The envelope's `sdk` is `glitchless-unreal/0.3.1`. Differences from the browser SDK on the wire:
 
 | | |
 | --- | --- |

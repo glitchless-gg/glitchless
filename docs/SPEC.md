@@ -145,7 +145,7 @@ player or the session: engine SDKs save it with the batch in every privacy mode 
 
 | type | fields |
 | --- | --- |
-| `session_start` | `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c) |
+| `session_start` | `session_type` (`user`: a player; `tester`: a person on a test build, a TestFlight or development install on iOS (§4b); `synthetic`: a bot, a playtest or a store's test phone; `simulated`: made-up data), `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck, distribution}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). The engine SDKs send `distribution` on iOS: `app_store`, `testflight` or `development` (§4b; intake drops any other value). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c) |
 | `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}`, `budget_ms` (from the display's refresh rate, read off the fastest frames and checked again as the session goes). A window never spans two levels: `levelStart` closes it, with the positions sampled so far |
 | `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`; engine SDKs also `gpu_or_os`: none of their other causes applies and what they measured inside the game, its code, physics, the renderer's CPU work and the GPU where it is timed, adds up to less than max(16 ms, 40% of the frame), so the time went to the GPU, to presenting the frame or to the OS). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
 | `load` | `ts` is when the first frame was drawn; `ttff_ms` (navigation → first rendered frame; engine SDKs: process start → first frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}`. Engine SDKs add `first_launch`: whether this is the first launch of this game version on the device (the first after an install or an update builds the shader caches and reads files the OS hasn't cached, so it starts slower). They keep the last version that ran in a file of their own to tell; it holds no ID, the same on every device. The slow-start finding compares the two when both have 3+ sessions |
@@ -208,7 +208,9 @@ sessions to compute exact-within-2% global percentiles (never average percentile
 
 `GET {api}/v1/query/{name}?service=zoomies&from={ms}&to={ms}[&version=][&env=][&level=][&steam_branch=]…`
 Header `x-glitchless-api-key: …` when the server has a read key configured. Every query reads only the project
-its key belongs to (§6); `service` picks a game inside that project. Each Steam fact (§4c: `steam_branch`,
+its key belongs to (§6); `service` picks a game inside that project. `type` keeps one session type (`user`, `tester`,
+`synthetic`, `simulated`; `all`, the default, keeps every session): `type=tester` finds the TestFlight testers that
+players' numbers leave out. Each Steam fact (§4c: `steam_branch`,
 `steam_build`, `steam_hardware`, `steam_controller`, `steam_language`, `proton`, `big_picture`, `family_shared`,
 `timed_trial`) is a filter too: `steam_branch=beta` keeps only the sessions that ran the beta (`meta.where` says so).
 
@@ -323,6 +325,15 @@ currency count in it; amounts in another currency are never added in: a money pa
 them in `mismatch: [{currency, sum, events}]`. A sum of events that never carry a currency (coins, seconds) is a
 plain number. The dashboard shows money with the currency's symbol and two decimals.
 
+**Sandbox purchases.** A purchase made where the store charges nothing (TestFlight, a build from Xcode, a store's
+test account) says `sandbox: true`. The engine SDKs add it themselves on iOS, to an event named `purchase` or one that
+carries a `currency`, when the install is a TestFlight or development one (§4b); a game adds it on any platform from
+what its billing library says (RevenueCat's `isSandbox`, a Play licence tester's test purchase). Such an event is counted
+like any other (conversion, breakdowns, `purchase:sandbox=true`), but its numbers are never added into sums, so
+revenue leaves it out whatever the filters; a money panel says how many it left out (`sandbox`, the event's count with
+`sandbox` true, when the panel's event is unfiltered). Only money is a sandbox purchase: `sandbox: true` on an event
+that isn't named `purchase` and carries no currency (a game's own sandbox mode) keeps its sums.
+
 ```json
 [ { "type": "stat", "event": "purchase", "sum": "amount", "title": "Revenue" },
   { "type": "stat", "event": "purchase", "sum": "amount", "per": "$players", "title": "Revenue per player" },
@@ -359,8 +370,20 @@ board, or call the control API:
 | `GET /api/projects/{p}/shares` | the game's links: `{id, name, service, page, pageTitle, hint, status, from, to, sums, createdAt, createdBy, expiresAt, revokedAt}`, `status` being Active, Expired or Revoked, `from` and `to` (ISO times) the pinned window or null, and `sums` whether it shows sums |
 | `DELETE /api/projects/{p}/shares/{id}` | revokes it: at once on the server that revoked it, within 15 s on the others |
 
-The link is `https://app.glitchless.gg/#/share/gl_share_…` (32 base64url characters after the prefix). Like a
+The link is `https://app.glitchless.gg/s/gl_share_…` (32 base64url characters after the prefix). Like a
 secret key it is shown once: the control table keeps its SHA-256 and the last four characters.
+
+**Previews.** Posted on X, Slack or Discord, a link shows its own card. `/s/<token>` answers crawlers with the board's
+title (the game and the page), a line of its stats for the last 7 days (a pinned link's own dates) and
+`/s/<token>/card.png`: a 1200 x 630 image of the game, the page, its first four stats and its first chart (a series
+panel, else frame time), with Glitchy, drawn as SVG and turned into a PNG with resvg (WebAssembly). Both read the
+board exactly as the link does, so they show nothing the link doesn't; a revoked or expired link gets the site's
+card and no numbers. People are sent on to the board at `/#/share/<token>`, which links made before `/s/` still
+open.
+
+**Players only.** A link's board counts the sessions of players: `session_type` user (no bots, playtests, store
+test phones or TestFlight testers) and, when the game has a `prod` environment, only that one (no dev builds), as
+findings read them.
 
 **Rolling or pinned.** A link without `from` and `to` shows the last days, from whenever it's opened: the viewer
 picks the past hour up to the past 30 days. A pinned link always shows its own window, such as a jam's week for a
@@ -855,6 +878,38 @@ browser SDK sends `steam_deck: true` when the browser shows the Deck's GPU (AMD 
 "vangogh") or a user agent names it, with `gpu_tier: "low"`, and nothing when unsure. Only these fields are sent,
 never what they were read from.
 
+**Where an iOS build came from.** A TestFlight build is a release build, so it reports the game's `prod` environment
+like an App Store install, and its purchases are free sandbox ones. The engine SDKs (Godot, Unity, Unreal) tell them
+apart in every mode, with no native plugin, from three files the app can already see, checking only that they are
+there:
+
+| | `StoreKit/receipt` in the data container | `StoreKit/sandboxReceipt` there | `embedded.mobileprovision` in the bundle | `distribution` |
+| --- | --- | --- | --- | --- |
+| App Store | yes: Apple writes it with every App Store install | | | `app_store` |
+| TestFlight (and App Review, which installs the same way) | | after a sandbox purchase | | `testflight` |
+| Xcode, ad hoc or enterprise profile, the Simulator | | after a sandbox purchase | yes (the Simulator: its path says so) | `development` |
+
+So a receipt means the App Store, a profile means a development build, and no receipt on an iPhone or iPad (a data
+container under `/var/mobile/Containers/Data/Application/`) means TestFlight. An iPad app on a Mac without a receipt
+can't tell and sends no `distribution`. The data container is `$HOME` (Godot `user://` and Unity's
+`persistentDataPath` are its `Documents`); the SDKs look in the bundle's `StoreKit/` too. One install is misread: an
+App Store app restored from a local backup without a network has no receipt until it gets one, so it reads as
+TestFlight until then. A TestFlight or development install's session is `tester` unless the game sets a session type
+or a bot flag makes it `synthetic`, and a purchase made in it says `sandbox: true` (§3b). Players' numbers (findings,
+share links) read `user` sessions, so testers stay out of them; `type=tester` finds them (§3).
+
+Apple deprecated `appStoreReceiptURL` in iOS 18 for `AppTransaction`, whose `environment` (`production`, `sandbox`,
+`xcode`) is the API's own answer; it is Swift-only and asynchronous, so it needs a native plugin in every engine. The
+receipt file is still written. Should Apple ever stop writing it, App Store installs on a phone would read as
+TestFlight, and the SDKs would have to read `AppTransaction` through a plugin instead.
+
+**Google Play's testing tracks** can't be told apart on the device. Internal, closed and open testing install from the
+Play Store like production (`InstallSourceInfo` names `com.android.vending` as the installer and the store as the
+source on every track), and nothing on the device says which track a build came from. A licence tester's test
+purchase is marked only server-side (the Play Developer API's `purchaseType` 0) or by a billing library that asks it
+(RevenueCat's `isSandbox`), so a game passes that on as `sandbox: true`, and a build for a testing track can send its
+own `env` (`beta`) or version. Firebase Test Lab phones (the pre-launch report) are already `synthetic` (§5).
+
 ## 4c. Steam facts
 
 A game that already uses Steamworks gets Steam facts on each session, so every chart, filter and comparison can split
@@ -904,13 +959,13 @@ sums (kept per minute and currency) aren't split by one either.
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.4.0"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.4.1"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default), and the server files the session under `session_id`; install and full mode send the stored `p_…` player ID (`user://glitchless/player_id`, §4b) |
-| `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, headless, or on Firebase Test Lab (Google Play's pre-launch report phones: the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton; the value is not sent), unless the game passes `session_type` |
-| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz` |
+| `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, headless, or on Firebase Test Lab (Google Play's pre-launch report phones: the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton; the value is not sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game passes `session_type` |
+| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `OS.get_executable_path()`'s folder); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz` |
 | `frame_window` | adds `gpu_ms` (Vulkan and Direct3D 12 only: Godot doesn't time the GPU on Metal or OpenGL), `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. The top-level counts are the values when the window closed; `ctx` holds each gauge's highest value in the window, so a leak check compares like with like (the top-level counts, or ctx's maxima). `hz` and `budget_ms` are measured from the frames: the 20th percentile of frame times under 100 ms (a frame can take longer than the screen's interval, never less), a first guess after 30 frames, the answer at 120, a look every 480 frames that only ever goes faster, and lowered when the OS says the screen slowed down (Low Power Mode). A window never spans two levels |
 | `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
 | `load` | `ts` is the first frame; `ttff_ms` counts from the engine's start; `first_launch` from `user://glitchless/launched` (the version that last ran) |
@@ -918,18 +973,18 @@ sums (kept per minute and currency) aren't split by one either.
 | `death` | `x`, `y`, `z` only when positions are on (full mode or `positions: true`); the server leaves unplaced deaths off heatmaps and hotspots |
 | `session_end` | `reason`: `background`, `close`, `quit`, `measure` |
 | `level_abandon` | `level_abandon()`; sent by itself, with `reason` `background`, `close` or `quit`, before `session_end` when a level is open (§2) |
-| `custom` | also `screen_change`, `app_resume` |
+| `custom` | also `screen_change`, `app_resume`. `track()` adds `sandbox: true` to a purchase in a TestFlight or development install (§3b) |
 | `bug_report` | `bug_reports` in init options adds the F8 form: a `CanvasLayer` that pauses the tree while open, with `bug_report_opened` and `bug_report_closed` signals. `report_bug(note)` sends one from the game's own UI. `screenshot` is the root viewport's last frame with its longer side at most 960 px (the browser caps the width), none in headless runs |
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.4.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.4.1"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); `Privacy.Install` and `Privacy.Full` send the stored `p_…` player ID (§4b). `batch_id` (§2) on every batch, kept through retries and saved with the batch in every mode |
-| `session_start` | `session_type` is `synthetic` in batch mode, with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, or on Firebase Test Lab (Android's `firebase.test.lab` setting is `true`, read through `UnityPlayer.currentActivity`'s content resolver; the value is not sent), unless the game sets `SessionType` |
-| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz` (`Screen.currentResolution`'s rate as the OS reports it, not the rate the game ran at: that is each `frame_window`'s `hz`), `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
+| `session_start` | `session_type` is `synthetic` in batch mode, with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, or on Firebase Test Lab (Android's `firebase.test.lab` setting is `true`, read through `UnityPlayer.currentActivity`'s content resolver; the value is not sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game sets `SessionType` |
+| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz` (`Screen.currentResolution`'s rate as the OS reports it, not the rate the game ran at: that is each `frame_window`'s `hz`), `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `Application.dataPath`'s folder, with no native plugin); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
 | `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. `gpu_ms` comes from `FrameTimingManager` (Frame Timing Stats on; the latest frame the GPU finished). The memory and object counts are their values when the window closed (sampled every 30 frames); `ctx` holds each gauge's highest value in the window. `hz` and `budget_ms` are measured as Godot's (§5). A window never spans two levels |
 | `hitch` | `causes` from `gc`, `shader_compile`, `scene_change`, `object_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `gc_collections`, `gc_alloc_kb`, `shader_compiles`, `objects_added`; `loaf` is empty |
 | `level_start` | also sent when a scene that reads as a level becomes active |
@@ -938,17 +993,17 @@ sums (kept per minute and currency) aren't split by one either.
 | `error` | `kind`: `exception` (uncaught; unhandled, like `js`), `log_error`, `assert`, `manual`, `warning`; adds `recent` (last 6 game events) |
 | `death` | `x`, `y`, `z` only when positions are on |
 | `session_end` | `reason`: `background` (phones), `quit`, `measure` |
-| `custom` | also `screen_change`, `app_resume` |
+| `custom` | also `screen_change`, `app_resume`. `Track()` adds `sandbox: true` to a purchase in a TestFlight or development install (§3b) |
 | `bug_report` | `BugReports` in the options adds the F8 form: IMGUI (no EventSystem), with `Time.timeScale` 0 and the Input System's actions off while open, and `OnOpen`/`OnClose`. `Glitchless.ReportBug(note)` sends one from the game's own UI. `screenshot` is `ScreenCapture` at the end of the frame with its longer side at most 960 px, none with `-nographics` |
 
 ## 5c. Unreal SDK
 
-`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.3.0"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
+`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.3.1"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
 
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID. `batch_id` (§2) on every batch, a bug report's and a crash's too, kept through retries and saved with the batch in every mode |
-| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only: the panel's highest rate as the OS reports it; each `frame_window`'s `hz` is the measured rate), `steam_deck`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null |
+| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only: the panel's highest rate as the OS reports it; each `frame_window`'s `hz` is the measured rate), `steam_deck`, `distribution` (iOS, §4b: the files are looked for from `FPlatformProcess::UserHomeDir()` and the main bundle); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null. `session_type` is `tester` on a TestFlight or development install on iOS unless the game sets one or a bot flag makes it `synthetic` |
 | `frame_window` | frame times from a clock at the start of each frame. Adds `game_ms` (game thread, GGameThreadTime), `process_ms` (the same, under the name the playtest gate reads), `render_ms` (render thread), `rhi_ms` (null without an RHI thread), `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles` (pipeline states created at draw time that took over 20 ms, UE 5.8), `shader_compiles` (the editor only), `packages_loaded`, `objects` (UObjects), `actors`, `heap_mb` (the process), `texture_mb`, `screen`, `window`. `draw_calls` and `triangles` only while the RHI counts them (usually null in a packaged build); `geometries`, `textures`, `programs` are null. `ctx` also holds `objects` and `actors`. Thread and GPU times are averages over the window's frames; `gc_*`, `pso_compiles`, `shader_compiles` and `packages_loaded` totals; each `ctx` gauge its highest value in the window; `objects`, `actors`, `heap_mb` and `texture_mb` the last sample. `hz` and `budget_ms` are measured from the frames: the fastest fifth of the first 30 under 100 ms, then the median of the first 120 (60 before that). A window never spans two levels |
 | `hitch` | `duration_ms` is the frame's time on the clock (Unreal leaves waits out of its thread times, so a frame stalled on a pipeline state, the GPU or the disk would look short by them). `causes` from `pso_compile`, `shader_compile`, `gc`, `map_load`, `level_stream`, `asset_load`, `script` (game thread at 40% of the frame), `render` (render, RHI or GPU at 40%), `gpu_or_os` (none of the others, and game, render, RHI and GPU time add up to under max(16 ms, 40% of the frame): waiting to present, GPU work Unreal didn't time, or the OS), `frozen` (over 700 ms). Adds `bound` (the slowest of `game`, `render`, `rhi`, `gpu`), `game_ms`, `process_ms`, `render_ms`, `rhi_ms`, `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles`, `shader_compiles`, `packages_loaded`; `loaf` is empty |
 | `level_start` | also sent when a map that reads as a level loads (not `Entry`, `MainMenu`, `Lobby`, `Loading`…); the game's first `LevelStart` turns that off |
@@ -957,7 +1012,7 @@ sums (kept per minute and currency) aren't split by one either.
 | `error` | `kind`: `crash` (fatal; written to the outbox as the game dies and sent on the next launch, with `session_end` reason `crash`; in anonymous mode under a fresh session ID), `ensure` (an error, not fatal: the game carries on, and each ensure reports once a run), `script` (a Blueprint runtime error such as Accessed None; Unreal stops that Blueprint function, so it is unhandled, like `js`), `log_error` (`UE_LOG` Error; `fn` is the log category), `warning`, `manual`; adds `recent` (last 6 game events) and, for `script`, `attrs.blueprint` |
 | `death`, `pos` | positions only when they are on (full mode, or Positions) |
 | `session_end` | `reason`: `quit`, `background` (phones), `measure`, `crash` |
-| `custom` | also `screen_change`, `app_resume`, `rage_input` |
+| `custom` | also `screen_change`, `app_resume`, `rage_input`. `Track` adds `sandbox: true` to a purchase in a TestFlight or development install (§3b) |
 | `bug_report` | a **Bug Report Key** (F8) in the plugin's settings, or `ShowBugReportDialog()`, opens a Slate box that takes the game's input and pauses it (Pause For Bug Report); `ReportBug(note)` sends one from the game's own UI. `screenshot` is the viewport read back, its longer side at most 960 px. A report is its own one-event batch in the outbox, sent after the session's events; neither the read-back frame nor the box's first draw is timed |
 
 `-glitchless-measure=S` (with `-glitchless-warmup`, `-glitchless-out`) prints `{"glitchless_measure": {…}}` as Unity and Godot do, plus `session_id`; `-autoplay` and `-glitchless-synthetic` mark the session synthetic. The optional GlitchlessToolset plugin gives Unreal MCP (UE 5.8, Experimental) `Status` and `Measure` tools for Play In Editor.

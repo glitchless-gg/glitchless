@@ -134,17 +134,15 @@ function Panel({ p }) {
   );
 }
 
-// Under a stat: what it is out of (conversion, per player), and money sent in another currency, left out.
+// Under a stat: what it is out of (conversion, per player), and money left out (another currency, sandbox purchases).
 function statSub(p) {
   const of = { $players: 'players', $sessions: 'sessions' }[p.per];
   const main = p.sum && p.base != null ? `${fmtSum(p.total, p.currency)} over ${fmtNum(p.base)} ${of}` : p.base != null ? `${fmtNum(p.count)} of ${fmtNum(p.base)}${of ? ` ${of}` : ''}` : p.note;
-  if (!p.mismatch?.length) return main;
+  if (!p.mismatch?.length && !p.sandbox) return main;
   return (
     <>
       {main}
-      <div className="warn-t" title="One currency per game: amounts in another currency are not added in.">
-        Left out: {p.mismatch.map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`).join(', ')}
-      </div>
+      <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
     </>
   );
 }
@@ -182,12 +180,15 @@ function LivePanel({ p, span }) {
   );
 }
 
-// Amounts sent in another currency than the game's, left out of a panel's sums.
-function LeftOut({ mismatch }) {
-  if (!mismatch?.length) return null;
+// Money left out of a panel's sums: amounts sent in another currency than the game's, and sandbox purchases
+// (TestFlight and other test installs, which nobody paid for).
+function LeftOut({ mismatch, sandbox }) {
+  const parts = [...(mismatch || []).map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`), ...(sandbox ? [`${fmtNum(sandbox)} sandbox ${sandbox === 1 ? 'purchase' : 'purchases'}`] : [])];
+  if (!parts.length) return null;
+  const why = [mismatch?.length && 'One currency per game: amounts in another currency are not added in.', sandbox && 'Purchases from TestFlight and other test installs are free sandbox purchases, not revenue.'].filter(Boolean).join(' ');
   return (
-    <div className="warn-t" style={{ marginTop: 6 }} title="One currency per game: amounts in another currency are not added in.">
-      Left out: {mismatch.map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`).join(', ')}
+    <div className="warn-t" style={{ marginTop: 6 }} title={why}>
+      Left out: {parts.join(', ')}
     </div>
   );
 }
@@ -200,7 +201,7 @@ function PanelBody({ p }) {
       return (
         <>
           <TimeSeries ts={p.ts} height={160} bars={p.series.length === 1} format={p.currency ? (v) => fmtMoney(v, p.currency, true) : undefined} series={p.series.map((s, i) => ({ ...s, color: colorFor(s.label, i) }))} />
-          <LeftOut mismatch={p.mismatch} />
+          <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
         </>
       );
     case 'breakdown':
@@ -211,7 +212,7 @@ function PanelBody({ p }) {
             <div className="muted s12" style={{ marginTop: 6 }}>
               {fmtSum(p.total, p.currency)} from {fmtNum(p.count)} events{p.more > 0 ? ` · ${p.more} more values` : ''}
             </div>
-            <LeftOut mismatch={p.mismatch} />
+            <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
           </>
         );
       return (

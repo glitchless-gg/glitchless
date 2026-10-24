@@ -122,6 +122,7 @@ namespace GlitchlessSdk
                 WindowSize = DeviceInfo.WindowSize,
                 ScreenHz = () => Screen.currentResolution.refreshRateRatio.value,
                 TestLabSetting = DeviceInfo.FirebaseTestLab,
+                Distribution = () => DeviceInfo.Distribution,
                 AppVersion = Application.version,
                 IsBatchMode = Application.isBatchMode,
                 IsDebugBuild = UnityEngine.Debug.isDebugBuild,

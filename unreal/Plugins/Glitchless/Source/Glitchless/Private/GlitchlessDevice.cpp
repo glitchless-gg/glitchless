@@ -11,6 +11,7 @@
 #include "GenericPlatform/GenericApplication.h"
 #include "HAL/PlatformMemory.h"
 #include "HAL/PlatformMisc.h"
+#include "HAL/PlatformProcess.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
 #include "RenderUtils.h"
@@ -18,6 +19,10 @@
 #include "UnrealClient.h"
 
 #include <cstdio>
+
+#if PLATFORM_IOS
+#include "IOS/IOSSystemIncludes.h"
+#endif
 
 namespace
 {
@@ -75,6 +80,45 @@ namespace GlitchlessDevice
 	bool IsSteamDeck()
 	{
 		return Glitchless::DeviceFacts::IsSteamDeck(SteamDeckFacts());
+	}
+
+	// Read once a launch, from files the app can already see (SPEC §4b): the App Store receipt Apple writes into the data
+	// container with every App Store install, the sandbox one a TestFlight purchase writes there, and the provisioning
+	// profile a development build carries in its bundle. Only the answer is sent, never a path.
+	const std::string& Distribution()
+	{
+		static const std::string Where = []() -> std::string {
+#if PLATFORM_IOS
+			auto Exists = [](const std::string& Path) {
+				std::FILE* F = Glitchless::Text::OpenFile(Path, "rb");
+				if (F)
+				{
+					std::fclose(F);
+				}
+				return F != nullptr;
+			};
+			Glitchless::DeviceFacts::FIosInstallFacts Facts;
+			Facts.Home = GlitchlessText::Utf8(FPlatformProcess::UserHomeDir());
+			std::string Bundle;
+			@autoreleasepool
+			{
+				if (NSString* Path = [[NSBundle mainBundle] bundlePath])
+				{
+					Bundle = [Path UTF8String];
+				}
+			}
+			for (const std::string& Dir : {Facts.Home, Bundle})
+			{
+				Facts.Receipt = Facts.Receipt || Exists(Dir + "/StoreKit/receipt");
+				Facts.SandboxReceipt = Facts.SandboxReceipt || Exists(Dir + "/StoreKit/sandboxReceipt");
+			}
+			Facts.Provisioned = Exists(Bundle + "/embedded.mobileprovision");
+			return Glitchless::DeviceFacts::IosDistribution(Facts);
+#else
+			return std::string();
+#endif
+		}();
+		return Where;
 	}
 
 	FString OsName()
@@ -155,6 +199,10 @@ namespace GlitchlessDevice
 		const int32 Hz = bMobile ? FPlatformMisc::GetMaxRefreshRate() : 0;
 		D.Set("refresh_hz", Hz > 0 ? Glitchless::FValue(Hz) : Glitchless::FValue());
 		D.Set("steam_deck", bDeck);
+		if (!Distribution().empty())
+		{
+			D.Set("distribution", Distribution());
+		}
 		if (bDetailed)
 		{
 			const FString Model = bDeck ? GlitchlessText::Tchar(Glitchless::DeviceFacts::SteamDeckModel(SteamDeckFacts())) : FPlatformMisc::GetDeviceMakeAndModel();

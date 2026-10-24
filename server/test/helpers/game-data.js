@@ -93,14 +93,16 @@ export function shopSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
     let ts = start + Math.floor(rnd() * spanMs);
     const events = [];
     const push = (e) => events.push({ ...base, ...e, ts: (ts += Math.floor(rnd() * 20_000) + 1) });
-    push({ type: 'session_start', session_type: 'user', device: { gpu_tier: 'mid', browser: 'Godot', gpu: 'Apple A17' } });
+    // Every eighth session is a TestFlight tester's: its purchases are Apple's free sandbox ones (SPEC §3b).
+    const tester = n % 8 === 7;
+    push({ type: 'session_start', session_type: tester ? 'tester' : 'user', device: { gpu_tier: 'mid', browser: 'Godot', gpu: 'Apple A17', ...(tester ? { distribution: 'testflight' } : {}) } });
     // Coins carry the level they were won on (as the SDKs send it), without level events of their own.
     for (const level of ['halcyon', 'glint'].slice(0, 1 + Math.floor(rnd() * 2))) push({ type: 'custom', level, name: 'coins', attrs: { amount: Math.round(rnd() * 4000) / 100, source: pick(['run', 'chest']) } });
     if (rnd() < 0.6) push({ type: 'custom', name: 'paywall', attrs: { where: pick(['shop', 'settings']) } });
     for (let k = rnd() < 0.45 ? 1 + Math.floor(rnd() * 2) : 0; k > 0; k--) {
       const [item, amount] = pick(items);
       const currency = rnd() < 0.15 ? 'EUR' : rnd() < 0.15 ? 'usd' : 'USD';
-      push({ type: 'custom', name: 'purchase', attrs: { amount, currency, item, store: pick(['ios', 'android']) } });
+      push({ type: 'custom', name: 'purchase', attrs: { amount, currency, item, store: pick(['ios', 'android']), ...(tester ? { sandbox: true } : {}) } });
     }
     if (rnd() < 0.8) push({ type: 'session_end', reason: 'pagehide' });
     out.push(events);

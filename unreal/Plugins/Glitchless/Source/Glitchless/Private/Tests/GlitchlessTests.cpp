@@ -95,7 +95,7 @@ bool FGlitchlessGzipTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the batch is gzip"), Body.size() > 2 && Body[0] == 0x1f && Body[1] == 0x8b);
 	Glitchless::FValue Envelope;
 	TestTrue(TEXT("it unpacks to JSON"), Glitchless::FValue::Parse(Gunzip(Body), Envelope));
-	TestEqual(TEXT("sdk"), GlitchlessText::Tchar(Envelope.Find("sdk") ? Envelope.Find("sdk")->AsString() : ""), FString(TEXT("glitchless-unreal/0.3.0")));
+	TestEqual(TEXT("sdk"), GlitchlessText::Tchar(Envelope.Find("sdk") ? Envelope.Find("sdk")->AsString() : ""), FString(TEXT("glitchless-unreal/0.3.1")));
 	const FString BatchId = GlitchlessText::Tchar(Envelope.Find("batch_id") ? Envelope.Find("batch_id")->AsString() : "");
 	TestTrue(TEXT("the batch has its own batch_id"), BatchId.StartsWith(TEXT("b_")) && BatchId.Len() == 18);
 	return true;

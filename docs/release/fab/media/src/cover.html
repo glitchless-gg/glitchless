@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="size" content="960x270">
+<title>Glitchless Fab cover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@800&family=JetBrains+Mono:wght@700&display=block" rel="stylesheet">
+<style>
+  /* The Fab publisher profile's cover photo, 1920 x 540 (drawn at 960 x 270, saved at 2x). The X banner's frame-time
+     chart, a stutter and then the agent's fix, with Glitchy beside it. Everything sits in the middle, clear of the
+     bottom left where profile pages put the avatar and of the edges a narrow screen crops. */
+  :root { --mint: #2EE6A6; --navy: #14213D; --navy-2: #0f1a31; --coral: #FF6B57; --white: #FFFFFF; --slate: #52648F; --rule: #2A3A60 }
+  * { box-sizing: border-box; margin: 0 }
+  html, body { width: 960px; height: 270px; overflow: hidden }
+  body { position: relative; background: radial-gradient(70% 120% at 70% 0%, #1d2e52 0%, var(--navy) 55%, var(--navy-2) 100%) }
+  h1 { position: absolute; left: 0; right: 0; top: 52px; text-align: center; font: 800 36px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
+  h1 span { color: var(--mint) }
+  .chart { position: absolute; left: 290px; width: 380px; top: 128px; height: 108px; display: grid; grid-template-columns: 1fr 1fr }
+  .side { display: flex; align-items: flex-end; gap: 5px; padding: 0 12px }
+  .side i { flex: 1; background: var(--slate); border-radius: 3px 3px 0 0 }
+  .side i.hot { background: var(--coral) }
+  .after i { background: var(--mint) }
+  .base { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--rule) }
+  .fix { position: absolute; left: 50%; top: 24px; bottom: -8px; border-left: 2px dashed var(--white) }
+  .label { position: absolute; font: 700 16px/1 "JetBrains Mono", monospace; white-space: nowrap }
+  .label.spike { color: var(--coral) }
+  .label.fixed { color: var(--mint) }
+  .label.agent { color: var(--white); left: 50%; top: 0; transform: translateX(-50%) }
+  .glitchy { position: absolute; left: 700px; top: 92px; width: 150px; height: 150px; object-fit: contain }
+</style>
+</head>
+<body>
+<h1>Vibe debugging <span>for games.</span></h1>
+<div class="chart" id="chart">
+  <div class="side before" id="before"></div>
+  <div class="side after" id="after"></div>
+  <div class="base"></div>
+  <div class="fix"></div>
+  <span class="label agent">agent fix</span>
+  <span class="label spike" id="spike">51 ms</span>
+  <span class="label fixed" id="fixed">16 ms</span>
+</div>
+<img class="glitchy" src="../../../../../assets/brand/glitchless/mascot/on-dark/glitchy-wave.png" alt="">
+<script>
+// Frame times as bars: before the fix uneven with one stutter, after it short and even (the X banner's numbers).
+const before = [34, 40, 31, 100, 37, 46, 42, 35, 48];
+const after = [17, 18, 16, 17, 18, 17, 16, 18, 17];
+const bars = (id, values, hot) => values.forEach((v, i) => { const b = document.createElement('i'); b.style.height = `${v * 0.78}%`; if (i === hot) b.className = 'hot'; document.getElementById(id).append(b); });
+bars('before', before, 3);
+bars('after', after, -1);
+const chart = document.getElementById('chart').getBoundingClientRect();
+const place = (label, bar) => { const r = bar.getBoundingClientRect(); const l = document.getElementById(label); l.style.left = `${r.left - chart.left + r.width / 2}px`; l.style.top = `${r.top - chart.top - 7}px`; l.style.transform = 'translate(-50%, -100%)'; };
+place('spike', document.querySelector('#before i.hot'));
+place('fixed', document.querySelectorAll('#after i')[4]);
+</script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+[
+ {
+  "text": "The",
+  "startMs": 0,
+  "endMs": 160,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "fix:",
+  "startMs": 240,
+  "endMs": 1120,
+  "timestampMs": 240,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Claude",
+  "startMs": 1240,
+  "endMs": 1520,
+  "timestampMs": 1240,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "reuses",
+  "startMs": 1640,
+  "endMs": 2080,
+  "timestampMs": 1640,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "the",
+  "startMs": 2160,
+  "endMs": 2320,
+  "timestampMs": 2160,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "same",
+  "startMs": 2440,
+  "endMs": 2560,
+  "timestampMs": 2440,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "confetti",
+  "startMs": 2640,
+  "endMs": 3120,
+  "timestampMs": 2640,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "instead",
+  "startMs": 3280,
+  "endMs": 3440,
+  "timestampMs": 3280,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "of",
+  "startMs": 3520,
+  "endMs": 3600,
+  "timestampMs": 3520,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "piling",
+  "startMs": 3640,
+  "endMs": 3920,
+  "timestampMs": 3640,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "up",
+  "startMs": 4000,
+  "endMs": 4080,
+  "timestampMs": 4000,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "more.",
+  "startMs": 4160,
+  "endMs": 4960,
+  "timestampMs": 4160,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "Now",
+  "startMs": 5160,
+  "endMs": 5360,
+  "timestampMs": 5160,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "each",
+  "startMs": 5440,
+  "endMs": 5600,
+  "timestampMs": 5440,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "frame",
+  "startMs": 5680,
+  "endMs": 6000,
+  "timestampMs": 5680,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "draws",
+  "startMs": 6120,
+  "endMs": 6480,
+  "timestampMs": 6120,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "eight",
+  "startMs": 6600,
+  "endMs": 6720,
+  "timestampMs": 6600,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "times",
+  "startMs": 6880,
+  "endMs": 7040,
+  "timestampMs": 6880,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "faster.",
+  "startMs": 7120,
+  "endMs": 7840,
+  "timestampMs": 7120,
+  "confidence": null,
+  "phrase": 4
+ }
+]

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- TestFlight testers are not players. On iOS the SDK tells a TestFlight install from an App Store one, with no native plugin: Apple writes an App Store receipt (`StoreKit/receipt` in the data container) with every App Store install and none with a TestFlight one, and a development build carries `embedded.mobileprovision`. It only checks that the files are there. `session_start.device` says `distribution` (`app_store`, `testflight` or `development`), a TestFlight or development session is `tester` unless `SessionType` is set (findings and share links count `user` sessions only), and `Track()` adds `sandbox: true` to a purchase there (an event named `purchase`, or any with a `currency`), which boards count but never add into revenue.
+
 ## 0.4.0
 
 - Needs Unity 6.3 LTS or later: Unity 2022.3 is no longer supported. Tested on Unity 6.3 LTS (6000.3.27f1) and Unity 6.5 (6000.5.9f1).

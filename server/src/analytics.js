@@ -270,6 +270,7 @@ export function overview(ctx) {
       deaths: total.n.death || 0,
       synthetic_sessions: sessions.filter((s) => s.session_type === 'synthetic').length,
       simulated_sessions: sessions.filter((s) => s.session_type === 'simulated').length,
+      tester_sessions: sessions.filter((s) => s.session_type === 'tester').length,
     },
     series,
     deployments: deployments(ctx),

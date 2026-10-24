@@ -337,6 +337,11 @@ test('a share reader reads its one board and nothing else', async () => {
       assert.equal((await app.send('any', payload(events))).status, 202);
     }
     assert.equal((await app.send('any', payload([{ service: 'other', env: 'prod', version: '1', session_id: 'o1', player_id: 'o1', type: 'session_start', ts: t0 }]))).status, 202);
+    // A dev build and a bot, a minute earlier: members see them; a share link counts players on prod only.
+    for (const [id, env, type] of [['dev_build', 'dev', 'user'], ['bot_run', 'prod', 'synthetic']]) {
+      const base = { service: 'zoomies', env, version: '1.0.0', session_id: id, player_id: null };
+      assert.equal((await app.send('any', payload([{ ...base, type: 'session_start', ts: t0 - 60_000, session_type: type }, { ...base, type: 'session_end', ts: t0 - 59_000, reason: 'quit' }]))).status, 202);
+    }
     const board = { id: 'jam', title: 'Jam', panels: [{ type: 'stat', metric: 'sessions' }, { type: 'sessions' }, { type: 'errors' }, { type: 'findings' }, { type: 'live' }, { type: 'breakdown', event: 'opened_secret_door', by: 'kind' }, { type: 'positions', level: 'level-1', show: 'both', bin: 1 }] };
     const put = await fetch(`${app.base}/v1/dashboard?service=zoomies`, { method: 'PUT', headers: { 'x-glitchless-api-key': 'full' }, body: JSON.stringify({ pages: [board, { id: 'private', title: 'Private', panels: [{ type: 'sessions' }] }, { id: 'errors', view: 'errors' }] }) });
     assert.equal(put.status, 200);
@@ -376,6 +381,7 @@ test('a share reader reads its one board and nothing else', async () => {
 
     // Members still get the whole board at the same URL, before and after (the query cache keeps them apart).
     const full = (await app.get(`/v1/query/board?service=zoomies&page=jam&from=${now - 7_200_000}&to=${now}`, 'full')).body;
+    assert.equal(full.board.panels.find((p) => p.type === 'stat').value, 6, 'members count the dev build and the bot too');
     assert.ok(full.board.panels.find((p) => p.type === 'sessions').sessions[0].session_id.startsWith('secret_session'));
     const again = (await app.get(`/v1/query/board?service=zoomies&page=jam&from=${now - 7_200_000}&to=${now}`, 'share')).body;
     assert.equal(JSON.stringify(again).includes('secret_session'), false);
@@ -426,7 +432,7 @@ test('a share reader reads its one board and nothing else', async () => {
     for (const p of refused) assert.equal((await app.get(p, 'share')).status, 403, p);
     for (const [method, p] of [['PUT', '/v1/dashboard?service=zoomies'], ['DELETE', '/v1/dashboard?service=zoomies'], ['DELETE', '/v1/data?service=zoomies'], ['POST', '/v1/query/board']])
       assert.equal((await fetch(app.base + p, { method, headers: { 'x-glitchless-api-key': 'share' }, body: method === 'PUT' ? JSON.stringify({ pages: [board] }) : undefined })).status, 403, `${method} ${p}`);
-    assert.equal((await app.get('/v1/query/sessions?service=zoomies', 'full')).body.sessions.length, 4, 'nothing was deleted');
+    assert.equal((await app.get('/v1/query/sessions?service=zoomies', 'full')).body.sessions.length, 6, 'nothing was deleted');
 
     // Share readers are rate limited where their reads compute: by their own rps, or DEFAULT_SHARE_RPS (10/s,
     // bursts of 20). Each of these asks for a window nobody has asked for yet.

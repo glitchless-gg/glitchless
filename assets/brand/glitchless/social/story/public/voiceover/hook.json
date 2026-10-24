@@ -1,0 +1,50 @@
+[
+ {
+  "text": "It",
+  "startMs": 0,
+  "endMs": 160,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "runs",
+  "startMs": 320,
+  "endMs": 480,
+  "timestampMs": 320,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "great",
+  "startMs": 560,
+  "endMs": 880,
+  "timestampMs": 560,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "on",
+  "startMs": 960,
+  "endMs": 1040,
+  "timestampMs": 960,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "your",
+  "startMs": 1080,
+  "endMs": 1120,
+  "timestampMs": 1080,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "machine.",
+  "startMs": 1200,
+  "endMs": 2000,
+  "timestampMs": 1200,
+  "confidence": null,
+  "phrase": 0
+ }
+]

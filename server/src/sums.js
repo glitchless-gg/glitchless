@@ -72,7 +72,8 @@ export function sumsBy(ctx, f, sum, { split = null, currency = null } = {}) {
     }
   }
   if (ctx.daily) approximate(ctx, 'event_sums', cut);
-  const money = [...raw.values()].some((g) => [...g.keys()].some(Boolean));
+  // Events that carry a currency are money even when none was summed (every one a sandbox purchase).
+  const money = [...raw.values()].some((g) => [...g.keys()].some(Boolean)) || !!eventIndex(ctx).get(f.name)?.attrs.has('currency');
   const cur = money ? gameCurrency(ctx, currency) : null;
   const groups = new Map();
   const mismatch = new Map();

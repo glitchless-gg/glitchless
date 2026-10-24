@@ -104,6 +104,22 @@ namespace Glitchless
 		bool IsSteamDeck(const FSteamDeckFacts& Facts);
 		bool IsSteamOS(const FSteamDeckFacts& Facts);
 		std::string SteamDeckModel(const FSteamDeckFacts& Facts);
+
+		/** What an iOS install shows about where it came from, read from files the app can already see. */
+		struct FIosInstallFacts
+		{
+			std::string Home; // NSHomeDirectory(): the app's data container
+			bool Receipt = false; // StoreKit/receipt: Apple writes one with every App Store install
+			bool SandboxReceipt = false; // StoreKit/sandboxReceipt: written by a TestFlight or development build's purchase
+			bool Provisioned = false; // embedded.mobileprovision in the bundle: signed for development, ad hoc or enterprise
+		};
+		/** "app_store", "testflight" (TestFlight, and App Review, which installs the same way), "development" (from
+		 * Xcode, an ad hoc or enterprise profile, or the Simulator), or "" when it can't tell. No receipt on an iPhone
+		 * or iPad is TestFlight; on a Mac (an iPad app there) it says nothing. The same rule as Godot's and Unity's. */
+		std::string IosDistribution(const FIosInstallFacts& Facts);
+		/** TestFlight and development installs buy in Apple's sandbox, for free: their sessions are testers', and their
+		 * purchases aren't revenue. */
+		bool IsSandbox(const std::string& Distribution);
 	}
 
 	namespace Levels

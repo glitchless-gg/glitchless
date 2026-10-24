@@ -57,7 +57,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.4.0";
+        public const string SdkVersion = "0.4.1";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -97,6 +97,7 @@ namespace GlitchlessSdk
         public Func<int[]> WindowSize = () => null;
         public Func<double> ScreenHz = () => 0; // the screen's refresh rate as the OS reports it, 0 when unknown
         public Func<string> TestLabSetting = () => null; // Android's firebase.test.lab setting (DeviceInfo.FirebaseTestLab)
+        public Func<string> Distribution = () => ""; // where an iOS build was installed from (DeviceInfo.Distribution)
         public Action<string> Log = s => UnityEngine.Debug.Log(s);
         public string AppVersion = "";
         public bool IsBatchMode, IsDebugBuild, IsMobile, IsWeb;
@@ -120,6 +121,7 @@ namespace GlitchlessSdk
         public readonly Dictionary<string, double> Ctx = new Dictionary<string, double>();
 
         string service = "unknown-game", version = "0.0.0", env = "dev", intake = "", sessionType = "user";
+        bool sandbox; // a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
         Dictionary<string, object> steamFacts; // read once Steamworks answers
         bool full, storesId, versionGiven, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
         long startedAt;
@@ -234,7 +236,8 @@ namespace GlitchlessSdk
             rageInputOn = Options.RageInput ?? !IsMobile;
             sceneLevels = Options.SceneLevels;
             debug = debug || Options.Debug || HasFlag("--glitchless-debug");
-            sessionType = SessionTypeFor(Options.SessionType, IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), TestLabSetting);
+            sandbox = DeviceInfo.IsSandbox(Distribution?.Invoke() ?? "");
+            sessionType = SessionTypeFor(Options.SessionType, IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), TestLabSetting, sandbox);
             Enabled = (Options.Enabled ?? !HasFlag("--glitchless-off")) && intake != "";
             Sampled = random.NextDouble() < Options.SampleRate;
             // The first batch goes soon, so a session that crashes early is still seen.
@@ -251,17 +254,28 @@ namespace GlitchlessSdk
             if (storesId) PlayerId = LoadId(PlayerIdName, "p_");
             else TryIo(() => DeleteId(PlayerIdName));
             if (SaveDir != null) LoadOutbox();
-            Debug($"on: {service} {version} {env} -> {intake} ({PrivacyName}, {sessionType})");
+            Debug($"on: {service} {version} {env} -> {intake} ({PrivacyName}, {sessionType}{(string.IsNullOrEmpty(Distribution?.Invoke()) ? "" : ", " + Distribution())})");
         }
 
         /// <summary>The session's type: what the game set; else synthetic for a bot (batch mode, --autoplay and the flags)
         /// or a Firebase Test Lab device, whose firebase.test.lab setting is "true" (Google Play's pre-launch report plays
-        /// every new build on them); else user. The setting is read only when nothing else decides.</summary>
-        internal static string SessionTypeFor(string set, bool bot, Func<string> testLabSetting)
+        /// every new build on them); else tester for a TestFlight or development install on iOS (`sandbox`); else user.
+        /// The setting is read only when nothing else decides.</summary>
+        internal static string SessionTypeFor(string set, bool bot, Func<string> testLabSetting, bool sandbox = false)
         {
             if (!string.IsNullOrEmpty(set)) return set;
             if (bot) return "synthetic";
-            return testLabSetting?.Invoke() == "true" ? "synthetic" : "user";
+            if (testLabSetting?.Invoke() == "true") return "synthetic";
+            return sandbox ? "tester" : "user";
+        }
+
+        /// <summary>A purchase (an event named purchase, or any with a currency) made in a sandbox install says so with
+        /// sandbox: true, as Apple charged nothing for it: its amounts are left out of revenue (SPEC §3b). A sandbox the
+        /// game set itself stays as it is, and the game's dictionary is never changed.</summary>
+        internal static Dictionary<string, object> SandboxAttrs(string name, Dictionary<string, object> attrs, bool sandbox)
+        {
+            if (!sandbox || attrs.ContainsKey("sandbox") || (name != "purchase" && !attrs.ContainsKey("currency"))) return attrs;
+            return new Dictionary<string, object>(attrs) { ["sandbox"] = true };
         }
 
         public void LevelStart(string levelId) => StartLevel(levelId, fromScene: false);
@@ -355,7 +369,7 @@ namespace GlitchlessSdk
         {
             var e = Ev("custom");
             e["name"] = name;
-            e["attrs"] = attrs ?? new Dictionary<string, object>();
+            e["attrs"] = SandboxAttrs(name, attrs ?? new Dictionary<string, object>(), sandbox);
             Push(e);
             Remember(name);
         }

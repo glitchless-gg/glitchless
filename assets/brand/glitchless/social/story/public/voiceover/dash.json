@@ -1,0 +1,98 @@
+[
+ {
+  "text": "Glitchless",
+  "startMs": 0,
+  "endMs": 560,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "watches",
+  "startMs": 640,
+  "endMs": 1120,
+  "timestampMs": 640,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "every",
+  "startMs": 1280,
+  "endMs": 1440,
+  "timestampMs": 1280,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "player's",
+  "startMs": 1520,
+  "endMs": 1920,
+  "timestampMs": 1520,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "game,",
+  "startMs": 2080,
+  "endMs": 2400,
+  "timestampMs": 2080,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "and",
+  "startMs": 2480,
+  "endMs": 2560,
+  "timestampMs": 2480,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "shows",
+  "startMs": 2640,
+  "endMs": 2880,
+  "timestampMs": 2640,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "you",
+  "startMs": 2920,
+  "endMs": 2960,
+  "timestampMs": 2920,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "the",
+  "startMs": 3040,
+  "endMs": 3200,
+  "timestampMs": 3040,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "worst",
+  "startMs": 3280,
+  "endMs": 3520,
+  "timestampMs": 3280,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "problems",
+  "startMs": 3600,
+  "endMs": 4000,
+  "timestampMs": 3600,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "first.",
+  "startMs": 4080,
+  "endMs": 4800,
+  "timestampMs": 4080,
+  "confidence": null,
+  "phrase": 1
+ }
+]

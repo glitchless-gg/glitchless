@@ -239,6 +239,7 @@ export function App({ shell: custom = {} }) {
                   <select value={type} onChange={(e) => setType(e.target.value)}>
                     <option value="all">*</option>
                     <option value="user">user</option>
+                    <option value="tester">tester (TestFlight)</option>
                     <option value="synthetic">synthetic (bots)</option>
                     <option value="simulated">simulated</option>
                   </select>

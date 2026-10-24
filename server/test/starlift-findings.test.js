@@ -317,7 +317,7 @@ test('findings read the production sessions of players unless asked otherwise', 
     const players = await app.get(`/v1/query/findings?${range}`);
     assert.ok(!players.findings.some((f) => f.id === 'error-e1ceb921'), `findings: ${players.findings.map((f) => f.id)}`);
     assert.deepEqual(players.meta.findings_from, { env: 'prod', type: 'user', sessions: 4, of: 9 });
-    assert.match(players.meta.note, /findings read the 4 prod sessions of players \(no dev builds or bots\) of the 9 in the range/);
+    assert.match(players.meta.note, /findings read the 4 prod sessions of players \(no dev builds, bots or testers\) of the 9 in the range/);
     const all = await app.get(`/v1/query/findings?${range}&type=all`);
     assert.ok(all.findings.some((f) => f.id === 'error-e1ceb921'), 'asked for every session type');
     assert.equal(all.meta.findings_from, undefined);

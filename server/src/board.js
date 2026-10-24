@@ -520,9 +520,15 @@ function panelData(ctx, p, board, maps, currency) {
 
 // ── sums and conversion (sums.js) ──
 
-// Money panels say their currency, and name the events sent in another one rather than adding them up.
-function money(s) {
-  return { currency: s.currency, ...(s.mismatch.length ? { mismatch: s.mismatch } : {}) };
+// Money panels say their currency, name the events sent in another one rather than adding them up, and count the
+// sandbox purchases they leave out (TestFlight and other test installs: rollups.js isSandboxPurchase).
+function money(s, ctx, f) {
+  const sandbox = f.value == null && (s.currency || f.name === 'purchase') ? sandboxPurchases(ctx, f.name) : 0;
+  return { currency: s.currency, ...(s.mismatch.length ? { mismatch: s.mismatch } : {}), ...(sandbox ? { sandbox } : {}) };
+}
+
+function sandboxPurchases(ctx, name) {
+  return eventIndex(ctx).get(name)?.attrs.get('sandbox')?.values.get('true')?.count ?? 0;
 }
 
 function noSum(p) {
@@ -536,9 +542,9 @@ function sumStat(ctx, p, f, currency) {
   const s = sumsBy(ctx, f, p.sum, { currency });
   const g = s.groups.get('');
   const total = g?.sum ?? 0;
-  if (!p.per) return { value: total, unit: null, ...money(s), events: g?.events ?? 0 };
+  if (!p.per) return { value: total, unit: null, ...money(s, ctx, f), events: g?.events ?? 0 };
   const base = kpis(ctx)[p.per === '$players' ? 'players' : 'sessions'];
-  return base ? { value: round(total / base, 2), unit: null, ...money(s), total, base } : { empty: true, why: `No ${PER[p.per]}s in this window.` };
+  return base ? { value: round(total / base, 2), unit: null, ...money(s, ctx, f), total, base } : { empty: true, why: `No ${PER[p.per]}s in this window.` };
 }
 
 // The share of players or sessions that sent an event.
@@ -553,14 +559,14 @@ function conversion(ctx, p, f) {
 function sumSeries(ctx, p, f, currency) {
   if (!eventIndex(ctx).get(f.name).attrs.has(p.sum)) return noSum(p);
   const s = sumsBy(ctx, f, p.sum, { split: p.by || null, currency });
-  if (!p.by) return { ts: ctx.buckets, series: [{ label: p.sum, values: s.groups.get('')?.series ?? ctx.buckets.map(() => 0) }], ...money(s) };
+  if (!p.by) return { ts: ctx.buckets, series: [{ label: p.sum, values: s.groups.get('')?.series ?? ctx.buckets.map(() => 0) }], ...money(s, ctx, f) };
   const values = [...s.groups.values()].sort((a, b) => b.sum - a.sum || (a.value < b.value ? -1 : 1));
   if (!values.length) return p.by.startsWith('$') ? noSum(p) : { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
   const top = values.slice(0, p.limit || 5);
   const rest = values.slice(top.length);
   const series = top.map((x) => ({ label: x.value, values: x.series }));
   if (rest.length) series.push({ label: 'other', values: ctx.buckets.map((_, i) => round(rest.reduce((t, x) => t + x.series[i], 0), 2)) });
-  return { ts: ctx.buckets, series, ...money(s) };
+  return { ts: ctx.buckets, series, ...money(s, ctx, f) };
 }
 
 // A breakdown by sum: each value's sum, with its count and sessions as the breakdown by count has them.
@@ -582,7 +588,7 @@ function sumBreakdown(ctx, p, f, currency) {
     .sort((a, b) => b.sum - a.sum || b.count - a.count || (a.value < b.value ? -1 : 1));
   if (!rows.length) return missing(f.name);
   const top = rows.slice(0, p.limit || 10);
-  return { total: round(rows.reduce((t, r) => t + r.sum, 0), 2), count: rows.reduce((t, r) => t + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null, ...money(s) };
+  return { total: round(rows.reduce((t, r) => t + r.sum, 0), 2), count: rows.reduce((t, r) => t + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null, ...money(s, ctx, f) };
 }
 
 // A sum stat with the dashboard's currency, for versions() (sums.js versionStat).

@@ -51,5 +51,5 @@ test('every read tool passes env and session_type on to the API', async (t) => {
   await client.callTool({ name: 'glitchless_triage', arguments: {} });
   assert.deepEqual(['env', 'type'].filter((k) => k in seen[0].params), [], 'unset: left out, so findings read prod players by default');
   const listed = (await client.listTools()).tools.find((x) => x.name === 'glitchless_triage');
-  assert.deepEqual(listed.inputSchema.properties.session_type.enum, ['user', 'synthetic', 'all']);
+  assert.deepEqual(listed.inputSchema.properties.session_type.enum, ['user', 'tester', 'synthetic', 'all']);
 });

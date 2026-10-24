@@ -53,7 +53,8 @@ namespace Glitchless
 		/** How often batches are sent, on a window boundary. The first goes after 2 s. */
 		double FlushIntervalSeconds = 15;
 		double PositionHz = 4;
-		/** "user" or "synthetic" (bots). Empty: synthetic with -autoplay, -glitchless-synthetic or -glitchless-measure. */
+		/** "user", "tester" or "synthetic" (bots). Empty: synthetic with -autoplay, -glitchless-synthetic or
+		 * -glitchless-measure, tester on a TestFlight or development install on iOS. */
 		std::string SessionType;
 		/** Seconds in the background after which coming back starts a new session. */
 		double SessionTimeoutSeconds = 300;
@@ -139,8 +140,8 @@ namespace Glitchless
 	class FCore
 	{
 	public:
-		static constexpr const char* SdkVersion = "0.3.0";
-		static constexpr const char* Sdk = "glitchless-unreal/0.3.0";
+		static constexpr const char* SdkVersion = "0.3.1";
+		static constexpr const char* Sdk = "glitchless-unreal/0.3.1";
 		static constexpr int SendDeadlineMs = 1500; // how long closing or going to the background may wait on the network
 
 		FCore();
@@ -160,6 +161,8 @@ namespace Glitchless
 		std::function<FValue(bool Detailed)> Device;
 		/** The game's Steam facts (GlitchlessSteam.h), an empty object until Steamworks answers. */
 		std::function<FValue()> SteamFacts;
+		/** Where an iOS build was installed from (DeviceFacts::IosDistribution); unset or "" elsewhere. */
+		std::function<std::string()> Distribution;
 		/** UObject and actor counts and memory, sampled every 30 frames. */
 		std::function<FValue()> Engine;
 		/** Time since the app started, for time to first frame. */
@@ -390,6 +393,7 @@ namespace Glitchless
 		FGauges Ctx;
 
 		std::string Service = "unknown-game", Version = "0.0.0", Env = "dev", Intake, SessionType = "user";
+		bool Sandbox = false; // a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
 		bool VersionGiven = false;
 		bool Detailed = false, StoresId = false, PositionsOn = false, RageInputOn = false, DebugOn = false, ManualLevels = false, MapLevels = true;
 		int64_t StartedAt = 0;

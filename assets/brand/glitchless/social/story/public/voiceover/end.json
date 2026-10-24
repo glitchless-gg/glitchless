@@ -1,0 +1,58 @@
+[
+ {
+  "text": "Glitchless.",
+  "startMs": 0,
+  "endMs": 960,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Vibe",
+  "startMs": 1200,
+  "endMs": 1440,
+  "timestampMs": 1200,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "debugging",
+  "startMs": 1600,
+  "endMs": 2000,
+  "timestampMs": 1600,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "and",
+  "startMs": 2080,
+  "endMs": 2160,
+  "timestampMs": 2080,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "analytics",
+  "startMs": 2240,
+  "endMs": 2800,
+  "timestampMs": 2240,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "for",
+  "startMs": 2880,
+  "endMs": 2960,
+  "timestampMs": 2880,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "games.",
+  "startMs": 3040,
+  "endMs": 3760,
+  "timestampMs": 3040,
+  "confidence": null,
+  "phrase": 1
+ }
+]

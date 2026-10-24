@@ -22,7 +22,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.4.0"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.4.1"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
@@ -57,7 +57,7 @@ Glitchless starts itself before the first scene loads, so frame times and errors
 
 The Editor and development builds send too, with `Env` set to `dev` unless you set it, so you can check data arrives from Play mode. Release builds default to `prod`.
 
-Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the Firebase Test Lab devices Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts.
+Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the Firebase Test Lab devices Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts. Nor are testers: a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart, with no native plugin) is marked `tester`, which findings and share links leave out too.
 
 ## Tell it about your game
 
@@ -80,7 +80,7 @@ Use the game's own words for names, causes and levels, never anything a player t
 
 **Your own metrics.** `Track` takes any event: `Glitchless.Track("open", "full")`, `Glitchless.Track("play", "endless")`, or a `Dictionary<string, object>` of attributes. One word becomes the attribute `what`. The dashboard's Events page counts each event over time, breaks it down by attribute and builds funnels between events (`paywall` → `buy=done`), and the game's own dashboard, whose pages your coding agent designs with `glitchless_set_dashboard`, shows the ones that matter. Attributes are strings, numbers or booleans, at most 12 per event.
 
-**Purchases** have one convention in every Glitchless SDK: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` (with Unity IAP, `product.metadata.localizedPrice` as a `double` and `isoCurrencyCode`). Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
+**Purchases** have one convention in every Glitchless SDK: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` (with Unity IAP, `product.metadata.localizedPrice` as a `double` and `isoCurrencyCode`). Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS is a free sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. On Android, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat's `isSandbox`).
 
 **Scenes as levels.** When a scene becomes the active one, it's a level and `level_start` is sent, unless its name reads as a menu, loader, overlay or end screen: `Boot`, `Bootstrap`, `Init`, `Preloader`, `Loading`, `Splash`, `Title`, `MainMenu`, `UI`, `HUD`, `Pause`, `GameOver`, `Settings`, `Credits`, `Shop`, `Empty` and the like (the words are matched after splitting camelCase). The level ends when its scene unloads. A menu made active on top doesn't end it. `SceneManager.LoadScene` of the same scene is a restart. Change it with:
 

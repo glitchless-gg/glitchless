@@ -24,9 +24,11 @@ const events = shopSessions({ start: START, spanMs: 2 * 3_600_000, sessions: 80 
 const ctxOf = (list = events) => buildContext(list, { service: 'zoomies', from: START - 60_000, to: NOW, type: 'all' });
 const r2 = (v) => Math.round(v * 100) / 100;
 
-// What the board should say, worked out from the events themselves.
+// What the board should say, worked out from the events themselves. Sandbox purchases (TestFlight testers') count as
+// purchases but are never added into money.
 const purchases = events.filter((e) => e.name === 'purchase');
-const inCurrency = (c) => purchases.filter((e) => e.attrs.currency.toUpperCase() === c);
+const sandbox = purchases.filter((e) => e.attrs.sandbox === true);
+const inCurrency = (c) => purchases.filter((e) => !e.attrs.sandbox && e.attrs.currency.toUpperCase() === c);
 const total = (list) => r2(list.reduce((t, e) => t + e.attrs.amount, 0));
 const players = new Set(events.map((e) => e.player_id)).size;
 const sessions = new Set(events.map((e) => e.session_id)).size;
@@ -37,6 +39,7 @@ test('the data has what these tests need', () => {
   assert.ok(inCurrency('EUR').length >= 2 && inCurrency('USD').length > 10, `${inCurrency('EUR').length} in EUR`);
   assert.ok(purchases.some((e) => e.attrs.currency === 'usd'), 'a currency in lower case');
   assert.ok(buyers < players && buyingSessions < sessions);
+  assert.ok(sandbox.length >= 2 && sandbox.some((e) => e.attrs.currency === 'USD'), `${sandbox.length} sandbox purchases`);
 });
 
 test('a stat adds an attribute up: revenue in the game currency, with amounts in another named and left out', () => {
@@ -61,6 +64,7 @@ test('a stat adds an attribute up: revenue in the game currency, with amounts in
   const usd = total(inCurrency('USD'));
   assert.deepStrictEqual([revenue.value, revenue.unit, revenue.currency, revenue.events], [usd, null, 'USD', inCurrency('USD').length]);
   assert.deepStrictEqual(revenue.mismatch, [{ currency: 'EUR', sum: total(inCurrency('EUR')), events: inCurrency('EUR').length }]);
+  assert.equal(revenue.sandbox, sandbox.length, 'sandbox purchases are counted apart, never added in');
   assert.equal(revenue.title, 'Revenue');
   assert.deepStrictEqual([perPlayer.value, perPlayer.total, perPlayer.base, perPlayer.currency], [r2(usd / players), usd, players, 'USD']);
   assert.equal(perPlayer.title, 'purchase amount per player');
@@ -260,11 +264,15 @@ test('the app keeps the currency, lists sums with events, and answers share link
     const board = (key) => get(`/v1/query/board?service=zoomies&page=money&${range}`, key);
     const full = (await board('full')).board.panels;
     assert.deepStrictEqual([full[0].value, full[0].currency], [total(inCurrency('EUR')), 'EUR'], "the dashboard's currency");
+    // A share link counts players on prod (no dev builds): what a member sees with those filters.
+    const players = (await get(`/v1/query/board?service=zoomies&page=money&${range}&env=prod&type=user`, 'full')).board.panels;
+    assert.ok(players[2].value < full[2].value, 'the fixture has dev builds');
     const hidden = (await board('share')).board.panels;
     assert.equal(hidden[0].empty, true);
-    assert.equal(hidden[1].value, full[1].value, 'conversion is shown');
+    assert.equal(hidden[1].value, players[1].value, 'conversion is shown');
+    assert.equal(hidden[2].value, players[2].value, 'players on prod only');
     const shown = (await board('sums')).board.panels;
-    assert.equal(shown[0].value, full[0].value);
+    assert.equal(shown[0].value, players[0].value);
     assert.equal((await board('share')).board.panels[0].empty, true, 'the cache keeps the two links apart');
     const listed = (await get(`/v1/query/events?service=zoomies&${range}`, 'full')).events.find((e) => e.name === 'purchase');
     assert.deepStrictEqual(listed.sums.map((x) => x.currency), ['USD', 'EUR']);

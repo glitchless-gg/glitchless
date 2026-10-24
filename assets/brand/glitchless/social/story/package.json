@@ -1,0 +1,23 @@
+{
+  "name": "glitchless-story",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render Story out/story-raw.mp4 --codec=h264 --crf=18 --color-space=bt709 && node scripts/master.mjs out/story-raw.mp4 out/glitchless-story.mp4",
+    "still": "remotion still Story out/still.png"
+  },
+  "dependencies": {
+    "remotion": "4.0.535",
+    "@remotion/cli": "4.0.535",
+    "@remotion/media": "4.0.535",
+    "@remotion/transitions": "4.0.535",
+    "@remotion/google-fonts": "4.0.535",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/react": "^19.2.0"
+  }
+}

@@ -1,0 +1,234 @@
+[
+ {
+  "text": "So",
+  "startMs": 0,
+  "endMs": 240,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "we",
+  "startMs": 480,
+  "endMs": 640,
+  "timestampMs": 480,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "asked",
+  "startMs": 720,
+  "endMs": 880,
+  "timestampMs": 720,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Claude",
+  "startMs": 960,
+  "endMs": 1200,
+  "timestampMs": 960,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Code.",
+  "startMs": 1280,
+  "endMs": 1600,
+  "timestampMs": 1280,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "It",
+  "startMs": 1920,
+  "endMs": 2080,
+  "timestampMs": 1920,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "checked",
+  "startMs": 2200,
+  "endMs": 2320,
+  "timestampMs": 2200,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "Glitchless,",
+  "startMs": 2400,
+  "endMs": 3120,
+  "timestampMs": 2400,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "played",
+  "startMs": 3240,
+  "endMs": 3360,
+  "timestampMs": 3240,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "the",
+  "startMs": 3400,
+  "endMs": 3440,
+  "timestampMs": 3400,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "level",
+  "startMs": 3520,
+  "endMs": 3680,
+  "timestampMs": 3520,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "itself,",
+  "startMs": 3800,
+  "endMs": 4320,
+  "timestampMs": 3800,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "and",
+  "startMs": 4440,
+  "endMs": 4560,
+  "timestampMs": 4440,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "found",
+  "startMs": 4720,
+  "endMs": 4880,
+  "timestampMs": 4720,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "it:",
+  "startMs": 4960,
+  "endMs": 5520,
+  "timestampMs": 4960,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "every",
+  "startMs": 5600,
+  "endMs": 5840,
+  "timestampMs": 5600,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "pickup",
+  "startMs": 5920,
+  "endMs": 6240,
+  "timestampMs": 5920,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "leaves",
+  "startMs": 6320,
+  "endMs": 6480,
+  "timestampMs": 6320,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "behind",
+  "startMs": 6560,
+  "endMs": 6960,
+  "timestampMs": 6560,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "eight",
+  "startMs": 7040,
+  "endMs": 7200,
+  "timestampMs": 7040,
+  "confidence": null,
+  "phrase": 5
+ },
+ {
+  "text": "hundred",
+  "startMs": 7360,
+  "endMs": 7680,
+  "timestampMs": 7360,
+  "confidence": null,
+  "phrase": 5
+ },
+ {
+  "text": "bits",
+  "startMs": 7840,
+  "endMs": 8000,
+  "timestampMs": 7840,
+  "confidence": null,
+  "phrase": 5
+ },
+ {
+  "text": "of",
+  "startMs": 8040,
+  "endMs": 8080,
+  "timestampMs": 8040,
+  "confidence": null,
+  "phrase": 5
+ },
+ {
+  "text": "confetti,",
+  "startMs": 8160,
+  "endMs": 8800,
+  "timestampMs": 8160,
+  "confidence": null,
+  "phrase": 5
+ },
+ {
+  "text": "and",
+  "startMs": 8920,
+  "endMs": 9040,
+  "timestampMs": 8920,
+  "confidence": null,
+  "phrase": 6
+ },
+ {
+  "text": "nothing",
+  "startMs": 9200,
+  "endMs": 9520,
+  "timestampMs": 9200,
+  "confidence": null,
+  "phrase": 6
+ },
+ {
+  "text": "cleans",
+  "startMs": 9600,
+  "endMs": 9840,
+  "timestampMs": 9600,
+  "confidence": null,
+  "phrase": 6
+ },
+ {
+  "text": "them",
+  "startMs": 9880,
+  "endMs": 9920,
+  "timestampMs": 9880,
+  "confidence": null,
+  "phrase": 6
+ },
+ {
+  "text": "up.",
+  "startMs": 10000,
+  "endMs": 10400,
+  "timestampMs": 10000,
+  "confidence": null,
+  "phrase": 6
+ }
+]

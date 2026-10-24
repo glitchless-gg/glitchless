@@ -12,7 +12,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `persistentDataPath/glitchless/player_id` (in WebGL builds, in PlayerPrefs as `glitchless.player_id`, which is the browser's localStorage). Not tied to any account, device ID or advertising ID | the same ID as install mode |
-| Device | OS name, a low/mid/high tier, render pipeline and graphics API, screen size, refresh rate, and whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
+| Device | OS name, a low/mid/high tier, render pipeline and graphics API, screen size, refresh rate, whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless `Positions = true`: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
 | Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install mode |
 
@@ -21,6 +21,8 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 `Positions = true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
 On Android, every mode reads one system setting, `firebase.test.lab`: Google Play's pre-launch report sets it on Google's test phones (Firebase Test Lab), and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. It is read on the device, only to mark the session, and the setting itself is not sent.
+
+On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
 
 No mode reads or sends:
 
@@ -33,13 +35,13 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.4.0`) and `batch_id` (random, made for each batch and sent again with its retries).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.4.1`) and `batch_id` (random, made for each batch and sent again with its retries).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`background`, `quit`, `measure`), `duration_s` | going to the background on a phone, quitting |
 | `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, update/physics/render/GPU ms, draw calls, SetPass calls, batches, triangles, GC collections, GC heap and system memory MB; in development builds also mesh, material, texture, object and GameObject counts and allocation per frame; `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each at its highest in the window; the counts outside `ctx` are their value as the window closed) | every 5 s |
 | `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK times in the game), the same timings and counts for that one frame, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
@@ -48,7 +50,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a scene that is a level becomes active | the game calls them, or a scene loads |
 | `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`) when Glitchless sends it | the game calls it, or the game goes to the background (phones) or quits mid-level |
 | `death` | `cause`; **full** or `Positions`: `x`, `y`, `z` | the game calls it |
-| `custom` | `name`, `attrs`: the game's own words via `Track()` | the game calls it |
+| `custom` | `name`, `attrs`: the game's own words via `Track()`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key name or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or `Positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
 | `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the screen as Unity drew it), `device` (the same fields as `session_start`, in the same mode), `recent` (the last 20 game events and hitches: when, which, and the few fields above that say what happened), `frames` (fps and p95 of the last frame windows); **full** or `Positions`: `x`, `y`, `z` | the player sends one from the form, or the game calls `Glitchless.ReportBug()`. Off unless the game turns it on |
@@ -65,6 +67,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `renderer`, `driver` | `urp`, `Metal` | all |
 | `screen`, `refresh_hz` | `[1290, 2796]`, `120`: `refresh_hz` is the screen's rate as the OS reports it, often its highest, not the rate the game ran at (that is each frame window's `hz`) | all |
 | `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` in Linux players, and through Proton's `Z:` drive in Windows players; read on the device and not sent) | all |
+| `distribution` | iOS only: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there; left out when it can't tell | all |
 | `model`, `os_version` | `iPhone16,1`, `iOS 27.1` | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |
 | `cores`, `memory_gb` | `6`, `8` | **full** |

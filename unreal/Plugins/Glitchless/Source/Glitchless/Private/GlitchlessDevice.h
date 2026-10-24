@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Core/GlitchlessJson.h"
 
+#include <string>
 #include <vector>
 
 /**
@@ -20,6 +21,8 @@ namespace GlitchlessDevice
 	Glitchless::FValue Collect(bool bDetailed);
 	FString OsName();
 	bool IsSteamDeck();
+	/** Where an iOS build was installed from: "app_store", "testflight", "development", or "" (can't tell, or not iOS). */
+	const std::string& Distribution();
 	std::vector<int> ScreenSize();
 	std::vector<int> WindowSize();
 }

@@ -262,6 +262,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     }
     const ids = params.get('sessions')?.split(',').map((s) => s.trim()).filter(Boolean);
     const q = { service, from, to, env: params.get('env') || null, version: params.get('version') || null, type: params.get('type') || 'all', sessions: ids?.length ? new Set(ids) : null, plan: reader.plan ?? null };
+    // A share link shows players: the sessions of people (no bots, playtests, store test phones or TestFlight testers) on
+    // the game's prod environment when it has one (no dev builds), as findings read them.
+    if (reader.share) {
+      q.type = 'user';
+      if (services.find((s) => s.service === service)?.envs?.includes('prod')) q.env = 'prod';
+    }
     // The levels a board's positions panels draw paths for: a store that keeps summaries reads their position
     // samples apart (only a saved dashboard has positions panels).
     const saved = name === 'board' ? await store.getDashboard(projectId, service) : undefined;
@@ -294,7 +300,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     // A game in anonymous mode sends no player IDs, so every players count in the answer is a count of sessions.
     if (playersAreSessions(ctx)) Object.assign(meta, { players_are_sessions: true, note: [meta.note, PLAYERS_ARE_SESSIONS].filter(Boolean).join('; ') });
     // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
-    // production sessions of players (not dev builds, not bots) when it has any, and meta says which they read.
+    // production sessions of players (not dev builds, bots or testers) when it has any, and meta says which they read.
     const findingsContext = async () => {
       if (params.get('env') || params.get('type') || q.sessions) return ctx;
       const env = services.find((s) => s.service === service)?.envs?.includes('prod') ? 'prod' : null;
@@ -303,7 +309,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       const n = sessionCount(players);
       if (!n || n === sessionCount(ctx)) return ctx;
       meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx) };
-      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds or ' : ''}bots) of the ${sessionCount(ctx)} in the range`].filter(Boolean).join('; ');
+      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range`].filter(Boolean).join('; ');
       return players;
     };
     switch (name) {

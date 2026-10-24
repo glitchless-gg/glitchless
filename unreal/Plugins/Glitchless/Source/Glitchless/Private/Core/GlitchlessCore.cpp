@@ -173,6 +173,8 @@ namespace Glitchless
 		RageInputOn = Options.RageInput.value_or(!IsMobile);
 		MapLevels = Options.MapLevels;
 		DebugOn = DebugOn || Options.Debug || HasFlag("glitchless-debug");
+		const std::string Where = Distribution ? Distribution() : std::string();
+		Sandbox = DeviceFacts::IsSandbox(Where);
 		if (!Options.SessionType.empty())
 		{
 			SessionType = Options.SessionType;
@@ -180,6 +182,10 @@ namespace Glitchless
 		else if (IsHeadless || HasFlag("autoplay") || HasFlag("glitchless-synthetic") || HasFlag("glitchless-measure"))
 		{
 			SessionType = "synthetic";
+		}
+		else if (Sandbox)
+		{
+			SessionType = "tester"; // a person on a TestFlight or development build, not a player from the App Store
 		}
 		// A development build sends only when told to, so the developer's own play can be kept out.
 		const bool On = Options.Enabled.value_or(!IsDevelopmentBuild || Options.SendInDevelopmentBuilds || HasFlag("glitchless") || FlagIntake.has_value());
@@ -210,7 +216,7 @@ namespace Glitchless
 			}
 			LoadOutbox();
 		}
-		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + ")");
+		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + (Where.empty() ? "" : ", " + Where) + ")");
 	}
 
 	void FCore::LevelStart(const std::string& LevelId)
@@ -322,7 +328,17 @@ namespace Glitchless
 	{
 		FValue E = Ev("custom");
 		E.Set("name", Name);
-		E.Set("attrs", Attrs.IsObject() ? std::move(Attrs) : FValue::Object());
+		if (!Attrs.IsObject())
+		{
+			Attrs = FValue::Object();
+		}
+		// A purchase (an event named purchase, or any with a currency) made in a sandbox install says so, as Apple
+		// charged nothing for it: its amounts are left out of revenue (SPEC §3b). A sandbox the game set stays.
+		if (Sandbox && !Attrs.Has("sandbox") && (Name == "purchase" || Attrs.Has("currency")))
+		{
+			Attrs.Set("sandbox", true);
+		}
+		E.Set("attrs", std::move(Attrs));
 		Push(std::move(E));
 		Remember(Name);
 	}

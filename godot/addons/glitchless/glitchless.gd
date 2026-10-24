@@ -32,7 +32,7 @@ extends Node
 ##   --glitchless-synthetic        mark the session as a bot's (--autoplay does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.4.0"
+const SDK_VERSION := "0.4.1"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -79,7 +79,7 @@ const DEFAULTS := {
 	"sample_rate": 1.0,
 	"flush_interval": 5.0,  # seconds between batches
 	"position_hz": 4.0,
-	"session_type": "",  # "user" or "synthetic"; "": synthetic with --autoplay
+	"session_type": "",  # "user", "tester" or "synthetic"; "": synthetic with --autoplay, tester on TestFlight
 	"session_timeout": 300.0,  # seconds in the background after which coming back is a new session
 	"capture_warnings": false,
 	"engine_gauges": true,  # node and object counts in ctx, where the findings look for leaks
@@ -115,6 +115,7 @@ var _privacy := "anonymous"
 var _full := false
 var _positions := false
 var _session_type := "user"
+var _sandbox := false  # a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
 var _rage_input := false
 var _engine_gauges := true
 var _measure_render := true
@@ -280,10 +281,13 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_debug = _debug or bool(_opts.debug)
 	_logger.capture_warnings = bool(_opts.capture_warnings)
 	_set_measure_render(bool(_opts.measure_render_time))
+	_sandbox = Device.is_sandbox(Device.distribution())
 	if str(_opts.session_type) != "":
 		_session_type = str(_opts.session_type)
 	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or DisplayServer.get_name() == "headless" or Device.test_lab():
 		_session_type = "synthetic"  # a bot, a measure run, or Google Play's pre-launch test phones
+	elif _sandbox:
+		_session_type = "tester"  # a person on a TestFlight or development build, not a player from the App Store
 	if _opts.enabled != null:
 		enabled = bool(_opts.enabled)
 	else:
@@ -310,7 +314,7 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	elif FileAccess.file_exists(PLAYER_PATH):
 		DirAccess.remove_absolute(PLAYER_PATH)  # left by an install- or full-mode build: anonymous mode keeps no ID
 	_load_outbox()
-	_log("on: %s %s %s -> %s (%s, %s)" % [_service, _version, _env, _intake, _privacy, _session_type])
+	_log("on: %s %s %s -> %s (%s, %s%s)" % [_service, _version, _env, _intake, _privacy, _session_type, ", " + Device.distribution() if Device.distribution() != "" else ""])
 
 
 ## Forgets the player ID kept on the device (install and full mode), for a
@@ -396,8 +400,20 @@ func track(event: String, what: Variant = null) -> void:
 		attrs = what
 	elif what != null:
 		attrs = {"what": what}
-	_push({"type": "custom", "name": event, "attrs": attrs})
+	_push({"type": "custom", "name": event, "attrs": sandbox_attrs(event, attrs, _sandbox)})
 	_remember(event)
+
+
+## A purchase (an event named purchase, or any with a currency) made in a
+## sandbox install says so with sandbox: true, as Apple charged nothing for it:
+## its amounts are left out of revenue (SPEC §3b). A sandbox the game set itself
+## stays as it is.
+static func sandbox_attrs(event: String, attrs: Dictionary, sandbox: bool) -> Dictionary:
+	if not sandbox or attrs.has("sandbox") or (event != "purchase" and not attrs.has("currency")):
+		return attrs
+	var out := attrs.duplicate()
+	out["sandbox"] = true
+	return out
 
 
 ## Numbers that describe what is going on (enemies, particles, blocks). The

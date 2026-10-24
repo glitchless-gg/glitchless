@@ -93,7 +93,7 @@ export function normalize({ envelope, events }, now = Date.now()) {
     if (e.type === 'map' && (typeof e.image !== 'string' || e.image.length > 120_000)) continue;
     // A report keeps the player's note even when its screenshot is too big or not an image.
     if (e.type === 'bug_report' && e.screenshot != null && (typeof e.screenshot !== 'string' || !e.screenshot.startsWith('data:image/') || e.screenshot.length > 200_000)) delete e.screenshot;
-    if (e.type === 'session_start' && e.device && typeof e.device === 'object') e.device = steamDevice(e.device);
+    if (e.type === 'session_start' && e.device && typeof e.device === 'object') e.device = distributionDevice(steamDevice(e.device));
     out.push({ ...e, ...envelope, level: e.level ?? null, received: now });
   }
   return out;
@@ -120,6 +120,15 @@ export function steamDevice(device) {
     else delete d[k];
   }
   if (d.steam_hardware === 'deck') d.steam_deck = true;
+  return d;
+}
+
+// Where an iOS build was installed from (SPEC §4b), in the words the engine SDKs send, or nothing.
+const DISTRIBUTIONS = new Set(['app_store', 'testflight', 'development']);
+
+export function distributionDevice(device) {
+  if (!('distribution' in device) || DISTRIBUTIONS.has(device.distribution)) return device;
+  const { distribution: _, ...d } = device;
   return d;
 }
 

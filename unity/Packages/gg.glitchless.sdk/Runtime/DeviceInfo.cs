@@ -43,6 +43,7 @@ namespace GlitchlessSdk
                 ["refresh_hz"] = RefreshRate(),
             };
             d["steam_deck"] = deck;
+            if (Distribution != "") d["distribution"] = Distribution;
             if (full)
             {
                 d["model"] = SystemInfo.deviceModel;
@@ -178,6 +179,51 @@ namespace GlitchlessSdk
         {
             var hz = Screen.currentResolution.refreshRateRatio.value;
             return hz > 0 ? (object)(int)System.Math.Round(hz) : null;
+        }
+
+        static string distribution; // read once a launch
+
+        /// <summary>Where an iOS build was installed from: "app_store", "testflight" (TestFlight, and App Review, which
+        /// installs the same way), "development" (from Xcode, an ad hoc or enterprise profile, or the Simulator), or ""
+        /// when it can't tell and on every other platform. Read from files the app can already see, so no native plugin
+        /// is needed; only the answer is sent, never a path.</summary>
+        public static string Distribution => distribution ??= Application.platform == RuntimePlatform.IPhonePlayer ? IosInstall() : "";
+
+        /// <summary>TestFlight and development installs buy in Apple's sandbox, for free: their sessions are testers', and
+        /// their purchases aren't revenue.</summary>
+        public static bool IsSandbox(string where) => where == "testflight" || where == "development";
+
+        /// <summary>The rule, from what the files say (SPEC §4b). Apple writes an App Store receipt, StoreKit/receipt in the
+        /// app's data container, with every App Store install; a TestFlight install has none until a sandbox purchase
+        /// writes StoreKit/sandboxReceipt; a build signed for development carries its profile, embedded.mobileprovision,
+        /// in the bundle. So no receipt on an iPhone or iPad is TestFlight; on a Mac (an iPad app there) it says nothing.
+        /// The same rule as Godot's and Unreal's.</summary>
+        public static string IosDistribution(string home, bool receipt, bool sandboxReceipt, bool provisioned)
+        {
+            home = home ?? "";
+            if (receipt) return "app_store";
+            if (provisioned || home.Contains("/CoreSimulator/")) return "development";
+            if (sandboxReceipt) return "testflight";
+            if (home.StartsWith("/var/mobile/Containers/Data/Application/", StringComparison.Ordinal) || home.StartsWith("/private/var/mobile/Containers/Data/Application/", StringComparison.Ordinal)) return "testflight";
+            return "";
+        }
+
+        static string IosInstall()
+        {
+            try
+            {
+                // The data container: $HOME on iOS, and persistentDataPath is its Documents folder. dataPath is the
+                // bundle's Data folder.
+                var home = Environment.GetEnvironmentVariable("HOME");
+                if (string.IsNullOrEmpty(home)) home = Path.GetDirectoryName(Application.persistentDataPath);
+                var bundle = Path.GetDirectoryName(Application.dataPath);
+                bool Has(string name) => File.Exists(Path.Combine(home, "StoreKit", name)) || File.Exists(Path.Combine(bundle, "StoreKit", name));
+                return IosDistribution(home, Has("receipt"), Has("sandboxReceipt"), File.Exists(Path.Combine(bundle, "embedded.mobileprovision")));
+            }
+            catch (Exception)
+            {
+                return "";
+            }
         }
 
         /// <summary>Android's firebase.test.lab system setting: "true" on the Firebase Test Lab devices Google Play's

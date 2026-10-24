@@ -598,6 +598,61 @@ namespace GlitchlessSdk.Tests
         }
 
         [Test]
+        public void WhereAnIosBuildCameFromIsReadFromItsReceiptAndProfile()
+        {
+            const string phone = "/private/var/mobile/Containers/Data/Application/BE5EB9FD-3704-488D-96E8-ADB805300ED7";
+            const string mac = "/Users/dev/Library/Containers/AB12/Data";
+            Assert.AreEqual("app_store", DeviceInfo.IosDistribution(phone, true, false, false));
+            Assert.AreEqual("testflight", DeviceInfo.IosDistribution(phone, false, false, false), "Apple writes a receipt with every App Store install");
+            Assert.AreEqual("testflight", DeviceInfo.IosDistribution(phone.Substring("/private".Length), false, false, false));
+            Assert.AreEqual("testflight", DeviceInfo.IosDistribution(phone, false, true, false), "a sandbox receipt, after a TestFlight purchase");
+            Assert.AreEqual("development", DeviceInfo.IosDistribution(phone, false, true, true), "a provisioning profile in the bundle");
+            Assert.AreEqual("development", DeviceInfo.IosDistribution("/Users/dev/Library/Developer/CoreSimulator/Devices/1F2E/data/Containers/Data/Application/AB12", false, false, false), "the Simulator");
+            Assert.AreEqual("", DeviceInfo.IosDistribution(mac, false, false, false), "an iPad app on a Mac without a receipt can't tell");
+            Assert.AreEqual("", DeviceInfo.IosDistribution(null, false, false, false));
+            Assert.AreEqual("app_store", DeviceInfo.IosDistribution(mac, true, false, false));
+            Assert.AreEqual("testflight", DeviceInfo.IosDistribution(mac, false, true, false));
+            Assert.IsTrue(DeviceInfo.IsSandbox("testflight") && DeviceInfo.IsSandbox("development"));
+            Assert.IsFalse(DeviceInfo.IsSandbox("app_store") || DeviceInfo.IsSandbox(""));
+            Assert.AreEqual("", DeviceInfo.Distribution, "nothing to tell in the Editor");
+            Assert.IsFalse(DeviceInfo.Collect(false).ContainsKey("distribution"));
+        }
+
+        [Test]
+        public void TestFlightSessionsAreTestersAndTheirPurchasesSayTheyreSandboxOnes()
+        {
+            var core = NewCore();
+            core.Distribution = () => "testflight";
+            core.Init(Options());
+            var buy = new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "full_version" };
+            core.Track("purchase", buy);
+            core.Track("unlock", new Dictionary<string, object> { ["price"] = 2, ["currency"] = "EUR" });
+            core.Track("level_pick", new Dictionary<string, object> { ["what"] = "forge" });
+            core.Track("purchase", new Dictionary<string, object> { ["sandbox"] = false });
+            core.Flush();
+            Assert.AreEqual("tester", transport.Events().First()["session_type"]);
+            var custom = transport.Events().Where(e => (string)e["type"] == "custom").Select(e => (Dictionary<string, object>)e["attrs"]).ToList();
+            Assert.AreEqual(true, custom[0]["sandbox"]);
+            Assert.AreEqual(true, custom[1]["sandbox"], "any event with a currency");
+            Assert.IsFalse(custom[2].ContainsKey("sandbox"));
+            Assert.AreEqual(false, custom[3]["sandbox"], "a sandbox the game set stays");
+            Assert.IsFalse(buy.ContainsKey("sandbox"), "the game's own dictionary isn't changed");
+
+            var store = NewCore();
+            store.Distribution = () => "app_store";
+            store.Init(Options());
+            store.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD" });
+            store.Flush();
+            var events = transport.Events().ToList();
+            Assert.AreEqual("user", events.Last(e => (string)e["type"] == "session_start")["session_type"]);
+            Assert.IsFalse(((Dictionary<string, object>)events.Last(e => (string)e["type"] == "custom")["attrs"]).ContainsKey("sandbox"));
+
+            Assert.AreEqual("user", GlitchlessCore.SessionTypeFor("user", false, () => null, true), "a type the game set wins");
+            Assert.AreEqual("synthetic", GlitchlessCore.SessionTypeFor("", true, () => null, true), "a bot on a TestFlight build is a bot");
+            Assert.AreEqual("tester", GlitchlessCore.SessionTypeFor("", false, () => null, true));
+        }
+
+        [Test]
         public void AHitchTheTimedPartsDontExplainIsGpuOrOs()
         {
             var core = NewCore();

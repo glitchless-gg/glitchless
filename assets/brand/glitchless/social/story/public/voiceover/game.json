@@ -1,0 +1,170 @@
+[
+ {
+  "text": "Like",
+  "startMs": 0,
+  "endMs": 240,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "Zoomies,",
+  "startMs": 320,
+  "endMs": 1040,
+  "timestampMs": 320,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "a",
+  "startMs": 1080,
+  "endMs": 1120,
+  "timestampMs": 1080,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "little",
+  "startMs": 1200,
+  "endMs": 1360,
+  "timestampMs": 1200,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "dog",
+  "startMs": 1440,
+  "endMs": 1680,
+  "timestampMs": 1440,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "platformer",
+  "startMs": 1760,
+  "endMs": 2320,
+  "timestampMs": 1760,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "we",
+  "startMs": 2400,
+  "endMs": 2480,
+  "timestampMs": 2400,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "vibe",
+  "startMs": 2560,
+  "endMs": 2720,
+  "timestampMs": 2560,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "coded",
+  "startMs": 2800,
+  "endMs": 3040,
+  "timestampMs": 2800,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "with",
+  "startMs": 3120,
+  "endMs": 3200,
+  "timestampMs": 3120,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "Claude",
+  "startMs": 3280,
+  "endMs": 3520,
+  "timestampMs": 3280,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "Code.",
+  "startMs": 3680,
+  "endMs": 4240,
+  "timestampMs": 3680,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "On",
+  "startMs": 4280,
+  "endMs": 4320,
+  "timestampMs": 4280,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "our",
+  "startMs": 4400,
+  "endMs": 4480,
+  "timestampMs": 4400,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "Mac,",
+  "startMs": 4640,
+  "endMs": 5040,
+  "timestampMs": 4640,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "a",
+  "startMs": 5120,
+  "endMs": 5200,
+  "timestampMs": 5120,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "smooth",
+  "startMs": 5280,
+  "endMs": 5760,
+  "timestampMs": 5280,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "sixty",
+  "startMs": 5840,
+  "endMs": 6080,
+  "timestampMs": 5840,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "frames",
+  "startMs": 6160,
+  "endMs": 6400,
+  "timestampMs": 6160,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "a",
+  "startMs": 6440,
+  "endMs": 6480,
+  "timestampMs": 6440,
+  "confidence": null,
+  "phrase": 4
+ },
+ {
+  "text": "second.",
+  "startMs": 6560,
+  "endMs": 7200,
+  "timestampMs": 6560,
+  "confidence": null,
+  "phrase": 4
+ }
+]

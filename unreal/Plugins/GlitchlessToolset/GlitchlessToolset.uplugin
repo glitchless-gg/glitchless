@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 3,
-	"VersionName": "0.3.0",
+	"Version": 4,
+	"VersionName": "0.3.1",
 	"FriendlyName": "Glitchless Toolset (Unreal MCP)",
 	"Description": "Glitchless tools for Unreal MCP: a coding agent measures the game in Play In Editor (frame times, hitches and their causes, errors) and reads what Glitchless sees, the way WebMCP's glitchless_measure works for web games. Needs the Glitchless plugin and, to reach an agent, Unreal MCP.",
 	"Category": "Analytics",

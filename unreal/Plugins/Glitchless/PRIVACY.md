@@ -12,11 +12,13 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `Saved/Glitchless/player_id`, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
-| Device | OS name, a low/mid/high tier, renderer and graphics API, screen size (and on phones its refresh rate), whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
+| Device | OS name, a low/mid/high tier, renderer and graphics API, screen size (and on phones its refresh rate), whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless Positions is on: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples in the game world |
 | Saved on the device | unsent batches, without the session or player ID | unsent batches with their IDs, and the player ID | the same as install |
 
 Positions (Advanced) turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location: Unreal units are sent as metres, with y up.
+
+On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
 
 No mode reads or sends:
 
@@ -29,13 +31,13 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-unreal/0.3.0`) and `batch_id` (random, made for each batch and sent again with its retries).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-unreal/0.3.1`) and `batch_id` (random, made for each batch and sent again with its retries).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user` or `synthetic`), `privacy`, `device` (below) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy`, `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`quit`, `background`, `measure`, `crash`), `duration_s` | quitting, going to the background on a phone, a crash |
 | `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`, `budget_ms`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, game/render/RHI thread and GPU ms (averages over the window), draw calls and triangles (averages, and the most draw calls), garbage collections and their ms, pipeline states compiled, packages loaded (totals over the window), UObject and actor counts, the process's memory MB, texture MB (the last sample: every 30 frames and as the window closes); `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each the highest value it was set to in the window) | every 5 s |
 | `hitch` | duration, the thread that held it up, likely causes, the same timings and counts for that one frame, `ctx` (the gauges as they were then), `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
@@ -44,7 +46,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a map that is a level loads | the game calls them, or a map loads |
 | `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`) when Glitchless sends it | the game calls `LevelAbandon`, or the game goes to the background or quits mid-level |
 | `death` | `cause`; **full** or Positions: `x`, `y`, `z` | the game calls it |
-| `custom` | `name`, `attrs`: the game's own words via `Track` | the game calls it |
+| `custom` | `name`, `attrs`: the game's own words via `Track`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key name or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or Positions: `[time, x, y, z]` samples | every 5 s while positions are on |
 | `bug_report` | `note` (what the player wrote, up to 2,000 characters), `screenshot` (a JPEG of the game's screen, its longer side at most 960 pixels), `recent` (the last 20 game events and hitches, as above), `frames` (the last windows' fps and frame time), `device` (as in `session_start`, at the same mode); **full** or Positions: `x`, `y`, `z` | only when the player sends one, or the game calls `ReportBug`; from every session, sampled or not |
@@ -62,6 +64,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `screen` | `[2560, 1440]` | all |
 | `refresh_hz` | `120`: the screen's highest refresh rate as the OS reports it, on phones only (null elsewhere); the rate the game ran at is `frame_window.hz` | all |
 | `steam_deck` | `true` | all |
+| `distribution` | iOS only: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there; left out when it can't tell | all |
 | `model`, `os_version` | `Steam Deck OLED`, `Windows 11 (24H2)` | **full** |
 | `gpu`, `gpu_vendor` | `NVIDIA GeForce RTX 4070`, `NVIDIA` | **full** |
 | `cores`, `memory_gb` | `16`, `32` | **full** |

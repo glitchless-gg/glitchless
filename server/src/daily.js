@@ -117,6 +117,7 @@ function newGroup(env, version, caps) {
     rage: 0,
     syn: 0,
     sim: 0,
+    tst: 0, // testers' sessions (TestFlight)
     ms: 0, // summed session duration, ms
     len: new Array(LENGTH_EDGES.length - 1).fill(0),
     dur: q(), // session duration, s
@@ -165,6 +166,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
   if (s.rage_quit) g.rage++;
   if (s.session_type === 'synthetic') g.syn++;
   else if (s.session_type === 'simulated') g.sim++;
+  else if (s.session_type === 'tester') g.tst++;
   const start = s.start ?? s.first_ts;
   g.ms += durationMs(s);
   const li = LENGTH_EDGES.findIndex((edge, k) => s.duration_s >= edge && s.duration_s < LENGTH_EDGES[k + 1]);
@@ -480,6 +482,7 @@ function groupToJSON(g) {
     rage: g.rage,
     syn: g.syn,
     sim: g.sim,
+    tst: g.tst,
     ms: g.ms,
     len: g.len,
     ...Object.fromEntries(QMAPS(g).map(([k, m]) => [k, m.toJSON()])),
@@ -523,8 +526,9 @@ function groupFromJSON(o) {
     ttp: q(o.ttp),
     pl: Sample.from(o.pl),
     px: new Map(o.px.map(([d, s]) => [d, Sample.from(s)])),
-    // Days stored before retention have no new players or ID counts.
+    // Days stored before retention have no new players or ID counts, and before testers were told apart no testers.
     id: o.id ?? 0,
+    tst: o.tst ?? 0,
     nw: Sample.from(o.nw),
     mem: qs(o.mem),
     // Days stored before textures and gauges were kept have none.
@@ -609,7 +613,7 @@ function addActive(active, day, sample) {
 // Merge group `g` into `into` (null: a fresh copy of g's shape).
 function mergeGroup(into, g) {
   if (!into) into = newGroup(g.env, g.version, UNCAPPED);
-  for (const k of ['n', 'fw', 'crashed', 'errored', 'rage', 'syn', 'sim', 'ms', 'ri', 'er', 'de', 'at', 'co', 'fa', 'hi', 'id']) into[k] += g[k];
+  for (const k of ['n', 'fw', 'crashed', 'errored', 'rage', 'syn', 'sim', 'tst', 'ms', 'ri', 'er', 'de', 'at', 'co', 'fa', 'hi', 'id']) into[k] += g[k];
   g.len.forEach((n, i) => (into.len[i] += n));
   for (const k of ['dur', 'ttff', 'ttp']) into[k].merge(g[k]);
   if (g.start != null && (into.start == null || g.start < into.start)) into.start = g.start;
@@ -714,6 +718,7 @@ export function dailyOverview(ctx) {
     rage_quit_pct: pct(g.rage, n),
     synthetic_sessions: g.syn,
     simulated_sessions: g.sim,
+    tester_sessions: g.tst,
   });
   o.series.players = ctx.buckets.map((b) => {
     const s = ctx.daily.active.get(b);

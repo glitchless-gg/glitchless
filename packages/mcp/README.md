@@ -95,7 +95,7 @@ above go in its environment.
 | `glitchless_deck_send` | Build the game, send it to the paired Steam Deck, add it to the Deck's library and optionally start it ([glitchless-deck](https://www.npmjs.com/package/glitchless-deck); pair once with `npx glitchless-deck pair`) |
 | `glitchless_deck_measure` | Measure a Unity, Godot or Unreal build on the Steam Deck and compare it with a saved run |
 
-The reads take `hours`, `version`, `env` (e.g. `prod`) and `session_type` (`user` for players only, `synthetic` for bots, playtests and store test devices, `all`). Unless `env` or `session_type` is given, findings read the production sessions of players and say so; the other numbers count every session in the window.
+The reads take `hours`, `version`, `env` (e.g. `prod`) and `session_type` (`user` for players only, `tester` for people on TestFlight and other test builds, `synthetic` for bots, playtests and store test devices, `all`). Unless `env` or `session_type` is given, findings read the production sessions of players and say so; the other numbers count every session in the window.
 
 To let the agent drive the running game as well (measure frame times, inspect the scene, load a
 level), add the WebMCP server beside this one: `npx -y @jason.today/webmcp@latest --mcp`.

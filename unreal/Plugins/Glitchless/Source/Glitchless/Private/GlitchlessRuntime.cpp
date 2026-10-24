@@ -283,6 +283,7 @@ FGlitchlessRuntime::FGlitchlessRuntime()
 	C.Files.MakeDir = [](const std::string& Dir) { IFileManager::Get().MakeDirectory(*GlitchlessText::Tchar(Dir), true); };
 	C.Device = [](bool bDetailed) { return GlitchlessDevice::Collect(bDetailed); };
 	C.SteamFacts = []() { return GlitchlessSteamworks::Read(); };
+	C.Distribution = []() { return GlitchlessDevice::Distribution(); };
 	C.Engine = [this]() { return SampleEngine(); };
 	C.StartupMs = []() { return (FPlatformTime::Seconds() - GStartTime) * 1000.0; };
 	C.Args = CommandLineArgs();

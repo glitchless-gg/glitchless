@@ -1,5 +1,6 @@
 // Renders the Fab listing's images from src/*.html: each page is drawn at 960 x 540 and saved at 2x, 1920 x 1080
-// (16:9, the gallery's size). The gallery pages frame captures in captures/, made from the demo's bot runs.
+// (16:9, the gallery's size), or at the size its <meta name="size"> gives (the profile cover is 960 x 270, 1920 x 540).
+// The gallery pages frame captures in captures/, made from the demo's bot runs.
 //   node docs/release/fab/media/render.mjs            every page in src/
 //   node docs/release/fab/media/render.mjs thumbnail  one page
 // Uses Playwright from the repo's node_modules with Chrome.
@@ -14,6 +15,9 @@ const pages = fs.readdirSync(path.join(here, 'src')).filter((f) => f.endsWith('.
 const browser = await chromium.launch({ channel: 'chrome' });
 const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 2 });
 for (const name of pages) {
+  const html = fs.readFileSync(path.join(here, 'src', `${name}.html`), 'utf8');
+  const [width, height] = (html.match(/<meta name="size" content="(\d+)x(\d+)">/) ?? [null, 960, 540]).slice(1).map(Number);
+  await page.setViewportSize({ width, height });
   await page.goto(`file://${path.join(here, 'src', `${name}.html`)}`);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0));

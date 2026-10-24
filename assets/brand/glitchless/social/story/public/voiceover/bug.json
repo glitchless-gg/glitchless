@@ -1,0 +1,146 @@
+[
+ {
+  "text": "But",
+  "startMs": 0,
+  "endMs": 160,
+  "timestampMs": 0,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "on",
+  "startMs": 240,
+  "endMs": 320,
+  "timestampMs": 240,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "a",
+  "startMs": 360,
+  "endMs": 400,
+  "timestampMs": 360,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "player's",
+  "startMs": 480,
+  "endMs": 880,
+  "timestampMs": 480,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "slower",
+  "startMs": 960,
+  "endMs": 1280,
+  "timestampMs": 960,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "laptop,",
+  "startMs": 1320,
+  "endMs": 2080,
+  "timestampMs": 1320,
+  "confidence": null,
+  "phrase": 0
+ },
+ {
+  "text": "every",
+  "startMs": 2240,
+  "endMs": 2400,
+  "timestampMs": 2240,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "pickup",
+  "startMs": 2480,
+  "endMs": 2800,
+  "timestampMs": 2480,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "makes",
+  "startMs": 2880,
+  "endMs": 3040,
+  "timestampMs": 2880,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "it",
+  "startMs": 3120,
+  "endMs": 3200,
+  "timestampMs": 3120,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "slower,",
+  "startMs": 3280,
+  "endMs": 4000,
+  "timestampMs": 3280,
+  "confidence": null,
+  "phrase": 1
+ },
+ {
+  "text": "until",
+  "startMs": 4120,
+  "endMs": 4240,
+  "timestampMs": 4120,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "it's",
+  "startMs": 4280,
+  "endMs": 4400,
+  "timestampMs": 4280,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "unplayable:",
+  "startMs": 4480,
+  "endMs": 5520,
+  "timestampMs": 4480,
+  "confidence": null,
+  "phrase": 2
+ },
+ {
+  "text": "eleven",
+  "startMs": 5680,
+  "endMs": 6000,
+  "timestampMs": 5680,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "frames",
+  "startMs": 6160,
+  "endMs": 6400,
+  "timestampMs": 6160,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "a",
+  "startMs": 6480,
+  "endMs": 6560,
+  "timestampMs": 6480,
+  "confidence": null,
+  "phrase": 3
+ },
+ {
+  "text": "second.",
+  "startMs": 6640,
+  "endMs": 7360,
+  "timestampMs": 6640,
+  "confidence": null,
+  "phrase": 3
+ }
+]

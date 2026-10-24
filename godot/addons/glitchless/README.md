@@ -58,7 +58,7 @@ pages designed by your coding agent with `glitchless_set_dashboard`) shows the o
 booleans, at most 12 per event.
 
 Purchases have one convention in every Glitchless SDK:
-`Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`. Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
+`Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`. Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS is a free sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. On Android, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat's `isSandbox`).
 
 `init(service, version, env, intake, options)` options. Every one is optional.
 
@@ -69,7 +69,7 @@ Purchases have one convention in every Glitchless SDK:
 | `client_token` | `"gl_pub_dev"` | the server's `GLITCHLESS_CLIENT_TOKENS` |
 | `sample_rate` | `1.0` | the share of sessions that send |
 | `flush_interval` | `5.0` | seconds between batches; the first goes 2 s after `init` |
-| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on Firebase Test Lab, where Google Play's pre-launch report runs a new build on Google's phones (the Android setting `firebase.test.lab`) |
+| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on Firebase Test Lab, where Google Play's pre-launch report runs a new build on Google's phones (the Android setting `firebase.test.lab`). `"tester"` is automatic on a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart), and keeps testers out of the players' numbers |
 | `session_timeout` | `300.0` | seconds in the background after which coming back starts a new session |
 | `engine_gauges` | `true` | put `nodes`, `orphan_nodes` and `objects` in `ctx` |
 | `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |

@@ -38,6 +38,11 @@ Settings, for every engine:
   Godot `"privacy": "install"`; Unity `Privacy = Privacy.Install`; Unreal `Privacy=Install`). Anonymous mode
   can't count returning players. Full mode adds a stored player ID, device detail and positions.
 - **Bots.** Sessions from autoplay bots and tests must be marked synthetic, so they stay out of player numbers.
+- **Testers.** On iOS the Godot, Unity and Unreal SDKs tell a TestFlight install from an App Store one themselves
+  (`distribution` in the device fields) and mark its sessions `tester`, out of player numbers, even though a
+  TestFlight build is a release build that reports `prod`. Don't pass a session type that would undo this. On
+  Android, Google Play's testing tracks can't be told apart on the device: if the developer ships test builds there,
+  give the testing-track build its own env (`beta`) from a build flag.
 - **Version.** Find where the game's version lives and pass it; bump it on every release so Glitchless can compare versions.
 
 ## Three.js
@@ -397,7 +402,7 @@ Add one line to `dependencies` in `Packages/manifest.json`:
 "gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"
 ```
 
-Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.4.0`.
+Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.4.1`.
 
 ### 3. Initialize, without touching a scene file
 
@@ -721,7 +726,11 @@ purchases, a platformer about where players die. Glitchless doesn't assume a gen
    Purchases have one convention in every engine, so boards can add them up into revenue: a `purchase` event
    when the store confirms it, with `amount` (a number in the currency's units: 4.99, not 499), `currency` (the
    ISO code the store charged in) and `item`. A game has one currency on its boards; purchases in another are
-   listed as left out, not added in. Never send receipts, order ids or payment details.
+   listed as left out, not added in. Never send receipts, order ids or payment details. A free test purchase
+   (TestFlight, Xcode, a Play licence tester) is not revenue: the engine SDKs add `sandbox: true` to purchases in a
+   TestFlight or development install on iOS by themselves, and where the game's billing library says a purchase is
+   a sandbox one (RevenueCat's `isSandbox`, on Android too) pass `sandbox: true` yourself. Boards count those
+   purchases but never add them into revenue.
    - Web games (Three.js, Phaser, Babylon.js, PlayCanvas): `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })`
    - Godot: `Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`
    - Unity: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });`

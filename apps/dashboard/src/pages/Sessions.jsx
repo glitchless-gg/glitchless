@@ -20,6 +20,7 @@ export function Sessions() {
     frames: all.some((s) => s.p95 != null),
     rage: all.some((s) => s.rage_quit),
     bots: all.some((s) => s.session_type === 'synthetic'),
+    testers: all.some((s) => s.session_type === 'tester'),
   };
   const eventNames = [...new Set(all.flatMap((s) => Object.keys(s.events || {})))].sort();
   const rows = all.filter((s) => {
@@ -29,6 +30,7 @@ export function Sessions() {
     if (filter === 'errors') return s.errors > 0;
     if (filter === 'slow') return s.p95 > 33.3;
     if (filter === 'synthetic') return s.session_type === 'synthetic';
+    if (filter === 'tester') return s.session_type === 'tester';
     return true;
   });
   return (
@@ -60,6 +62,7 @@ export function Sessions() {
                 ...(has.rage ? [{ value: 'rage', label: 'Rage quits' }] : []),
                 { value: 'crashed', label: 'Crashed' },
                 ...(has.bots ? [{ value: 'synthetic', label: 'Bots' }] : []),
+                ...(has.testers ? [{ value: 'tester', label: 'Testers' }] : []),
               ]}
             />
             {rows.length > 0 && <CsvButton name="sessions" rows={() => sessionsCsv(rows, all)} />}
@@ -74,6 +77,13 @@ export function Sessions() {
 
 // Sessions as rows, one click from their replay. Columns only for what this game reports (`all`: every
 // session in the range, so filtering doesn't make columns come and go).
+// A bot's or a tester's session (TestFlight and other test builds), next to its time or player.
+function TypeTag({ s }) {
+  if (s.session_type === 'synthetic') return <Status kind="brand">bot</Status>;
+  if (s.session_type === 'tester') return <Status>tester</Status>;
+  return null;
+}
+
 export function SessionsTable({ rows, all = rows, maxHeight }) {
   const f = useFilters();
   const has = {
@@ -108,11 +118,11 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
           {rows.map((s, i) => (
             <tr key={s.session_id ?? i} className={open ? 'click' : undefined} onClick={open ? () => f.go(`sessions/${s.session_id}`) : undefined}>
               <td className="muted">
-                {timeAgo(s.start)} {!has.ids && s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
+                {timeAgo(s.start)} {!has.ids && <TypeTag s={s} />}
               </td>
               {has.ids && (
                 <td className="mono" style={{ fontSize: 11.5 }}>
-                  {s.player_id.slice(0, 10)} {s.session_type === 'synthetic' && <Status kind="brand">bot</Status>}
+                  {s.player_id.slice(0, 10)} <TypeTag s={s} />
                 </td>
               )}
               <td>
@@ -297,6 +307,7 @@ export function SessionDetail({ route }) {
               VERSION
             </div>
             <span className="tag">{s.version}</span> {s.session_type === 'synthetic' && <Status kind="brand">synthetic</Status>}
+            {s.session_type === 'tester' && <Status>{s.device?.distribution === 'testflight' ? 'TestFlight tester' : 'tester'}</Status>}
           </div>
           <div>
             <div className="muted" style={{ fontSize: 11 }}>

@@ -898,6 +898,28 @@ namespace Glitchless
 			const std::string Name = Text::Lower(Text::Trim(Facts.BoardName));
 			return Name == "galileo" ? "Steam Deck OLED" : Name == "jupiter" ? "Steam Deck LCD" : "Steam Deck";
 		}
+
+		std::string IosDistribution(const FIosInstallFacts& Facts)
+		{
+			if (Facts.Receipt)
+			{
+				return "app_store";
+			}
+			if (Facts.Provisioned || Facts.Home.find("/CoreSimulator/") != std::string::npos)
+			{
+				return "development";
+			}
+			if (Facts.SandboxReceipt || Text::StartsWith(Facts.Home, "/var/mobile/Containers/Data/Application/") || Text::StartsWith(Facts.Home, "/private/var/mobile/Containers/Data/Application/"))
+			{
+				return "testflight";
+			}
+			return "";
+		}
+
+		bool IsSandbox(const std::string& Distribution)
+		{
+			return Distribution == "testflight" || Distribution == "development";
+		}
 	}
 
 	// ───────────────────────────── maps as levels ─────────────────────────────

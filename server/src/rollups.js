@@ -20,7 +20,9 @@ export const MAX_EVENT_VALUES = 400;
 // Numeric attributes of custom events are summed as well (revenue, coins, seconds…) as [sum, events]: per
 // name, attribute and currency in evs, and per string or boolean attribute value of the event too in evx
 // (revenue by item); at most this many of each per cell. An event's `currency` attribute (the purchase convention)
-// keeps each currency's sums apart; events without one sum under ''. See sumKey.
+// keeps each currency's sums apart; events without one sum under ''. See sumKey. A sandbox purchase (an event named
+// purchase, or with a currency, that says sandbox: true: TestFlight, Xcode, a store's test account) is counted but
+// never summed: nobody paid for it.
 export const MAX_EVENT_SUMS = 400;
 export const OTHER = '(other)';
 // The attributes of a custom event that counts and breakdowns use (see smallAttrs).
@@ -84,7 +86,8 @@ export function addEvent(c, e) {
     countName(c.ev, name, 1, MAX_EVENT_NAMES);
     const attrs = smallAttrs(e.attrs);
     for (const [k, v] of Object.entries(attrs)) countName(c.evv, attrKey(name, k, v), 1, MAX_EVENT_VALUES);
-    addSums(c, name, attrs, currencyOf(e.attrs));
+    const currency = currencyOf(e.attrs);
+    if (!isSandboxPurchase(name, e.attrs, currency)) addSums(c, name, attrs, currency);
   }
   if (e.type !== 'frame_window') return;
   if (c.t0 == null || e.ts < c.t0) c.t0 = e.ts;
@@ -245,6 +248,12 @@ export function splitSumKey(k) {
 export function currencyOf(attrs) {
   const c = attrs?.currency;
   return typeof c === 'string' ? c.trim().toUpperCase().slice(0, 8) : '';
+}
+
+// A purchase made in a store's sandbox (SPEC §3b): free, so not revenue. Only money says so, so a game's own
+// "sandbox" attribute on other events (a sandbox mode) keeps its sums.
+export function isSandboxPurchase(name, attrs, currency = currencyOf(attrs)) {
+  return attrs?.sandbox === true && (name === 'purchase' || currency !== '');
 }
 
 function addSums(c, name, attrs, currency) {
