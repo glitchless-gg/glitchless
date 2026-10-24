@@ -83,7 +83,8 @@ No bundler? Use `<script src="{GLITCHLESS_URL}/sdk/glitchless.js"></script>` and
 | --- | --- |
 | level/stage starts (incl. restarts) | `glitchless.levelStart('level-2')` |
 | level beaten | `glitchless.levelComplete('level-2', { durationS, score })` |
-| player gives up / game over | `glitchless.levelFail('level-2', { cause })` |
+| game over: the player lost the level | `glitchless.levelFail('level-2', { cause })` |
+| the player leaves mid-level (back to the menu, a restart) | `glitchless.levelAbandon('level-2')`: never a fail. Closing the page or app mid-level sends one by itself |
 | player dies | `glitchless.death({ x, y, z, cause: 'fell' })`: short, low-cardinality causes |
 | pickups, power-ups, checkpoints | `glitchless.track('powerup', { kind: 'speed' })` |
 | a purchase the store confirmed | `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })` |
@@ -432,7 +433,8 @@ call `Glitchless.LevelStart("world-1-2")` where a level begins (that turns scene
 | Game moment | Call |
 | --- | --- |
 | level beaten | `Glitchless.LevelComplete("level-2", score: 1200)` |
-| player gives up / game over | `Glitchless.LevelFail("level-2", "fell")` |
+| game over: the player lost the level | `Glitchless.LevelFail("level-2", "fell")` |
+| the player leaves mid-level (the menu, a restart) | `Glitchless.LevelAbandon("level-2")`: never a fail; quitting or going to the background mid-level sends one by itself |
 | player dies | `Glitchless.Death(player.position, "spikes")` |
 | pickups, checkpoints | `Glitchless.Track("powerup", "magnet")` |
 | a purchase the store confirmed | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" })` |
@@ -546,7 +548,8 @@ turns map levels off.
 | --- | --- | --- |
 | level starts | `FGlitchless::LevelStart(TEXT("forest-2"))` | Level Start |
 | level beaten | `FGlitchless::LevelComplete(TEXT(""), Score)` (empty: the current level) | Level Complete |
-| player gives up, game over | `FGlitchless::LevelFail(TEXT(""), TEXT("timeout"))` | Level Fail |
+| game over: the player lost the level | `FGlitchless::LevelFail(TEXT(""), TEXT("timeout"))` | Level Fail |
+| the player leaves mid-level (the menu, a restart) | `FGlitchless::LevelAbandon(TEXT(""))`: never a fail; quitting or going to the background mid-level sends one by itself | Level Abandon |
 | player dies | `FGlitchless::Death(GetActorLocation(), TEXT("fell"))` | Death |
 | pickups, checkpoints | `FGlitchless::Track(TEXT("powerup"), TEXT("magnet"))` | Track Event (What), Track Event |
 | a purchase the store confirmed | `FGlitchless::Track(TEXT("purchase"), {{TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}}, {{TEXT("amount"), 4.99}})` | Track Event, `amount` in Numbers |

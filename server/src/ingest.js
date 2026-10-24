@@ -28,6 +28,7 @@ const EVENT_TYPES = new Set([
   'level_start',
   'level_complete',
   'level_fail',
+  'level_abandon',
   'death',
   'pos',
   'custom',
@@ -46,7 +47,15 @@ export class IntakeError extends Error {
   }
 }
 
+// A batch's own ID (SPEC §2 batch_id): the SDK makes it when it cuts the batch and sends it again with every
+// retry, so intake can store a batch once however often it arrives.
+const BATCH_ID = /^[A-Za-z0-9_.:-]{8,64}$/;
+// How long a store remembers a batch it took. The engine SDKs keep unsent batches up to 6 days, and intake files
+// anything older than 7 days under "now" (normalize below), so a repeat never arrives later than this.
+export const BATCH_KEEP_MS = 7 * 86_400_000;
+
 // `projectId` comes from the resolved ingest key and is stamped on every event; a payload can't set it.
+// `batch` is the payload's batch_id, or null when it sent none (an older SDK) or one that isn't an ID.
 export function parsePayload(body, { projectId = null } = {}) {
   let payload;
   try {
@@ -69,6 +78,7 @@ export function parsePayload(body, { projectId = null } = {}) {
       sdk: typeof payload.sdk === 'string' ? payload.sdk.slice(0, 40) : null,
     },
     events: events.slice(0, MAX_EVENTS),
+    batch: typeof payload.batch_id === 'string' && BATCH_ID.test(payload.batch_id) ? payload.batch_id : null,
   };
 }
 

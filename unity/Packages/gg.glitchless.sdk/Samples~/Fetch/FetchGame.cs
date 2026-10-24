@@ -22,6 +22,8 @@ namespace GlitchlessSamples.Fetch
     ///
     /// Command line (a built player): --autoplay --seed=7 --skill=0.9 --level=2 --privacy=full (or install) --quit-after=60
     /// --bug-report-at=5 (send a bug report from code, as a "Report a bug" button would)
+    /// --fail-on-quit (end the level as a "left" fail as the game closes, as some games do: Glitchless has sent the
+    /// abandon by then, and drops it)
     /// </summary>
     public sealed class FetchGame : MonoBehaviour
     {
@@ -57,6 +59,7 @@ namespace GlitchlessSamples.Fetch
         int lives, score, confetti, attempt;
         string banner, lastBurst;
         float quitAfter, bugReportAt;
+        bool failOnQuit;
         FetchBot bot;
         Camera cam;
         Material baseMaterial;
@@ -108,6 +111,7 @@ namespace GlitchlessSamples.Fetch
                 else if (a == "--privacy=install") privacy = Privacy.Install;
                 else if (a.StartsWith("--quit-after=")) float.TryParse(a.Substring(13), NumberStyles.Float, CultureInfo.InvariantCulture, out quitAfter);
                 else if (a.StartsWith("--bug-report-at=")) float.TryParse(a.Substring(16), NumberStyles.Float, CultureInfo.InvariantCulture, out bugReportAt);
+                else if (a == "--fail-on-quit") failOnQuit = true;
             }
         }
 
@@ -440,6 +444,13 @@ namespace GlitchlessSamples.Fetch
 #else
             Application.Quit();
 #endif
+        }
+
+        // Leaving a level isn't losing it: a game that quits mid-level needs no call, Glitchless sends level_abandon
+        // itself. --fail-on-quit does what some games do anyway, so the e2e test can check that it is dropped.
+        void OnDestroy()
+        {
+            if (failOnQuit && level != null) Glitchless.LevelFail(level.Id, "left");
         }
 
         /// <summary>For agents and the console: what the game is doing.</summary>

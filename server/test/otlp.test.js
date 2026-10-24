@@ -381,3 +381,28 @@ test('/v1/health lists each exporter and its status', async () => {
     server.close();
   }
 });
+
+test('an abandoned level is counted as an abandon, never a fail, by both exporters (SPEC §2 level_abandon)', async () => {
+  const left = [
+    { type: 'level_start', ts: T0 + 1000, level: 'level-3' },
+    { type: 'level_abandon', ts: T0 + 2000, level: 'level-3', duration_s: 1 },
+    { type: 'level_fail', ts: T0 + 3000, level: 'level-3', cause: 'abandon' },
+    { type: 'level_fail', ts: T0 + 4000, level: 'level-3', cause: 'fell' },
+  ];
+  const { x, to } = otlp();
+  await x.export(session('s1', { events: left }));
+  const [req] = to('/v1/metrics');
+  assert.deepEqual(validateMetricsRequest(req), []);
+  assert.equal(metric(req, 'glitchless.level.abandons').sum.dataPoints[0].asInt, '2');
+  assert.equal(metric(req, 'glitchless.level.fails').sum.dataPoints[0].asInt, '1');
+  assert.deepEqual(
+    records(to('/v1/logs')[0]).map((r) => r.body.stringValue).filter((b) => b.startsWith('Level')),
+    ['Level level-3 started', 'Level level-3 left before it ended', 'Level level-3 left before it ended', 'Level level-3 failed (fell)'],
+  );
+
+  const f = fakeFetch();
+  await createExporters([{ kind: 'datadog', apiKey: 'k', site: 'datadoghq.com' }], { fetch: f.fetch, logger: quiet }).forward(session('s2', { events: left }));
+  const series = f.to('/api/v2/series')[0].series;
+  const total = (name) => series.filter((s) => s.metric === name).reduce((a, s) => a + s.points.reduce((b, p) => b + p.value, 0), 0);
+  assert.deepEqual([total('glitchless.level.abandons'), total('glitchless.level.fails')], [2, 1]);
+});

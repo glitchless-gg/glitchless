@@ -102,6 +102,12 @@ void FGlitchless::LevelFail(const FString& Level, const FString& Cause)
 	WithCore([&](Glitchless::FCore& C) { C.LevelFail(L, Why); });
 }
 
+void FGlitchless::LevelAbandon(const FString& Level)
+{
+	const std::optional<std::string> L = LevelOrCurrent(Level);
+	WithCore([&](Glitchless::FCore& C) { C.LevelAbandon(L); });
+}
+
 void FGlitchless::Death(const FVector& Location, const FString& Cause)
 {
 	double X, Y, Z;

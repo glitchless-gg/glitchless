@@ -154,9 +154,36 @@ static func window_size() -> Array:
 	return [size.x, size.y]
 
 
+## The screen's refresh rate as the OS reports it: the panel's highest, not the
+## rate the game runs at (some 60 Hz iPhones report 120; a ProMotion iPhone in
+## Low Power Mode runs at 60). frame_window.hz is the rate measured from frames.
 static func refresh_rate() -> Variant:
 	var hz := DisplayServer.screen_get_refresh_rate(DisplayServer.window_get_current_screen())
 	return roundi(hz) if hz > 0 else null
+
+
+## Firebase Test Lab, where Google Play's pre-launch report runs each new build
+## on Google's own phones, sets the system setting firebase.test.lab to "true".
+## Those runs are bots, so their sessions are synthetic. Read through the
+## AndroidRuntime singleton (Godot 4.4 and later), so no Android plugin is needed;
+## the value is only read here, never sent.
+static func test_lab() -> bool:
+	return is_test_lab(_test_lab_setting())
+
+
+static func is_test_lab(setting: Variant) -> bool:
+	return setting != null and str(setting).strip_edges() == "true"
+
+
+static func _test_lab_setting() -> Variant:
+	if OS.get_name() != "Android" or not Engine.has_singleton("AndroidRuntime"):
+		return null
+	var runtime: Variant = Engine.get_singleton("AndroidRuntime")
+	var context: Variant = runtime.getApplicationContext()
+	var settings: Variant = JavaClassWrapper.wrap("android.provider.Settings$System")
+	if context == null or settings == null:
+		return null
+	return settings.getString(context.getContentResolver(), "firebase.test.lab")
 
 
 static func _has(s: String, pattern: String) -> bool:

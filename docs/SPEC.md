@@ -35,7 +35,8 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is opt
 | --- | --- |
 | `glitchless.levelStart(levelId)` | a level/stage begins (also sets current level on every event) |
 | `glitchless.levelComplete(levelId, { durationS, score })` | level beaten |
-| `glitchless.levelFail(levelId, { cause })` | level failed / player gave up / restart |
+| `glitchless.levelFail(levelId, { cause })` | level failed: the player lost it (died, ran out of time) |
+| `glitchless.levelAbandon(levelId)` | the player left the level before it ended: quit to the menu, restarted it, closed the game. Never a fail (§2 `level_abandon`); the SDK sends it itself when the page hides mid-level |
 | `glitchless.death({ x, y, z, cause })` | player died; `cause` is a short string (`fell`, `squirrel`, …) |
 | `glitchless.track(name, attrs)` | any custom design event (`bone_collected`, `powerup`) |
 | `glitchless.setPosition({ x, y, z })` | every frame; SDK samples at `positionHz` |
@@ -114,6 +115,7 @@ instrumentPlayCanvas(glitchless, { app, pc, levels: 'auto', gauges: true }); // 
   "service": "zoomies", "env": "dev", "version": "1.0.0",
   "session_id": "s_8f2c…", "player_id": "p_19ab…",
   "sdk": "glitchless-browser/0.1.0",
+  "batch_id": "b_k2j4h5g6f7d8s9a0",
   "events": [ { "type": "frame_window", "ts": 1760540000000, "level": "level-2", "…": "…" } ]
 }
 ```
@@ -121,16 +123,37 @@ instrumentPlayCanvas(glitchless, { app, pc, levels: 'auto', gauges: true }); // 
 Every event has `type`, `ts` (epoch ms) and `level` (current level or `null`). The server adds
 `project_id` from the client token (§6); a payload can't set it.
 
+**`level_abandon`.** The player left a level before it ended (went to the menu, restarted, closed the game). It
+is never a fail: the level funnel counts it apart (`abandons`), it is no rage quit, and a level is judged a wall only
+on the sessions that played it to an end (§4). Every SDK has a call for it, and sends one itself, before
+`session_end`, when the game goes to the background, closes or quits (the page hides, in the browser) with a level
+started and not yet completed, failed or abandoned. A `level_fail` or `level_abandon` the game sends for that level
+after the session has ended (a level torn down as the app closes) is then dropped by the SDK: the attempt already
+has its outcome. A player who comes back from the background and plays on in the same session takes the abandon
+back: the server drops an abandon followed by a complete, fail or death on the same level before its next
+`level_start`. A game on an older SDK can send `level_fail` with the cause `abandon`.
+
+**`batch_id`.** The batch's own ID: `b_` and 16 random characters `[a-z0-9]` (8 to 64 of `[A-Za-z0-9_.:-]` are
+accepted), made when the SDK cuts the batch and sent unchanged with every retry of it. An SDK sends a batch again
+whenever it never saw the answer to an earlier try: the request timed out, the game went to the background with
+it in flight, or the game closed with it still saved (engine SDKs send their saved batches on the next launch, in
+anonymous mode under a new session ID, so the ID is not derived from the session). Intake stores a batch ID once
+per project and game for 7 days: a repeat is answered `202 {"accepted": 0, "duplicate": true}` and nothing in it
+is stored, counted, forwarded or shown on the live tail again. An SDK clears a batch as soon as any 2xx comes back.
+A payload without `batch_id` (an older SDK) is stored every time it arrives. The ID names one batch, never the
+player or the session: engine SDKs save it with the batch in every privacy mode (§4b).
+
 | type | fields |
 | --- | --- |
 | `session_start` | `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c) |
 | `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}`, `budget_ms` (from the display's refresh rate, read off the fastest frames and checked again as the session goes). A window never spans two levels: `levelStart` closes it, with the positions sampled so far |
-| `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
-| `load` | `ttff_ms` (navigation → first rendered frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}` |
+| `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`; engine SDKs also `gpu_or_os`: none of their other causes applies and what they measured inside the game, its code, physics, the renderer's CPU work and the GPU where it is timed, adds up to less than max(16 ms, 40% of the frame), so the time went to the GPU, to presenting the frame or to the OS). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
+| `load` | `ts` is when the first frame was drawn; `ttff_ms` (navigation → first rendered frame; engine SDKs: process start → first frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}`. Engine SDKs add `first_launch`: whether this is the first launch of this game version on the device (the first after an install or an update builds the shader caches and reads files the OS hasn't cached, so it starts slower). They keep the last version that ran in a file of their own to tell; it holds no ID, the same on every device. The slow-start finding compares the two when both have 3+ sessions |
 | `error` | `kind` (`js` \| `promise` \| `webgl_context_lost` \| `manual`), `message, stack, source, line, col, fn, fingerprint`. See below |
 | `level_start` | — |
 | `level_complete` | `duration_s, score` |
-| `level_fail` | `cause` |
+| `level_fail` | `cause`. The cause `abandon` is reserved: such a fail is a `level_abandon` |
+| `level_abandon` | `duration_s`, `reason` (`background`, `close`, `quit`, `pagehide`: the SDK sent it as the game went; none when the game called it) |
 | `death` | `x, y, z, cause` |
 | `pos` | `pts: [[ts, x, y, z], …]` (batched samples) |
 | `custom` | `name, attrs` |
@@ -195,7 +218,7 @@ its key belongs to (§6); `service` picks a game inside that project. Each Steam
 | `overview` | `{kpis, series, top_errors, funnel, findings}` |
 | `performance` | `{distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, hitches, memory, load}`; the Steam breakdowns hold only sessions that sent the fact (§4c) |
 | `errors` | `{issues:[{fingerprint, message, kind, location, fn, source, line, count, sessions, players, first_seen, last_seen, first_version, versions, levels, stack, sample_session, breadcrumbs}]}`; for a web build with source maps (§3d), original frames with `frames` and `minified` |
-| `players` | `{kpis, funnel, session_length, death_causes, rage_quits, retention}`. `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range) |
+| `players` | `{kpis, funnel, session_length, death_causes, rage_quits, retention}`. `funnel: [{level, sessions, players, completed, completion_pct, attempts, deaths, deaths_per_session, fails, abandons, abandoned, avg_complete_s, death_causes, rage_quits, rage_quit_pct}]`: `abandons` counts the attempts the player left (§2 `level_abandon`), `abandoned` the sessions that left the level without completing, failing or dying on it. `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range) |
 | `players_now` | `{players_now, window_s}`: sessions of the game that sent anything in the last two minutes (§4), whatever the range |
 | `heatmap` | `{level, map, deaths:[{x,y,z,cause,version}], density:{…}, stats}` (requires `level`); `stats` is the level's funnel row plus `no_win`, true for a game nobody wins (§4), which has runs rather than a completion rate |
 | `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports) |
@@ -468,7 +491,7 @@ reads by default, so the finding an alert names is in the agent's triage. It rea
 | --- | --- | --- | --- |
 | `new_error` | an error first occurred after alerts went on and within the last day, and has reached `newErrorSessions` sessions (default 3; 1–1,000) | it occurs in the last day | `error-<fingerprint>` |
 | `crash_free` | of the two newest versions with 5+ sessions (as the version finding picks them), each has 20+ sessions in the day, and the newer one's crash-free sessions are 2+ points lower with z ≥ 2 (two-proportion test) | the drop is 1+ point | `crash-free-<prev>-<cur>` |
-| `frame_p95` | the same two versions, 20+ sessions each, and the newer one's p95 frame time is 20% and 2 ms worse | it is 10% worse | `frame-p95-<prev>-<cur>` |
+| `frame_p95` | the same two versions, 20+ sessions each, and the newer one's p95 frame time is 20% and 2 ms worse, compared like with like: when the versions ran on different screens (their frame windows split across refresh rates 20+ points apart), on the commonest refresh rate both had with 3+ sessions, as the version finding compares them, and not at all when there is none | it is 10% worse | `frame-p95-<prev>-<cur>` |
 | `finding` | a finding (§4) is high or critical. Version findings belong to the two rules above while either is on | it is medium or above | the finding's id |
 
 An error without a fingerprint is skipped. The finding an alert names is `error-<fingerprint>`,
@@ -765,10 +788,15 @@ not web pages. In the browser, the dashboard registers the same abilities as Web
   error (`js`, `promise`, `script`, `exception`) with nothing played after it (a level event, a death, or one of the
   game's own events; the SDKs' own events don't count). A frozen frame the game recovers from is a hitch, and an
   error the player plays through is an error, not a crash.
-- **Rage quit**: session ends ≤ 20s after a `death`/`level_fail` with no later `level_start` or `level_complete`.
+- **Rage quit**: session ends ≤ 20s after a `death`/`level_fail` with no later `level_start` or `level_complete`. The
+  end has to come after the fail: a fail the game logged as it closed, after `session_end`, is not one, and an
+  abandon (§2 `level_abandon`) never is.
   It counts at the death behind it (a `level_fail` right after a death is the same moment). A game nobody wins
   (5+ sessions in the range, levels started and failed, none completed: an endless or flappy game) has no rage
   quits: every run ends in a death, and leaving after one is the end of a run.
+- **Wall**: a level that far fewer sessions get through than the game's other levels (25 points under their median,
+  70% or less). The rate is over the sessions that played it to an end: a session that only abandoned it (§2) is
+  left out, as it says nothing about how hard the level is.
 - **Climbing gauge**: a `setContext` gauge that, over a session's frame windows (3 or more), ends within 10% of
   its peak, at least 4× and 50 above where it started, and was last at its low point in the first half. Enemies
   come and go between waves; a leak only grows. A gauge that climbs in 60% of the sessions that report it (3 or
@@ -805,7 +833,7 @@ SDK's PRIVACY.md lists exactly what it sends at each.
 | session ID | random per launch, in memory only | random per launch, saved with unsent batches until they go | the same as install |
 | device | coarse: OS, tiers, screen, renderer, `steam_deck` | as anonymous | adds model, OS version, GPU, cores, memory |
 | positions | off (on with `positions`) | as anonymous | on |
-| unsent batches on the device (engine SDKs; the browser keeps none) | without IDs | with their session and player IDs | the same as install |
+| unsent batches on the device (engine SDKs; the browser keeps none) | without the session or player ID (each keeps its own `batch_id`, §2) | with their session and player IDs | the same as install |
 
 Install mode adds one thing to anonymous mode, the stored player ID (and, since that ID is on the device anyway,
 unsent batches keep their IDs), so retention (D1, D7, D30, §4) can be counted without knowing who the player is: the
@@ -879,26 +907,32 @@ sums (kept per minute and currency) aren't split by one either.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default), and the server files the session under `session_id`; install and full mode send the stored `p_…` player ID (`user://glitchless/player_id`, §4b) |
-| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null |
-| `frame_window` | adds `gpu_ms`, `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. A window never spans two levels |
-| `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
+| `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, headless, or on Firebase Test Lab (Google Play's pre-launch report phones: the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton; the value is not sent), unless the game passes `session_type` |
+| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz` |
+| `frame_window` | adds `gpu_ms` (Vulkan and Direct3D 12 only: Godot doesn't time the GPU on Metal or OpenGL), `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. The top-level counts are the values when the window closed; `ctx` holds each gauge's highest value in the window, so a leak check compares like with like (the top-level counts, or ctx's maxima). `hz` and `budget_ms` are measured from the frames: the 20th percentile of frame times under 100 ms (a frame can take longer than the screen's interval, never less), a first guess after 30 frames, the answer at 120, a look every 480 frames that only ever goes faster, and lowered when the OS says the screen slowed down (Low Power Mode). A window never spans two levels |
+| `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
+| `load` | `ts` is the first frame; `ttff_ms` counts from the engine's start; `first_launch` from `user://glitchless/launched` (the version that last ran) |
 | `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events) |
 | `death` | `x`, `y`, `z` only when positions are on (full mode or `positions: true`); the server leaves unplaced deaths off heatmaps and hotspots |
 | `session_end` | `reason`: `background`, `close`, `quit`, `measure` |
+| `level_abandon` | `level_abandon()`; sent by itself, with `reason` `background`, `close` or `quit`, before `session_end` when a level is open (§2) |
 | `custom` | also `screen_change`, `app_resume` |
 | `bug_report` | `bug_reports` in init options adds the F8 form: a `CanvasLayer` that pauses the tree while open, with `bug_report_opened` and `bug_report_closed` signals. `report_bug(note)` sends one from the game's own UI. `screenshot` is the root viewport's last frame with its longer side at most 960 px (the browser caps the width), none in headless runs |
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 2022.3 and 6) sends the same envelope with `"sdk": "glitchless-unity/0.2.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 2022.3 and 6) sends the same envelope with `"sdk": "glitchless-unity/0.3.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
-| envelope | `player_id` is null in anonymous mode (the default); `Privacy.Install` and `Privacy.Full` send the stored `p_…` player ID (§4b) |
-| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
-| `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. A window never spans two levels |
-| `hitch` | `causes` from `gc`, `shader_compile`, `scene_change`, `object_spawn`, `script`, `physics`, `render`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `gc_collections`, `gc_alloc_kb`, `shader_compiles`, `objects_added`; `loaf` is empty |
+| envelope | `player_id` is null in anonymous mode (the default); `Privacy.Install` and `Privacy.Full` send the stored `p_…` player ID (§4b). `batch_id` (§2) on every batch, kept through retries and saved with the batch in every mode |
+| `session_start` | `session_type` is `synthetic` in batch mode, with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, or on Firebase Test Lab (Android's `firebase.test.lab` setting is `true`, read through `UnityPlayer.currentActivity`'s content resolver; the value is not sent), unless the game sets `SessionType` |
+| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz` (`Screen.currentResolution`'s rate as the OS reports it, not the rate the game ran at: that is each `frame_window`'s `hz`), `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
+| `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. `gpu_ms` comes from `FrameTimingManager` (Frame Timing Stats on; the latest frame the GPU finished). The memory and object counts are their values when the window closed (sampled every 30 frames); `ctx` holds each gauge's highest value in the window. `hz` and `budget_ms` are measured as Godot's (§5). A window never spans two levels |
+| `hitch` | `causes` from `gc`, `shader_compile`, `scene_change`, `object_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `gc_collections`, `gc_alloc_kb`, `shader_compiles`, `objects_added`; `loaf` is empty |
 | `level_start` | also sent when a scene that reads as a level becomes active |
+| `level_abandon` | `Glitchless.LevelAbandon()`; sent by itself, with `reason` `background` (phones), `quit` or `measure`, before `session_end` when a level is open (§2); a scene level closes silently when its scene unloads |
+| `load` | `ts` is the first frame; `ttff_ms` counts from Unity's start (`Time.realtimeSinceStartup` at the end of the first frame); `first_launch` from `persistentDataPath/glitchless/launched` (PlayerPrefs `glitchless.launched` in WebGL) |
 | `error` | `kind`: `exception` (uncaught; unhandled, like `js`), `log_error`, `assert`, `manual`, `warning`; adds `recent` (last 6 game events) |
 | `death` | `x`, `y`, `z` only when positions are on |
 | `session_end` | `reason`: `background` (phones), `quit`, `measure` |
@@ -911,11 +945,13 @@ sums (kept per minute and currency) aren't split by one either.
 
 | | |
 | --- | --- |
-| envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID |
-| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only), `steam_deck`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null |
-| `frame_window` | frame times from a clock at the start of each frame. Adds `game_ms` (game thread, GGameThreadTime), `process_ms` (the same, under the name the playtest gate reads), `render_ms` (render thread), `rhi_ms` (null without an RHI thread), `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles` (pipeline states created at draw time that took over 20 ms, UE 5.8), `shader_compiles` (the editor only), `packages_loaded`, `objects` (UObjects), `actors`, `heap_mb` (the process), `texture_mb`, `screen`, `window`. `draw_calls` and `triangles` only while the RHI counts them (usually null in a packaged build); `geometries`, `textures`, `programs` are null. `ctx` also holds `objects` and `actors`. A window never spans two levels |
-| `hitch` | `duration_ms` is the frame's time on the clock (Unreal leaves waits out of its thread times, so a frame stalled on a pipeline state, the GPU or the disk would look short by them). `causes` from `pso_compile`, `shader_compile`, `gc`, `map_load`, `level_stream`, `asset_load`, `script` (game thread at 40% of the frame), `render` (render, RHI or GPU at 40%), `frozen` (over 700 ms). Adds `bound` (the slowest of `game`, `render`, `rhi`, `gpu`), `game_ms`, `process_ms`, `render_ms`, `rhi_ms`, `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles`, `shader_compiles`, `packages_loaded`; `loaf` is empty |
+| envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID. `batch_id` (§2) on every batch, a bug report's and a crash's too, kept through retries and saved with the batch in every mode |
+| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only: the panel's highest rate as the OS reports it; each `frame_window`'s `hz` is the measured rate), `steam_deck`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null |
+| `frame_window` | frame times from a clock at the start of each frame. Adds `game_ms` (game thread, GGameThreadTime), `process_ms` (the same, under the name the playtest gate reads), `render_ms` (render thread), `rhi_ms` (null without an RHI thread), `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles` (pipeline states created at draw time that took over 20 ms, UE 5.8), `shader_compiles` (the editor only), `packages_loaded`, `objects` (UObjects), `actors`, `heap_mb` (the process), `texture_mb`, `screen`, `window`. `draw_calls` and `triangles` only while the RHI counts them (usually null in a packaged build); `geometries`, `textures`, `programs` are null. `ctx` also holds `objects` and `actors`. Thread and GPU times are averages over the window's frames; `gc_*`, `pso_compiles`, `shader_compiles` and `packages_loaded` totals; each `ctx` gauge its highest value in the window; `objects`, `actors`, `heap_mb` and `texture_mb` the last sample. `hz` and `budget_ms` are measured from the frames: the fastest fifth of the first 30 under 100 ms, then the median of the first 120 (60 before that). A window never spans two levels |
+| `hitch` | `duration_ms` is the frame's time on the clock (Unreal leaves waits out of its thread times, so a frame stalled on a pipeline state, the GPU or the disk would look short by them). `causes` from `pso_compile`, `shader_compile`, `gc`, `map_load`, `level_stream`, `asset_load`, `script` (game thread at 40% of the frame), `render` (render, RHI or GPU at 40%), `gpu_or_os` (none of the others, and game, render, RHI and GPU time add up to under max(16 ms, 40% of the frame): waiting to present, GPU work Unreal didn't time, or the OS), `frozen` (over 700 ms). Adds `bound` (the slowest of `game`, `render`, `rhi`, `gpu`), `game_ms`, `process_ms`, `render_ms`, `rhi_ms`, `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles`, `shader_compiles`, `packages_loaded`; `loaf` is empty |
 | `level_start` | also sent when a map that reads as a level loads (not `Entry`, `MainMenu`, `Lobby`, `Loading`…); the game's first `LevelStart` turns that off |
+| `level_abandon` | `LevelAbandon(Level)` (C++ and Blueprint). Sent by itself, with `reason` `background`, `quit` or `measure`, before `session_end`, for a level (a map level too) started and not ended; a map level that unloads closes without one, and a crash sends none |
+| `load` | `ts` is the first frame's wall-clock time; `ttff_ms` runs from the engine's start (`GStartTime`) to the end of the first frame the plugin times |
 | `error` | `kind`: `crash` (fatal; written to the outbox as the game dies and sent on the next launch, with `session_end` reason `crash`; in anonymous mode under a fresh session ID), `ensure` (an error, not fatal: the game carries on, and each ensure reports once a run), `script` (a Blueprint runtime error such as Accessed None; Unreal stops that Blueprint function, so it is unhandled, like `js`), `log_error` (`UE_LOG` Error; `fn` is the log category), `warning`, `manual`; adds `recent` (last 6 game events) and, for `script`, `attrs.blueprint` |
 | `death`, `pos` | positions only when they are on (full mode, or Positions) |
 | `session_end` | `reason`: `quit`, `background` (phones), `measure`, `crash` |
@@ -973,7 +1009,11 @@ activity feed and the query cache are all per project.
 `getReport`, `deleteReport`, `putSourcemap`, `getSourcemap`, `sourcemaps`, `deleteSourcemaps`, `services`, `clear`
 ([`server/src/stores/file.js`](../server/src/stores/file.js) lists them), and optionally `cohorts` (the players first
 seen on each day of a range, for retention): the file store keeps that first-seen index in memory over everything it
-holds; a store without one counts players as new on their first day in the range (`first_seen: 'range'`).
+holds; a store without one counts players as new on their first day in the range (`first_seen: 'range'`). Optionally
+`claimBatch(projectId, service, id)` and `releaseBatch(...)` keep repeats of a batch out (§2 `batch_id`): `claimBatch`
+is true the first time an ID comes within 7 days and false after, across every server process the store serves (the
+file store keeps the IDs in `batches.jsonl`; Glitchless Cloud makes one conditional write per batch), and intake
+releases an ID whose events it failed to store, so the game's retry is taken. A store without them keeps every copy.
 
 Data written before projects existed (JSONL lines without `project_id`) is read as the `default` project, so no
 migration is needed.

@@ -4,6 +4,7 @@
 #include "GlitchlessCore.h"
 #include "TestMain.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <random>
@@ -19,17 +20,21 @@ namespace
 		int64_t Status = 202;
 		std::vector<std::string> Sent;
 		std::vector<std::string> SentNow;
+		std::vector<std::string> InOrder; // both, in the order they went
 		std::vector<std::vector<uint8_t>> Raw;
 		int Aborts = 0;
 		// Hold: the server gets each request, but its answer waits for Wait (or, with AnswerOnWait off, never comes).
 		bool Hold = false;
 		bool AnswerOnWait = true;
 		std::vector<std::function<void(int64_t)>> Pending;
+		// Runs as each blocking send starts, before it is answered: what is on disk then is what a game stopped there leaves.
+		std::function<void()> BeforeSendNow;
 
 		void Send(const std::string&, std::vector<uint8_t> Body, const std::string&, std::function<void(int64_t)> Done) override
 		{
 			Raw.push_back(Body);
 			Sent.push_back(Text(Body));
+			InOrder.push_back(Sent.back());
 			if (Hold)
 			{
 				Pending.push_back(std::move(Done));
@@ -59,7 +64,12 @@ namespace
 
 		int64_t SendNow(const std::string&, const std::vector<uint8_t>& Body, const std::string&, int) override
 		{
+			if (BeforeSendNow)
+			{
+				BeforeSendNow();
+			}
 			SentNow.push_back(Text(Body));
+			InOrder.push_back(SentNow.back());
 			return Status;
 		}
 
@@ -95,6 +105,24 @@ namespace
 	};
 
 	std::string Type(const FValue& E) { return E.Find("type") ? E.Find("type")->AsString() : ""; }
+
+	// The batch_id of a request as it was sent.
+	std::string BatchId(const std::string& Body)
+	{
+		FValue Envelope;
+		const FValue* Id = FValue::Parse(Body, Envelope) ? Envelope.Find("batch_id") : nullptr;
+		return Id && Id->IsString() ? Id->AsString() : "";
+	}
+
+	// b_ and 16 of [a-z0-9] (SPEC §2 batch_id).
+	bool IsBatchId(const std::string& Id)
+	{
+		if (Id.size() != 18 || Id.compare(0, 2, "b_") != 0)
+		{
+			return false;
+		}
+		return std::all_of(Id.begin() + 2, Id.end(), [](char C) { return (C >= 'a' && C <= 'z') || (C >= '0' && C <= '9'); });
+	}
 
 	std::vector<FValue> OfType(const std::vector<FValue>& Events, const std::string& T)
 	{
@@ -248,6 +276,9 @@ namespace
 				Core.Frame(Dt, C ? *C : Default);
 			}
 		}
+
+		// Every event that went, by either kind of send, in order.
+		std::vector<FValue> AllEvents() const { return Transport->Events(&Transport->InOrder); }
 
 		FValue Envelope(size_t I = 0) const
 		{
@@ -1331,4 +1362,425 @@ TEST(LambdasAreTheirFunctions)
 	EXPECT_EQ(StackParser::Parse("0x1 Game!UGlitchlessTestScript::Step(float)::$_0::operator()() const  [UnknownFile]) ").at(0).Fn, "UGlitchlessTestScript::Step");
 	EXPECT_EQ(StackParser::Parse("Game!`AFoo::Bar'::`2'::<lambda_1>::operator()() [C:\\Game\\Source\\Foo.cpp:12]").at(0).Fn, "AFoo::Bar");
 	EXPECT_EQ(StackParser::Parse("Game!AFoo::Bar(int) [C:\\Game\\Source\\Foo.cpp:12]").at(0).Fn, "AFoo::Bar");
+}
+
+// ───────────── batch IDs (SPEC §2 batch_id): the server stores a batch once, however often it arrives ─────────────
+
+TEST(EveryBatchHasItsOwnIdAndKeepsItWhenTriedAgain)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->Track("first");
+	H.Transport->Status = 503;
+	Core->Flush();
+	H.Transport->Status = 202;
+	H.Frames(*Core, 1, 5000 - 100);
+	H.Frames(*Core, 10); // past the 5 s backoff: tried again
+	EXPECT_EQ(H.Transport->Sent.size(), static_cast<size_t>(2));
+	const std::string First = BatchId(H.Transport->Sent.at(0));
+	EXPECT(IsBatchId(First));
+	EXPECT_EQ(BatchId(H.Transport->Sent.at(1)), First); // the same batch, under the same ID
+	Core->Track("second");
+	Core->Flush();
+	const std::string Second = BatchId(H.Transport->Sent.back());
+	EXPECT(IsBatchId(Second));
+	EXPECT(Second != First);
+	Core->BugReport("it froze", "");
+	EXPECT(IsBatchId(BatchId(H.Transport->Sent.back()))); // a bug report's request has one too
+	EXPECT(BatchId(H.Transport->Sent.back()) != Second);
+}
+
+TEST(SavedBatchesKeepTheirIdsInEveryMode)
+{
+	FHarness H;
+	auto First = H.NewCore();
+	First->Init(FHarness::Options());
+	H.Transport->Status = 0; // no network
+	First->Track("bone_collected");
+	First->Flush();
+	const std::string Tried = BatchId(H.Transport->Sent.at(0));
+	First->Shutdown("quit");
+	FValue Saved;
+	EXPECT(FValue::Parse(ReadAll(H.Dir + "/outbox.json"), Saved));
+	const FValue& Batches = *Saved.Find("batches");
+	EXPECT(Batches.Size() >= 2);
+	for (const FValue& B : Batches.GetItems())
+	{
+		EXPECT(IsBatchId(B.Find("bid")->AsString()));
+		EXPECT(!B.Has("sid") && !B.Has("pid")); // anonymous: the batch's ID, never the session's or the player's
+	}
+	EXPECT_EQ(Batches[0].Find("bid")->AsString(), Tried);
+
+	H.Transport->Status = 202;
+	auto Second = H.NewCore();
+	Second->Init(FHarness::Options());
+	Second->Flush();
+	bool Again = false;
+	for (const std::string& Body : H.Transport->Sent)
+	{
+		FValue Env;
+		FValue::Parse(Body, Env);
+		Again |= BatchId(Body) == Tried && Body.find("bone_collected") != std::string::npos && Env.Find("session_id")->AsString() != First->GetSessionId();
+	}
+	EXPECT(Again); // under a new session ID, but the ID the server may have seen it under before
+
+	FHarness Install;
+	auto Kept = Install.NewCore();
+	Kept->Init(FHarness::Options(EPrivacy::Install));
+	Install.Transport->Status = 0;
+	Kept->Track("x");
+	Kept->Shutdown("quit");
+	FValue SavedInstall;
+	EXPECT(FValue::Parse(ReadAll(Install.Dir + "/outbox.json"), SavedInstall));
+	for (const FValue& B : SavedInstall.Find("batches")->GetItems())
+	{
+		EXPECT(IsBatchId(B.Find("bid")->AsString()));
+		EXPECT_EQ(B.Find("sid")->AsString(), Kept->GetSessionId());
+	}
+}
+
+TEST(ABatchSavedBeforeBatchIdsGetsOne)
+{
+	FHarness H;
+	// What a build from before batch IDs left.
+	const std::string Old = "{\"v\":1,\"batches\":[{\"service\":\"fetch\",\"env\":\"dev\",\"version\":\"1.0.0\",\"group\":1761000000000,"
+		"\"events\":[{\"type\":\"custom\",\"ts\":1761000000500,\"level\":null,\"name\":\"from_an_old_build\",\"attrs\":{}}]}]}";
+	std::FILE* F = std::fopen((H.Dir + "/outbox.json").c_str(), "wb");
+	EXPECT(F != nullptr);
+	if (F)
+	{
+		std::fwrite(Old.data(), 1, Old.size(), F);
+		std::fclose(F);
+	}
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->Flush();
+	bool Found = false;
+	for (const std::string& Body : H.Transport->Sent)
+	{
+		if (Body.find("from_an_old_build") != std::string::npos)
+		{
+			Found = true;
+			EXPECT(IsBatchId(BatchId(Body)));
+		}
+	}
+	EXPECT(Found);
+}
+
+TEST(ClosingSavesTheOutboxAfterEachBatchTheServerTakes)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->Track("first");
+	H.Transport->Status = 503; // the timer's send fails, so closing has more than one batch to send
+	Core->Flush();
+	const std::string First = BatchId(H.Transport->Sent.at(0));
+	Core->Track("second");
+	Core->Flush(); // waits out the backoff in the outbox
+	H.Transport->Status = 202;
+	std::vector<std::string> OnDisk;
+	H.Transport->BeforeSendNow = [&]() { OnDisk.push_back(ReadAll(H.Dir + "/outbox.json")); };
+	Core->Shutdown("quit");
+	EXPECT_EQ(OnDisk.size(), static_cast<size_t>(3)); // first, second and the session's end
+	EXPECT(OnDisk.at(0).find(First) != std::string::npos);
+	EXPECT(OnDisk.at(1).find(First) == std::string::npos); // gone from the file as soon as the server took it
+	EXPECT(!Exists(H.Dir + "/outbox.json"));
+}
+
+TEST(ARequestGivenUpOnAtQuitGoesAgainUnderItsId)
+{
+	FHarness H;
+	auto First = H.NewCore();
+	First->Init(FHarness::Options());
+	H.Frames(*First, 30);
+	First->LevelComplete("Gallery", 4200, std::nullopt);
+	H.Transport->Hold = true;
+	H.Transport->AnswerOnWait = false; // it reached the server, but the answer never came back
+	First->Flush();
+	const std::string Held = BatchId(H.Transport->Sent.at(0));
+	First->Shutdown("quit");
+	H.Transport->Hold = false;
+	auto Second = H.NewCore();
+	Second->Init(FHarness::Options());
+	Second->Flush();
+	int Tries = 0;
+	for (const std::string& Body : H.Transport->Sent)
+	{
+		Tries += BatchId(Body) == Held ? 1 : 0;
+	}
+	EXPECT_EQ(Tries, 2); // the server keeps the first and answers the second as a duplicate
+}
+
+TEST(TheBatchesACrashWritesHaveIdsToo)
+{
+	FHarness H;
+	auto First = H.NewCore();
+	First->Init(FHarness::Options());
+	H.Frames(*First, 30);
+	First->ReportCrash("crash", "boom", "");
+	FValue Saved;
+	EXPECT(FValue::Parse(ReadAll(H.Dir + "/outbox.json"), Saved));
+	std::vector<std::string> Ids;
+	for (const FValue& B : Saved.Find("batches")->GetItems())
+	{
+		Ids.push_back(B.Find("bid")->AsString());
+		EXPECT(IsBatchId(Ids.back()));
+	}
+	EXPECT(!Ids.empty());
+	auto Second = H.NewCore();
+	Second->Init(FHarness::Options());
+	Second->Flush();
+	for (const std::string& Id : Ids)
+	{
+		EXPECT(std::any_of(H.Transport->Sent.begin(), H.Transport->Sent.end(), [&](const std::string& Body) { return BatchId(Body) == Id; }));
+	}
+}
+
+// ───────────── level_abandon (SPEC §2): leaving a level is not losing it ─────────────
+
+namespace
+{
+	// The level outcomes and session ends that went, in order: "level_abandon:quit", "level_fail:left".
+	std::vector<std::string> Outcomes(const std::vector<FValue>& Events)
+	{
+		std::vector<std::string> Out;
+		for (const FValue& E : Events)
+		{
+			const std::string T = Type(E);
+			if (T != "level_start" && T != "level_complete" && T != "level_fail" && T != "level_abandon" && T != "session_end")
+			{
+				continue;
+			}
+			const FValue* Why = E.Find("reason");
+			if (!Why || !Why->IsString())
+			{
+				Why = E.Find("cause");
+			}
+			Out.push_back(T + (Why && Why->IsString() ? ":" + Why->AsString() : ""));
+		}
+		return Out;
+	}
+}
+
+TEST(LeavingALevelIsAnAbandonNeverAFail)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("forest-2");
+	H.Frames(*Core, 60); // a second
+	Core->LevelAbandon();
+	Core->Shutdown("quit");
+	const std::vector<FValue> Events = H.AllEvents();
+	const std::vector<FValue> Abandons = OfType(Events, "level_abandon");
+	EXPECT_EQ(Abandons.size(), static_cast<size_t>(1)); // none from Glitchless at the quit: the level has its outcome
+	EXPECT_EQ(Abandons.at(0).Find("level")->AsString(), "forest-2");
+	EXPECT_NEAR(Abandons.at(0).Find("duration_s")->AsNumber(), 1.0, 0.01);
+	EXPECT(!Abandons.at(0).Has("reason")); // the game's own
+	EXPECT(OfType(Events, "level_fail").empty());
+	EXPECT(Core->MakeBugReport("").Serialize().find("\"type\":\"level_abandon\"") != std::string::npos); // and it is in a bug report's recent events
+}
+
+TEST(ALevelPlayedToAnEndIsNotAbandonedAtTheQuit)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("a");
+	Core->LevelComplete();
+	Core->LevelStart("b");
+	Core->LevelFail(std::nullopt, "lost");
+	Core->Shutdown("quit");
+	EXPECT(OfType(H.AllEvents(), "level_abandon").empty());
+}
+
+TEST(QuittingMidLevelAbandonsItBeforeTheSessionEnds)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("forest-2");
+	H.Frames(*Core, 60);
+	Core->Shutdown("quit");
+	// The game ends its level as it closes, after Glitchless has: dropped, the attempt has its outcome.
+	Core->LevelFail("forest-2", "left");
+	Core->LevelAbandon();
+	Core->LevelFail("cave-1", "lost"); // another level's is kept
+	const std::vector<std::string> Order = Outcomes(H.AllEvents());
+	EXPECT_EQ(Order.size(), static_cast<size_t>(3));
+	EXPECT_EQ(Order.at(1), "level_abandon:quit");
+	EXPECT_EQ(Order.at(2), "session_end:quit");
+	const std::vector<FValue> Abandon = OfType(H.AllEvents(), "level_abandon");
+	EXPECT(Abandon.at(0).Find("ts")->AsInt() <= OfType(H.AllEvents(), "session_end").at(0).Find("ts")->AsInt());
+	const std::vector<std::string> After = Outcomes(Core->Queued());
+	EXPECT_EQ(After.size(), static_cast<size_t>(1));
+	EXPECT_EQ(After.at(0), "level_fail:lost");
+	EXPECT_EQ(OfType(Core->Queued(), "level_fail").at(0).Find("level")->AsString(), "cave-1");
+}
+
+TEST(GoingToTheBackgroundMidLevelAbandonsItUntilTheGameComesBack)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("forest-2");
+	H.Frames(*Core, 60);
+	Core->OnBackground();
+	Core->LevelFail("forest-2", "left"); // the game tears its level down as it goes: dropped
+	H.Now += 10000;
+	Core->OnForeground(); // back in the same session: the level goes on
+	H.Frames(*Core, 30);
+	Core->OnBackground(); // so going away again abandons it again
+	H.Now += 400000;
+	Core->OnForeground(); // a new session: that attempt is over, and the new one has no level started
+	H.Frames(*Core, 30);
+	Core->Shutdown("quit");
+	const std::vector<std::string> Order = Outcomes(H.AllEvents());
+	const std::vector<std::string> Expected = {"level_start", "level_abandon:background", "session_end:background", "level_abandon:background", "session_end:background", "session_end:quit"};
+	EXPECT_EQ(Order.size(), Expected.size());
+	for (size_t I = 0; I < std::min(Order.size(), Expected.size()); I++)
+	{
+		EXPECT_EQ(Order[I], Expected[I]);
+	}
+}
+
+TEST(AMapLevelLeftByQuittingIsAbandonedButNotOneItsMapTookAway)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->OnMapLoaded("Arena", 1);
+	H.Frames(*Core, 30);
+	Core->OnMapUnloaded(1); // back to the menu: the level ended with its map
+	Core->OnMapLoaded("Level_02", 2);
+	H.Frames(*Core, 30);
+	Core->Shutdown("quit");
+	const std::vector<FValue> Abandons = OfType(H.AllEvents(), "level_abandon");
+	EXPECT_EQ(Abandons.size(), static_cast<size_t>(1));
+	EXPECT_EQ(Abandons.at(0).Find("level")->AsString(), "Level_02");
+	EXPECT_EQ(Abandons.at(0).Find("reason")->AsString(), "quit");
+}
+
+TEST(ACrashMidLevelIsNoAbandon)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("forest-2");
+	H.Frames(*Core, 30);
+	Core->ReportCrash("crash", "boom", "");
+	const std::string File = ReadAll(H.Dir + "/outbox.json");
+	EXPECT(File.find("\"reason\":\"crash\"") != std::string::npos);
+	EXPECT(File.find("level_abandon") == std::string::npos);
+}
+
+// ───────────── hitches, load and the refresh rate ─────────────
+
+TEST(AHitchNothingMeasuredExplainsIsGpuOrOs)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	H.Frames(*Core, 60);
+	// 120 ms on the clock, and the threads and the GPU busy for a few of them: presenting, the compositor, the OS.
+	H.Now += 120;
+	Core->Frame(120, FHarness::Cost(4, 3, 2, 6));
+	H.Frames(*Core, 20);
+	// Each part under 40% of the frame, but together most of it: nothing to name.
+	H.Now += 110;
+	Core->Frame(110, FHarness::Cost(30, 25, 5, 20));
+	H.Frames(*Core, 20);
+	// A collection, and little else measured: the collection is the cause.
+	FFrameCost Gc = FHarness::Cost(4, 3, 2, 6);
+	Gc.GcCollections = 1;
+	Gc.GcMs = 90;
+	H.Now += 100;
+	Core->Frame(100, Gc);
+	H.Frames(*Core, 20);
+	Core->Flush();
+	std::vector<FValue> Hitches = OfType(H.Transport->Events(), "hitch");
+	EXPECT_EQ(Hitches.size(), static_cast<size_t>(3));
+	if (Hitches.size() == 3)
+	{
+		EXPECT_EQ(Hitches[0].Find("duration_ms")->AsNumber(), 120.0);
+		EXPECT_EQ(Hitches[0].Find("causes")->Serialize(), "[\"gpu_or_os\"]");
+		EXPECT_EQ(Hitches[0].Find("bound")->AsString(), "gpu"); // still the largest part measured
+		EXPECT_EQ(Hitches[1].Find("causes")->Serialize(), "[]");
+		EXPECT_EQ(Hitches[2].Find("causes")->Serialize(), "[\"gc\"]");
+	}
+	// A frozen frame is frozen, whatever was measured of it.
+	H.Frames(*Core, 60);
+	H.Now += 900;
+	Core->Frame(900, FHarness::Cost(4, 3, 2, 6));
+	H.Frames(*Core, 20);
+	Core->Flush();
+	Hitches = OfType(H.Transport->Events(), "hitch");
+	EXPECT_EQ(Hitches.back().Find("duration_ms")->AsNumber(), 900.0);
+	EXPECT_EQ(Hitches.back().Find("causes")->Serialize(), "[\"frozen\"]");
+}
+
+TEST(TheLoadIsPlacedAtTheFirstFrameNotTheFirstBatch)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	Core->LevelStart("intro");
+	Core->Flush(); // a batch before any frame: no load yet
+	EXPECT(OfType(H.Transport->Events(), "load").empty());
+	H.Now += 1500; // the first frame is slow to come
+	H.Frames(*Core, 1);
+	const double FirstFrameClock = H.Now;
+	const int64_t FirstFrame = 1761000000000LL + static_cast<int64_t>(H.Now);
+	Core->LevelStart("level-1");
+	H.Frames(*Core, 200);
+	Core->Flush();
+	const std::vector<FValue> Loads = OfType(H.Transport->Events(), "load");
+	EXPECT_EQ(Loads.size(), static_cast<size_t>(1));
+	EXPECT_EQ(Loads.at(0).Find("ts")->AsInt(), FirstFrame); // when it happened, not when it was sent
+	EXPECT_EQ(Loads.at(0).Find("level")->AsString(), "intro");
+	EXPECT_EQ(Loads.at(0).Find("ttff_ms")->AsInt(), static_cast<int64_t>(FirstFrameClock)); // from the app's start (here, the clock's zero)
+}
+
+TEST(TheFirstWindowsAreJudgedAgainstTheMeasuredRate)
+{
+	FHarness H;
+	auto Phone = H.NewCore();
+	Phone->Init(FHarness::Options());
+	H.Frames(*Phone, 20, 33.3); // a game capped at 30 fps
+	EXPECT_NEAR(Phone->GetBudgetMs(), 1000.0 / 60, 0.01); // nothing measured yet
+	H.Frames(*Phone, 25, 33.3);
+	Phone->LevelStart("level-1"); // closes the first window 1.5 s in
+	Phone->Flush();
+	const FValue First = OfType(H.Transport->Events(), "frame_window").at(0);
+	EXPECT_EQ(First.Find("hz")->AsInt(), 30);
+	EXPECT_EQ(First.Find("budget_ms")->AsNumber(), 33.33);
+
+	auto Fast = H.NewCore();
+	Fast->Init(FHarness::Options());
+	H.Frames(*Fast, 40, 8.33); // a 120 Hz screen
+	EXPECT_NEAR(Fast->GetBudgetMs(), 1000.0 / 120, 0.01);
+}
+
+TEST(AWindowsGaugesAreTheirHighestAndItsCountsTheLast)
+{
+	FHarness H;
+	int64_t Objects = 5000;
+	auto Core = H.NewCore();
+	Core->Engine = [&Objects]() {
+		FValue E = FValue::Object();
+		E.Set("objects", Objects);
+		return E;
+	};
+	Core->Init(FHarness::Options());
+	Core->SetContext("enemies", 12);
+	H.Frames(*Core, 30); // the engine counts are sampled every 30 frames
+	Core->SetContext("enemies", 4);
+	Objects = 4200;
+	Core->Flush(); // and as the window closes
+	const FValue W = OfType(H.Transport->Events(), "frame_window").at(0);
+	EXPECT_EQ(W.Find("ctx")->Find("enemies")->AsNumber(), 12.0);
+	EXPECT_EQ(W.Find("ctx")->Find("objects")->AsNumber(), 5000.0);
+	EXPECT_EQ(W.Find("objects")->AsInt(), 4200);
 }

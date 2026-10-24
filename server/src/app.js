@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody } from './ingest.js';
-import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS } from './analytics.js';
+import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
 import { validateDashboard, autoDashboard, evaluateBoard, versionColumns, dashboardStats, pathLevels, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
@@ -31,6 +31,8 @@ const SOURCEMAP_QUERIES = new Set(['errors', 'overview', 'findings', 'board', 'p
 const RETENTION_QUERIES = new Set(['players', 'board']);
 // Queries that join a game's store reviews and vitals (reviews.js) when the host has them: their panels, finding, queries.
 const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals']);
+// meta.note for an answer from a game in anonymous mode (playersAreSessions).
+const PLAYERS_ARE_SESSIONS = 'no session sent a player ID (anonymous mode), so every players count here is a count of sessions';
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -88,12 +90,23 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           return json(res, 429, { error: 'rate limit exceeded' });
         }
         const body = decodeBody(await readBody(req));
-        const parsed = normalize(parsePayload(body, { projectId: writer.projectId }));
+        const payload = parsePayload(body, { projectId: writer.projectId });
+        // A batch already stored (its response never reached the game, so the game sent it again) is
+        // answered as taken, and nothing in it is stored, counted or forwarded twice (SPEC §2 batch_id).
+        const batch = payload.batch && store.claimBatch ? { service: payload.envelope.service, id: payload.batch } : null;
+        if (batch && !(await store.claimBatch(writer.projectId, batch.service, batch.id))) return json(res, 202, { accepted: 0, duplicate: true });
+        const parsed = normalize(payload);
         const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
         const events = admitted.events;
         if (events.length) {
           await sourcemaps.refingerprint(writer.projectId, events);
-          await store.put(writer.projectId, events, writer);
+          try {
+            await store.put(writer.projectId, events, writer);
+          } catch (err) {
+            // Not stored, so the game's retry must not be taken for a repeat.
+            if (batch) await store.releaseBatch?.(writer.projectId, batch.service, batch.id).catch(() => {});
+            throw err;
+          }
           counters.received += events.length;
           presence?.record(writer.projectId, events);
           clearCache(writer.projectId, { shares: false });
@@ -254,29 +267,48 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     const saved = name === 'board' ? await store.getDashboard(projectId, service) : undefined;
     const levels = saved ? pathLevels(boardPage(saved, params.get('page'))) : [];
     if (levels.length) q.positions = levels;
-    let ctx;
     // Steam facts the sessions must have (steam_branch=beta…, SPEC §4c), and the one versions are grouped by instead.
     q.where = steamWhere(params);
     q.by = name === 'versions' && STEAM_DIMENSIONS.includes(params.get('by')) ? params.get('by') : null;
-    if (store.context) {
-      // Stores that keep summaries build the context themselves (and answer in whole minutes).
-      ctx = await store.context(projectId, q, name, params);
-    } else {
-      const raw = await store.query(projectId, { service, from, to });
-      const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions && !q.where ? await store.rollups(projectId, { service, from, to }) : null;
-      ctx = buildContext(raw, q, rollups);
-    }
-    // Reports are kept apart from the events (stored as they arrive), so they answer for the range as asked.
-    ctx.reports = REPORT_QUERIES.has(name) && store.reports ? reportsOf(await store.reports(projectId, service, { from, to }), ctx) : [];
-    if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
-    // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
-    if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
+    const contextFor = async (q) => {
+      let ctx;
+      if (store.context) {
+        // Stores that keep summaries build the context themselves (and answer in whole minutes).
+        ctx = await store.context(projectId, q, name, params);
+      } else {
+        const raw = await store.query(projectId, { service, from, to });
+        const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions && !q.where ? await store.rollups(projectId, { service, from, to }) : null;
+        ctx = buildContext(raw, q, rollups);
+      }
+      // Reports are kept apart from the events (stored as they arrive), so they answer for the range as asked.
+      ctx.reports = REPORT_QUERIES.has(name) && store.reports ? reportsOf(await store.reports(projectId, service, { from, to }), ctx) : [];
+      if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
+      // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
+      if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
+      return ctx;
+    };
+    const ctx = await contextFor(q);
     if (stores && STORE_QUERIES.has(name)) ctx.stores = await storesOf(projectId, service, ctx, name === 'store_reviews' ? ctx.from : null, services);
     // A store's own notes (ctx.meta): resolution 'day' and what is approximate, for long ranges.
     const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(q.where ? { where: q.where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
+    // A game in anonymous mode sends no player IDs, so every players count in the answer is a count of sessions.
+    if (playersAreSessions(ctx)) Object.assign(meta, { players_are_sessions: true, note: [meta.note, PLAYERS_ARE_SESSIONS].filter(Boolean).join('; ') });
+    // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
+    // production sessions of players (not dev builds, not bots) when it has any, and meta says which they read.
+    const findingsContext = async () => {
+      if (params.get('env') || params.get('type') || q.sessions) return ctx;
+      const env = services.find((s) => s.service === service)?.envs?.includes('prod') ? 'prod' : null;
+      const players = await contextFor({ ...q, env, type: 'user' });
+      players.stores = ctx.stores;
+      const n = sessionCount(players);
+      if (!n || n === sessionCount(ctx)) return ctx;
+      meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx) };
+      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds or ' : ''}bots) of the ${sessionCount(ctx)} in the range`].filter(Boolean).join('; ');
+      return players;
+    };
     switch (name) {
       case 'overview':
-        return { meta, ...overview(ctx), findings: findings(ctx, await store.getMaps(projectId, service)).slice(0, 6) };
+        return { meta, ...overview(ctx), findings: findings(await findingsContext(), await store.getMaps(projectId, service)).slice(0, 6) };
       case 'performance':
         return { meta, ...performance(ctx) };
       case 'errors':
@@ -340,7 +372,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         if (!q.sessions) return { meta, error: 'playtest needs sessions=<comma-separated session ids>' };
         return { meta, summary: playtestSummary(ctx) };
       case 'findings':
-        return { meta, findings: findings(ctx, await store.getMaps(projectId, service)) };
+        return { meta, findings: findings(await findingsContext(), await store.getMaps(projectId, service)) };
       case 'store_reviews':
         // A store's reviews of the game in the range, filtered (reviews.js storeReviews): what glitchless_store_reviews reads.
         return { meta, ...storeReviews(ctx, params) };

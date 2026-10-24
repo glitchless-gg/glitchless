@@ -40,6 +40,7 @@ struct GLITCHLESS_API FGlitchlessOptions
  * the same shape as the browser, Unity and Godot SDKs.
  *
  *   FGlitchless::Init(TEXT("my-game"), TEXT("https://api.glitchless.gg"), TEXT("gl_pub_..."));  // or Project Settings > Plugins > Glitchless
+ *   FGlitchless::LevelAbandon();  // the player went to the menu or restarted mid-level: not a fail
  *   FGlitchless::Death(Character->GetActorLocation(), TEXT("fell"));
  *   FGlitchless::Track(TEXT("powerup"), TEXT("magnet"));
  *   FGlitchless::SetContext(TEXT("enemies"), Enemies.Num());
@@ -61,8 +62,11 @@ public:
 	static void LevelStart(const FString& Level);
 	/** Empty Level: the current one. Unset Duration: the time since its LevelStart. */
 	static void LevelComplete(const FString& Level = FString(), TOptional<double> Score = {}, TOptional<double> DurationSeconds = {});
-	/** The player gave up or lost the level. Cause is a short word: "fell", "timeout", "restart". */
+	/** The player lost the level. Cause is a short word: "fell", "timeout". Leaving it is LevelAbandon. */
 	static void LevelFail(const FString& Level = FString(), const FString& Cause = FString());
+	/** The player left the level before it ended: went to the menu, restarted it, quit. Never counted as a fail.
+	 * Empty Level: the current one. Going to the background or quitting mid-level sends one by itself. */
+	static void LevelAbandon(const FString& Level = FString());
 
 	/** A death at a place in the world. The place is sent only when positions are on (Full mode, or Positions). */
 	static void Death(const FVector& Location, const FString& Cause = TEXT("unknown"));

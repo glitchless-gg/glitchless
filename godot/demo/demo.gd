@@ -19,6 +19,9 @@ extends Node2D
 ##   --reset-install-id   call Glitchless.reset_install_id() once the game starts
 ##   --background-at=S    pretend the phone sent the game to the background S
 ##                        seconds in, and back after --background-for=S (default 1)
+##   --close-at=S         pretend the player closed the window S seconds in, mid-level;
+##                        like Starlift, the game then ends the level as "left" as it
+##                        goes, after the session has ended
 ##   --focus-away-at=S    pretend the player pulled down Control Center (or the
 ##                        notification shade) S seconds in: the game loses focus and
 ##                        draws nothing for --focus-away-for=S (default 1.5)
@@ -42,6 +45,7 @@ var _next_event := 0.0
 var _events_this_level := 0
 var _background_at := -1.0
 var _background_for := 1.0
+var _close_at := -1.0
 var _focus_away_at := -1.0
 var _focus_away_for := 1.5
 var _bug_report_at := -1.0
@@ -71,6 +75,8 @@ func _ready() -> void:
 			_background_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--background-for="):
 			_background_for = float(a.get_slice("=", 1))
+		elif a.begins_with("--close-at="):
+			_close_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--focus-away-at="):
 			_focus_away_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--focus-away-for="):
@@ -89,6 +95,8 @@ func _ready() -> void:
 		_pretend_background()
 	if _focus_away_at >= 0.0:
 		_pretend_focus_away()
+	if _close_at >= 0.0:
+		_pretend_close()
 	if _bug_report_at >= 0.0:
 		_report_from_code()
 	if _bug_form_at >= 0.0:
@@ -169,6 +177,19 @@ func _pretend_background() -> void:
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_PAUSED)
 	await get_tree().create_timer(_background_for).timeout
 	get_tree().root.propagate_notification(NOTIFICATION_APPLICATION_RESUMED)
+
+
+# The window's close button, or Android's back gesture: Glitchless ends the session, then the game quits.
+func _pretend_close() -> void:
+	await get_tree().create_timer(_close_at).timeout
+	get_tree().root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	get_tree().quit()
+
+
+# Starlift's way: a run torn down mid-level ends it as "left".
+func _exit_tree() -> void:
+	if _level >= 0 and _level < LEVELS.size():
+		Glitchless.level_fail(LEVELS[_level], "left")
 
 
 # What iOS sends for Control Center, Notification Center, Siri or a call, and Android

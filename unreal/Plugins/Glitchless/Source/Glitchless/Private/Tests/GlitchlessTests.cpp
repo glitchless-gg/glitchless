@@ -5,6 +5,7 @@
 // unreal/test/core.mjs runs the core's own tests, the JavaScript parity ones among them, without the engine.
 
 #include "Glitchless.h"
+#include "GlitchlessBlueprintLibrary.h"
 #include "GlitchlessBugReport.h"
 #include "GlitchlessDevice.h"
 #include "GlitchlessSettings.h"
@@ -95,6 +96,48 @@ bool FGlitchlessGzipTest::RunTest(const FString& Parameters)
 	Glitchless::FValue Envelope;
 	TestTrue(TEXT("it unpacks to JSON"), Glitchless::FValue::Parse(Gunzip(Body), Envelope));
 	TestEqual(TEXT("sdk"), GlitchlessText::Tchar(Envelope.Find("sdk") ? Envelope.Find("sdk")->AsString() : ""), FString(TEXT("glitchless-unreal/0.2.0")));
+	const FString BatchId = GlitchlessText::Tchar(Envelope.Find("batch_id") ? Envelope.Find("batch_id")->AsString() : "");
+	TestTrue(TEXT("the batch has its own batch_id"), BatchId.StartsWith(TEXT("b_")) && BatchId.Len() == 18);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGlitchlessBlueprintLevelsTest, "Glitchless.Blueprint.LevelCalls", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+bool FGlitchlessBlueprintLevelsTest::RunTest(const FString& Parameters)
+{
+	for (const TCHAR* Name : {TEXT("LevelStart"), TEXT("LevelComplete"), TEXT("LevelFail"), TEXT("LevelAbandon")})
+	{
+		const UFunction* Function = UGlitchlessBlueprintLibrary::StaticClass()->FindFunctionByName(Name);
+		TestTrue(FString::Printf(TEXT("%s is a Blueprint node"), Name), Function && Function->HasAnyFunctionFlags(FUNC_BlueprintCallable));
+	}
+	// Safe without a running Glitchless, as every call is.
+	FGlitchless::LevelAbandon(TEXT("forest-2"));
+	UGlitchlessBlueprintLibrary::LevelAbandon(TEXT(""));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGlitchlessAbandonTest, "Glitchless.Core.QuittingMidLevelAbandonsIt", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+bool FGlitchlessAbandonTest::RunTest(const FString& Parameters)
+{
+	TSharedPtr<FRecordingTransport> Transport = MakeShared<FRecordingTransport>();
+	Glitchless::FCore Core;
+	Core.Transport = std::shared_ptr<FRecordingTransport>(Transport.Get(), [Keep = Transport](FRecordingTransport*) {});
+	Glitchless::FOptions Options;
+	Options.Service = "abandon-test";
+	Options.Intake = "http://127.0.0.1:1";
+	Core.Init(Options);
+	Core.LevelStart("forest-2");
+	Core.Shutdown("quit");
+	Core.LevelFail(std::string("forest-2"), "left"); // the game ending its level as it closes: dropped
+	FString Sent;
+	for (const std::vector<uint8_t>& Body : Transport->Bodies)
+	{
+		Sent += GlitchlessText::Tchar(std::string(Body.begin(), Body.end()));
+	}
+	const int32 Abandon = Sent.Find(TEXT("\"type\":\"level_abandon\",\"level\":\"forest-2\""));
+	const int32 End = Sent.Find(TEXT("\"type\":\"session_end\",\"reason\":\"quit\""));
+	TestTrue(TEXT("the level is abandoned"), Abandon != INDEX_NONE && Sent.Contains(TEXT("\"reason\":\"quit\"")));
+	TestTrue(TEXT("before the session ends"), Abandon != INDEX_NONE && End != INDEX_NONE && Abandon < End);
+	TestFalse(TEXT("no fail"), Sent.Contains(TEXT("level_fail")) || Core.Queued().size() > 0);
 	return true;
 }
 

@@ -1,6 +1,7 @@
 extends SceneTree
 ## Steam Deck detection (device.gd is_steam_deck) from what a Deck, a desktop
-## and a Deck-like PC show, without a Deck. test/e2e.mjs runs it.
+## and a Deck-like PC show, without a Deck, and Firebase Test Lab's setting.
+## test/e2e.mjs runs it.
 ##   godot --headless --path godot --script res://test/device_test.gd
 
 const Device := preload("res://addons/glitchless/device.gd")
@@ -24,6 +25,9 @@ func _init() -> void:
 	_check("so does a Windows build Steam started on a Deck", Device.is_steam_os({"env": "1"}))
 	_check("a Deck under Bazzite stays Linux", not Device.is_steam_os({"board_vendor": "Valve", "board_name": "Galileo", "os_release": BAZZITE}))
 	_check("a desktop stays what it is", not Device.is_steam_os({"os_release": UBUNTU}))
+	_check("Firebase Test Lab: the setting says \"true\"", Device.is_test_lab("true") and Device.is_test_lab("true\n"))
+	_check("Firebase Test Lab: anything else, or no setting, is not it", not Device.is_test_lab(null) and not Device.is_test_lab("") and not Device.is_test_lab("false") and not Device.is_test_lab("1"))
+	_check("Firebase Test Lab: not on this machine, and reading it never fails off Android", not Device.test_lab())
 	var here := Device.info(false)
 	_check("this machine sends steam_deck as a boolean, false here", here.get("steam_deck") is bool and here.steam_deck == Device.steam_deck() and not here.steam_deck and here.os != "SteamOS")
 	print("device tests: %d failed" % _failed)

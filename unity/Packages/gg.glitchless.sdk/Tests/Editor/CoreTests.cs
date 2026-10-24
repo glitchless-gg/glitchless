@@ -16,19 +16,27 @@ namespace GlitchlessSdk.Tests
         public readonly List<string> SentNow = new List<string>();
         public readonly List<byte[]> Raw = new List<byte[]>();
         public int Aborts;
+        public bool Hold; // keep the answers back: each request is still going until the test calls its Pending answer
+        public readonly List<Action<long>> Pending = new List<Action<long>>();
+        public Action<string> BeforeSendNow;
 
         public void Send(string url, byte[] body, string contentType, Action<long> done)
         {
             Raw.Add(body);
             Sent.Add(Text(body));
-            done(Status);
+            if (Hold) Pending.Add(done);
+            else done(Status);
         }
 
         public long SendNow(string url, byte[] body, string contentType, int timeoutMs)
         {
-            SentNow.Add(Text(body));
+            var text = Text(body);
+            BeforeSendNow?.Invoke(text);
+            SentNow.Add(text);
             return Status;
         }
+
+        public static string BatchId(string body) => (string)((Dictionary<string, object>)Json.Parse(body))["batch_id"];
 
         public void Abort() => Aborts++;
 
@@ -110,6 +118,7 @@ namespace GlitchlessSdk.Tests
             Assert.AreEqual(GlitchlessCore.Sdk, envelope["sdk"]);
             Assert.IsNull(envelope["player_id"], "anonymous mode has no player ID");
             StringAssert.StartsWith("s_", (string)envelope["session_id"]);
+            StringAssert.IsMatch("^b_[a-z0-9]{16}$", (string)envelope["batch_id"]);
         }
 
         [Test]
@@ -285,6 +294,8 @@ namespace GlitchlessSdk.Tests
             StringAssert.DoesNotContain(first.SessionId, file);
             StringAssert.DoesNotContain("\"sid\"", file);
             Assert.IsFalse(File.Exists(Path.Combine(dir, "player_id")));
+            var tried = FakeTransport.BatchId(transport.SentNow[0]);
+            StringAssert.Contains($"\"bid\":\"{tried}\"", file, "the batch's own ID is saved, in anonymous mode too: it names the batch, not the player");
 
             transport.Status = 202;
             var second = NewCore();
@@ -294,6 +305,7 @@ namespace GlitchlessSdk.Tests
             var replayed = bodies.First(b => ((List<object>)b["events"]).Cast<Dictionary<string, object>>().Any(e => (string)e["type"] == "custom"));
             Assert.AreNotEqual(first.SessionId, replayed["session_id"], "the earlier session goes under a new random ID");
             Assert.AreNotEqual(second.SessionId, replayed["session_id"], "and not this launch's");
+            Assert.AreEqual(tried, replayed["batch_id"], "under the batch ID the first launch tried, so the server can tell a repeat");
             Assert.IsFalse(File.Exists(Path.Combine(dir, "outbox.json")), "deleted once everything is sent");
         }
 
@@ -397,7 +409,7 @@ namespace GlitchlessSdk.Tests
             second.Init(Options(Privacy.Install));
             Assert.AreEqual(first.PlayerId, second.PlayerId);
             Web().Init(Options());
-            Assert.IsEmpty(prefs);
+            CollectionAssert.AreEquivalent(new[] { "launched" }, prefs.Keys, "anonymous mode deletes the ID; the version that last ran stays");
         }
 
         [Test]
@@ -421,6 +433,26 @@ namespace GlitchlessSdk.Tests
             var device = DeviceInfo.Collect(false);
             Assert.AreEqual(false, device["steam_deck"], "a boolean, as the Unreal plugin sends it");
             Assert.AreNotEqual("SteamOS", device["os"]);
+        }
+
+        [Test]
+        public void TheLoadEventSaysWhetherThisIsAVersionsFirstLaunch()
+        {
+            bool? FirstLaunch(string version)
+            {
+                transport.Sent.Clear();
+                var core = NewCore();
+                var o = Options();
+                o.Version = version;
+                core.Init(o);
+                Frames(core, 3);
+                core.Flush();
+                return (bool?)transport.Events().Single(e => (string)e["type"] == "load")["first_launch"];
+            }
+            Assert.AreEqual(true, FirstLaunch("1.0.0"), "after an install");
+            Assert.AreEqual(false, FirstLaunch("1.0.0"));
+            Assert.AreEqual(true, FirstLaunch("1.1.0"), "after an update");
+            Assert.AreEqual("1.1.0", File.ReadAllText(Path.Combine(dir, "launched")), "the version and nothing else, in anonymous mode too");
         }
 
         [Test]
@@ -506,6 +538,404 @@ namespace GlitchlessSdk.Tests
             var off = NewCore("--glitchless-off");
             off.Init(Options());
             Assert.IsFalse(off.Enabled);
+        }
+    }
+
+    public class FrameAndSessionTests
+    {
+        double now;
+        FakeTransport transport;
+
+        [SetUp]
+        public void SetUp()
+        {
+            now = 1000;
+            transport = new FakeTransport();
+        }
+
+        GlitchlessCore NewCore() => new GlitchlessCore
+        {
+            Transport = transport,
+            Clock = () => now,
+            UnixNow = () => 1_761_000_000_000L + (long)now,
+            Args = () => new string[0],
+            Log = _ => { },
+        };
+
+        static GlitchlessOptions Options(string sessionType = "") => new GlitchlessOptions { Service = "Fetch", Intake = "http://localhost:7777/", SessionType = sessionType };
+
+        void Frames(GlitchlessCore core, int count, double dt = 16.7, FrameCost? cost = null)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                now += dt;
+                core.Frame(dt, cost ?? Cost(2, 1, 3));
+            }
+        }
+
+        static FrameCost Cost(double process, double physics, double render, double gpu = -1) => new FrameCost { Process = process, Physics = physics, Render = render, Gpu = gpu, Calls = 40, Triangles = 9000, SetPass = 12, Batches = 30, ShaderCompiles = 0, ObjectsAdded = 0, GcAllocKb = 1.5 };
+
+        [Test]
+        public void FirebaseTestLabDevicesAreSynthetic()
+        {
+            Assert.AreEqual("synthetic", GlitchlessCore.SessionTypeFor("", false, () => "true"), "Google Play's pre-launch report");
+            Assert.AreEqual("user", GlitchlessCore.SessionTypeFor("", false, () => null));
+            Assert.AreEqual("user", GlitchlessCore.SessionTypeFor("", false, () => "false"));
+            Assert.AreEqual("user", GlitchlessCore.SessionTypeFor("user", false, () => "true"), "a type the game set wins");
+            Assert.AreEqual("synthetic", GlitchlessCore.SessionTypeFor(null, true, () => throw new Exception("not read when a bot flag decides")));
+            Assert.IsNull(DeviceInfo.FirebaseTestLab(), "nothing to read in the Editor, and nothing thrown");
+
+            var core = NewCore();
+            core.TestLabSetting = () => "true";
+            core.Init(Options());
+            core.Flush();
+            Assert.AreEqual("synthetic", transport.Events().First()["session_type"]);
+            var set = NewCore();
+            set.TestLabSetting = () => "true";
+            set.Init(Options("user"));
+            set.Flush();
+            Assert.AreEqual("user", transport.Events().Last(e => (string)e["type"] == "session_start")["session_type"]);
+        }
+
+        [Test]
+        public void AHitchTheTimedPartsDontExplainIsGpuOrOs()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            Frames(core, 60);
+            void Hitch(double ms, FrameCost cost)
+            {
+                now += ms;
+                core.Frame(ms, cost);
+                Frames(core, 10);
+            }
+            Hitch(120, Cost(3, 1, 4)); // 8 ms of 120 timed: presenting, the GPU or the OS (Metal without GPU times)
+            Hitch(110, Cost(3, 1, 4, gpu: 30)); // a GPU time that still leaves most of the frame out
+            Hitch(100, Cost(20, 15, 15)); // nothing stands out, but the timed parts fill the frame
+            core.Flush();
+            Hitch(90, FrameCost.Unknown); // the timing points didn't run: nothing to say
+            Hitch(80, new FrameCost { Process = 3, Physics = 1, Render = 4, Gpu = -1, Calls = 40, GcCollections = 1, GcAllocKb = 900 }); // a GC is a cause of its own
+            Hitch(900, Cost(3, 1, 4)); // a frozen frame the game code doesn't explain either
+            core.Flush();
+            var causes = transport.Events().Where(e => (string)e["type"] == "hitch").ToDictionary(e => (double)e["duration_ms"], e => string.Join(",", ((List<object>)e["causes"]).Cast<string>()));
+            Assert.AreEqual("gpu_or_os", causes[120.0]);
+            Assert.AreEqual("gpu_or_os", causes[110.0]);
+            Assert.AreEqual("", causes[100.0]);
+            Assert.AreEqual("", causes[90.0]);
+            Assert.AreEqual("gc", causes[80.0]);
+            Assert.AreEqual("gpu_or_os,frozen", causes[900.0]);
+        }
+
+        [Test]
+        public void TheLoadEventIsStampedAtTheFirstFrame()
+        {
+            var core = NewCore();
+            Frames(core, 5);
+            var firstFrame = 1_761_000_000_000L + (long)(1000 + 16.7);
+            now += 20_000; // the game calls Init late, and its first batch goes 2 s after that
+            core.Init(Options());
+            now += 2_000;
+            core.Flush();
+            var load = transport.Events().Single(e => (string)e["type"] == "load");
+            Assert.AreEqual((double)firstFrame, load["ts"]);
+            Assert.AreEqual(1016.0, load["ttff_ms"]);
+        }
+
+        [Test]
+        public void TheFirstWindowsGoOutWithTheMeasuredRateNotSixty()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            Frames(core, 29, 33.3);
+            Assert.AreEqual(1000.0 / 60, core.BudgetMs, 0.001, "60 Hz until 30 frames are in");
+            Frames(core, 11, 33.3);
+            core.LevelStart("level-1"); // closes the first window early, 40 frames in
+            core.Flush();
+            var fw = transport.Events().First(e => (string)e["type"] == "frame_window");
+            Assert.AreEqual(30.0, fw["hz"]);
+            Assert.AreEqual(33.33, fw["budget_ms"]);
+        }
+
+        [Test]
+        public void TheRateIsReadFromTheFastFrames()
+        {
+            var fast = NewCore();
+            fast.Init(Options());
+            Frames(fast, 10, 60); // a busy start: loading, shader compiles
+            Frames(fast, 20, 8.33);
+            Assert.AreEqual(1000.0 / 120, fast.BudgetMs, 0.001, "a frame can take longer than the screen's interval, never less");
+
+            var bound = NewCore(); // a GPU-bound game at 40 fps on a 60 Hz screen: frames of one and two intervals
+            bound.Init(Options());
+            for (var i = 0; i < 60; i++)
+            {
+                Frames(bound, 1, 16.7);
+                Frames(bound, 1, 33.3);
+            }
+            Assert.AreEqual(1000.0 / 60, bound.BudgetMs, 0.001, "judged at the screen's 60 Hz, not at 30");
+
+            var promotion = NewCore();
+            promotion.Init(Options());
+            Frames(promotion, 120, 8.33);
+            Assert.AreEqual(1000.0 / 120, promotion.BudgetMs, 0.001);
+            promotion.ScreenHz = () => 60; // Low Power Mode: the OS says the screen slowed down, and the frames follow
+            Frames(promotion, 30, 16.7);
+            Assert.AreEqual(1000.0 / 60, promotion.BudgetMs, 0.001);
+            Frames(promotion, 600, 16.7);
+            Assert.AreEqual(1000.0 / 60, promotion.BudgetMs, 0.001, "the later looks only ever go faster");
+        }
+    }
+
+    public class BatchIdTests
+    {
+        double now;
+        FakeTransport transport;
+        string dir;
+
+        [SetUp]
+        public void SetUp()
+        {
+            now = 1000;
+            transport = new FakeTransport();
+            dir = Path.Combine(Path.GetTempPath(), "glitchless-tests-" + Guid.NewGuid().ToString("N"));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+
+        GlitchlessCore NewCore() => new GlitchlessCore
+        {
+            Transport = transport,
+            SaveDir = dir,
+            Clock = () => now,
+            UnixNow = () => 1_761_000_000_000L + (long)now,
+            Args = () => new string[0],
+            Log = _ => { },
+            AppVersion = "1.2.3",
+        };
+
+        static GlitchlessOptions Options() => new GlitchlessOptions { Service = "Fetch", Intake = "http://localhost:7777/" };
+
+        string OutboxFile => Path.Combine(dir, "outbox.json");
+
+        [Test]
+        public void EveryBatchHasItsOwnIdAndARetrySendsItAsItWas()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            core.Track("bone_collected", null);
+            transport.Status = 0; // timed out: the server may have it, but the game never saw the answer
+            core.Flush();
+            var first = transport.Sent[0];
+            StringAssert.IsMatch("^b_[a-z0-9]{16}$", FakeTransport.BatchId(first));
+            core.Track("powerup", null);
+            core.Flush(); // a second batch, cut while the first waits for its retry
+            Assert.AreEqual(1, transport.Sent.Count, "nothing goes during the backoff");
+            transport.Status = 202;
+            now += 5000;
+            core.Frame(16.7, FrameCost.Unknown);
+            Assert.AreEqual(3, transport.Sent.Count);
+            Assert.AreEqual(first, transport.Sent[1], "the same batch with the same ID, never merged into a new one");
+            Assert.AreNotEqual(FakeTransport.BatchId(first), FakeTransport.BatchId(transport.Sent[2]));
+            Assert.AreEqual(0, core.OutboxEvents);
+        }
+
+        [Test]
+        public void QuittingWithABatchInFlightSendsItAgainUnderItsId()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            transport.Hold = true; // the server has the first batch, but its answer hasn't come back
+            core.Track("bone_collected", null);
+            core.Flush();
+            Assert.AreEqual(1, transport.Pending.Count);
+            core.Track("powerup", null);
+            core.Shutdown("quit");
+            Assert.AreEqual(1, transport.Aborts, "the request in flight is given up on");
+            Assert.AreEqual(FakeTransport.BatchId(transport.Sent[0]), FakeTransport.BatchId(transport.SentNow[0]), "and sent again with its ID");
+            Assert.AreEqual(2, transport.SentNow.Select(FakeTransport.BatchId).Distinct().Count());
+            transport.Pending[0](0); // the aborted request ends
+            Assert.AreEqual(0, core.OutboxEvents);
+            Assert.IsFalse(File.Exists(OutboxFile));
+        }
+
+        [Test]
+        public void TheAnswerToAnAbortedTryIsNotTakenForTheNextTry()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            transport.Hold = true;
+            core.Track("bone_collected", null);
+            core.Flush();
+            transport.Status = 0; // to the background with no network: nothing goes then
+            core.OnBackground();
+            Assert.AreEqual(1, transport.Aborts);
+            now += 10_000;
+            core.OnForeground();
+            core.Frame(16.7, FrameCost.Unknown); // the first batch is tried again
+            Assert.AreEqual(2, transport.Pending.Count);
+            Assert.AreEqual(FakeTransport.BatchId(transport.Sent[0]), FakeTransport.BatchId(transport.Sent[1]));
+            transport.Pending[0](0); // only now does the aborted first try end
+            Assert.AreNotEqual("error", core.Stats.LastStatus, "that is not the second try failing");
+            var waiting = core.OutboxEvents;
+            transport.Pending[1](202);
+            Assert.Less(core.OutboxEvents, waiting, "the second try's answer clears the batch");
+        }
+
+        [Test]
+        public void SendingOnQuitSavesTheOutboxAfterEachBatchTheServerTakes()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            transport.Status = 503;
+            core.Track("bone_collected", null);
+            core.Flush(); // the first batch waits for its retry
+            core.Track("powerup", null);
+            core.Flush(); // and a second one behind it
+            var first = FakeTransport.BatchId(transport.Sent[0]);
+            transport.Status = 202;
+            var onDisk = new List<string>();
+            transport.BeforeSendNow = _ => onDisk.Add(File.Exists(OutboxFile) ? File.ReadAllText(OutboxFile) : "");
+            core.Shutdown("quit");
+            Assert.AreEqual(3, transport.SentNow.Count, "the two waiting, and the one with the session's end");
+            StringAssert.Contains(first, onDisk[0]);
+            StringAssert.DoesNotContain(first, onDisk[1], "gone from the file before the next batch goes: the OS may stop the game any moment");
+            Assert.IsFalse(File.Exists(OutboxFile));
+        }
+
+        [Test]
+        public void ABatchSavedWithoutAnIdGetsOne()
+        {
+            Directory.CreateDirectory(dir);
+            var ts = 1_761_000_000_000L + (long)now;
+            File.WriteAllText(OutboxFile, "{\"v\":1,\"batches\":[{\"service\":\"fetch\",\"env\":\"dev\",\"version\":\"1.2.0\",\"group\":" + ts + ",\"events\":[{\"type\":\"custom\",\"ts\":" + ts + ",\"level\":null,\"name\":\"bone_collected\",\"attrs\":{}}]}]}");
+            var core = NewCore();
+            core.Init(Options());
+            core.Flush();
+            var replayed = transport.Sent.First(b => b.Contains("bone_collected"));
+            StringAssert.IsMatch("^b_[a-z0-9]{16}$", FakeTransport.BatchId(replayed), "an outbox an older version saved");
+        }
+    }
+
+    public class LevelAbandonTests
+    {
+        double now;
+        FakeTransport transport;
+        string dir;
+
+        [SetUp]
+        public void SetUp()
+        {
+            now = 1000;
+            transport = new FakeTransport();
+            dir = Path.Combine(Path.GetTempPath(), "glitchless-tests-" + Guid.NewGuid().ToString("N"));
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+
+        GlitchlessCore NewCore() => new GlitchlessCore
+        {
+            Transport = transport,
+            SaveDir = dir,
+            Clock = () => now,
+            UnixNow = () => 1_761_000_000_000L + (long)now,
+            Args = () => new string[0],
+            Log = _ => { },
+        };
+
+        static GlitchlessOptions Options() => new GlitchlessOptions { Service = "Fetch", Intake = "http://localhost:7777/" };
+
+        void Frames(GlitchlessCore core, int count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                now += 16.7;
+                core.Frame(16.7, FrameCost.Unknown);
+            }
+        }
+
+        // Every level outcome and session end that went out, in order, as "type level reason".
+        List<string> Outcomes() => transport.Events(transport.Sent.Concat(transport.SentNow))
+            .Where(e => (string)e["type"] == "level_complete" || (string)e["type"] == "level_fail" || (string)e["type"] == "level_abandon" || (string)e["type"] == "session_end")
+            .Select(e => $"{e["type"]} {e["level"] ?? "-"} {(e.TryGetValue("reason", out var r) ? r : e.TryGetValue("cause", out var c) ? c : "")}".Trim())
+            .ToList();
+
+        [Test]
+        public void LeavingALevelIsAnAbandonNotAFail()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            core.LevelStart("level-2");
+            Frames(core, 60); // about a second
+            core.LevelAbandon(); // the player went to the menu
+            core.LevelStart("level-2");
+            core.LevelFail("level-2", "fell");
+            core.Flush();
+            var abandon = transport.Events().Single(e => (string)e["type"] == "level_abandon");
+            Assert.AreEqual("level-2", abandon["level"]);
+            Assert.AreEqual(1.0, (double)abandon["duration_s"], 0.01, "seconds since its level_start");
+            Assert.IsFalse(abandon.ContainsKey("reason"), "no reason when the game sends it");
+            CollectionAssert.AreEqual(new[] { "level_abandon level-2", "level_fail level-2 fell" }, Outcomes());
+        }
+
+        [Test]
+        public void QuittingMidLevelSendsTheAbandonBeforeTheEndAndDropsALateFail()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            core.LevelStart("level-1");
+            core.LevelComplete("level-1", 10);
+            core.LevelStart("level-2");
+            Frames(core, 30);
+            core.Shutdown("quit");
+            core.LevelFail("level-2", "left"); // the game ends its level as it is torn down, after the session ended
+            core.LevelAbandon("level-2");
+            CollectionAssert.AreEqual(new[] { "level_complete level-1", "level_abandon level-2 quit", "session_end level-2 quit" }, Outcomes());
+            Assert.IsFalse(core.Queued.Any(e => (string)e["type"] == "level_fail" || (string)e["type"] == "level_abandon"), "the late fail and abandon are dropped");
+        }
+
+        [Test]
+        public void QuittingFromTheMenuAbandonsNothing()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            core.OnSceneActive("Level1", 1); // a scene level starts
+            Frames(core, 30);
+            core.OnSceneUnloaded(1); // and its scene unloads: back in the menu
+            core.Shutdown("quit");
+            CollectionAssert.AreEqual(new[] { "session_end - quit" }, Outcomes());
+        }
+
+        [Test]
+        public void GoingToTheBackgroundMidLevelAbandonsItAndComingBackReopensIt()
+        {
+            var core = NewCore();
+            core.Init(Options());
+            core.LevelStart("level-3");
+            Frames(core, 30);
+            core.OnBackground();
+            core.LevelFail("level-3", "left"); // dropped: the session has ended and the level has its abandon
+            now += 10_000;
+            core.OnForeground(); // back in the same session: the level goes on
+            Frames(core, 30);
+            core.OnBackground(); // so it is abandoned again
+            now += 400_000;
+            core.OnForeground(); // a new session: the level is forgotten
+            Frames(core, 30);
+            core.OnBackground();
+            CollectionAssert.AreEqual(new[]
+            {
+                "level_abandon level-3 background", "session_end level-3 background",
+                "level_abandon level-3 background", "session_end level-3 background",
+                "session_end level-3 background",
+            }, Outcomes());
         }
     }
 

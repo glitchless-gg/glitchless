@@ -1,7 +1,12 @@
 // What every exporter needs to know about Glitchless events, whatever the backend.
 
 // Event types that become log records (frame windows and positions are metrics or map data, not logs).
-export const LOG_TYPES = new Set(['session_start', 'session_end', 'level_start', 'level_complete', 'level_fail', 'death', 'error', 'hitch', 'custom', 'load']);
+export const LOG_TYPES = new Set(['session_start', 'session_end', 'level_start', 'level_complete', 'level_fail', 'level_abandon', 'death', 'error', 'hitch', 'custom', 'load']);
+
+// A level_fail with the reserved cause `abandon` is an abandon (SPEC §2), as level_abandon is.
+export function levelOutcome(e) {
+  return e.type === 'level_fail' && e.cause === 'abandon' ? 'level_abandon' : e.type;
+}
 
 // Device context arrives once, on session_start; later events in the session only carry the session id.
 export class SessionContext {
@@ -41,7 +46,9 @@ export function describe(e) {
     case 'level_complete':
       return `Level ${e.level} completed in ${e.duration_s}s`;
     case 'level_fail':
-      return `Level ${e.level} failed (${e.cause ?? 'unknown'})`;
+      return e.cause === 'abandon' ? `Level ${e.level} left before it ended` : `Level ${e.level} failed (${e.cause ?? 'unknown'})`;
+    case 'level_abandon':
+      return `Level ${e.level} left before it ended`;
     case 'death':
       return `Player died on ${e.level} at x=${e.x} (${e.cause})`;
     case 'error':

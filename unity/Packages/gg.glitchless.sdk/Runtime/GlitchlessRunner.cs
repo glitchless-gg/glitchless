@@ -44,6 +44,7 @@ namespace GlitchlessSdk
     {
         public static GlitchlessCore Core { get; private set; }
         static GlitchlessRunner instance;
+        static bool quitting;
 
         static readonly object LogLock = new object();
         static readonly List<(string condition, string stack, LogType type)> Logs = new List<(string, string, LogType)>();
@@ -72,6 +73,7 @@ namespace GlitchlessSdk
         {
             Core = null;
             instance = null;
+            quitting = false;
             PlayerLoopHooks.Remove();
             lock (LogLock) Logs.Clear();
         }
@@ -81,10 +83,11 @@ namespace GlitchlessSdk
         static void Bootstrap() => EnsureRunning();
 #endif
 
-        /// <summary>The running core, made (with its GameObject) on first use.</summary>
+        /// <summary>The running core, made (with its GameObject) on first use. Not while the game quits: a Glitchless call
+        /// from an OnDestroy then (a level ended as it is torn down) must not start it again.</summary>
         public static GlitchlessCore EnsureRunning()
         {
-            if (Core != null || !Application.isPlaying) return Core;
+            if (Core != null || !Application.isPlaying || quitting) return Core;
             var go = new GameObject("Glitchless");
             DontDestroyOnLoad(go);
             go.AddComponent<GlitchlessRunner>(); // Awake makes Core
@@ -117,6 +120,8 @@ namespace GlitchlessSdk
                 StartupMs = () => Time.realtimeSinceStartupAsDouble * 1000,
                 ScreenSize = DeviceInfo.ScreenSize,
                 WindowSize = DeviceInfo.WindowSize,
+                ScreenHz = () => Screen.currentResolution.refreshRateRatio.value,
+                TestLabSetting = DeviceInfo.FirebaseTestLab,
                 AppVersion = Application.version,
                 IsBatchMode = Application.isBatchMode,
                 IsDebugBuild = UnityEngine.Debug.isDebugBuild,
@@ -427,19 +432,30 @@ namespace GlitchlessSdk
         void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             sceneChanged = true;
-            if (scene == SceneManager.GetActiveScene()) Core?.OnSceneActive(scene.name, scene.handle);
+            if (scene == SceneManager.GetActiveScene()) Core?.OnSceneActive(scene.name, HandleOf(scene));
         }
 
         void OnActiveSceneChanged(Scene from, Scene to)
         {
             sceneChanged = true;
-            if (to.IsValid()) Core?.OnSceneActive(to.name, to.handle);
+            if (to.IsValid()) Core?.OnSceneActive(to.name, HandleOf(to));
         }
 
         void OnSceneUnloaded(Scene scene)
         {
             sceneChanged = true;
-            Core?.OnSceneUnloaded(scene.handle);
+            Core?.OnSceneUnloaded(HandleOf(scene));
+        }
+
+        // The core tells scenes apart by an int. Unity 6.5 made Scene.handle a SceneHandle whose int conversion
+        // no longer compiles.
+        static int HandleOf(Scene scene)
+        {
+#if UNITY_6000_5_OR_NEWER
+            return scene.handle.GetHashCode();
+#else
+            return scene.handle;
+#endif
         }
 
         // ───────────────────────────── input ─────────────────────────────
@@ -500,7 +516,11 @@ namespace GlitchlessSdk
             else if (Core.Inited) Core.Flush();
         }
 
-        static void OnQuitting() => Core?.Shutdown("quit");
+        static void OnQuitting()
+        {
+            quitting = true;
+            Core?.Shutdown("quit");
+        }
 
 #if UNITY_EDITOR
         static void OnEditorPause(PauseState state) => Core?.SkipNextFrame();

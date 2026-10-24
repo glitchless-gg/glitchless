@@ -30,17 +30,18 @@ The GPU renderer string sent in full mode helps tell slow devices apart, but it 
 
 ## Field by field
 
-Every batch has an envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the stored player ID in install and full mode) and `sdk`. Every event has `type`, `ts` (milliseconds, UTC) and `level` (the game's own level name, or null).
+Every batch has an envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the stored player ID in install and full mode), `sdk` and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once). Every event has `type`, `ts` (milliseconds, UTC) and `level` (the game's own level name, or null).
 
 | event | fields | when |
 | --- | --- | --- |
 | `session_start` | `session_type` (`user` or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (above; `steam_deck: true` only on a Steam Deck, with `gpu_tier` `low`), `page`, `nav_ms`; with the Phaser, Babylon.js or PlayCanvas adapter, `engine` (`phaser`, `babylon` or `playcanvas`, its version and renderer: the same for every player of a build) | the first batch |
 | `session_end` | `reason`, `duration_s` | page hidden or closed |
 | `frame_window` | frames, fps, refresh rate and budget, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, render ms, update ms (Phaser, Babylon.js, PlayCanvas), draw calls, triangles, geometry/texture/shader counts, JS heap MB, `ctx` (the game's gauges; with Phaser also object, body, tween, listener and sound counts; with Babylon.js mesh, material, texture, particle and observer counts; with PlayCanvas entity, mesh instance, material, texture and light counts) | every 5 s, sent in batches every 15 s |
-| `hitch` | duration, likely causes (Long Animation Frame script attribution, shader compile, GC, asset load; with Phaser, Babylon.js and PlayCanvas also scene change, object spawn, texture or geometry upload, update or render time, and what the frame compiled, added or uploaded), draw calls, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms and over twice the recent median, at most 3 per window |
-| `load` | time to first frame, asset load timings | once |
+| `hitch` | duration, likely causes (Long Animation Frame script attribution, shader compile, GC, asset load, `gpu_or_os` where the browser reports long animation frames and the stall wasn't one; with Phaser, Babylon.js and PlayCanvas also scene change, object spawn, texture or geometry upload, update or render time, and what the frame compiled, added or uploaded), draw calls, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms and over twice the recent median, at most 3 per window |
+| `load` | time to first frame (stamped when it was drawn), asset load timings | once |
 | `error` | `kind`, `message`, `stack`, `source` (file name), `line`, `col`, `fn`, `fingerprint`, `attrs` (what the game passes to `glitchless.error`; for errors an adapter reports, engine counts, the Phaser scene key, how long the loop stalled, a shader compiler's message, or a PlayCanvas script's name and method). The server builds breadcrumbs from the session's earlier events | each error, at most 25 of a kind per session |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them | the game calls them |
+| `level_abandon` | `duration_s`; `reason` (`pagehide`) when the SDK sends it | the game calls `levelAbandon()`, or the page goes away mid-level |
 | `death` | `cause`; with positions on: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `glitchless.track()`; also `rage_input` (a key code and count) from the SDK | as they happen |
 | `pos` | `[time, x, y, z]` samples | with positions on, in each batch |

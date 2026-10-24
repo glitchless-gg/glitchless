@@ -11,6 +11,8 @@
  * collection, a log error, an ensure, a Blueprint runtime error, a death, a map change, a bug report,
  * and with -glitchless-test-crash a crash (a null write) or -glitchless-test-fatal a UE_LOG Fatal. Then it quits.
  * With -glitchless-test-dialog it opens the bug report box instead, types a note and presses Ctrl+Enter.
+ * With -glitchless-test-leave it starts a level, goes to the background mid-level as a phone game would (and
+ * fails the level as "left" there, as games that tear their level down do), comes back, and quits mid-level.
  */
 /** Objects made only to be collected. */
 UCLASS()
@@ -42,6 +44,7 @@ private:
 	bool bCrash = false;
 	bool bFatal = false;
 	bool bDialog = false;
+	bool bLeave = false;
 	UPROPERTY()
 	TArray<TObjectPtr<UObject>> Garbage;
 };

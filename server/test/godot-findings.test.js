@@ -195,7 +195,7 @@ test('browser sessions keep their three.js findings, also next to Godot sessions
   assert.ok(!fs.some((f) => f.id.startsWith('leak-orphan-nodes')));
   assert.equal(fs.find((f) => f.id === 'device-gap-low-tier').suggestion, 'Add a quality tier: cap devicePixelRatio at 1.5, disable shadows/post-processing and halve particle counts when gpu_tier is low or p95 stays above budget for 5s.');
   const slow = fs.find((f) => f.id === 'load-ttff');
-  assert.equal(slow.summary, 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.');
+  assert.equal(slow.summary, '100% of sessions waited more than 4s for the first frame (median 9.0s). Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.');
   assert.equal(slow.suggestion, 'Lazy-load non-first-level assets, compress textures (KTX2/Basis) and meshes (Draco/Meshopt), and warm shaders with renderer.compileAsync before the first frame.');
   assert.match(fs.find((f) => f.id === 'perf-level-level-2').suggestion, /^Profile level-2 with the overlay open/);
 });

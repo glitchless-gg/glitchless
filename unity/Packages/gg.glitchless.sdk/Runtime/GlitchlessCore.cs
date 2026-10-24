@@ -95,6 +95,8 @@ namespace GlitchlessSdk
         public Func<string[]> Args = () => Environment.GetCommandLineArgs();
         public Func<int[]> ScreenSize = () => null;
         public Func<int[]> WindowSize = () => null;
+        public Func<double> ScreenHz = () => 0; // the screen's refresh rate as the OS reports it, 0 when unknown
+        public Func<string> TestLabSetting = () => null; // Android's firebase.test.lab setting (DeviceInfo.FirebaseTestLab)
         public Action<string> Log = s => UnityEngine.Debug.Log(s);
         public string AppVersion = "";
         public bool IsBatchMode, IsDebugBuild, IsMobile, IsWeb;
@@ -122,13 +124,15 @@ namespace GlitchlessSdk
         bool full, storesId, versionGiven, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
         long startedAt;
         double levelStartedAt;
+        bool levelOpen; // a level started and not yet completed, failed or abandoned
+        string leftLevel; // the level abandoned for the game as the session ended
         readonly List<(string name, double t)> recent = new List<(string, double)>();
         readonly List<Dictionary<string, object>> history = new List<Dictionary<string, object>>(); // the last game events, slimmed, for bug reports
         readonly List<Dictionary<string, object>> recentHitches = new List<Dictionary<string, object>>();
         readonly List<Dictionary<string, object>> recentWindows = new List<Dictionary<string, object>>(); // {ts, level, fps, p95}
         List<Dictionary<string, object>> queue = new List<Dictionary<string, object>>();
         readonly List<Batch> outbox = new List<Batch>();
-        int nextBatchId = 1, inFlight = -1;
+        int nextBatchId = 1, inFlight = -1, sends;
         double retryAt, backoffS;
         bool sessionStartSent, loadSent, ended, shut;
         double pausedAt;
@@ -139,11 +143,15 @@ namespace GlitchlessSdk
         Window win;
         readonly double[] ring = new double[RingSize];
         int ringIdx, ringCount, hz = 60;
-        readonly List<double> early = new List<double>();
+        static readonly int[] Rates = { 30, 60, 75, 90, 100, 120, 144, 165, 240 };
+        List<double> rateFrames = new List<double>(); // frame times under 100 ms, for the refresh rate
         double recentMedian;
         (double dt, FrameCost cost)? pendingLong;
         bool throttled, skipNext;
         double firstFrameMs, firstInputAt;
+        long firstFrameAt; // unix ms of the first frame, the load event's ts
+        string firstFrameLevel;
+        bool? firstLaunch; // the first launch of this game version on this device (the load event's first_launch)
         readonly Dictionary<string, List<double>> keyHistory = new Dictionary<string, List<double>>();
         double[] position;
         readonly List<object> posBuffer = new List<object>();
@@ -153,10 +161,14 @@ namespace GlitchlessSdk
         int[] screen, window;
         readonly System.Random random = new System.Random();
 
+        // Bid is the batch's own random ID (SPEC §2 batch_id). It goes with every try of the batch and is saved with it,
+        // so the server stores a batch once however many times it is sent: after a timeout, a send cut short by going to
+        // the background or quitting, or a launch that sends what the last one saved. It names the batch, not the player
+        // or the session, so anonymous mode saves it too.
         sealed class Batch
         {
             public int Id;
-            public string Service, Env, Version, Sid, Pid;
+            public string Bid, Service, Env, Version, Sid, Pid;
             public long Group;
             public List<string> Events;
             public bool Direct; // a bug report on a request of its own
@@ -222,8 +234,7 @@ namespace GlitchlessSdk
             rageInputOn = Options.RageInput ?? !IsMobile;
             sceneLevels = Options.SceneLevels;
             debug = debug || Options.Debug || HasFlag("--glitchless-debug");
-            if (!string.IsNullOrEmpty(Options.SessionType)) sessionType = Options.SessionType;
-            else if (IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure")) sessionType = "synthetic";
+            sessionType = SessionTypeFor(Options.SessionType, IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), TestLabSetting);
             Enabled = (Options.Enabled ?? !HasFlag("--glitchless-off")) && intake != "";
             Sampled = random.NextDouble() < Options.SampleRate;
             // The first batch goes soon, so a session that crashes early is still seen.
@@ -235,11 +246,22 @@ namespace GlitchlessSdk
                 return;
             }
             if (SaveDir != null) TryIo(() => Directory.CreateDirectory(SaveDir));
+            firstLaunch = NoteLaunch();
             // Install and full mode share one saved ID (SPEC §4b); anonymous mode deletes one another build left.
             if (storesId) PlayerId = LoadId(PlayerIdName, "p_");
             else TryIo(() => DeleteId(PlayerIdName));
             if (SaveDir != null) LoadOutbox();
             Debug($"on: {service} {version} {env} -> {intake} ({PrivacyName}, {sessionType})");
+        }
+
+        /// <summary>The session's type: what the game set; else synthetic for a bot (batch mode, --autoplay and the flags)
+        /// or a Firebase Test Lab device, whose firebase.test.lab setting is "true" (Google Play's pre-launch report plays
+        /// every new build on them); else user. The setting is read only when nothing else decides.</summary>
+        internal static string SessionTypeFor(string set, bool bot, Func<string> testLabSetting)
+        {
+            if (!string.IsNullOrEmpty(set)) return set;
+            if (bot) return "synthetic";
+            return testLabSetting?.Invoke() == "true" ? "synthetic" : "user";
         }
 
         public void LevelStart(string levelId) => StartLevel(levelId, fromScene: false);
@@ -250,12 +272,15 @@ namespace GlitchlessSdk
             CloseWindow(false); // so a frame window never spans two levels
             Level = levelId;
             levelStartedAt = Ticks;
+            levelOpen = true;
+            leftLevel = null;
             Push(Ev("level_start"));
             Remember("level_start");
         }
 
         public void LevelComplete(string levelId = null, double? score = null, double? durationS = null)
         {
+            levelOpen = false;
             var e = Ev("level_complete");
             e["level"] = levelId ?? Level;
             e["duration_s"] = Sketch.Round(durationS ?? (Ticks - levelStartedAt) / 1000, 2);
@@ -264,13 +289,49 @@ namespace GlitchlessSdk
             Remember("level_complete");
         }
 
+        /// <summary>The player lost the level (died, ran out of lives or time). Leaving it is LevelAbandon.</summary>
         public void LevelFail(string levelId = null, string cause = null)
         {
+            var level = levelId ?? Level;
+            if (OutcomeSent(level)) return;
+            levelOpen = false;
             var e = Ev("level_fail");
-            e["level"] = levelId ?? Level;
+            e["level"] = level;
             e["cause"] = string.IsNullOrEmpty(cause) ? null : cause;
             Push(e);
             Remember("level_fail");
+        }
+
+        /// <summary>The player left the level before it ended: went to the menu, restarted it, closed the game. Never
+        /// counted as a fail. Going to the background or quitting mid-level sends one by itself (SPEC §2 level_abandon).</summary>
+        public void LevelAbandon(string levelId = null)
+        {
+            var level = levelId ?? Level;
+            if (OutcomeSent(level)) return;
+            Abandon(level, null);
+        }
+
+        void Abandon(string level, string reason)
+        {
+            levelOpen = false;
+            var e = Ev("level_abandon");
+            e["level"] = level;
+            e["duration_s"] = Sketch.Round((Ticks - levelStartedAt) / 1000, 2);
+            if (reason != null) e["reason"] = reason;
+            Push(e);
+            Remember("level_abandon");
+        }
+
+        // A game often ends its level as it closes (in an OnDestroy, say), after the session ended and Glitchless already
+        // sent the abandon: that attempt has its outcome.
+        bool OutcomeSent(string level) => ended && leftLevel != null && level == leftLevel;
+
+        // The session ends with a level still going: the player left it (SPEC §2 level_abandon).
+        void EndLevel(string reason)
+        {
+            if (!levelOpen) return;
+            leftLevel = Level;
+            Abandon(Level, reason);
         }
 
         /// <summary>A death. The place is sent only when positions are on; the death and cause always are.</summary>
@@ -331,6 +392,7 @@ namespace GlitchlessSdk
             levelSceneHandle = 0;
             CloseWindow(false);
             Level = null; // back in a menu: frames there have no level
+            levelOpen = false; // nothing to abandon if the game closes from the menu
         }
 
         public string LevelForScene(string sceneName)
@@ -371,11 +433,17 @@ namespace GlitchlessSdk
                 throttled = false;
                 OnFrame(dtMs, cost);
             }
-            // The refresh rate (60 / 90 / 120 Hz, or a cap the game set) from the median early frame.
-            if (early.Count < 120 && dtMs > 0 && dtMs < 100)
+            // The refresh rate (60 / 90 / 120 Hz, or a cap the game set) sets the frame budget. A frame can take longer
+            // than the screen's interval but never less, so the fast frames tell the rate, as the browser SDK reads it:
+            // a first guess after 30 frames (so the session's first window isn't judged at a made-up 60 Hz), the answer
+            // at 120, then a look every 480 frames, only ever faster. CheckScreen lowers it when the OS says the screen
+            // slowed down (Low Power Mode).
+            if (dtMs > 3.5 && dtMs < 100)
             {
-                early.Add(dtMs);
-                if (early.Count == 120) SetBudget(Median(early));
+                rateFrames.Add(dtMs);
+                var n = rateFrames.Count;
+                if (n == 30 || n == 120 || n == 600) SetBudget(Quantile(rateFrames, 0.2), onlyFaster: n == 600);
+                if (n >= 600) rateFrames = rateFrames.GetRange(480, n - 480);
             }
             Tick();
         }
@@ -405,12 +473,13 @@ namespace GlitchlessSdk
             }
         }
 
-        void SetBudget(double medianDt)
+        void SetBudget(double typicalDt, bool onlyFaster = false)
         {
-            var rate = 1000 / medianDt;
+            var rate = 1000 / typicalDt;
             var best = 60;
-            foreach (var r in new[] { 30, 60, 75, 90, 100, 120, 144, 165, 240 })
+            foreach (var r in Rates)
                 if (Math.Abs(r - rate) < Math.Abs(best - rate)) best = r;
+            if (onlyFaster && best <= hz) return;
             hz = best;
             BudgetMs = 1000.0 / hz;
         }
@@ -458,7 +527,12 @@ namespace GlitchlessSdk
             ring[ringIdx] = dt;
             ringIdx = (ringIdx + 1) % RingSize;
             ringCount = Math.Min(ringCount + 1, RingSize);
-            if (firstFrameMs <= 0) firstFrameMs = StartupMs != null ? StartupMs() : Ticks;
+            if (firstFrameMs <= 0)
+            {
+                firstFrameMs = StartupMs != null ? StartupMs() : Ticks;
+                firstFrameAt = UnixNow(); // the load event happened now, whenever the first batch goes
+                firstFrameLevel = Level;
+            }
             if (FrameCount % 16 == 0 && ringCount >= 30) recentMedian = Median(LastFrames(60));
 
             // A hitch is a stutter: over 50 ms and well above what this device usually does. A device that
@@ -532,6 +606,10 @@ namespace GlitchlessSdk
             if (f.Process >= share) c.Add("script");
             if (f.Physics >= share) c.Add("physics");
             if (Math.Max(f.Render, f.Gpu) >= share) c.Add("render");
+            // None of those, and what the timing points measured (Update to LateUpdate, physics, PostLateUpdate, and the
+            // GPU where FrameTimingManager has it) adds up to little of the frame: the time went where they can't see, to
+            // the GPU, presenting the frame, the OS, or the engine's own work between them.
+            if (c.Count == 0 && f.Process >= 0 && f.Process + Math.Max(0, f.Physics) + Math.Max(0, f.Render) + Math.Max(0, f.Gpu) < share) c.Add("gpu_or_os");
             if (dt > FrozenMs) c.Add("frozen");
             return c;
         }
@@ -632,6 +710,10 @@ namespace GlitchlessSdk
         // breadcrumb for any stutter that follows.
         void CheckScreen()
         {
+            // The OS reports the screen's rate, which can be higher than what the game gets (a 60 Hz panel said to be
+            // 120) but drops at once when a ProMotion phone goes into Low Power Mode: then the frames' rate does too.
+            var osHz = ScreenHz();
+            if (osHz >= 30 && osHz < hz) SetBudget(1000 / osHz);
             var s = ScreenSize();
             var wsz = WindowSize();
             if (s == null) return;
@@ -800,6 +882,7 @@ namespace GlitchlessSdk
             pendingLong = null;
             if (Inited && Enabled && !ended)
             {
+                EndLevel("background");
                 ended = true;
                 Push(SessionEnd("background"));
             }
@@ -816,8 +899,19 @@ namespace GlitchlessSdk
             if (!ended) return;
             ended = false;
             var away = (Ticks - pausedAt) / 1000;
-            if (away > Options.SessionTimeoutSeconds) NewSession();
-            else Track("app_resume", new Dictionary<string, object> { ["away_s"] = Sketch.Round(away, 1) });
+            if (away > Options.SessionTimeoutSeconds)
+            {
+                leftLevel = null;
+                NewSession();
+            }
+            else
+            {
+                // Back in the same session: the level goes on, and the server takes back the abandon sent on the way
+                // out once anything else happens on it.
+                levelOpen = leftLevel != null;
+                leftLevel = null;
+                Track("app_resume", new Dictionary<string, object> { ["away_s"] = Sketch.Round(away, 1) });
+            }
         }
 
         // Back after a long time away: a new session with a new random ID. In anonymous mode nothing joins it to the last one.
@@ -838,6 +932,7 @@ namespace GlitchlessSdk
             shut = true;
             if (Inited && Enabled && !ended)
             {
+                EndLevel(reason);
                 ended = true;
                 Push(SessionEnd(reason));
             }
@@ -1048,7 +1143,7 @@ namespace GlitchlessSdk
                 if (firstFrameMs > 0 && !loadSent)
                 {
                     loadSent = true;
-                    queue.Add(new Dictionary<string, object> { ["type"] = "load", ["ts"] = UnixNow(), ["level"] = Level, ["ttff_ms"] = (long)firstFrameMs, ["assets"] = null });
+                    queue.Add(new Dictionary<string, object> { ["type"] = "load", ["ts"] = firstFrameAt, ["level"] = firstFrameLevel, ["ttff_ms"] = (long)firstFrameMs, ["assets"] = null, ["first_launch"] = firstLaunch });
                 }
             }
             if (!Sampled)
@@ -1092,7 +1187,7 @@ namespace GlitchlessSdk
             }
         }
 
-        Batch NewBatch(List<string> events) => new Batch { Id = nextBatchId++, Service = service, Env = env, Version = version, Sid = SessionId, Pid = PlayerId, Group = startedAt, Events = events };
+        Batch NewBatch(List<string> events) => new Batch { Id = nextBatchId++, Bid = NewId("b_", 16), Service = service, Env = env, Version = version, Sid = SessionId, Pid = PlayerId, Group = startedAt, Events = events };
 
         string Body(Batch b)
         {
@@ -1107,7 +1202,9 @@ namespace GlitchlessSdk
             Json.Write(sb, b.Sid);
             sb.Append(",\"player_id\":");
             Json.Write(sb, string.IsNullOrEmpty(b.Pid) ? null : b.Pid); // the server uses the session ID in its place
-            sb.Append(",\"sdk\":\"").Append(Sdk).Append("\",\"events\":[");
+            sb.Append(",\"sdk\":\"").Append(Sdk).Append("\",\"batch_id\":");
+            Json.Write(sb, b.Bid);
+            sb.Append(",\"events\":[");
             for (var i = 0; i < b.Events.Count; i++)
             {
                 if (i > 0) sb.Append(',');
@@ -1148,12 +1245,15 @@ namespace GlitchlessSdk
             Debug($"sending {b.Events.Count} events ({body.Length} bytes)");
             inFlight = b.Id;
             var id = b.Id;
-            Transport.Send(IntakeUrl, body, "text/plain", status => OnSent(id, status));
+            var send = ++sends;
+            Transport.Send(IntakeUrl, body, "text/plain", status => OnSent(id, send, status));
         }
 
-        void OnSent(int id, long status)
+        void OnSent(int id, int send, long status)
         {
-            if (id != inFlight) return; // given up on (SendNow sent it instead)
+            // Given up on: SendNow sent it instead. The send number tells an aborted try apart from a later try of the
+            // same batch that is still going.
+            if (id != inFlight || send != sends) return;
             inFlight = -1;
             var i = outbox.FindIndex(x => x.Id == id);
             var n = i >= 0 ? outbox[i].Events.Count : 0;
@@ -1194,7 +1294,9 @@ namespace GlitchlessSdk
             if (outbox.Count == 0 || !Sampled || IsWeb || Transport == null) return;
             if (inFlight >= 0)
             {
-                Transport.Abort(); // it needs frames to finish; send it here instead
+                // It needs frames to finish; send it here instead. The server may have it already: its batch_id lets
+                // the server store it once.
+                Transport.Abort();
                 inFlight = -1;
             }
             var deadline = Ticks + budgetMs;
@@ -1206,6 +1308,7 @@ namespace GlitchlessSdk
                 if (status >= 200 && status < 300) Stats.Sent += b.Events.Count;
                 else if (status == 0 || status >= 500 || status == 408 || status == 429) break;
                 outbox.Remove(b);
+                SaveOutbox(); // at once: the OS may stop the game before the next one
             }
             SaveOutbox();
         }
@@ -1224,6 +1327,7 @@ namespace GlitchlessSdk
 
         string OutboxPath => Path.Combine(SaveDir, "outbox.json");
         const string PlayerIdName = "player_id"; // install and full mode
+        const string LaunchedName = "launched"; // the game version that last ran here, in every mode
         string PrivacyName => full ? "full" : storesId ? "install" : "anonymous";
 
         /// <summary>Forgets the player ID saved on the device. This session keeps the ID it started with.</summary>
@@ -1251,7 +1355,9 @@ namespace GlitchlessSdk
         // Batches that couldn't be sent are saved, so a game played offline is sent when the network is
         // back. In anonymous mode they are saved without the session ID; on the next launch each earlier
         // session's batches go under a new random ID, so nothing written to the device ties two sessions.
-        // Install and full mode keep a stored ID anyway, so they save both IDs.
+        // Install and full mode keep a stored ID anyway, so they save both IDs. Every mode saves each batch's
+        // own ID, so a batch the server took just before the game closed is not stored twice when the next
+        // launch sends it.
         void SaveOutbox()
         {
             if (!Enabled || SaveDir == null || IsWeb) return;
@@ -1267,7 +1373,7 @@ namespace GlitchlessSdk
                 {
                     var events = new List<object>();
                     foreach (var e in b.Events) events.Add(new Json.Raw(e));
-                    var saved = new Dictionary<string, object> { ["service"] = b.Service, ["env"] = b.Env, ["version"] = b.Version, ["group"] = b.Group, ["events"] = events };
+                    var saved = new Dictionary<string, object> { ["bid"] = b.Bid, ["service"] = b.Service, ["env"] = b.Env, ["version"] = b.Version, ["group"] = b.Group, ["events"] = events };
                     if (storesId)
                     {
                         saved["sid"] = b.Sid;
@@ -1304,7 +1410,8 @@ namespace GlitchlessSdk
                         if (!freshIds.TryGetValue(group, out sid)) freshIds[group] = sid = NewId("s_", 16);
                     }
                     long.TryParse(group, NumberStyles.Integer, CultureInfo.InvariantCulture, out var groupId);
-                    outbox.Add(new Batch { Id = nextBatchId++, Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Group = groupId, Events = events });
+                    var bid = Str(saved, "bid", ""); // an outbox an older version saved has none: a new one
+                    outbox.Add(new Batch { Id = nextBatchId++, Bid = bid.StartsWith("b_", StringComparison.Ordinal) ? bid : NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Group = groupId, Events = events });
                 }
                 Debug($"{outbox.Count} saved batches from earlier launches");
             });
@@ -1314,6 +1421,21 @@ namespace GlitchlessSdk
         {
             if (!d.TryGetValue(key, out var v) || v == null) return fallback;
             return v is double n ? n.ToString("R", CultureInfo.InvariantCulture) : v.ToString();
+        }
+
+        // Whether this is the first launch of this game version on this device. The first after an install or an update
+        // starts cold (empty shader and file caches), which shows in the time to the first frame. The file holds only the
+        // version, the same on every player's device, so it ties no two sessions together. Null with nowhere to keep it.
+        bool? NoteLaunch()
+        {
+            if (Ids == null && SaveDir == null) return null;
+            bool? first = null;
+            TryIo(() =>
+            {
+                first = ReadId(LaunchedName)?.Trim() != version;
+                if (first == true) WriteId(LaunchedName, version);
+            });
+            return first;
         }
 
         // The random ID install and full mode send as player_id, made on first launch and kept by name. With nowhere to
@@ -1375,12 +1497,14 @@ namespace GlitchlessSdk
             return sb.ToString();
         }
 
-        static double Median(List<double> values)
+        static double Median(List<double> values) => Quantile(values, 0.5);
+
+        static double Quantile(List<double> values, double q)
         {
             if (values.Count == 0) return 0;
             var sorted = new List<double>(values);
             sorted.Sort();
-            return sorted[sorted.Count / 2];
+            return sorted[Math.Min(sorted.Count - 1, (int)(sorted.Count * q))];
         }
 
         static object Round(double? v, int digits) => v.HasValue ? (object)Sketch.Round(v.Value, digits) : null;

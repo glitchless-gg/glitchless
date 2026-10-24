@@ -12,9 +12,9 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `Saved/Glitchless/player_id`, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
-| Device | OS name, a low/mid/high tier, renderer and graphics API, screen size, whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
+| Device | OS name, a low/mid/high tier, renderer and graphics API, screen size (and on phones its refresh rate), whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless Positions is on: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples in the game world |
-| Saved on the device | unsent batches, without any ID | unsent batches with their IDs, and the player ID | the same as install |
+| Saved on the device | unsent batches, without the session or player ID | unsent batches with their IDs, and the player ID | the same as install |
 
 Positions (Advanced) turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location: Unreal units are sent as metres, with y up.
 
@@ -29,7 +29,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), and `sdk` (`glitchless-unreal/0.2.0`).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-unreal/0.2.0`) and `batch_id` (random, made for each batch and sent again with its retries).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 
@@ -37,11 +37,12 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | --- | --- | --- |
 | `session_start` | `session_type` (`user` or `synthetic`), `privacy`, `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`quit`, `background`, `measure`, `crash`), `duration_s` | quitting, going to the background on a phone, a crash |
-| `frame_window` | frame count, fps, refresh rate, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, game/render/RHI thread and GPU ms, draw calls, triangles, garbage collections and their ms, pipeline states compiled, packages loaded, UObject and actor counts, the process's memory MB, texture MB; `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts) | every 5 s |
-| `hitch` | duration, the thread that held it up, likely causes, the same timings and counts for that one frame, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
-| `load` | `ttff_ms` (app start to first frame), `ttp_ms` (to first key, click or touch) | once |
+| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`, `budget_ms`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, game/render/RHI thread and GPU ms (averages over the window), draw calls and triangles (averages, and the most draw calls), garbage collections and their ms, pipeline states compiled, packages loaded (totals over the window), UObject and actor counts, the process's memory MB, texture MB (the last sample: every 30 frames and as the window closes); `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each the highest value it was set to in the window) | every 5 s |
+| `hitch` | duration, the thread that held it up, likely causes, the same timings and counts for that one frame, `ctx` (the gauges as they were then), `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
+| `load` | `ttff_ms` (engine start to first frame), `ttp_ms` (to first key, click or touch); `ts` is when that frame or input happened | once |
 | `error` | `kind`, `message`, `stack` (function names, source paths of the game's build, lines), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `Error`, and a Blueprint's class name), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session; a crash is sent on the next launch |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a map that is a level loads | the game calls them, or a map loads |
+| `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`) when Glitchless sends it | the game calls `LevelAbandon`, or the game goes to the background or quits mid-level |
 | `death` | `cause`; **full** or Positions: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `Track` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key name or `pointer`, count; off on phones} | as they happen |
@@ -59,6 +60,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `gpu_tier` | on desktops, from the GPU name; the same as `device_tier` on phones; `low` on a Steam Deck | all |
 | `renderer`, `driver` | `deferred`, `D3D12` | all |
 | `screen` | `[2560, 1440]` | all |
+| `refresh_hz` | `120`: the screen's highest refresh rate as the OS reports it, on phones only (null elsewhere); the rate the game ran at is `frame_window.hz` | all |
 | `steam_deck` | `true` | all |
 | `model`, `os_version` | `Steam Deck OLED`, `Windows 11 (24H2)` | **full** |
 | `gpu`, `gpu_vendor` | `NVIDIA GeForce RTX 4070`, `NVIDIA` | **full** |
@@ -94,7 +96,7 @@ When the game already uses Steamworks through Unreal's `SteamShared` or `OnlineS
 
 | file | what | mode |
 | --- | --- | --- |
-| `Saved/Glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or it crashed): the events above. In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
+| `Saved/Glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or it crashed): the events above, each batch with its own random batch ID (`b_…`, sent as `batch_id` so the server stores a batch once however often it arrives; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Rewritten as each batch is sent, deleted once everything is. At most 4,000 events, none over 6 days old | all |
 | `Saved/Glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 
 `Saved` is the game's own folder: `%LOCALAPPDATA%\<Game>\Saved` on Windows, `~/Library/Application Support/Epic/<Game>/Saved` on macOS. Uninstalling the game may leave it; deleting it removes both files.

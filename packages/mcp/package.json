@@ -46,6 +46,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "test": "node --test test/*.test.js",
     "bundle": "esbuild src/index.js --bundle --platform=node --format=esm --target=node20 --external:playwright --outfile=../../plugin/glitchless/mcp/glitchless-mcp.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\""
   },
   "dependencies": {

@@ -227,12 +227,16 @@ namespace Glitchless
 		CloseWindow(false); // so a frame window never spans two levels
 		Level = LevelId;
 		LevelStartedAt = Ticks();
+		LevelOpen = true;
+		LeftLevel.reset();
 		Push(Ev("level_start"));
 		Remember("level_start");
 	}
 
 	void FCore::LevelComplete(const std::optional<std::string>& LevelId, std::optional<double> Score, std::optional<double> DurationS)
 	{
+		LevelOpen = false;
+		LeftLevel.reset(); // completed: nothing to open again when the game comes back
 		FValue E = Ev("level_complete");
 		E.Set("level", LevelId ? FValue(*LevelId) : Level ? FValue(*Level) : FValue());
 		E.Set("duration_s", Round(DurationS ? *DurationS : (Ticks() - LevelStartedAt) / 1000, 2));
@@ -243,11 +247,59 @@ namespace Glitchless
 
 	void FCore::LevelFail(const std::optional<std::string>& LevelId, const std::string& Cause)
 	{
+		const std::optional<std::string> L = LevelId ? LevelId : Level;
+		if (OutcomeSent(L))
+		{
+			return;
+		}
+		LevelOpen = false;
 		FValue E = Ev("level_fail");
-		E.Set("level", LevelId ? FValue(*LevelId) : Level ? FValue(*Level) : FValue());
+		E.Set("level", L ? FValue(*L) : FValue());
 		E.Set("cause", Cause.empty() ? FValue() : FValue(Cause));
 		Push(std::move(E));
 		Remember("level_fail");
+	}
+
+	void FCore::LevelAbandon(const std::optional<std::string>& LevelId)
+	{
+		const std::optional<std::string> L = LevelId ? LevelId : Level;
+		if (OutcomeSent(L))
+		{
+			return;
+		}
+		Abandon(L, "");
+	}
+
+	// Reason is the session_end's when Glitchless sends the abandon itself, and empty when the game calls it.
+	void FCore::Abandon(const std::optional<std::string>& LevelId, const std::string& Reason)
+	{
+		LevelOpen = false;
+		FValue E = Ev("level_abandon");
+		E.Set("level", LevelId ? FValue(*LevelId) : FValue());
+		E.Set("duration_s", Round((Ticks() - LevelStartedAt) / 1000, 2));
+		if (!Reason.empty())
+		{
+			E.Set("reason", Reason);
+		}
+		Push(std::move(E));
+		Remember("level_abandon");
+	}
+
+	// A game often ends its level as it closes or goes to the background (in EndPlay, say), after the session
+	// ended and Glitchless already sent the abandon: that attempt has its outcome.
+	bool FCore::OutcomeSent(const std::optional<std::string>& LevelId) const
+	{
+		return Ended && LeftLevel && LevelId && *LevelId == *LeftLevel;
+	}
+
+	// The session ends with a level still going: the player left it (SPEC §2 level_abandon).
+	void FCore::EndLevel(const std::string& Reason)
+	{
+		if (LevelOpen)
+		{
+			LeftLevel = Level;
+			Abandon(Level, Reason);
+		}
 	}
 
 	void FCore::Death(std::optional<double> X, std::optional<double> Y, std::optional<double> Z, const std::string& InCause)
@@ -318,6 +370,7 @@ namespace Glitchless
 		LevelMapHandle = 0;
 		CloseWindow(false);
 		Level.reset(); // back in a menu: frames there have no level
+		LevelOpen = false; // a map level ends with its map, and nothing says whether it was beaten or left
 	}
 
 	std::string FCore::LevelForMap(const std::string& MapName) const
@@ -406,11 +459,17 @@ namespace Glitchless
 			Throttled = false;
 			OnFrame(DtMs, Cost);
 		}
-		// The refresh rate (60 / 90 / 120 Hz, or a cap the game set) from the median early frame.
+		// The refresh rate (60 / 90 / 120 Hz, or a cap the game set) from the median early frame. Until then,
+		// from the fastest of the first 30 (a frame can take longer than the screen's interval, never less), so
+		// a session's first windows don't go out judged against 60 Hz while the median is still being counted.
 		if (Early.size() < 120 && DtMs > 0 && DtMs < 100)
 		{
 			Early.push_back(DtMs);
-			if (Early.size() == 120)
+			if (Early.size() == 30)
+			{
+				SetBudget(Quantile(Early, 0.2));
+			}
+			else if (Early.size() == 120)
 			{
 				SetBudget(Median(Early));
 			}
@@ -468,9 +527,9 @@ namespace Glitchless
 		}
 	}
 
-	void FCore::SetBudget(double MedianDt)
+	void FCore::SetBudget(double TypicalDt)
 	{
-		const double Rate = 1000 / MedianDt;
+		const double Rate = 1000 / TypicalDt;
 		int Best = 60;
 		for (int R : {30, 60, 75, 90, 100, 120, 144, 165, 240})
 		{
@@ -565,7 +624,10 @@ namespace Glitchless
 		RingCount = std::min(RingCount + 1, RingSize);
 		if (FirstFrameMs <= 0)
 		{
+			// The load event is sent with the first batch, but it happened here.
 			FirstFrameMs = StartupMs ? StartupMs() : Ticks();
+			FirstFrameAt = UnixNow();
+			FirstFrameLevel = Level;
 		}
 		if (FrameCount % 16 == 0 && RingCount >= 30)
 		{
@@ -712,6 +774,26 @@ namespace Glitchless
 		if (F.Game >= Share) C.push_back("script");
 		if (std::max({F.Render, F.Rhi, F.Gpu}) >= Share) C.push_back("render");
 		if (Dt > FrozenMs) C.push_back("frozen");
+		// None of those, and the parts of the frame that were measured (the game, render and RHI threads, and
+		// the GPU where the RHI times it) add up to under that share: the time went where nothing here measures
+		// it, such as waiting to present the frame, GPU work Unreal didn't time, or the OS.
+		if (C.empty())
+		{
+			double Measured = 0;
+			bool Any = false;
+			for (const double Ms : {F.Game, F.Render, F.Rhi, F.Gpu})
+			{
+				if (Ms >= 0)
+				{
+					Measured += Ms;
+					Any = true;
+				}
+			}
+			if (Any && Measured < Share)
+			{
+				C.push_back("gpu_or_os");
+			}
+		}
 		return C;
 	}
 
@@ -1114,7 +1196,7 @@ namespace Glitchless
 		ReportError(Kind, Message, Stack);
 		if (Inited && Enabled && !Ended)
 		{
-			Ended = true;
+			Ended = true; // no level_abandon: the player didn't leave, the game did, and the crash says so
 			Push(SessionEnd("crash"));
 		}
 		FinishHitch(nullptr);
@@ -1311,6 +1393,7 @@ namespace Glitchless
 		PendingLong.reset();
 		if (Inited && Enabled && !Ended)
 		{
+			EndLevel("background");
 			Ended = true;
 			Push(SessionEnd("background"));
 		}
@@ -1332,10 +1415,18 @@ namespace Glitchless
 		const double Away = (Ticks() - PausedAt) / 1000;
 		if (Away > Options.SessionTimeoutSeconds)
 		{
+			LeftLevel.reset();
 			NewSession();
 		}
 		else
 		{
+			// Back in the same session: the level goes on, and the server takes back the abandon sent on
+			// the way out once anything else happens on it.
+			if (LeftLevel)
+			{
+				LevelOpen = true;
+			}
+			LeftLevel.reset();
 			FValue Attrs = FValue::Object();
 			Attrs.Set("away_s", Round(Away, 1));
 			Track("app_resume", std::move(Attrs));
@@ -1374,6 +1465,7 @@ namespace Glitchless
 		}
 		if (Inited && Enabled && !Ended)
 		{
+			EndLevel(Reason);
 			Ended = true;
 			Push(SessionEnd(Reason));
 		}
@@ -1424,7 +1516,7 @@ namespace Glitchless
 	void FCore::RememberEvent(const FValue& E)
 	{
 		const std::string& T = E.Find("type")->AsString();
-		if (T != "level_start" && T != "level_complete" && T != "level_fail" && T != "death" && T != "custom" && T != "error")
+		if (T != "level_start" && T != "level_complete" && T != "level_fail" && T != "level_abandon" && T != "death" && T != "custom" && T != "error")
 		{
 			return;
 		}
@@ -1578,17 +1670,18 @@ namespace Glitchless
 		{
 			Queue.insert(Queue.begin(), SessionStartEvent());
 			SessionStartSent = true;
-			if (FirstFrameMs > 0 && !LoadSent)
-			{
-				LoadSent = true;
-				FValue E = FValue::Object();
-				E.Set("type", "load");
-				E.Set("ts", UnixNow());
-				E.Set("level", Level ? FValue(*Level) : FValue());
-				E.Set("ttff_ms", static_cast<int64_t>(FirstFrameMs));
-				E.Set("assets", FValue());
-				Queue.push_back(std::move(E));
-			}
+		}
+		if (FirstFrameMs > 0 && !LoadSent)
+		{
+			// Once a launch, timed and placed at the first frame, though it goes with the first batch after it.
+			LoadSent = true;
+			FValue E = FValue::Object();
+			E.Set("type", "load");
+			E.Set("ts", FirstFrameAt);
+			E.Set("level", FirstFrameLevel ? FValue(*FirstFrameLevel) : FValue());
+			E.Set("ttff_ms", static_cast<int64_t>(FirstFrameMs));
+			E.Set("assets", FValue());
+			Queue.push_back(std::move(E));
 		}
 		if (!Sampled)
 		{
@@ -1632,10 +1725,15 @@ namespace Glitchless
 		}
 	}
 
+	// Bid is the batch's own random ID (SPEC §2 batch_id). It goes with every try of the batch and is saved with
+	// it, so the server stores a batch once however many times it arrives: after a send that timed out, one given
+	// up on when the game went to the background or closed, or a launch that sends what the last one saved
+	// (a crash's batches too). It names the batch, not the player or the session, so anonymous mode saves it too.
 	FCore::FBatch FCore::NewBatch(std::vector<std::string> Events)
 	{
 		FBatch B;
 		B.Id = NextBatchId++;
+		B.Bid = NewId("b_", 16);
 		B.Service = Service;
 		B.Env = Env;
 		B.Version = Version;
@@ -1669,7 +1767,9 @@ namespace Glitchless
 		}
 		S += ",\"sdk\":\"";
 		S += Sdk;
-		S += "\",\"events\":[";
+		S += "\",\"batch_id\":";
+		Json::WriteString(S, B.Bid);
+		S += ",\"events\":[";
 		for (size_t I = 0; I < B.Events.size(); I++)
 		{
 			if (I > 0)
@@ -1818,6 +1918,7 @@ namespace Glitchless
 				break;
 			}
 			Outbox.erase(It);
+			SaveOutbox(); // at once: the OS may stop the game before the next answer comes
 		}
 		Draining = false;
 		SaveOutbox();
@@ -1848,7 +1949,8 @@ namespace Glitchless
 	// Batches that couldn't be sent are saved, so a game played offline is sent when the network is
 	// back, and a crash is sent on the next launch. In anonymous mode they are saved without the
 	// session ID; on the next launch each earlier session's batches go under a new random ID, so
-	// nothing written to the device ties two sessions.
+	// nothing written to the device ties two sessions. Every mode saves each batch's own ID, so a batch
+	// the server took just before the game closed is not stored twice when the next launch sends it.
 	void FCore::SaveOutbox()
 	{
 		if (!Enabled || SaveDir.empty())
@@ -1868,7 +1970,9 @@ namespace Glitchless
 			{
 				S += ',';
 			}
-			S += "{\"service\":";
+			S += "{\"bid\":";
+			Json::WriteString(S, B.Bid);
+			S += ",\"service\":";
 			Json::WriteString(S, B.Service);
 			S += ",\"env\":";
 			Json::WriteString(S, B.Env);
@@ -1953,6 +2057,8 @@ namespace Glitchless
 			}
 			FBatch B;
 			B.Id = NextBatchId++;
+			const std::string Bid = Str("bid", "");
+			B.Bid = Text::StartsWith(Bid, "b_") ? Bid : NewId("b_", 16); // saved by a build from before batch IDs: a new one
 			B.Service = Str("service", Service);
 			B.Env = Str("env", Env);
 			B.Version = Str("version", Version);
@@ -2092,11 +2198,17 @@ namespace Glitchless
 
 	double FCore::Median(std::vector<double> Values)
 	{
+		return Quantile(std::move(Values), 0.5);
+	}
+
+	// The browser SDK's quantileOf: the value at that share of the sorted values.
+	double FCore::Quantile(std::vector<double> Values, double Q)
+	{
 		if (Values.empty())
 		{
 			return 0;
 		}
 		std::sort(Values.begin(), Values.end());
-		return Values[Values.size() / 2];
+		return Values[std::min(Values.size() - 1, static_cast<size_t>(std::floor(static_cast<double>(Values.size()) * Q)))];
 	}
 }

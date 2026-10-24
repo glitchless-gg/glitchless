@@ -172,10 +172,35 @@ namespace GlitchlessSdk
 
         public static int[] WindowSize() => new[] { Screen.width, Screen.height };
 
+        /// <summary>The screen's refresh rate as the OS reports it, often the most the panel can do: a 120 Hz phone in Low
+        /// Power Mode, or a game capped at 60, still says 120. The rate the game ran at is each frame window's hz.</summary>
         public static object RefreshRate()
         {
             var hz = Screen.currentResolution.refreshRateRatio.value;
             return hz > 0 ? (object)(int)System.Math.Round(hz) : null;
+        }
+
+        /// <summary>Android's firebase.test.lab system setting: "true" on the Firebase Test Lab devices Google Play's
+        /// pre-launch report plays every new build on, so their sessions can be marked synthetic. Read on the device and
+        /// never sent. Null anywhere else, and if reading it fails.</summary>
+        public static string FirebaseTestLab()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var resolver = activity?.Call<AndroidJavaObject>("getContentResolver"))
+                using (var settings = new AndroidJavaClass("android.provider.Settings$System"))
+                    return resolver == null ? null : settings.CallStatic<string>("getString", resolver, "firebase.test.lab");
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+#else
+            return null;
+#endif
         }
     }
 }

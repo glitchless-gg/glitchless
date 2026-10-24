@@ -1,6 +1,6 @@
 // The game's own metrics: its custom events and funnels, and versions compared in its own terms.
 import { z } from 'zod';
-import { query, resolveService, range, reply, common, tool } from '../context.js';
+import { query, resolveService, range, reply, common, tool, filters } from '../context.js';
 
 tool(
   'glitchless_events',
@@ -10,9 +10,9 @@ tool(
     name: z.string().optional().describe('Only this event, e.g. "paywall"'),
     funnel: z.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"'),
   },
-  async ({ service, hours, version, steam_branch, name, funnel }) => {
+  async ({ service, hours, name, funnel, ...f }) => {
     const svc = await resolveService(service);
-    const d = await query('events', { service: svc, version, steam_branch, name, funnel, ...range(hours) });
+    const d = await query('events', { service: svc, ...filters(f), name, funnel, ...range(hours) });
     const brief = d.events
       .slice(0, 15)
       .map((e) => `${e.name}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ''}`).join(', ')}` : ''}`)
@@ -30,14 +30,16 @@ tool(
   {
     service: common.service,
     hours: common.hours,
+    env: common.env,
+    session_type: common.session_type,
     a: z.string().optional().describe('Baseline version, branch or build (default: second newest)'),
     b: z.string().optional().describe('New version, branch or build (default: newest)'),
     by: z.enum(['version', 'steam_branch', 'steam_build']).optional().describe('What to compare (default version). steam_branch and steam_build need a game that uses Steamworks'),
   },
-  async ({ service, hours, a, b, by }) => {
+  async ({ service, hours, a, b, by, env, session_type }) => {
     const svc = await resolveService(service);
     const steam = by && by !== 'version' ? by : null;
-    const { versions, has = {}, board = [] } = await query('versions', { service: svc, ...(steam ? { by: steam } : {}), ...range(hours || 72) });
+    const { versions, has = {}, board = [] } = await query('versions', { service: svc, ...filters({ env, session_type }), ...(steam ? { by: steam } : {}), ...range(hours || 72) });
     const what = steam === 'steam_branch' ? 'Steam branch' : steam === 'steam_build' ? 'Steam build' : 'version';
     if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
     if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);

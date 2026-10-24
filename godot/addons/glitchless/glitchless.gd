@@ -6,6 +6,7 @@ extends Node
 ##
 ##   Glitchless.init("starlift", "1.4.0", "prod", "https://glitchless.example.com")
 ##   Glitchless.level_start("voyage_3")
+##   Glitchless.level_abandon()  # the player went home or restarted mid-level: not a fail
 ##   Glitchless.track("play", "endless")
 ##   Glitchless.death(pos.x, pos.y, "meteor")
 ##   Glitchless.set_context({"blocks": blocks.size()})
@@ -53,12 +54,14 @@ const MAX_OUTBOX_EVENTS := 4000
 const MAX_OUTBOX_AGE_MS := 6 * 86400 * 1000  # the server files anything over 7 days old under "now"
 const SEND_DEADLINE_MS := 1500  # how long closing or going to the background may wait on the network
 const RING_SIZE := 240
+const RATES: Array[int] = [30, 60, 75, 90, 100, 120, 144, 165, 240]
 const BUG_RECENT := 20  # game events and hitches a bug report carries
 const BUG_FRAMES := 6  # frame windows a bug report carries
 const ADDON_DIR := "res://addons/glitchless/"
 const SAVE_DIR := "user://glitchless"
 const OUTBOX_PATH := "user://glitchless/outbox.json"
 const PLAYER_PATH := "user://glitchless/player_id"  # install and full mode
+const LAUNCHED_PATH := "user://glitchless/launched"  # the game version that last ran here (first_launch)
 const ID_CHARS := "abcdefghijklmnopqrstuvwxyz0123456789"
 const PIPELINE_MONITORS: Array[int] = [
 	Performance.PIPELINE_COMPILATIONS_CANVAS,
@@ -119,10 +122,12 @@ var _debug := false
 
 var _started_at := 0  # unix ms of this session's start
 var _level_started := 0  # ticks ms
+var _level_open := false  # a level started and not yet completed, failed or abandoned
+var _left_level: Variant = null  # the level abandoned for the game as the session ended
 var _ctx := {}
 var _recent: Array[Dictionary] = []  # the last game events, for breadcrumbs: {name, t}
 var _queue: Array[Dictionary] = []
-var _outbox: Array[Dictionary] = []  # batches: {id, service, env, version, sid, pid, group, events}
+var _outbox: Array[Dictionary] = []  # batches: {id, bid, service, env, version, sid, pid, group, events}
 var _next_batch_id := 1
 var _in_flight := -1  # id of the batch _http is sending
 var _http: HTTPRequest
@@ -144,14 +149,16 @@ var _ring_idx := 0
 var _ring_count := 0
 var _budget_ms := 1000.0 / 60.0
 var _hz := 60
-var _early: Array[float] = []
+var _rate_frames: Array[float] = []  # frame times under 100 ms, for the refresh rate
 var _recent_median := 0.0
 var _frame_id := 0
 var _last_us := 0
 var _untimed := 0  # frames not to time (taking a bug report's screenshot)
 var _pending_long := {}
 var _throttled := false
-var _first_frame_ms := 0
+var _first_frame_ms := 0  # ticks: from engine start
+var _first_frame_at := 0  # unix ms
+var _first_launch: Variant = null  # the first launch of this version on this device (load event)
 var _first_input_ms := 0
 var _key_history := {}
 var _position: Variant = null
@@ -275,8 +282,8 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_set_measure_render(bool(_opts.measure_render_time))
 	if str(_opts.session_type) != "":
 		_session_type = str(_opts.session_type)
-	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or DisplayServer.get_name() == "headless":
-		_session_type = "synthetic"
+	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or DisplayServer.get_name() == "headless" or Device.test_lab():
+		_session_type = "synthetic"  # a bot, a measure run, or Google Play's pre-launch test phones
 	if _opts.enabled != null:
 		enabled = bool(_opts.enabled)
 	else:
@@ -297,6 +304,7 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		_log("off (debug build without --glitchless, or no intake)")
 		return
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+	_first_launch = _note_launch()
 	if _privacy != "anonymous":
 		player_id = _load_player_id()  # install and full mode share it (SPEC §4b)
 	elif FileAccess.file_exists(PLAYER_PATH):
@@ -317,6 +325,8 @@ func level_start(level_id: Variant) -> void:
 	_close_window(false)  # so a frame window never spans two levels
 	level = str(level_id)
 	_level_started = Time.get_ticks_msec()
+	_level_open = true
+	_left_level = null
 	_push({"type": "level_start"})
 	_remember("level_start")
 
@@ -324,14 +334,44 @@ func level_start(level_id: Variant) -> void:
 func level_complete(level_id: Variant = null, score: Variant = null, duration_s: float = -1.0) -> void:
 	var lvl: Variant = str(level_id) if level_id != null else level
 	var secs := duration_s if duration_s >= 0.0 else (Time.get_ticks_msec() - _level_started) / 1000.0
+	_level_open = false
 	_push({"type": "level_complete", "level": lvl, "duration_s": snappedf(secs, 0.01), "score": score})
 	_remember("level_complete")
 
 
+## The player lost the level (died, ran out of time). Leaving it is level_abandon.
 func level_fail(level_id: Variant = null, cause: String = "") -> void:
 	var lvl: Variant = str(level_id) if level_id != null else level
+	if _outcome_sent(lvl):
+		return
+	_level_open = false
 	_push({"type": "level_fail", "level": lvl, "cause": cause if cause != "" else null})
 	_remember("level_fail")
+
+
+## The player left the level before it ended: went to the menu, restarted it,
+## closed the game. Never counted as a fail. Going to the background or closing
+## mid-level sends one by itself (SPEC §2 level_abandon).
+func level_abandon(level_id: Variant = null) -> void:
+	var lvl: Variant = str(level_id) if level_id != null else level
+	if _outcome_sent(lvl):
+		return
+	_abandon(lvl, "")
+
+
+func _abandon(lvl: Variant, reason: String) -> void:
+	_level_open = false
+	var e := {"type": "level_abandon", "level": lvl, "duration_s": snappedf((Time.get_ticks_msec() - _level_started) / 1000.0, 0.01)}
+	if reason != "":
+		e.reason = reason
+	_push(e)
+	_remember("level_abandon")
+
+
+# A game often ends its level as it closes (in _exit_tree, say), after the session
+# ended and Glitchless already sent the abandon: that attempt has its outcome.
+func _outcome_sent(lvl: Variant) -> bool:
+	return _ended and _left_level != null and lvl == _left_level
 
 
 ## A death at a place in the game world. The place is sent only when positions
@@ -444,7 +484,7 @@ func flush() -> void:
 		_session_start_sent = true
 		if _first_frame_ms > 0 and not _load_sent:
 			_load_sent = true
-			_queue.append({"type": "load", "ts": _now(), "level": level, "ttff_ms": _first_frame_ms, "assets": null})
+			_queue.append({"type": "load", "ts": _first_frame_at, "level": level, "ttff_ms": _first_frame_ms, "assets": null, "first_launch": _first_launch})
 	if not sampled:
 		_queue.clear()
 		stats.last_status = "unsampled"
@@ -541,11 +581,18 @@ func _frame(dt: float) -> void:
 		_pending_long = {}
 		_throttled = false
 		_on_frame(_snapshot(dt))
-	# The refresh rate (60 / 90 / 120 Hz, or a cap the game set) from the median early frame.
-	if _early.size() < 120 and dt < 100.0:
-		_early.append(dt)
-		if _early.size() == 120:
-			_set_budget(_median(_early))
+	# The refresh rate (60 / 90 / 120 Hz, or a cap the game set) sets the frame budget. A frame can take
+	# longer than the screen's interval but never less, so the fast frames tell the rate, as the browser
+	# SDK reads it: a first guess after 30 frames (so the session's first window isn't judged at a made-up
+	# 60 Hz), the answer at 120, then a look every 480 frames, only ever faster. _check_screen lowers it
+	# when the OS says the screen slowed down (Low Power Mode).
+	if dt < 100.0 and dt > 3.5:
+		_rate_frames.append(dt)
+		var n := _rate_frames.size()
+		if n == 30 or n == 120 or n == 600:
+			_set_budget(_quantile(_rate_frames, 0.2), n == 600)
+		if n >= 600:
+			_rate_frames = _rate_frames.slice(480)
 
 
 func _snapshot(dt: float) -> Dictionary:
@@ -556,12 +603,14 @@ func _snapshot(dt: float) -> Dictionary:
 	}
 
 
-func _set_budget(median_dt: float) -> void:
-	var hz := 1000.0 / median_dt
+func _set_budget(typical_dt: float, only_faster: bool = false) -> void:
+	var hz := 1000.0 / typical_dt
 	var best := 60
-	for r: int in [30, 60, 75, 90, 100, 120, 144, 165, 240]:
+	for r: int in RATES:
 		if absf(r - hz) < absf(best - hz):
 			best = r
+	if only_faster and best <= _hz:
+		return
 	_hz = best
 	_budget_ms = 1000.0 / _hz
 
@@ -590,6 +639,7 @@ func _on_frame(f: Dictionary) -> void:
 	_ring_count = mini(_ring_count + 1, RING_SIZE)
 	if _first_frame_ms == 0:
 		_first_frame_ms = Time.get_ticks_msec()
+		_first_frame_at = _now()
 	if _frame_id % 16 == 0 and _ring_count >= 30:
 		_recent_median = _median(_last_frames(60))
 
@@ -652,6 +702,11 @@ func _causes(f: Dictionary) -> Array[String]:
 		out.append("physics")
 	if f.render + f.gpu >= share:
 		out.append("render")
+	# Nothing measured in the game explains the frame: the time went to the GPU
+	# (Godot times it only on Vulkan and Direct3D 12, not on Metal or OpenGL), to
+	# presenting the frame, or to the OS.
+	if out.is_empty() and f.process + f.physics + f.render + f.gpu < share:
+		out.append("gpu_or_os")
 	if f.dt > FROZEN_MS:
 		out.append("frozen")
 	return out
@@ -755,6 +810,11 @@ func _sample_engine() -> Dictionary:
 # The screen size changes when an iPhone Duo opens or closes, or a desktop
 # window moves to another screen: a breadcrumb for any stutter that follows.
 func _check_screen() -> void:
+	# The OS reports the screen's rate, which can be higher than what the game gets (a 60 Hz panel said to be
+	# 120) but drops at once when a ProMotion phone goes into Low Power Mode: then the frames' rate does too.
+	var os_hz: Variant = Device.refresh_rate()
+	if os_hz != null and os_hz >= 30 and os_hz < _hz:
+		_set_budget(1000.0 / float(os_hz))
 	var screen := Device.screen_size()
 	var win := Device.window_size()
 	if _screen.is_empty():
@@ -987,6 +1047,7 @@ func _on_background() -> void:
 	_last_us = 0
 	_pending_long = {}
 	if _inited and enabled and not _ended:
+		_end_level("background")
 		_ended = true
 		_push({"type": "session_end", "reason": "background", "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
 	if _inited and enabled:
@@ -1001,8 +1062,13 @@ func _on_foreground() -> void:
 	_ended = false
 	var away := (Time.get_ticks_msec() - _paused_at) / 1000.0
 	if away > float(_opts.session_timeout):
+		_left_level = null
 		_new_session()
 	else:
+		# Back in the same session: the level goes on, and the server takes back the
+		# abandon sent on the way out once anything else happens on it.
+		_level_open = _left_level != null
+		_left_level = null
 		track("app_resume", {"away_s": snappedf(away, 0.1)})
 
 
@@ -1018,11 +1084,19 @@ func _new_session() -> void:
 	_error_counts.clear()
 
 
+# The session ends with a level still going: the player left it (SPEC §2 level_abandon).
+func _end_level(reason: String) -> void:
+	if _level_open:
+		_left_level = level
+		_abandon(level, reason)
+
+
 func _shutdown(reason: String) -> void:
 	if _shut:
 		return
 	_shut = true
 	if _inited and enabled and not _ended:
+		_end_level(reason)
 		_ended = true
 		_push({"type": "session_end", "reason": reason, "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
 	if _inited and enabled:
@@ -1265,9 +1339,14 @@ func _add_batches(events: Array[Dictionary]) -> void:
 		_outbox.pop_front()
 
 
+# bid is the batch's own random ID (SPEC §2 batch_id). It goes with every try of
+# the batch and is saved with it, so the server stores a batch once however many
+# times it is sent: after a timeout, a send cut short by going to the background,
+# or a launch that sends what the last one saved. It names the batch, not the
+# player or the session, so anonymous mode saves it too.
 func _batch(events: Array[Dictionary]) -> Dictionary:
 	var b := {
-		"id": _next_batch_id, "service": _service, "env": _env, "version": _version,
+		"id": _next_batch_id, "bid": _new_id("b_", 16), "service": _service, "env": _env, "version": _version,
 		"sid": session_id, "pid": player_id, "group": _started_at, "events": events,
 	}
 	_next_batch_id += 1
@@ -1282,6 +1361,7 @@ func _body(b: Dictionary) -> String:
 		"session_id": b.sid,
 		"player_id": b.pid if b.pid != "" else null,  # the server uses the session ID in its place
 		"sdk": SDK,
+		"batch_id": b.bid,
 		"events": b.events,
 	})
 
@@ -1389,6 +1469,7 @@ func _send_now(budget_ms: int) -> void:
 		var i := _outbox_index(b.id)
 		if i >= 0:
 			_outbox.remove_at(i)
+		_save_outbox()  # at once: the OS may stop the game before the next one
 		if Time.get_ticks_msec() > deadline:
 			break
 	client.close()
@@ -1418,13 +1499,15 @@ static func _parse_url(url: String) -> Dictionary:
 # when the network is back. In anonymous mode they are saved without the
 # session ID; on the next launch each earlier session's batches go under a new
 # random ID, so nothing written to the device ties two sessions together.
-# Install and full mode keep a stored ID anyway, so they save both IDs.
+# Install and full mode keep a stored ID anyway, so they save both IDs. Every
+# mode saves each batch's own ID, so a batch the server took just before the
+# game closed is not stored twice when the next launch sends it.
 func _save_outbox() -> void:
 	if not enabled:
 		return
 	var out: Array[Dictionary] = []
 	for b in _outbox:
-		var saved := {"service": b.service, "env": b.env, "version": b.version, "group": b.group, "events": b.events}
+		var saved := {"bid": b.bid, "service": b.service, "env": b.env, "version": b.version, "group": b.group, "events": b.events}
 		if _privacy != "anonymous":
 			saved.sid = b.sid
 			saved.pid = b.pid
@@ -1466,14 +1549,31 @@ func _load_outbox() -> void:
 			if not fresh_ids.has(group):
 				fresh_ids[group] = _new_id("s_", 16)
 			sid = fresh_ids[group]
+		var bid := str(saved.get("bid", ""))
 		var b := {
-			"id": _next_batch_id, "service": str(saved.get("service", _service)), "env": str(saved.get("env", _env)),
+			"id": _next_batch_id, "bid": bid if bid.begins_with("b_") else _new_id("b_", 16),
+			"service": str(saved.get("service", _service)), "env": str(saved.get("env", _env)),
 			"version": str(saved.get("version", _version)), "sid": sid, "pid": str(saved.get("pid", "")) if _privacy != "anonymous" else "",
 			"group": group, "events": events,
 		}
 		_next_batch_id += 1
 		_outbox.append(b)
 	_log("%d saved batches from earlier launches" % _outbox.size())
+
+
+# Whether this is the first launch of this game version on this device. The
+# first after an install or an update starts cold (empty shader and file
+# caches), which shows in the time to the first frame. The file holds only the
+# version, the same on every player's device, so it ties no two sessions together.
+func _note_launch() -> bool:
+	var last := FileAccess.get_file_as_string(LAUNCHED_PATH).strip_edges() if FileAccess.file_exists(LAUNCHED_PATH) else ""
+	if last == _version:
+		return false
+	var f := FileAccess.open(LAUNCHED_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(_version)
+		f.close()
+	return true
 
 
 func _load_player_id() -> String:
@@ -1527,9 +1627,13 @@ static func _new_id(prefix: String, length: int) -> String:
 
 
 static func _median(values: Array[float]) -> float:
+	return _quantile(values, 0.5)
+
+
+static func _quantile(values: Array[float], q: float) -> float:
 	var sorted := values.duplicate()
 	sorted.sort()
-	return sorted[sorted.size() / 2] if not sorted.is_empty() else 0.0
+	return sorted[mini(sorted.size() - 1, int(sorted.size() * q))] if not sorted.is_empty() else 0.0
 
 
 static func _round(v: Variant, step: float) -> Variant:

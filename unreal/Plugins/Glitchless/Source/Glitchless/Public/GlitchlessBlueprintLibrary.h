@@ -33,9 +33,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Glitchless")
 	static void LevelComplete(const FString& Level = TEXT(""), float Score = -1);
 
-	/** The player gave up or lost the level. Cause is a short word: fell, timeout, restart. */
+	/** The player lost the level. Cause is a short word: fell, timeout. Leaving it is Level Abandon. */
 	UFUNCTION(BlueprintCallable, Category = "Glitchless")
 	static void LevelFail(const FString& Level = TEXT(""), const FString& Cause = TEXT(""));
+
+	/** The player left the level before it ended: went to the menu, restarted it, quit. Never counted as a fail. Empty Level: the current one. */
+	UFUNCTION(BlueprintCallable, Category = "Glitchless")
+	static void LevelAbandon(const FString& Level = TEXT(""));
 
 	/** A death at a place in the world. The place is sent only when positions are on. */
 	UFUNCTION(BlueprintCallable, Category = "Glitchless")

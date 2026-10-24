@@ -18,11 +18,18 @@
 //                run's, saved in the outbox and sent on the next launch
 //   9. install   install mode: the random player ID kept in user://, sent as player_id, with the device and
 //                positions as anonymous mode sends them; reset_install_id() and anonymous mode remove it
-// It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys) and test/device_test.gd
-// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files) and test/steam_test.gd (Steam facts
+//  10. repeats   the server stores the first batch but its answer is late: going to the background sends the
+//                batch again, and a send that times out is tried again. Each batch carries its batch_id, so
+//                the server stores it once (Starlift's first batches arrived up to 8 times without one)
+//  11. close     the window closes mid-level: Glitchless records the abandon before the session's end, and drops
+//                the "left" fail the game sends as it tears the level down
+// It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys), test/device_test.gd
+// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Firebase Test Lab's setting),
+// test/frames_test.gd (the refresh rate read off the fast frames; hitch causes) and test/steam_test.gd (Steam facts
 // from a fake GodotSteam).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,6 +88,41 @@ function runGodot(args, label) {
   return r.stdout + r.stderr;
 }
 
+// Like runGodot, without blocking this process, so a server in it (the proxy in step 10) can answer.
+function runGodotAsync(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(godot, ['--headless', '--max-fps', '60', '--path', PROJECT, ...args]);
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (out += d));
+    const timer = setTimeout(() => child.kill(), 120_000);
+    child.on('exit', (code) => (clearTimeout(timer), code === 0 ? resolve(out) : reject(new Error(`Godot exited with ${code}\n${out}`))));
+  });
+}
+
+// Passes each request on to the server, so every batch is stored, but holds the answer to the first intake request
+// back for holdMs: what a phone that stalled, or went to the background mid-send, sees.
+async function holdingProxy(target, holdMs) {
+  let first = true;
+  const answers = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const r = await fetch(`http://127.0.0.1:${target}${req.url}`, { method: req.method, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined });
+    const text = await r.text();
+    if (req.url.startsWith('/v1/intake')) {
+      answers.push(JSON.parse(text));
+      if (first) {
+        first = false;
+        await new Promise((resolve) => setTimeout(resolve, holdMs));
+      }
+    }
+    if (res.writable) res.writeHead(r.status, { 'Content-Type': 'application/json' }).end(text);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { port: server.address().port, answers, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+}
+
 async function startServer(port, dataDir) {
   const child = spawn(process.execPath, [path.join(ROOT, 'server/src/local.js')], {
     env: { ...process.env, PORT: String(port), GLITCHLESS_DATA_DIR: dataDir, GLITCHLESS_DATADOG: 'off', GLITCHLESS_API_KEY: '' },
@@ -128,6 +170,9 @@ try {
   const steamUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/steam_test.gd'], { encoding: 'utf8', timeout: 120_000 });
   for (const m of steamUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `steam unit: ${m[2]}`] : ['FAIL', `steam unit: ${m[2]}`]);
   check('steam unit tests ran', () => assert.match(steamUnit.stdout, /steam tests: 0 failed/, steamUnit.stdout + steamUnit.stderr));
+  const framesUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/frames_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of framesUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `frames unit: ${m[2]}`] : ['FAIL', `frames unit: ${m[2]}`]);
+  check('frames unit tests ran', () => assert.match(framesUnit.stdout, /frames tests: 0 failed/, framesUnit.stdout + framesUnit.stderr));
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });
@@ -144,6 +189,11 @@ try {
   check('offline: anonymous mode saves no session or player ID', () => {
     assert.ok(!/"(sid|pid|session_id|player_id)"/.test(saved), 'an ID was written to disk');
     assert.ok(!fs.existsSync(playerFile), 'player_id file exists');
+  });
+  check('offline: each saved batch keeps its own batch ID, for the server to spot a repeat', () => {
+    const batches = JSON.parse(saved).batches;
+    assert.ok(batches.length > 0 && batches.every((b) => /^b_[a-z0-9]{16}$/.test(b.bid)), JSON.stringify(batches.map((b) => b.bid)));
+    assert.equal(new Set(batches.map((b) => b.bid)).size, batches.length);
   });
 
   // 2. online
@@ -209,6 +259,21 @@ try {
     }
     assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.3.0'));
   });
+  check('load: stamped when the first frame was drawn, not when the first batch went', () => {
+    for (const s of sessions) {
+      const start = raw.find((e) => e.session_id === s.session_id && e.type === 'session_start');
+      const load = raw.find((e) => e.session_id === s.session_id && e.type === 'load' && e.ttff_ms != null);
+      const firstWindow = raw.filter((e) => e.session_id === s.session_id && e.type === 'frame_window').sort((a, b) => a.ts - b.ts)[0];
+      assert.ok(load && start && firstWindow, s.session_id);
+      assert.ok(load.ts - start.ts < 1000, `load ${load.ts - start.ts} ms after the start`);
+      assert.ok(load.ts < firstWindow.ts + firstWindow.duration_s * 1000, 'before the first window closed');
+    }
+  });
+  check('load: first_launch is true for the first launch of a version on this device only', () => {
+    const loads = raw.filter((e) => e.type === 'load' && e.ttff_ms != null);
+    assert.deepEqual(loads.map((e) => e.first_launch).sort(), [false, false, true], JSON.stringify(loads.map((e) => [e.session_id, e.first_launch])));
+    assert.equal(fs.readFileSync(path.join(userDir, 'glitchless/launched'), 'utf8'), '0.1.0');
+  });
   check('engine gauges ride in ctx: level_3 carries the orphan nodes level_2 leaked', () => {
     const peak = (level) => Math.max(...raw.filter((e) => e.type === 'frame_window' && e.level === level).map((w) => w.ctx?.orphan_nodes ?? 0));
     assert.ok(peak('level_3') >= 2500, `level_3 orphan_nodes ${peak('level_3')}`);
@@ -264,6 +329,15 @@ try {
   check('away: a short trip to the background ends the session, and coming back carries on in it', () => {
     assert.equal(shortAway.length, 1, `${shortAway.length} sessions`);
     assert.deepEqual(typesOf(shortAway[0].session_id), ['session_start', 'background', 'app_resume', 'quit']);
+  });
+  check('away: going to the background mid-level sends an abandon before the end; playing on takes it back', () => {
+    const mine = raw2().filter((e) => e.session_id === shortAway[0].session_id);
+    const abandon = mine.find((e) => e.type === 'level_abandon');
+    assert.ok(abandon && abandon.reason === 'background' && abandon.level === 'level_2', JSON.stringify(abandon));
+    const end = mine.find((e) => e.type === 'session_end' && e.reason === 'background');
+    assert.ok(abandon.ts <= end.ts && mine.indexOf(abandon) < mine.indexOf(end), 'the abandon comes before the end');
+    assert.deepEqual(shortAway[0].abandoned, [], 'level_2 was completed after coming back');
+    assert.deepEqual(shortAway[0].completed, ['level_1', 'level_2', 'level_3']);
   });
   check('long away: past session_timeout, coming back starts a new session with a new ID', () => {
     assert.equal(longAway.length, 2, `${longAway.length} sessions`);
@@ -379,6 +453,44 @@ try {
   });
   runGodot(demo(['--seed=12', intake]), 'anonymous run after install');
   check('install: anonymous mode deletes the ID an install-mode build left', () => assert.ok(!fs.existsSync(playerFile), 'player_id still there'));
+
+  // 10. repeats: the first batch is stored, but its answer comes 3 s late. At 2.5 s the game goes to the background,
+  // which sends what is waiting there and then, the first batch included.
+  const beforeRepeats = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  const proxy = await holdingProxy(port, 3000);
+  try {
+    await runGodotAsync(demo(['--seed=13', '--background-at=2.5', '--background-for=0.5', `--intake=http://127.0.0.1:${proxy.port}`]));
+    await new Promise((r) => setTimeout(r, 3300));
+  } finally {
+    await proxy.close();
+  }
+  const repeatRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeRepeats.has(s.session_id));
+  check('repeats: a batch sent again is answered as a duplicate, and nothing is stored twice', () => {
+    assert.equal(repeatRun.length, 1, `${repeatRun.length} sessions`);
+    assert.ok(proxy.answers.some((a) => a.duplicate === true), JSON.stringify(proxy.answers));
+    const mine = raw2().filter((e) => e.session_id === repeatRun[0].session_id);
+    const seen = new Set();
+    for (const e of mine) {
+      const key = JSON.stringify({ ...e, received: 0 });
+      assert.ok(!seen.has(key), `stored twice: ${e.type}`);
+      seen.add(key);
+    }
+    assert.equal(mine.filter((e) => e.type === 'session_start').length, 1);
+  });
+
+  // 11. close mid-level
+  const beforeClose = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  runGodot(demo(['--seed=14', '--close-at=2.2', intake]), 'close mid-level run');
+  await new Promise((r) => setTimeout(r, 300));
+  const closeRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeClose.has(s.session_id));
+  check('close: leaving mid-level is an abandon, not a fail, and no rage quit', () => {
+    assert.equal(closeRun.length, 1, `${closeRun.length} sessions`);
+    const s = closeRun[0];
+    const mine = raw2().filter((e) => e.session_id === s.session_id);
+    assert.deepEqual(mine.filter((e) => ['level_abandon', 'level_fail', 'session_end'].includes(e.type)).map((e) => [e.type, e.reason ?? e.cause]), [['level_abandon', 'close'], ['session_end', 'close']], 'the game\'s "left" fail after the end is dropped');
+    assert.deepEqual(s.abandoned, ['level_2']);
+    assert.equal(s.rage_quit, false);
+  });
 } finally {
   server?.kill();
   fs.rmSync(tmp, { recursive: true, force: true });

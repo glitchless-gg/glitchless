@@ -14,11 +14,13 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID | the same ID as install mode |
 | Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, and whether it is a Steam Deck | the same as anonymous | adds model, OS version, GPU name, core count, memory |
 | Positions | **not sent**: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
-| Saved on the device | unsent batches, without any ID | unsent batches with their IDs, and the player ID | the same as install mode |
+| Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install mode |
 
 **What install mode adds to anonymous mode:** the player ID, sent in every batch as `player_id` and kept in `user://glitchless/player_id`, so the next launch sends the same ID; and, because that ID is on the device anyway, unsent batches are saved with their session and player IDs. Everything else is sent exactly as in anonymous mode. Install and full mode share the saved ID; anonymous mode deletes one another build left. `Glitchless.reset_install_id()` deletes it: the session in progress keeps sending the ID it started with, and the next launch makes a new one, which nothing links to the old one.
 
 `positions: true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
+
+Every mode reads one Android system setting, `firebase.test.lab`: Google Play's pre-launch report sets it on Google's test phones, and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. The setting itself is not sent.
 
 No mode reads or sends:
 
@@ -30,7 +32,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), and `sdk` (`glitchless-godot/0.2.0`).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-godot/0.2.0`) and `batch_id` (random, made for each batch and sent again with its retries).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
 
@@ -38,11 +40,12 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | --- | --- | --- |
 | `session_start` | `session_type` (`user` or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
 | `session_end` | `reason` (`background`, `close`, `quit`), `duration_s` | going to the background, closing, quitting |
-| `frame_window` | frame count, fps, refresh rate, frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts) | every 5 s |
-| `hitch` | duration, likely causes, draw calls, primitives, timings, pipeline compiles, nodes added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
-| `load` | `ttff_ms` (engine start to first frame), `ttp_ms` (to first touch or key) | once |
+| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts) | every 5 s |
+| `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK measures in the game), draw calls, primitives, timings, pipeline compiles, nodes added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
+| `load` | when the first frame was drawn, `ttff_ms` (engine start to first frame), `first_launch` (whether this is the first launch of this game version on the device), `ttp_ms` (to first touch or key) | once |
 | `error` | `kind`, `message`, `stack` (script files, lines and functions), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `Glitchless.error`), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them | the game calls them |
+| `level_abandon` | `duration_s`; `reason` (`background`, `close`, `quit`) when Glitchless sends it | the game calls it, or the game goes to the background or closes mid-level |
 | `death` | `cause`; **full** or `positions`: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `track()` | the game calls it |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key code or `pointer`, count; off on phones} | as they happen |
@@ -59,7 +62,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `device_tier` | `low` / `mid` / `high`, from core count and memory | all |
 | `gpu_tier` | the same as `device_tier` on phones; `low` on a Steam Deck; on other desktops, from the GPU name | all |
 | `renderer`, `driver` | `mobile`, `metal` | all |
-| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120` | all |
+| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120`: `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (that is each frame window's `hz`) | all |
 | `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` on Linux, and through Proton's `Z:` drive on Windows; read on the device and not sent) | all |
 | `model`, `os_version` | `iPhone16,1`, `27.1` | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |
@@ -107,8 +110,9 @@ The form tells players what it sends ("your note, the screenshot and where you a
 
 | file | what | mode |
 | --- | --- | --- |
-| `user://glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above, bug reports included. In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
+| `user://glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id` so the server stores a batch once however often it arrives; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
 | `user://glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
+| `user://glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 
 Deleting the app deletes them all.
 
@@ -130,7 +134,7 @@ Linebreakers' and Starlift's pages (`site/privacy/index.html`) say today:
 A paragraph in the pages' own voice, for anonymous mode:
 
 > **Performance and error reports**
-> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many blocks), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. *[If the server forwards to Datadog: We use Datadog, a monitoring service, to store and chart them on our behalf.]* They are deleted after *[30 days]*.
+> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many blocks), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your device which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. *[If the server forwards to Datadog: We use Datadog, a monitoring service, to store and chart them on our behalf.]* They are deleted after *[30 days]*.
 
 Install mode needs one more sentence:
 

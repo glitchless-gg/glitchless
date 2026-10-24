@@ -9,6 +9,7 @@
 #include "HAL/PlatformTime.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/CommandLine.h"
+#include "Misc/CoreDelegates.h"
 #include "Misc/Parse.h"
 #include "UObject/Package.h"
 #include "UObject/Script.h"
@@ -42,6 +43,7 @@ void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 	bCrash = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-crash"));
 	bFatal = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-fatal"));
 	bDialog = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-dialog"));
+	bLeave = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-leave"));
 	StartedAt = FPlatformTime::Seconds();
 	Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UGlitchlessTestScript::Step));
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UGlitchlessTestScript::OnMapLoaded);
@@ -104,6 +106,31 @@ bool UGlitchlessTestScript::Step(float DeltaTime)
 		{
 			FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest dialog"));
 			return false;
+		}
+		return true;
+	}
+	if (bLeave)
+	{
+		switch (Done)
+		{
+		case 2:
+			FGlitchless::LevelStart(TEXT("arena-1"));
+			break;
+		case 3:
+			// What iOS and Android say as the app goes to the background. Glitchless ends the session there, with
+			// the level abandoned; the game failing it as "left" afterwards is dropped.
+			FCoreDelegates::ApplicationWillEnterBackgroundDelegate.Broadcast();
+			FGlitchless::LevelFail(TEXT("arena-1"), TEXT("left"));
+			break;
+		case 5:
+			FCoreDelegates::ApplicationHasEnteredForegroundDelegate.Broadcast(); // back soon: the same session, the level goes on
+			FGlitchless::Track(TEXT("coins"), 1.0);
+			break;
+		case 7:
+			FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest leave")); // quits mid-level
+			return false;
+		default:
+			break;
 		}
 		return true;
 	}

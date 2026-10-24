@@ -90,7 +90,9 @@ function waves(n, through3) {
 test('a level far fewer sessions get through is a wall, deaths or not', () => {
   const [wall] = findings(ctxOf(waves(8, 2)), []).filter((f) => f.id.startsWith('design-wall-'));
   assert.equal(wall?.id, 'design-wall-wave-3');
-  assert.equal(wall.severity, 'high');
+  // 8 sessions: under 10, a wall is never high, and says why.
+  assert.equal(wall.severity, 'medium');
+  assert.match(wall.summary, /Only 8 sessions reached it, so this could be chance\.$/);
   assert.equal(wall.evidence.completion_pct, 25);
   assert.equal(wall.evidence.other_levels_median_pct, 100);
   assert.match(wall.title, /wave-3 is a wall: 25% of the sessions that reach it get through/);

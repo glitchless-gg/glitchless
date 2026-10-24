@@ -89,8 +89,8 @@ test('a report from an offline build is not sent, and one that fails is queued f
   globalThis.fetch = async () => ({ ok: false, status: 503 });
   const gd = sdk();
   assert.deepEqual(await gd.reportBug({ note: 'later' }), { sent: false, reason: 'error' });
-  assert.equal(gd.queue.find((e) => e.type === 'bug_report')?.note, 'later');
-  // The next flush sends it on its own request again.
+  // It waits as a batch of its own, with its batch_id, and the next flush sends it on its own request again.
+  assert.equal(gd.retries.flatMap((b) => b.events).find((e) => e.type === 'bug_report')?.note, 'later');
   const sent = capture();
   gd.flush();
   await new Promise((r) => setTimeout(r, 20));

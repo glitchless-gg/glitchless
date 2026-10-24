@@ -44,6 +44,11 @@ void UGlitchlessBlueprintLibrary::LevelFail(const FString& Level, const FString&
 	FGlitchless::LevelFail(Level, Cause);
 }
 
+void UGlitchlessBlueprintLibrary::LevelAbandon(const FString& Level)
+{
+	FGlitchless::LevelAbandon(Level);
+}
+
 void UGlitchlessBlueprintLibrary::Death(FVector Location, const FString& Cause)
 {
 	FGlitchless::Death(Location, Cause);

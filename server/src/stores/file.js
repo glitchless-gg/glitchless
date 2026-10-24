@@ -20,9 +20,15 @@
 //                                               ids (retention, analytics.js), over everything the store holds
 //   services(projectId)
 //   clear(projectId, service)
+//   claimBatch(projectId, service, id)          true the first time a batch ID comes (SPEC §2 batch_id), false for
+//                                               a repeat within BATCH_KEEP_MS; releaseBatch() forgets one whose
+//                                               events could not be stored. Optional: without them every batch is kept
 //
 // Lines written before projects existed have no project_id; they belong to `legacyProject` (the
 // open-source server's single project), so existing data keeps working without a migration.
+//
+// Batch IDs the store took are kept in batches.jsonl, one line each ({p, s, b, at}, or with `del` once released),
+// and rewritten without the expired ones at startup.
 //
 // Bug reports are kept apart from the events: their records in reports.jsonl, each screenshot as an image file in
 // reports/ (<id>.jpg), read only when one report is opened. Source maps are files too:
@@ -34,6 +40,7 @@ import { DEFAULT_PROJECT, isProjectId } from '../auth.js';
 import { rollup, minuteOf, MINUTE } from '../rollups.js';
 import { splitReport, decodeScreenshot, encodeScreenshot, MAX_REPORTS } from '../reports.js';
 import { keySeg, fromKeySeg } from '../sourcemaps.js';
+import { BATCH_KEEP_MS } from '../ingest.js';
 
 const RETENTION_DAYS = 14;
 
@@ -42,6 +49,7 @@ export class FileStore {
     this.dir = dir;
     this.legacyProject = legacyProject;
     this.projects = new Map();
+    this.batches = new Map(); // batchKey() → when it was taken
     fs.mkdirSync(dir, { recursive: true });
     this.load();
   }
@@ -83,6 +91,7 @@ export class FileStore {
       for (const m of JSON.parse(fs.readFileSync(mapsFile, 'utf8'))) this.ownerOf(m)?.maps.set(mapKey(m), m);
     }
     this.loadReports(cutoff);
+    this.loadBatches();
     const dashboardsFile = path.join(this.dir, 'dashboards.json');
     if (fs.existsSync(dashboardsFile)) {
       for (const [projectId, dashboards] of Object.entries(JSON.parse(fs.readFileSync(dashboardsFile, 'utf8')))) {
@@ -108,6 +117,45 @@ export class FileStore {
       p.reports.set(r.id, r);
     }
     if (dropped) this.saveReports();
+  }
+
+  loadBatches() {
+    const file = path.join(this.dir, 'batches.jsonl');
+    if (!fs.existsSync(file)) return;
+    const since = Date.now() - BATCH_KEEP_MS;
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const b = line && parse(line);
+      if (!b || !isProjectId(b.p)) continue;
+      const key = batchKey(b.p, b.s, b.b);
+      if (b.del || b.at < since) this.batches.delete(key);
+      else this.batches.set(key, b.at);
+    }
+    this.saveBatches();
+  }
+
+  saveBatches() {
+    const lines = [...this.batches].map(([key, at]) => {
+      const [p, s, b] = JSON.parse(key);
+      return JSON.stringify({ p, s, b, at });
+    });
+    fs.writeFileSync(path.join(this.dir, 'batches.jsonl'), lines.length ? lines.join('\n') + '\n' : '');
+  }
+
+  async claimBatch(projectId, service, id) {
+    this.project(projectId);
+    const key = batchKey(projectId, service, id);
+    const now = Date.now();
+    const at = this.batches.get(key);
+    if (at != null && at >= now - BATCH_KEEP_MS) return false;
+    this.batches.set(key, now);
+    if (this.batches.size % 10_000 === 0) for (const [k, t] of this.batches) if (t < now - BATCH_KEEP_MS) this.batches.delete(k);
+    await fs.promises.appendFile(path.join(this.dir, 'batches.jsonl'), JSON.stringify({ p: projectId, s: service, b: id, at: now }) + '\n');
+    return true;
+  }
+
+  async releaseBatch(projectId, service, id) {
+    if (!this.batches.delete(batchKey(projectId, service, id))) return;
+    await fs.promises.appendFile(path.join(this.dir, 'batches.jsonl'), JSON.stringify({ p: projectId, s: service, b: id, del: 1 }) + '\n');
   }
 
   async put(projectId, events) {
@@ -365,6 +413,10 @@ function parse(line) {
   } catch {
     return null;
   }
+}
+
+function batchKey(projectId, service, id) {
+  return JSON.stringify([projectId, service, id]);
 }
 
 function mapKey(m) {

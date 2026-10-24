@@ -13,7 +13,7 @@
 // streams. Points carry the server's clock; log records keep the game's own timestamps.
 
 import { randomUUID } from 'node:crypto';
-import { LOG_TYPES, SessionContext, describe, errorType, chunk, redactUrl } from './events.js';
+import { LOG_TYPES, SessionContext, describe, errorType, chunk, redactUrl, levelOutcome } from './events.js';
 
 export const SCOPE = { name: 'glitchless', version: '0.1.0' };
 export const DELTA = 1;
@@ -36,11 +36,12 @@ export const METRICS = {
   'glitchless.level.starts': { unit: '{level}', description: 'Levels started' },
   'glitchless.level.completes': { unit: '{level}', description: 'Levels completed' },
   'glitchless.level.fails': { unit: '{level}', description: 'Levels failed' },
+  'glitchless.level.abandons': { unit: '{level}', description: 'Levels left before they ended' },
   'glitchless.deaths': { unit: '{death}', description: 'Player deaths' },
   'glitchless.errors': { unit: '{error}', description: 'Errors caught by the game SDK' },
 };
 
-const COUNTERS = { session_start: 'glitchless.sessions', level_start: 'glitchless.level.starts', level_complete: 'glitchless.level.completes', level_fail: 'glitchless.level.fails' };
+const COUNTERS = { session_start: 'glitchless.sessions', level_start: 'glitchless.level.starts', level_complete: 'glitchless.level.completes', level_fail: 'glitchless.level.fails', level_abandon: 'glitchless.level.abandons' };
 
 export class OtlpExporter {
   constructor({
@@ -119,7 +120,7 @@ export class OtlpExporter {
         agg.add(game, 'glitchless.errors', { ...attrs, 'error.type': String(e.kind ?? 'unknown') }, 1);
         break;
       default:
-        if (COUNTERS[e.type]) agg.add(game, COUNTERS[e.type], attrs, 1);
+        if (COUNTERS[levelOutcome(e)]) agg.add(game, COUNTERS[levelOutcome(e)], attrs, 1);
     }
   }
 

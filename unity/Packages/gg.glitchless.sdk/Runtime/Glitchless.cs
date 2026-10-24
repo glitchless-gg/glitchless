@@ -10,6 +10,7 @@ namespace GlitchlessSdk
     ///
     ///   using GlitchlessSdk;
     ///   Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake = "https://api.glitchless.gg", ClientToken = "gl_pub_…" });
+    ///   Glitchless.LevelAbandon(); // the player went to the menu or restarted mid-level: not a fail
     ///   Glitchless.Death(player.position, "fell");
     ///   Glitchless.Track("powerup", "magnet");
     ///   Glitchless.SetContext("enemies", enemies.Count);
@@ -35,8 +36,15 @@ namespace GlitchlessSdk
 
         public static void LevelComplete(string level = null, double? score = null, double? durationSeconds = null) => Core?.LevelComplete(level, score, durationSeconds);
 
-        /// <summary>The player gave up or lost the level. `cause` is a short word: "fell", "timeout", "restart".</summary>
+        /// <summary>The player lost the level: died, ran out of lives or time. `cause` is a short word: "fell", "timeout".
+        /// Leaving the level is LevelAbandon, never a fail.</summary>
         public static void LevelFail(string level = null, string cause = null) => Core?.LevelFail(level, cause);
+
+        /// <summary>The player left the level before it ended: went to the menu, restarted it. The funnel counts abandons
+        /// apart from fails, and they are never rage quits. Going to the background or quitting mid-level sends one by
+        /// itself, and a LevelFail or LevelAbandon for that level after the session has ended (from an OnDestroy as the
+        /// game closes, say) is dropped.</summary>
+        public static void LevelAbandon(string level = null) => Core?.LevelAbandon(level);
 
         /// <summary>A death at a place in the game world. The place is sent only when positions are on (Full mode, or Positions = true).</summary>
         public static void Death(Vector3 position, string cause = "unknown") => Core?.Death(position.x, position.y, position.z, cause);

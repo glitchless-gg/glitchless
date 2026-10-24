@@ -33,11 +33,11 @@
 //   not at day resolution (the store answers them over the last 31 days and says so in meta)
 //                  heatmaps (position samples), session-type filters, recent hitches
 
-import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, budgetMedian, meanOf, seconds, FIXED, OTHER } from './rollups.js';
+import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, meanOf, seconds, FIXED, OTHER } from './rollups.js';
 import { newFacts, addFactsCell } from './facts.js';
 import { MARK } from './session-state.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, RETENTION_DAYS } from './analytics.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -241,6 +241,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
   // The level funnel (analytics.js funnel()).
   const started = new Set();
   const completed = new Set();
+  const ended = new Set();
   for (const { ts, k: kind, level, cause, x, y, z, d } of s.marks) {
     if (kind === MARK.death) {
       g.dc[cause] = (g.dc[cause] || 0) + 1;
@@ -259,6 +260,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
     } else if (kind === MARK.complete) {
       if (!completed.has(level)) l.sc++;
       completed.add(level);
+      ended.add(level);
       l.co++;
       if (isNum(d)) {
         l.ds += Math.round(d * FIXED.sec);
@@ -266,10 +268,17 @@ function addSession(g, s, day, caps, newPlayers = null) {
       }
     } else if (kind === MARK.fail) {
       l.fa++;
-    } else {
+      ended.add(level);
+    } else if (kind === MARK.death) {
       l.de++;
       l.ca[cause] = (l.ca[cause] || 0) + 1;
+      ended.add(level);
     }
+  }
+  for (const [level, n] of Object.entries(s.abandoned || {})) {
+    const l = levelRow(g, level, caps);
+    l.ab += n;
+    if (!ended.has(level)) l.lo++;
   }
   if (s.rage_quit && s.rage?.level) levelRow(g, s.rage.level, caps).rq++;
   if (s.rage_quit) g.rq.push([s.last_ts, { session_id: s.session_id, version: s.version, ts: s.end ?? s.last_ts, ...s.rage }]);
@@ -311,7 +320,8 @@ function gaugeRow(g, key, caps) {
 
 function levelRow(g, level, caps) {
   let l = g.lv.get(level);
-  if (!l) g.lv.set(level, (l = { ss: 0, pl: new Distinct(...caps.levelPlayers), sc: 0, at: 0, co: 0, fa: 0, de: 0, ds: 0, dn: 0, ca: {}, rq: 0 }));
+  // ab: abandons, lo: sessions that only left it (analytics.js funnel(): abandons, abandoned)
+  if (!l) g.lv.set(level, (l = { ss: 0, pl: new Distinct(...caps.levelPlayers), sc: 0, at: 0, co: 0, fa: 0, de: 0, ab: 0, lo: 0, ds: 0, dn: 0, ca: {}, rq: 0 }));
   return l;
 }
 
@@ -631,7 +641,7 @@ function mergeGroup(into, g) {
   for (const [level, n] of g.fwl) into.fwl.set(level, (into.fwl.get(level) || 0) + n);
   for (const [level, l] of g.lv) {
     const m = levelRow(into, level, UNCAPPED);
-    for (const k of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ds', 'dn', 'rq']) m[k] += l[k];
+    for (const k of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ab', 'lo', 'ds', 'dn', 'rq']) m[k] += l[k] ?? 0;
     m.pl.merge(l.pl);
     for (const [c, n] of Object.entries(l.ca)) m.ca[c] = (m.ca[c] || 0) + n;
   }
@@ -722,9 +732,6 @@ export function dailyOverview(ctx) {
 export function dailyPerformance(ctx) {
   const p = performance(plain(ctx));
   const g = ctx.daily.all;
-  const total = newCell();
-  for (const { c } of cellsOf(ctx)) mergeCell(total, c);
-  const budget = budgetMedian(total.budgets) ?? 1000 / 60;
   // As performance() summarizes a group of frame windows.
   const summarize = (key, x) => {
     const c = x.cell;
@@ -737,7 +744,7 @@ export function dailyPerformance(ctx) {
       p75: round(c.ft.quantile(0.75), 2),
       p95: round(c.ft.quantile(0.95), 2),
       p99: round(c.ft.quantile(0.99), 2),
-      pct_over_budget: round(c.ft.fractionAbove(budget * 1.15) * 100, 1),
+      pct_over_budget: c.ft.n ? round((c.over / c.ft.n) * 100, 1) : 0,
       hitches: c.hitches,
       hitches_per_min: secs ? round(c.hitches / (secs / 60), 2) : null,
       draw_calls: c.calls[1] ? Math.round(meanOf(c.calls, FIXED.calls)) : null,
@@ -762,6 +769,8 @@ export function dailyPerformance(ctx) {
   approximate(ctx, 'load_times', g.ttff.approx || g.ttp.approx);
   p.kpis.ttff_p50 = g.ttff.quantile(0.5);
   p.kpis.ttff_p95 = g.ttff.quantile(0.95);
+  const slow = Object.entries(g.ttff.c).reduce((a, [v, n]) => a + (Number(v) > SLOW_START_MS ? n : 0), 0);
+  p.kpis.ttff_slow_pct = pct(slow, g.ttff.n);
   p.kpis.ttp_p50 = g.ttp.quantile(0.5);
   const versions = [...ctx.daily.byVersion];
   p.memory = Object.fromEntries(
@@ -817,6 +826,8 @@ export function dailyFunnel(ctx) {
       deaths: l.de,
       deaths_per_session: l.ss ? round(l.de / l.ss, 2) : null,
       fails: l.fa,
+      abandons: l.ab ?? 0,
+      abandoned: l.lo ?? 0,
       avg_complete_s: l.dn ? round(l.ds / FIXED.sec / l.dn, 1) : null,
       death_causes: l.ca,
       rage_quits: l.rq,

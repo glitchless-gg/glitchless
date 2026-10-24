@@ -139,6 +139,7 @@ export function checkAutoplay(check, batches, run) {
       assert.equal(b.json.service, SERVICE);
       assert.equal(b.json.player_id, null, 'anonymous mode sends no player ID');
       assert.match(b.json.session_id, /^s_[a-z0-9]{16}$/);
+      assert.match(b.json.batch_id, /^b_[a-z0-9]{16}$/, 'every batch has its own ID (SPEC §2 batch_id)');
     }
     assert.ok(batches.some((b) => b.gzip), 'nothing was gzipped');
   });

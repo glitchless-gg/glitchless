@@ -183,7 +183,11 @@ namespace Glitchless
 		void Init(const FOptions& InOptions);
 		void LevelStart(const std::string& LevelId);
 		void LevelComplete(const std::optional<std::string>& LevelId = std::nullopt, std::optional<double> Score = std::nullopt, std::optional<double> DurationS = std::nullopt);
+		/** The player lost the level (died, ran out of time). Leaving it is LevelAbandon. */
 		void LevelFail(const std::optional<std::string>& LevelId = std::nullopt, const std::string& Cause = "");
+		/** The player left the level before it ended: went to the menu, restarted it, closed the game. Never a
+		 * fail. Going to the background or quitting mid-level sends one by itself (SPEC §2 level_abandon). */
+		void LevelAbandon(const std::optional<std::string>& LevelId = std::nullopt);
 		/** A death. The place is sent only when positions are on; the death and cause always are. */
 		void Death(std::optional<double> X, std::optional<double> Y, std::optional<double> Z, const std::string& Cause);
 		void Track(const std::string& Name, FValue Attrs = FValue());
@@ -259,6 +263,7 @@ namespace Glitchless
 		struct FBatch
 		{
 			int Id = 0;
+			std::string Bid; // the batch's own random ID, sent as batch_id with every try of it (SPEC §2)
 			std::string Service, Env, Version, Sid, Pid;
 			int64_t Group = 0;
 			std::vector<std::string> Events;
@@ -322,8 +327,11 @@ namespace Glitchless
 		void Begin();
 		void StartLevel(const std::string& LevelId, bool FromMap);
 		void LeaveLevel();
+		void Abandon(const std::optional<std::string>& LevelId, const std::string& Reason);
+		bool OutcomeSent(const std::optional<std::string>& LevelId) const;
+		void EndLevel(const std::string& Reason);
 		void Tick();
-		void SetBudget(double MedianDt);
+		void SetBudget(double TypicalDt);
 		void OnFrame(double Dt, const FFrameCost& F);
 		void FinishHitch(const FFrameCost* Next);
 		static std::vector<std::string> Causes(double Dt, const FFrameCost& F);
@@ -368,11 +376,14 @@ namespace Glitchless
 		std::string NewId(const char* Prefix, int Length) const;
 		double Random01() const;
 		static double Median(std::vector<double> Values);
+		static double Quantile(std::vector<double> Values, double Q);
 
 		FOptions Options;
 		bool Inited = false, Enabled = false, Sampled = true;
 		std::string SessionId, PlayerId;
 		std::optional<std::string> Level;
+		bool LevelOpen = false; // a level started and not yet completed, failed or abandoned
+		std::optional<std::string> LeftLevel; // the level abandoned for the game as the session ended
 		int FrameCount = 0;
 		double BudgetMs = 1000.0 / 60;
 		FStats Stats;
@@ -412,6 +423,8 @@ namespace Glitchless
 		bool Throttled = false;
 		int SkipFrames = 0;
 		double FirstFrameMs = 0, FirstInputAt = 0;
+		int64_t FirstFrameAt = 0; // the wall clock at the first frame: the load event's ts
+		std::optional<std::string> FirstFrameLevel;
 		std::map<std::string, std::vector<double>> KeyHistory;
 		std::optional<std::vector<double>> Position;
 		std::vector<FValue> PosBuffer;

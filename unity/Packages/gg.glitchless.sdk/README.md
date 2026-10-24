@@ -2,9 +2,9 @@
 
 Game observability for Unity 2022.3 LTS and Unity 6. Glitchless records how your game runs for real players and gives your coding agent the same data, over MCP, so it can fix what they hit.
 
-- **Stutter.** Every frame is timed from `Time.unscaledDeltaTime`. Each frame window carries a mergeable frame-time sketch and where the time went: physics, your `Update` code, rendering, the GPU. Each hitch (a frame over 50 ms and twice the recent median) comes with its likely causes: a garbage collection, a shader compile, a scene load, a burst of new objects, or long script, physics or render work.
+- **Stutter.** Every frame is timed from `Time.unscaledDeltaTime`. Each frame window carries a mergeable frame-time sketch and where the time went: physics, your `Update` code, rendering, the GPU. Each hitch (a frame over 50 ms and twice the recent median) comes with its likely causes: a garbage collection, a shader compile, a scene load, a burst of new objects, or long script, physics or render work. When none of those fit and the parts Glitchless times add up to little of the frame, the cause is `gpu_or_os`: the time went to the GPU, presenting the frame or the OS.
 - **Errors.** Uncaught exceptions, `Debug.LogError`, assertions and engine errors, through `Application.logMessageReceivedThreaded`, grouped by the same fingerprint the web and Godot SDKs use, with the game events just before each one.
-- **Levels and players.** Scenes are levels on their own. Deaths, level fails and quits feed the level funnel, death heatmaps and rage-quit detection.
+- **Levels and players.** Scenes are levels on their own. Deaths, level fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection.
 - **Leaks.** Mesh, material, texture and object counts per level load, where a development build has them.
 - **Bug reports from players**, when you turn them on: F8 (or your own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 - **Anonymous by default.** No player ID, no device identifier, coarse device facts only. `Privacy = Privacy.Install` adds a saved random player ID so retention (D1, D7, D30) can be counted, and nothing else. [PRIVACY.md](PRIVACY.md) lists every field.
@@ -57,13 +57,16 @@ Glitchless starts itself before the first scene loads, so frame times and errors
 
 The Editor and development builds send too, with `Env` set to `dev` unless you set it, so you can check data arrives from Play mode. Release builds default to `prod`.
 
+Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the Firebase Test Lab devices Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts.
+
 ## Tell it about your game
 
 | Game moment | Call |
 | --- | --- |
 | a level starts (a restart counts) | automatic for scenes, or `Glitchless.LevelStart("level-2")` |
 | a level is beaten | `Glitchless.LevelComplete("level-2", score: 1200)` |
-| the player gives up or runs out of lives | `Glitchless.LevelFail("level-2", "fell")` |
+| the player loses it: runs out of lives or time | `Glitchless.LevelFail("level-2", "fell")` |
+| the player leaves it: goes to the menu, restarts | `Glitchless.LevelAbandon("level-2")`, never a fail |
 | the player dies | `Glitchless.Death(player.position, "spikes")`: short, low-cardinality causes |
 | pickups, purchases, checkpoints | `Glitchless.Track("powerup", "magnet")` |
 | counts of anything that scales, every frame | `Glitchless.SetContext("enemies", enemies.Count)` |
@@ -72,6 +75,8 @@ The Editor and development builds send too, with `Env` set to `dev` unless you s
 | a player's bug report from your own UI | `Glitchless.ReportBug(note)`, or `Glitchless.OpenBugReport()` for the built-in form ([below](#bug-reports)) |
 
 Use the game's own words for names, causes and levels, never anything a player typed.
+
+**Leaving a level is not losing it.** Call `LevelAbandon()` when the player leaves a level before it ends, not `LevelFail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background (phones) or quits with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session's end, and drops a `LevelFail` or `LevelAbandon` the game sends for that level afterwards (from an `OnDestroy` as the game closes, say). Back from the background in the same session, the level carries on and the server takes the abandon back.
 
 **Your own metrics.** `Track` takes any event: `Glitchless.Track("open", "full")`, `Glitchless.Track("play", "endless")`, or a `Dictionary<string, object>` of attributes. One word becomes the attribute `what`. The dashboard's Events page counts each event over time, breaks it down by attribute and builds funnels between events (`paywall` → `buy=done`), and the game's own dashboard, whose pages your coding agent designs with `glitchless_set_dashboard`, shows the ones that matter. Attributes are strings, numbers or booleans, at most 12 per event.
 
@@ -142,10 +147,14 @@ If the game already uses [Steamworks.NET](https://steamworks.github.io) or [Face
 | physics, update and render time per frame (timing points in the player loop) | yes | yes |
 | draw calls, SetPass calls, batches, triangles | yes | yes |
 | GC heap and system memory | yes | yes |
-| GPU time | with **Player Settings → Frame Timing Stats** on | the same |
+| GPU time (`FrameTimingManager`, the latest frame the GPU has finished, which can be a few frames behind) | with **Player Settings → Frame Timing Stats** on | the same |
 | mesh, material, texture and object counts, allocation per frame, shader compiles | no | yes |
 
 The counts come from Unity's profiler counters (`ProfilerRecorder`), which Unity only fills in development builds. That's where leaks show up, so run your playtest bots on a development build.
+
+**What a frame window's numbers mean.** Over the window's frames: `frames`, `fps` and the frame-time sketch and percentiles; `slow`, `jank`, `hitches` and `frozen` are counts, and `gc_collections` a total. `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `draw_calls`, `triangles`, `setpass_calls`, `batches` and `gc_alloc_kb` are averages per frame, and `draw_calls_max` and `ft_max` the highest. Each `ctx` gauge is its highest value in the window. The memory and object counts (`geometries` for meshes, `textures`, `materials`, `objects`, `game_objects`, `heap_mb`, `gc_reserved_mb`, `system_mb`) are their value as the window closed, sampled every 30 frames, so a window a level start cuts short keeps the sample from just before it.
+
+**Refresh rates.** `hz` and `budget_ms` in each window are the rate the game ran at (60 Hz, 120 Hz, or a cap the game set), measured from its frames. A frame can take longer than the screen's interval but never less, so the fast frames tell the rate: their 20th percentile, a first guess after 30 frames, the answer at 120, then a look every 480 frames that only goes faster, and lowered when the OS reports a slower screen. `refresh_hz` in `session_start` is the screen's rate as the OS reports it, often the most the panel can do: a 120 Hz phone in Low Power Mode, or a game capped at 60, can still report 120.
 
 **Stack traces.** Mono builds report files and lines. IL2CPP builds report method names; for files and lines, set **Player Settings → IL2CPP Stacktrace Information** to *Method Name, File Name, and Line Number*.
 
@@ -153,7 +162,7 @@ The counts come from Unity's profiler counters (`ProfilerRecorder`), which Unity
 
 ## Sending
 
-Events are summed up per 5-second frame window and sent every 15 seconds (the first batch after 2), gzipped, with `UnityWebRequest`. A batch that fails is retried with backoff (5 s, doubling to 5 minutes). Batches that couldn't be sent are saved in `Application.persistentDataPath/glitchless/` and sent on a later launch; in anonymous mode they're saved without any ID.
+Events are summed up per 5-second frame window and sent every 15 seconds (the first batch after 2), gzipped, with `UnityWebRequest`. A batch that fails is retried with backoff (5 s, doubling to 5 minutes). Batches that couldn't be sent are saved in `Application.persistentDataPath/glitchless/` and sent on a later launch; in anonymous mode they're saved without the session or player ID. Each batch keeps its own random `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back (a timeout, or a send cut short by going to the background or quitting).
 
 When a phone app goes to the background the session ends and the last batch is sent at once, waiting at most 1.5 s, because iOS and Android often stop a backgrounded app without warning. Back within 5 minutes, the session carries on; later, it's a new session. Quitting sends the last batch the same way.
 

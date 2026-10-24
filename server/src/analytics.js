@@ -17,6 +17,8 @@ import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventI
 import { versionStat } from './sums.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
+// A first frame later than this is a slow start (the slow-start finding, and the share of sessions it hits).
+export const SLOW_START_MS = 4000;
 
 // ───────────────────────────── context ─────────────────────────────
 
@@ -153,6 +155,14 @@ export function indexSessions(events) {
   return sessions;
 }
 
+function ttffByLaunch(sessions) {
+  const first = sessions.filter((s) => isNum(s.ttff) && s.first_launch === true).map((s) => s.ttff);
+  const later = sessions.filter((s) => isNum(s.ttff) && s.first_launch === false).map((s) => s.ttff);
+  if (!first.length && !later.length) return { ttff_first_launch: null };
+  const part = (list) => ({ sessions: list.length, p50: quantile(list, 0.5), slow_pct: pct(list.filter((v) => v > SLOW_START_MS).length, list.length || 1) });
+  return { ttff_first_launch: { first: part(first), later: part(later) } };
+}
+
 export function sessionSummary(s) {
   return {
     session_id: s.session_id,
@@ -172,6 +182,8 @@ export function sessionSummary(s) {
     gpu_tier: s.device?.gpu_tier ?? null,
     levels: naturalSort([...s.levels]),
     completed: naturalSort([...s.completed]),
+    // Levels the player left before they ended (SPEC §2 level_abandon).
+    abandoned: naturalSort(Object.keys(s.abandoned || {})),
     deaths: s.deaths,
     errors: s.errors,
     hitches: s.hitches,
@@ -248,7 +260,7 @@ export function overview(ctx) {
       frame_p95: round(all.quantile(0.95), 2),
       frame_p99: round(all.quantile(0.99), 2),
       frame_budget_ms: round(budget, 2),
-      pct_frames_over_budget: round(all.fractionAbove(budget * 1.15) * 100, 1),
+      pct_frames_over_budget: all.n ? round((total.over / all.n) * 100, 1) : 0,
       avg_fps: frameSeconds ? round(total.frames / frameSeconds, 1) : null,
       hitches_per_min: frameSeconds ? round(total.hitches / (frameSeconds / 60), 2) : null,
       avg_session_s: meanSeconds(sessions),
@@ -350,7 +362,7 @@ export function performance(ctx) {
       p75: round(g.ft.quantile(0.75), 2),
       p95: round(g.ft.quantile(0.95), 2),
       p99: round(g.ft.quantile(0.99), 2),
-      pct_over_budget: round(g.ft.fractionAbove(budget * 1.15) * 100, 1),
+      pct_over_budget: g.ft.n ? round((g.over / g.ft.n) * 100, 1) : 0,
       hitches: g.hitches,
       hitches_per_min: secs ? round(g.hitches / (secs / 60), 2) : null,
       draw_calls: g.calls[1] ? Math.round(meanOf(g.calls, FIXED.calls)) : null,
@@ -375,7 +387,7 @@ export function performance(ctx) {
       frame_p95: round(all.quantile(0.95), 2),
       frame_p99: round(all.quantile(0.99), 2),
       frame_budget_ms: round(budget, 2),
-      pct_frames_over_budget: round(all.fractionAbove(budget * 1.15) * 100, 1),
+      pct_frames_over_budget: all.n ? round((total.over / all.n) * 100, 1) : 0,
       hitches: total.hitches,
       hitches_per_min: frameSeconds ? round(total.hitches / (frameSeconds / 60), 2) : null,
       frozen_frames: total.frozen,
@@ -383,6 +395,10 @@ export function performance(ctx) {
       render_cpu_ms: total.render[1] ? round(meanOf(total.render, FIXED.render), 2) : null,
       ttff_p50: quantile(sessions.map((s) => s.ttff).filter(isNum), 0.5),
       ttff_p95: quantile(sessions.map((s) => s.ttff).filter(isNum), 0.95),
+      ttff_slow_pct: pct(sessions.filter((s) => isNum(s.ttff) && s.ttff > SLOW_START_MS).length, sessions.filter((s) => isNum(s.ttff)).length),
+      // The first launch of a version on a device starts cold (empty shader and file caches); engine SDKs say which
+      // launches were first. Null where no session said.
+      ...ttffByLaunch(sessions),
       ttp_p50: quantile(sessions.map((s) => s.ttp).filter(isNum), 0.5),
     },
     distribution: {
@@ -459,19 +475,30 @@ function hitchContext(ctx) {
 
 // Which events show up right before hitches more often than chance? Frequent events (a pickup
 // every second) appear before almost every hitch, so rank by lift over their base rate instead of raw share.
+// A hitch's recent events can come from before its level started (the menu choice that launched it), and such an
+// event is barely counted on the level: below LIFT_MIN_EVENTS there, its base rate is the whole game's instead,
+// or the floor would make its lift share × 1000. Fewer than LIFT_MIN_HITCHES hitches naming it is chance.
+const LIFT_MIN_EVENTS = 5;
+const LIFT_MIN_HITCHES = 5;
 export function eventLift(ctx, level = undefined, windowS = 1.5) {
   const hitches = hitchCount(ctx, level);
   if (!hitches) return [];
   const f = mergedFacts(ctx, level);
+  const all = mergedFacts(ctx);
   let fixedSeconds = 0;
-  for (const { c } of cellsOf(ctx)) if (level === undefined || c.level === level) fixedSeconds += c.sec;
-  const seconds = fixedSeconds / FIXED.sec;
+  let allFixedSeconds = 0;
+  for (const { c } of cellsOf(ctx)) {
+    allFixedSeconds += c.sec;
+    if (level === undefined || c.level === level) fixedSeconds += c.sec;
+  }
   const inHitch = {};
   for (const name of keysBySeen(f.hn)) inHitch[name] = f.hr[name];
   return Object.entries(inHitch)
+    .filter(([, n]) => n >= LIFT_MIN_HITCHES)
     .map(([event, n]) => {
       const share = n / hitches;
-      const rate = seconds ? (f.cr[event] || 0) / seconds : 0;
+      const [count, fixed] = (f.cr[event] || 0) >= LIFT_MIN_EVENTS ? [f.cr[event], fixedSeconds] : [all.cr[event] || 0, allFixedSeconds];
+      const rate = fixed ? count / (fixed / FIXED.sec) : 0;
       const base = Math.min(0.99, Math.max(1e-3, 1 - Math.exp(-rate * windowS)));
       return { event, share: round(share, 3), base_rate: round(base, 3), lift: round(share / base, 1) };
     })
@@ -660,11 +687,12 @@ export function funnel(ctx) {
   const levels = new Map();
   const get = (l) => {
     let v = levels.get(l);
-    if (!v) levels.set(l, (v = { level: l, sessions_started: new Set(), sessions_completed: new Set(), players: new Set(), attempts: 0, completes: 0, fails: 0, deaths: 0, durations: [], causes: {}, rage_quits: 0 }));
+    if (!v) levels.set(l, (v = { level: l, sessions_started: new Set(), sessions_completed: new Set(), players: new Set(), attempts: 0, completes: 0, fails: 0, deaths: 0, abandons: 0, abandoned: 0, durations: [], causes: {}, rage_quits: 0 }));
     return v;
   };
   const durations = [];
   for (const s of ctx.sessions.values()) {
+    const ended = new Set(); // levels this session completed, failed or died on
     for (const { ts, k: kind, level, cause, d: duration } of s.marks) {
       if (!level) continue;
       const l = get(level);
@@ -675,13 +703,21 @@ export function funnel(ctx) {
       } else if (kind === MARK.complete) {
         l.sessions_completed.add(s.session_id);
         l.completes++;
+        ended.add(level);
         if (isNum(duration)) durations.push([ts, l, duration]);
       } else if (kind === MARK.fail) {
         l.fails++;
-      } else {
+        ended.add(level);
+      } else if (kind === MARK.death) {
         l.deaths++;
         l.causes[cause] = (l.causes[cause] || 0) + 1;
+        ended.add(level);
       }
+    }
+    for (const [level, n] of Object.entries(s.abandoned || {})) {
+      const l = get(level);
+      l.abandons += n;
+      if (!ended.has(level)) l.abandoned++;
     }
   }
   // Averaged in time order across sessions, as the raw events come.
@@ -698,6 +734,8 @@ export function funnel(ctx) {
       deaths: l.deaths,
       deaths_per_session: l.sessions_started.size ? round(l.deaths / l.sessions_started.size, 2) : null,
       fails: l.fails,
+      abandons: l.abandons,
+      abandoned: l.abandoned,
       avg_complete_s: l.durations.length ? round(l.durations.reduce((a, d) => a + Math.round(d * FIXED.sec), 0) / FIXED.sec / l.durations.length, 1) : null,
       death_causes: l.causes,
       rage_quits: l.rage_quits,
@@ -795,6 +833,13 @@ export function retention(ctx) {
 // its session ID.
 export function hasPlayerId(s) {
   return s.player_id != null && s.player_id !== s.session_id;
+}
+
+// Whether every players count of a context is a count of sessions: none of its sessions sent a player ID (a game in
+// anonymous mode), so each one was filed under its own session ID.
+export function playersAreSessions(ctx) {
+  if (ctx.daily) return !!ctx.daily.all?.n && !ctx.daily.all.id;
+  return ctx.sessions.size > 0 && ![...ctx.sessions.values()].some(hasPlayerId);
 }
 
 export function utcDay(ts) {
@@ -1450,7 +1495,34 @@ function summarize(sessions, cells) {
     deaths_per_session: round(st.deaths / n, 2),
     geometries_growth_per_level_load: st.geometries_growth_per_level_load,
     level_p95: levelP95,
+    // The screens it ran on: the share of frame windows at each frame budget (1000 / refresh rate, in ms).
+    frame_budgets: budgetShares(total.budgets),
   };
+}
+
+function budgetShares(budgets) {
+  const total = Object.values(budgets).reduce((a, n) => a + n, 0);
+  return Object.fromEntries(
+    Object.entries(budgets)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([b, n]) => [b, pct(n, total)]),
+  );
+}
+
+// One version's frame time on the devices that ran at one frame budget, from its sessions' own frame windows, so
+// versions that ran on different screens (120 Hz phones in one, 60 Hz in the other) compare like with like. Null
+// for a daily context (no sessions) or under `min` sessions at that budget.
+export function versionFramesAt(ctx, version, budget, min = 3) {
+  const cell = newCell();
+  let n = 0;
+  for (const s of ctx.sessions.values()) {
+    if (s.version !== version || !s.cell.fw || budgetMedian(s.cell.budgets) !== budget) continue;
+    mergeCell(cell, s.cell);
+    n++;
+  }
+  if (n < min) return null;
+  const secs = seconds(cell);
+  return { sessions: n, frame_p95: round(cell.ft.quantile(0.95), 2), hitches_per_min: secs ? round(cell.hitches / (secs / 60), 2) : null };
 }
 
 // The session numbers summarize() reports, from a group of sessions (daily.js gives the same per version).

@@ -200,7 +200,7 @@ export function crumbName(e) {
   if (e.type === 'custom') return e.name;
   if (e.type === 'death') return `death:${e.cause}`;
   if (e.type === 'error') return `error:${String(e.message).slice(0, 40)}`;
-  if (e.type === 'level_start' || e.type === 'level_complete' || e.type === 'level_fail') return e.type;
+  if (e.type === 'level_start' || e.type === 'level_complete' || e.type === 'level_fail' || e.type === 'level_abandon') return e.type;
   return null;
 }
 

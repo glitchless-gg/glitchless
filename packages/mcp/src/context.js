@@ -154,7 +154,17 @@ export const common = {
     .describe("Look-back window in hours (default 24). Up to the plan's retention on Glitchless Cloud: 336 (14 days) on Free, 2160 (90 days) on Indie, 9600 (400 days) on Studio. Past 744 (31 days) answers are by day."),
   version: z.string().optional().describe('Only include sessions from this game version'),
   steam_branch: z.string().optional().describe('Only include sessions that ran this Steam branch ("public", or a beta\'s name); games that use Steamworks send it'),
+  env: z.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
+  session_type: z
+    .enum(['user', 'synthetic', 'all'])
+    .optional()
+    .describe('"user": players only; "synthetic": bots, playtests and store test devices only; "all" or unset: both. Findings (glitchless_triage, and the overview\'s) read the production sessions of players unless env or session_type is given'),
 };
+
+// The filters every read passes on to the Glitchless API.
+export function filters({ version, steam_branch, env, session_type } = {}) {
+  return { version, steam_branch, env, type: session_type };
+}
 
 // Every tool takes `game` (by name or id): with a workspace key it picks the game, with a game key it's ignored.
 const gameField = z.string().optional().describe('The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.');

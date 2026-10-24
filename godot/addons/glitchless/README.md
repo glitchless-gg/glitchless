@@ -9,7 +9,7 @@ It reports:
 - **Engine counts.** Draw calls, primitives, objects, nodes, orphan nodes, video memory, and static memory (debug builds only). They're the leak watch.
 - **Errors** through Godot 4.5's custom loggers, with script backtraces and the last game events as breadcrumbs.
 - **Play events:** the level funnel, deaths, game events and gauges.
-- **The device:** a coarse tier, renderer, screen size and refresh rate. The screen size also shows whether an iPhone Duo is open or closed.
+- **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed.
 - **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 
 It also has an agent flag, `--glitchless-measure=SECONDS`, which prints frame stats as JSON and quits. It's the native version of the browser SDK's `glitchless_measure` tool.
@@ -37,7 +37,8 @@ func _ready() -> void:
 
 Glitchless.level_start("voyage_3")
 Glitchless.level_complete("voyage_3", score)          # duration measured since level_start
-Glitchless.level_fail("voyage_3", "lost")
+Glitchless.level_fail("voyage_3", "lost")              # lost it: died, ran out of time
+Glitchless.level_abandon("voyage_3")                  # left it: home, restart, a menu. Never a fail
 Glitchless.death(pos.x, pos.y, "meteor")              # the place is sent only when positions are on
 Glitchless.track("play", "endless")                   # one word, a number, or a dictionary
 Glitchless.set_context({"blocks": blocks.size()})     # at the end of the frame's work
@@ -47,6 +48,8 @@ var stats := await Glitchless.measure(5.0)            # what --glitchless-measur
 Glitchless.open_bug_report()                          # the bug report form, from a pause menu
 await Glitchless.report_bug(note)                     # or a report from the game's own form
 ```
+
+**Leaving a level is not losing it.** Call `level_abandon()` when the player leaves a level before it ends (goes to the menu, restarts it), not `level_fail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background or closes with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session's end, and drops a `level_fail` or `level_abandon` the game sends for that level afterwards (from `_exit_tree`, say). Back from the background in the same session, the level carries on and the server takes the abandon back.
 
 `track` is for the game's own metrics, whatever they are: `track("open", "full")`, `track("play", "endless")`,
 `track("buy", {"step": "done"})`. One word becomes the attribute `what`. The dashboard's Events page counts each
@@ -66,7 +69,7 @@ Purchases have one convention in every Glitchless SDK:
 | `client_token` | `"gl_pub_dev"` | the server's `GLITCHLESS_CLIENT_TOKENS` |
 | `sample_rate` | `1.0` | the share of sessions that send |
 | `flush_interval` | `5.0` | seconds between batches; the first goes 2 s after `init` |
-| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless` |
+| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on Firebase Test Lab, where Google Play's pre-launch report runs a new build on Google's phones (the Android setting `firebase.test.lab`) |
 | `session_timeout` | `300.0` | seconds in the background after which coming back starts a new session |
 | `engine_gauges` | `true` | put `nodes`, `orphan_nodes` and `objects` in `ctx` |
 | `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |
@@ -142,7 +145,7 @@ It works in any build, sends nothing unless sending is on, and quits when done. 
 | field | |
 | --- | --- |
 | `frame_ms` | `p50`, `p95`, `p99`, `worst` |
-| `fps`, `frame_budget_ms`, `refresh_hz`, `pct_frames_over_budget` | the budget is the refresh rate the game actually runs at (60/90/120 Hz, or its own cap), read from the median early frame |
+| `fps`, `frame_budget_ms`, `refresh_hz`, `pct_frames_over_budget` | the budget is the refresh rate the game actually runs at (60/90/120 Hz, or its own cap), read from the fast frames (their 20th percentile); `refresh_hz` is the screen's rate as the OS reports it |
 | `hitches`, `hitch_count` | up to 10 hitches: `ms`, `causes`, `ctx`, `recent` events |
 | `render_cpu_ms`, `gpu_ms` | the renderer's time per frame; `gpu_ms` is null where the driver doesn't report it (Metal) |
 | `process_ms` | all the game's `_process` code per frame |
@@ -174,9 +177,10 @@ Run the same seed before and after a change to compare.
 | `script` | `_process` code took 40% of the frame. Glitchless runs first in each frame and has a child node that runs last, so the gap between them is every other node's `_process` |
 | `physics` | physics steps took 40% of the frame |
 | `render` | the renderer's CPU and GPU time took 40% of the frame |
+| `gpu_or_os` | none of the above, and everything measured in the game (`_process`, physics, the renderer's CPU and GPU time) adds up to less than 40% of the frame: the time went to the GPU (Godot times it only on Vulkan and Direct3D 12, so on iPhones and the Compatibility renderer it lands here), to presenting the frame, or to the OS |
 | `frozen` | over 700 ms |
 
-**Engine counts** go in each frame window, and with `engine_gauges` they also go in `ctx`. That is where the findings compare a slow level with the smoothest one: *"`orphan_nodes` sits at 2,500 for this whole level vs 0 on level_1, so objects created earlier are never cleaned up"*. Orphan nodes are nodes that were taken out of the tree and never freed, the commonest Godot leak.
+**Engine counts** go in each frame window, and with `engine_gauges` they also go in `ctx`. The two say different things: the window's own `nodes`, `orphan_nodes` and `objects` are the counts when it closed, and `ctx` holds each gauge's highest value in the window. That is where the findings compare a slow level with the smoothest one: *"`orphan_nodes` sits at 2,500 for this whole level vs 0 on level_1, so objects created earlier are never cleaned up"*. Orphan nodes are nodes that were taken out of the tree and never freed, the commonest Godot leak.
 
 A frame window never spans two levels: `level_start` closes the current one.
 
@@ -211,7 +215,7 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 - **Going to the background ends the session.** iOS and Android usually stop a backgrounded app without warning, so on `NOTIFICATION_APPLICATION_PAUSED` Glitchless sends `session_end` (`reason: "background"`) at once. It waits up to 1.5 s on the network, then saves whatever didn't go.
 - **Coming back** within `session_timeout` carries on the same session with an `app_resume` event. A later `session_end` then replaces the first. Coming back later than that starts a new session with a new random ID.
 - **Closing** (the window's close button, Android's back button, or `get_tree().quit()`) sends `session_end` the same way.
-- **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID.
+- **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID. Each batch keeps its own `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back.
 
 ## What goes on the wire
 

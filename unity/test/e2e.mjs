@@ -5,9 +5,9 @@
 //   node unity/test/e2e.mjs                 (npm run test:unity)
 //   UNITY=/path/to/Unity node unity/test/e2e.mjs
 //
-// Uses the Editor version in unity/ProjectSettings/ProjectVersion.txt unless UNITY is set; another
-// version runs on a copy of the project, so the committed one isn't upgraded. The player runs in batch
-// mode, so it works on a machine without a screen.
+// Uses the Editor version in unity/ProjectSettings/ProjectVersion.txt (or, when it isn't installed, the newest
+// one that is) unless UNITY is set; another version runs on a copy of the project, so the committed one isn't
+// upgraded. The player runs in batch mode, so it works on a machine without a screen.
 //   1. offline   the server is down: batches are saved in the player's persistent data folder,
 //                in anonymous mode without any ID
 //   2. online    the saved batches go out under a new random ID, then this run's session
@@ -15,10 +15,15 @@
 //   4. measure   --glitchless-measure writes frame stats as JSON and quits
 //   5. install   install mode: the saved player ID sent as player_id (full mode's, kept), the device as anonymous
 //                mode sends it
+//   6. repeats   the server stores the first batch but its answer is late, and the game quits mid-level meanwhile:
+//                quitting sends the batch again, and its batch_id lets the server store it once. The quit sends
+//                level_abandon before session_end, and the "left" fail the game sends as it tears the level down
+//                (--fail-on-quit) is dropped
 // The offline and online runs each send a bug report from code (--bug-report-at): the offline one waits in the
 // outbox and goes on the next launch.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,7 +34,11 @@ import { Sketch } from '../../packages/sdk/src/sketch.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SERVICE = 'fetch-unity';
 const PROJECT_VERSION = fs.readFileSync(path.join(ROOT, 'unity/ProjectSettings/ProjectVersion.txt'), 'utf8').match(/m_EditorVersion: (\S+)/)[1];
-const unity = process.env.UNITY || `/Applications/Unity/Hub/Editor/${PROJECT_VERSION}/Unity.app/Contents/MacOS/Unity`;
+// The project's version, else the newest Editor the Hub has installed (on a copy of the project, below).
+const HUB = '/Applications/Unity/Hub/Editor';
+const editorAt = (v) => `${HUB}/${v}/Unity.app/Contents/MacOS/Unity`;
+const installed = fs.existsSync(HUB) ? fs.readdirSync(HUB).filter((v) => fs.existsSync(editorAt(v))).sort((a, b) => a.localeCompare(b, 'en', { numeric: true })) : [];
+const unity = process.env.UNITY || (installed.includes(PROJECT_VERSION) || !installed.length ? editorAt(PROJECT_VERSION) : editorAt(installed.at(-1)));
 if (process.platform !== 'darwin') {
   console.error('This test builds a macOS player. On another OS, build the sample with SampleBuilder yourself.');
   process.exit(2);
@@ -113,6 +122,45 @@ function play(args, label) {
   return fs.readFileSync(log, 'utf8');
 }
 
+// Like play, without blocking this process, so a server in it (the proxy in step 6) can answer.
+function playAsync(args, label) {
+  const log = path.join(tmp, `${label}.player.log`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(player, ['-batchmode', '-nographics', '-logFile', log, '--autoplay', ...args], { stdio: 'ignore' });
+    const timer = setTimeout(() => child.kill(), 180_000);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(fs.readFileSync(log, 'utf8'));
+      else reject(new Error(`${label}: the player exited with ${code} (log: ${log})`));
+    });
+  });
+}
+
+// Passes each request on to the server, so every batch is stored, but holds the answer to the first intake request
+// back for holdMs: what a phone that stalled, or a game that quit mid-send, sees.
+async function holdingProxy(target, holdMs) {
+  let first = true;
+  const answers = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const r = await fetch(`http://127.0.0.1:${target}${req.url}`, { method: req.method, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined });
+    const text = await r.text();
+    if (req.url.startsWith('/v1/intake')) {
+      answers.push(JSON.parse(text));
+      if (first) {
+        first = false;
+        await new Promise((resolve) => setTimeout(resolve, holdMs));
+      }
+    }
+    if (res.writable) res.writeHead(r.status, { 'Content-Type': 'application/json' }).end(text);
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { port: server.address().port, answers, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+}
+
+const readRaw = () => fs.readdirSync(path.join(tmp, 'data')).filter((f) => f.startsWith('events-')).flatMap((f) => fs.readFileSync(path.join(tmp, 'data', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+
 // A package installed from git is read-only, and Unity ignores any file in it without a .meta.
 const PACKAGE = path.join(ROOT, 'unity/Packages/gg.glitchless.sdk');
 check('every file in the package has its .meta (Samples~ is copied as it is)', () => {
@@ -150,6 +198,11 @@ try {
     assert.ok(!/"(sid|pid|session_id|player_id)"/.test(saved), 'an ID was written to disk');
     assert.ok(!fs.existsSync(playerFile), 'player_id file exists');
   });
+  check('offline: each saved batch keeps its own batch ID, for the server to spot a repeat', () => {
+    const batches = JSON.parse(saved).batches;
+    assert.ok(batches.length > 0 && batches.every((b) => /^b_[a-z0-9]{16}$/.test(b.bid)), JSON.stringify(batches.map((b) => b.bid)));
+    assert.equal(new Set(batches.map((b) => b.bid)).size, batches.length);
+  });
 
   // 2. online
   server = await startServer(port, path.join(tmp, 'data'));
@@ -168,7 +221,7 @@ try {
     assert.ok(m.frames > 30, `frames ${m.frames}`);
     for (const k of ['p50', 'p95', 'p99', 'worst']) assert.equal(typeof m.frame_ms[k], 'number', `frame_ms.${k}`);
     for (const k of ['fps', 'frame_budget_ms', 'pct_frames_over_budget', 'hitch_count', 'update_cpu_ms', 'physics_ms', 'memory_delta', 'new_errors']) assert.ok(k in m, k);
-    assert.equal(m.sdk, 'glitchless-unity/0.2.0');
+    assert.equal(m.sdk, 'glitchless-unity/0.3.0');
   });
 
   await new Promise((r) => setTimeout(r, 300));
@@ -197,7 +250,22 @@ try {
     for (const k of ['model', 'gpu', 'os_version', 'cores']) assert.ok(k in fullDevice, `full lacks ${k}`);
   });
 
-  const raw = fs.readdirSync(path.join(tmp, 'data')).filter((f) => f.startsWith('events-')).flatMap((f) => fs.readFileSync(path.join(tmp, 'data', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+  const raw = readRaw();
+  check('load: stamped at the first frame, not when the first batch went', () => {
+    for (const s of sessions) {
+      const start = raw.find((e) => e.session_id === s.session_id && e.type === 'session_start');
+      const load = raw.find((e) => e.session_id === s.session_id && e.type === 'load' && 'ttff_ms' in e);
+      assert.ok(load, `${s.session_id}: no load`);
+      // The session starts before the first scene loads, after the engine has started: the first frame comes
+      // at most ttff_ms after it. The first batch goes 2 s after Init.
+      assert.ok(load.ts >= start.ts && load.ts - start.ts <= load.ttff_ms + 100, `load ${load.ts - start.ts} ms after the start, ttff_ms ${load.ttff_ms}`);
+    }
+  });
+  check("load: first_launch only on this build's first launch here (the offline run)", () => {
+    const loads = sessions.map((s) => raw.find((e) => e.session_id === s.session_id && e.type === 'load' && 'ttff_ms' in e));
+    assert.deepEqual(loads.map((l) => l?.first_launch).sort(), [false, false, true]);
+    assert.equal(fs.readFileSync(path.join(dataDir, 'launched'), 'utf8'), '1.0.0');
+  });
   check('frame windows: the server reads the C# sketch back, with the frame split and the mesh count', () => {
     const windows = raw.filter((e) => e.type === 'frame_window');
     assert.ok(windows.length >= 6, `${windows.length} windows`);
@@ -207,7 +275,7 @@ try {
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
       for (const k of ['process_ms', 'physics_ms', 'render_ms']) assert.equal(typeof w[k], 'number', k);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.2.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.3.0'));
     assert.ok(windows.some((w) => typeof w.geometries === 'number'), 'no mesh count (a development build has it)');
   });
   check('the confetti bodies show up in the physics time', () => {
@@ -242,7 +310,7 @@ try {
   const opened = reports[0] && (await query(port, 'report', { id: reports[0].id })).report;
   check('bug reports: recent events and frame windows arrive (no screenshot in -nographics)', () => {
     assert.ok(opened, 'no report');
-    assert.equal(opened.sdk, 'glitchless-unity/0.2.0');
+    assert.equal(opened.sdk, 'glitchless-unity/0.3.0');
     assert.ok(opened.recent.some((e) => e.type === 'level_start'), JSON.stringify(opened.recent));
     assert.ok(opened.frames.length > 0 && opened.frames.every((f) => typeof f.fps === 'number'), JSON.stringify(opened.frames));
     assert.equal(opened.screenshot, null);
@@ -267,8 +335,41 @@ try {
   check('install: the session sends the saved ID, with the device as anonymous mode sends it', () => {
     assert.deepEqual(installRun.map((s) => s.player_id), [installId]);
     assert.deepEqual(Object.keys(installDevice).sort(), Object.keys(anonDevice).sort());
-    const raw5 = fs.readdirSync(path.join(tmp, 'data')).filter((f) => f.startsWith('events-')).flatMap((f) => fs.readFileSync(path.join(tmp, 'data', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
+    const raw5 = readRaw();
     assert.equal(raw5.find((e) => e.type === 'session_start' && e.session_id === installRun[0].session_id).privacy, 'install');
+  });
+
+  // 6. repeats: the first batch is stored, but its answer comes 5 s late. The game quits about 4.5 s in, mid-level,
+  // and sends what is waiting then, the first batch included.
+  const beforeRepeats = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  const proxy = await holdingProxy(port, 5000);
+  try {
+    await playAsync(['--level=1', '--skill=1', '--seed=6', '--quit-after=3', '--fail-on-quit', `--glitchless-intake=http://127.0.0.1:${proxy.port}`], 'repeats');
+  } finally {
+    await proxy.close();
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const repeatRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeRepeats.has(s.session_id));
+  const raw6 = readRaw();
+  const mine = repeatRun[0] ? raw6.filter((e) => e.session_id === repeatRun[0].session_id) : [];
+  check('repeats: a batch sent again is answered as a duplicate, and stored once', () => {
+    assert.equal(repeatRun.length, 1, `${repeatRun.length} sessions`);
+    assert.ok(proxy.answers.some((a) => a.duplicate === true), JSON.stringify(proxy.answers));
+    assert.equal(mine.filter((e) => e.type === 'session_start').length, 1);
+  });
+  check('quit mid-level: an abandon before the end, and the "left" fail after it is dropped', () => {
+    const ends = mine.filter((e) => ['level_abandon', 'level_fail', 'session_end'].includes(e.type)).map((e) => [e.type, e.reason ?? e.cause, e.level]);
+    assert.deepEqual(ends, [['level_abandon', 'quit', 'level-1'], ['session_end', 'quit', 'level-1']]);
+    assert.deepEqual(repeatRun[0].abandoned, ['level-1']);
+    assert.equal(repeatRun[0].rage_quit, false);
+  });
+  check('no event is stored twice', () => {
+    const seen = new Set();
+    for (const e of raw6) {
+      const key = JSON.stringify({ ...e, received: 0 });
+      assert.ok(!seen.has(key), `stored twice: ${e.type} in ${e.session_id}`);
+      seen.add(key);
+    }
   });
 } catch (err) {
   results.push(['FAIL', 'run', err.message]);

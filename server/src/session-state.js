@@ -37,9 +37,11 @@ const GAUGE_WINDOWS = 3; // frame windows (about 15 s) before a gauge's course s
 const GAUGE_CLIMB = 50; // and how far it must climb, at least, to be a leak rather than a few objects
 
 // Level and death events, in order: { ts, k: kind, level, cause, x, y, z, d: duration_s } (objects, so a
-// missing field stays missing through JSON).
-export const MARK = { start: 0, complete: 1, fail: 2, death: 3 };
-const MARK_OF = { level_start: MARK.start, level_complete: MARK.complete, level_fail: MARK.fail, death: MARK.death };
+// missing field stays missing through JSON). An abandon is the player leaving a level before it ended
+// (`level_abandon`, or a `level_fail` with the reserved cause `abandon`, SPEC §2): never a fail.
+export const MARK = { start: 0, complete: 1, fail: 2, death: 3, abandon: 4 };
+const MARK_OF = { level_start: MARK.start, level_complete: MARK.complete, level_fail: MARK.fail, death: MARK.death, level_abandon: MARK.abandon };
+export const ABANDON_CAUSE = 'abandon';
 
 // Custom events (`custom`, the game's own metrics), per name: { n, o, a }. n counts them; o holds the
 // earliest occurrences as [ts, attrs], for ordered funnels; a counts each attribute's values as
@@ -87,6 +89,7 @@ export function newSession(e) {
     nodes: {}, // { [key]: { first, firstAt, last, lastAt } }
     ttffAt: null,
     ttff: null,
+    first_launch: null, // the load's first_launch: the first launch of this version on the device (engine SDKs)
     ttpAt: null,
     ttp: null,
     fwLevels: new Set(), // levels this session sent frame windows on (null for menus)
@@ -111,8 +114,16 @@ export function addToSession(s, e) {
     case 'level_start':
     case 'level_complete':
     case 'level_fail':
+      if (e.type === 'level_fail' && e.cause === ABANDON_CAUSE) {
+        s.marks.push({ ts: e.ts, k: MARK.abandon, level: e.level, d: e.duration_s });
+        break;
+      }
       s.marks.push({ ts: e.ts, k: MARK_OF[e.type], level: e.level, cause: e.cause, d: e.duration_s });
       played(s, e.ts);
+      break;
+    // Not play: the SDKs send it themselves when the game goes to the background or closes mid-level.
+    case 'level_abandon':
+      s.marks.push({ ts: e.ts, k: MARK.abandon, level: e.level, d: e.duration_s });
       break;
     case 'death':
       s.marks.push({ ts: e.ts, k: MARK.death, level: e.level, cause: e.cause, x: e.x, y: e.y, z: e.z });
@@ -155,7 +166,7 @@ export function addToSession(s, e) {
       }
       break;
     case 'load':
-      if (e.ttff_ms != null) [s.ttffAt, s.ttff] = [e.ts, e.ttff_ms];
+      if (e.ttff_ms != null) [s.ttffAt, s.ttff, s.first_launch] = [e.ts, e.ttff_ms, typeof e.first_launch === 'boolean' ? e.first_launch : null];
       if (e.ttp_ms != null) [s.ttpAt, s.ttp] = [e.ts, e.ttp_ms];
       break;
   }
@@ -288,7 +299,7 @@ export function mergeSession(a, b) {
       if (n.lastAt >= m.lastAt) [m.last, m.lastAt] = [n.last, n.lastAt];
     }
   }
-  if (b.ttffAt != null && (a.ttffAt == null || b.ttffAt >= a.ttffAt)) [a.ttffAt, a.ttff] = [b.ttffAt, b.ttff];
+  if (b.ttffAt != null && (a.ttffAt == null || b.ttffAt >= a.ttffAt)) [a.ttffAt, a.ttff, a.first_launch] = [b.ttffAt, b.ttff, b.first_launch ?? null];
   if (b.ttpAt != null && (a.ttpAt == null || b.ttpAt >= a.ttpAt)) [a.ttpAt, a.ttp] = [b.ttpAt, b.ttp];
   for (const l of b.fwLevels) a.fwLevels.add(l);
   for (const m of b.minutes) a.minutes.add(m);
@@ -308,7 +319,24 @@ export function finalizeSession(s) {
   s.fails = 0;
   s.deaths = 0;
   s.last_fail = null;
+  // Abandons per level. One counts once its attempt is over (the next level_start, or the session's end); if the
+  // level goes on instead (a complete, fail or death on it: the player came back from the background and played
+  // on), the SDK's abandon was early and is dropped. Two in a row before anything else are one.
+  s.abandons = 0;
+  s.abandoned = {};
+  const pending = new Set();
+  const settle = (level) => {
+    if (!pending.delete(level)) return;
+    s.abandons++;
+    s.abandoned[level] = (s.abandoned[level] || 0) + 1;
+  };
   for (const { ts, k: kind, level, cause, x, y, z } of s.marks) {
+    if (kind === MARK.abandon) {
+      pending.add(level);
+      continue;
+    }
+    if (kind === MARK.start) settle(level);
+    else pending.delete(level);
     if (kind === MARK.start) {
       s.levels.add(level);
       s.attempts[level] = (s.attempts[level] || 0) + 1;
@@ -323,11 +351,12 @@ export function finalizeSession(s) {
       // A fail takes its place from the death before it; `dts` says which death that was, so a rage quit
       // can be put on the map where it happened even when the game sent a level_fail after the death.
       s.last_fail = { ts, level, cause, x: s.last_fail?.x, y: s.last_fail?.y, z: s.last_fail?.z, dts: s.last_fail?.dts };
-    } else {
+    } else if (kind === MARK.death) {
       s.deaths++;
       s.last_fail = { ts, level, cause, x, y, z, dts: ts };
     }
   }
+  for (const level of [...pending]) settle(level);
   s.sketch = s.cell.ft;
   s.geo_first = s.geo ? s.geo.first : null;
   s.geo_last = s.geo ? s.geo.last : null;
@@ -348,7 +377,9 @@ export function finalizeSession(s) {
   const start = s.start ?? s.first_ts;
   const end = s.end ?? s.last_ts;
   s.duration_s = Math.max(0, (end - start) / 1000);
-  s.rage_quit = !!(s.ended && s.last_fail && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
+  // The end has to come after the fail: a fail the game logged as it closed, after the session had ended (a
+  // level torn down as the app quits), is not the player quitting in anger.
+  s.rage_quit = !!(s.ended && s.last_fail && s.last_fail.ts <= end && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
   s.rage = s.rage_quit ? s.last_fail : null;
   // Game-aware crash: the run actually broke. The WebGL context was lost for good, the game loop stopped,
   // the session ended inside a frozen frame, or an unhandled error came right before the end with nothing

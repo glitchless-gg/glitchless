@@ -145,6 +145,7 @@ What the adapter adds:
 | Call | Use |
 | --- | --- |
 | `glitchless.levelStart(id)` / `glitchless.levelComplete(id, { durationS, score })` / `glitchless.levelFail(id, { cause })` | level funnel, difficulty spikes |
+| `glitchless.levelAbandon(id)` | the player left the level before it ended (back to the menu, a restart): never counted as a fail or a rage quit. Sent by itself when the page goes away mid-level |
 | `glitchless.death({ x, y, z, cause })` | death heatmap (places sent only when positions are on), rage-quit detection |
 | `glitchless.track(name, attrs)` | pickups, power-ups, purchases; also breadcrumbs for errors and hitches |
 | `glitchless.setPosition(vec3)` (every frame) | movement heatmap and session replay (sampled at 4 Hz, sent only when positions are on) |

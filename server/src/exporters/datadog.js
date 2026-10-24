@@ -4,7 +4,7 @@
 //   • gameplay + errors → Logs (errors carry error.kind/message/stack, so they land in Error Tracking)
 //   • first sighting of a version → Event (shows as a deployment marker on dashboards)
 
-import { LOG_TYPES, SessionContext, describe, errorType, slug, chunk } from './events.js';
+import { LOG_TYPES, SessionContext, describe, errorType, slug, chunk, levelOutcome } from './events.js';
 
 export class DatadogExporter {
   constructor({ apiKey, site = 'datadoghq.com', fetch = globalThis.fetch, logger = console }) {
@@ -39,7 +39,7 @@ export class DatadogExporter {
       }
       const tags = this.tags(e);
       const ts = Math.floor(e.ts / 1000);
-      switch (e.type) {
+      switch (levelOutcome(e)) {
         case 'frame_window': {
           if (e.ft?.b) distributions.push({ metric: 'glitchless.frame.time', points: [[ts, expandSketch(e.ft)]], tags, type: 'distribution' });
           gauge(series, 'glitchless.frame.fps', ts, e.fps, tags);
@@ -67,6 +67,9 @@ export class DatadogExporter {
           break;
         case 'level_fail':
           count(series, 'glitchless.level.fails', ts, 1, tags);
+          break;
+        case 'level_abandon':
+          count(series, 'glitchless.level.abandons', ts, 1, tags);
           break;
         case 'death':
           count(series, 'glitchless.deaths', ts, 1, [...tags, `cause:${slug(e.cause)}`]);

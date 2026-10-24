@@ -613,7 +613,7 @@ function reviewsPanel(ctx, st) {
   const down = ts.map(() => 0);
   const perf = ts.map(() => 0);
   for (const [hour, u, d, dp] of st.hours) {
-    if (hour < from - HOUR || hour > to) continue;
+    if (hour < from || hour > to) continue; // the hours the total counts
     const i = Math.floor((hour - first) / bucket);
     if (i < 0 || i >= ts.length) continue;
     up[i] += u;

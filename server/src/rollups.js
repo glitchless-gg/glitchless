@@ -47,6 +47,9 @@ export function newCell(env = null, version = null, level = null) {
     sec: 0,
     ft: new Sketch(),
     budgets: {},
+    // Frames slower than 1.15× their own window's budget_ms: each screen against its own refresh rate (a 60 Hz
+    // phone's 16.7ms frames are on time next to 120 Hz ones), counted per window so cells merge exactly.
+    over: 0,
     calls: [0, 0],
     callsMax: 0,
     render: [0, 0],
@@ -90,7 +93,10 @@ export function addEvent(c, e) {
   if (isNum(e.hitches)) c.hitches += e.hitches;
   if (isNum(e.frozen)) c.frozen += e.frozen;
   if (isNum(e.duration_s)) c.sec += fixed(e.duration_s, FIXED.sec);
-  if (e.ft) c.ft.merge(e.ft);
+  if (e.ft) {
+    c.ft.merge(e.ft);
+    c.over += framesOver(Sketch.from(e.ft), isNum(e.budget_ms) && e.budget_ms ? e.budget_ms : 1000 / 60);
+  }
   if (isNum(e.budget_ms) && e.budget_ms) c.budgets[e.budget_ms] = (c.budgets[e.budget_ms] || 0) + 1;
   addPair(c.calls, e.draw_calls, FIXED.calls);
   if (isNum(e.draw_calls_max) && e.draw_calls_max > c.callsMax) c.callsMax = e.draw_calls_max;
@@ -115,6 +121,7 @@ export function mergeCell(into, c) {
   into.frozen += c.frozen;
   into.sec += c.sec;
   mergeSketch(into.ft, c.ft);
+  into.over += c.over || 0;
   for (const [v, k] of Object.entries(c.budgets)) into.budgets[v] = (into.budgets[v] || 0) + k;
   for (const f of ['calls', 'render', 'tris', 'geo', 'heap']) {
     into[f][0] += c[f][0];
@@ -136,7 +143,15 @@ export function cellToJSON(c) {
 }
 
 export function cellFromJSON(o) {
-  return { ...newCell(), ...o, ft: Sketch.from(o.ft) };
+  const c = { ...newCell(), ...o, ft: Sketch.from(o.ft) };
+  // A cell stored before `over` was kept: its frames against its own median budget.
+  if (o.over == null) c.over = framesOver(c.ft, budgetMedian(c.budgets) ?? 1000 / 60);
+  return c;
+}
+
+// How many of a sketch's frames took over 1.15× the frame budget.
+function framesOver(sketch, budget) {
+  return Math.round(sketch.fractionAbove(budget * 1.15) * sketch.n);
 }
 
 // Merge one cell into minutes (taking ownership of `c` when the minute has no such cell yet).

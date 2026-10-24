@@ -62,9 +62,10 @@ test('stored reviews: overlapping syncs count each review once, a read gives the
 // A game with telemetry and a Steam page, served by the core with a stores reader, as a host gives it. `steamBuild`:
 // its sessions name their Steam build (the SDKs do, SPEC §4c); `notes: false` keeps patch notes out.
 async function storeGame({ connect = true, steamBuild = false, notes = true, extra = null } = {}) {
-  // The same minute past the hour every run: reviews, sessions and builds are made hour by hour, so a clock at a
-  // different minute moves a build's first session against the reviews, and a borderline rise in or out.
-  const now = Math.floor(Date.now() / HOUR) * HOUR - 20 * 60_000;
+  // The same two times of day every run (11:40 or 23:40 UTC, whichever came last): reviews come day by day and
+  // sessions and builds hour by hour, so a clock at another hour or minute moves a build's first session against the
+  // reviews, and a borderline rise in or out. Under 12½ hours back, so the oldest session stays inside intake's 7 days.
+  const now = Math.floor(Date.now() / (12 * HOUR)) * 12 * HOUR - 20 * 60_000;
   const sc = steamScenario({ now });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-store-reviews-'));
   const store = new FileStore(dir);

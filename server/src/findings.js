@@ -2,7 +2,8 @@
 // Written for two readers: a human on the dashboard, and a coding agent over MCP — so every
 // finding says what's wrong, how sure we are (numbers), where to look, and what usually fixes it.
 
-import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, sessionCount, gaugeClimbs, noWin, rageDeathTs, quantile, round, pct } from './analytics.js';
+import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, sessionCount, gaugeClimbs, noWin, rageDeathTs, quantile, round, pct, cellsOf, versionFramesAt, SLOW_START_MS } from './analytics.js';
+import { MARK } from './session-state.js';
 import { dailySdks } from './daily.js';
 import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './facts.js';
 import { reportFindings } from './reports.js';
@@ -28,11 +29,47 @@ const CAUSE_WORDS = {
   script: 'long game code frames',
   render: 'long render frames',
   frozen: 'frozen frames',
+  gpu_or_os: 'time outside the game code (the GPU, presenting, the OS)',
 };
 const LOAD_CAUSES = ['map_load', 'scene_change'];
-const GENERIC_CAUSES = ['script', 'render', 'frozen'];
+const GENERIC_CAUSES = ['script', 'render', 'frozen', 'gpu_or_os'];
 // Stalls worth naming however rarely they come: a shader or pipeline built the first time something is drawn.
 const COMPILE_CAUSES = ['pso_compile', 'shader_compile'];
+// A design finding from fewer sessions than this could be chance (or one person's sessions, in an anonymous game):
+// it is never high, and it says so.
+const CONFIDENT_SESSIONS = 10;
+function smallSample(sessions) {
+  return sessions < CONFIDENT_SESSIONS ? ` Only ${sessions} ${sessions === 1 ? 'session' : 'sessions'} reached it, so this could be chance.` : '';
+}
+// Versions whose frame windows split across frame budgets (refresh rates) this differently, in points, ran on
+// different screens: their frame times only compare at a budget both had.
+const BUDGET_MIX_GAP = 20;
+function budgetGap(a = {}, b = {}) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...keys].reduce((sum, k) => sum + Math.abs((a[k] || 0) - (b[k] || 0)), 0) / 2;
+}
+function hz(budget) {
+  return Math.round(1000 / Number(budget));
+}
+
+// The frame times of two versions, compared like with like. Versions that ran on much the same screens compare as
+// they are ({ prev, cur, budget: null }); versions whose screens differ compare at the commonest refresh rate both
+// had with enough sessions ({ prev, cur, budget }: versionFramesAt()), or not at all (null). `mixGap` says how far
+// the screens differed. The version finding and the release alert's frame_p95 rule both read it.
+export function versionFrames(ctx, prev, cur) {
+  // A version that sent no frame windows has no screens to compare.
+  const mixGap = Object.keys(prev.frame_budgets || {}).length && Object.keys(cur.frame_budgets || {}).length ? budgetGap(prev.frame_budgets, cur.frame_budgets) : 0;
+  if (mixGap < BUDGET_MIX_GAP) return { prev, cur, budget: null, mixGap };
+  const shared = Object.keys(prev.frame_budgets)
+    .filter((b) => b in cur.frame_budgets)
+    .sort((a, b) => prev.frame_budgets[b] + cur.frame_budgets[b] - prev.frame_budgets[a] - cur.frame_budgets[a]);
+  const at = shared.map((b) => ({ budget: Number(b), prev: versionFramesAt(ctx, prev.version, Number(b)), cur: versionFramesAt(ctx, cur.version, Number(b)) })).find((x) => x.prev && x.cur);
+  return at ? { ...at, mixGap } : null;
+}
+
+// Two error issues from one source file, first seen this close together in one session and as often in as many
+// sessions, are one failure.
+const LOGGED_WITH_MS = 100;
 
 export function findings(ctx, maps = []) {
   const out = [];
@@ -144,7 +181,9 @@ export function findings(ctx, maps = []) {
   }
 
   // 2b. Godot node leaks: orphan nodes (removed from the tree, never freed) that pile up with every level load.
-  const orphaned = Object.entries(perf.node_growth).filter(([, m]) => m.orphan_nodes_growth_per_level_load >= 40 && m.sessions >= 3);
+  // Orphans that rise only as the live tree shrinks by as much are nodes on their way out (a scene taken down
+  // as the game quits), not a leak: the tree and its orphans together have to grow.
+  const orphaned = Object.entries(perf.node_growth).filter(([, m]) => m.orphan_nodes_growth_per_level_load >= 40 && m.orphan_nodes_growth_per_level_load + (m.nodes_growth_per_level_load ?? 0) >= 40 && m.sessions >= 3);
   const latestOrphans = orphaned.sort((a, b) => semver(b[0], a[0]))[0];
   for (const [version, m] of latestOrphans ? [latestOrphans] : []) {
     const older = orphaned.filter(([v]) => v !== version).map(([v, o]) => `${v}: +${Math.round(o.orphan_nodes_growth_per_level_load)}`);
@@ -207,20 +246,36 @@ export function findings(ctx, maps = []) {
     });
   }
 
-  // 3. Errors, ranked by sessions affected.
-  for (const issue of errorIssues(ctx).slice(0, 6)) {
+  // 3. Errors, ranked by sessions affected. An issue logged with another one from the same source file every time
+  // (as many times, in as many sessions, first in the same session within LOGGED_WITH_MS) is the same failure's
+  // second log line, such as Godot's "Method/function failed." after the shader link error it follows: it goes in
+  // the first one's finding.
+  const issues = [];
+  const loggedWith = new Map();
+  for (const issue of errorIssues(ctx)) {
+    const lead = issues.find((l) => l.source && l.source === issue.source && l.kind === issue.kind && l.count === issue.count && l.sessions === issue.sessions && l.sample_session === issue.sample_session && Math.abs(issue.sample_ts - l.sample_ts) <= LOGGED_WITH_MS);
+    if (lead) loggedWith.get(lead.fingerprint).push(issue);
+    else {
+      issues.push(issue);
+      loggedWith.set(issue.fingerprint, []);
+    }
+  }
+  for (const issue of issues.slice(0, 6)) {
     if (issue.sessions < 2 && issue.count < 5) continue;
     const share = issue.sessions / totalSessions;
     const severity = issue.kind === 'webgl_context_lost' || issue.kind === 'crash' || share > 0.25 ? 'high' : share > 0.05 ? 'medium' : 'low';
     const crumbs = issue.breadcrumbs?.map((b) => b.name || b.type).filter(Boolean).slice(-4) || [];
+    const also = loggedWith.get(issue.fingerprint);
     out.push({
       id: `error-${issue.fingerprint}`,
       severity,
       category: 'stability',
       title: `${issue.message.slice(0, 90)}`,
-      summary: `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? fatalWords(ctx, issue) || 'Unhandled — reaches window.onerror.' : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}`,
-      evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs },
-      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs),
+      summary:
+        `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? fatalWords(ctx, issue) || 'Unhandled — reaches window.onerror.' : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}` +
+        (also.length ? ` Each time it comes with ${also.map((a) => `"${a.message.slice(0, 60)}"${a.location ? ` at ${a.location}` : ''}`).join(' and ')}: one failure, logged ${also.length + 1} ways.` : ''),
+      evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs, ...(also.length ? { logged_with: also.map((a) => ({ fingerprint: a.fingerprint, message: a.message, location: a.location })) } : {}) },
+      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs, errorWhen(ctx, issue)),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
     });
@@ -250,7 +305,7 @@ export function findings(ctx, maps = []) {
     spiked.add(l.level);
     const prev = fun[i - 1];
     const dropVsPrev = prev?.completion_pct != null && l.completion_pct != null ? round(prev.completion_pct - l.completion_pct, 1) : null;
-    const severity = top.share > 0.5 && (endless || l.rage_quit_pct > 10 || (l.completion_pct ?? 100) < 50) ? 'high' : 'medium';
+    const severity = top.share > 0.5 && (endless || l.rage_quit_pct > 10 || (l.completion_pct ?? 100) < 50) && l.sessions >= CONFIDENT_SESSIONS ? 'high' : 'medium';
     const topDown = axis !== 'xy';
     const at = topDown ? `x≈${top.x}, z≈${top.z}` : `x≈${top.x}`;
     const area = topDown ? `x=${top.x_range[0]}–${top.x_range[1]}, z=${top.z_range[0]}–${top.z_range[1]}` : `x=${top.x_range[0]}–${top.x_range[1]}`;
@@ -266,8 +321,9 @@ export function findings(ctx, maps = []) {
         `${top.deaths} of ${deaths.length} deaths on ${l.level} happen ${topDown ? `in ${area}` : `between x=${top.x_range[0]} and x=${top.x_range[1]}`} (mostly "${top.top_cause}"). ` +
         (endless
           ? 'No session completes a level in this game, so every run ends in a death, and more of them end here than anywhere else.'
-          : `Completion rate is ${l.completion_pct}%${dropVsPrev != null ? ` (${dropVsPrev > 0 ? '-' : '+'}${Math.abs(dropVsPrev)} pts vs ${prev.level})` : ''} and ${l.rage_quits} sessions rage-quit here (${l.rage_quit_pct}% of sessions that reached it).`),
-      evidence: { level: l.level, axis, hotspot: top, other_hotspots: spots.slice(1, 3), no_win: endless, completion_pct: l.completion_pct, previous_level_completion_pct: prev?.completion_pct ?? null, deaths_per_session: l.deaths_per_session, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct },
+          : `Completion rate is ${l.completion_pct}%${dropVsPrev != null ? ` (${dropVsPrev > 0 ? '-' : '+'}${Math.abs(dropVsPrev)} pts vs ${prev.level})` : ''} and ${l.rage_quits} sessions rage-quit here (${l.rage_quit_pct}% of sessions that reached it).`) +
+        smallSample(l.sessions),
+      evidence: { level: l.level, axis, hotspot: top, other_hotspots: spots.slice(1, 3), no_win: endless, completion_pct: l.completion_pct, previous_level_completion_pct: prev?.completion_pct ?? null, deaths_per_session: l.deaths_per_session, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct, sessions: l.sessions },
       suggestion: `Look at the level data around ${area}: ${fix}, consider a checkpoint just before it, then compare ${endless ? 'deaths there' : 'completion and rage-quit rates'} between versions to confirm the fix.`,
       link: { page: 'players', level: l.level },
       impact: (l.sessions || 0) / totalSessions,
@@ -276,23 +332,31 @@ export function findings(ctx, maps = []) {
 
   // 4b. Walls: a level far fewer sessions get through than the others, whether or not its deaths bunch (or
   // it has any: a tower-defence wave, a puzzle, a timer). Levels with a hotspot above already have a finding.
-  const judged = fun.filter((l) => l.sessions >= 5 && l.completion_pct != null);
+  // A session that only left the level (an abandon: the player went home, retried, or closed the game, and it
+  // never ended in a fail or death there) says nothing about how hard it is, so the rate is over the others.
+  const judged = fun
+    .map((l) => ({ ...l, decided: l.sessions - (l.abandoned || 0) }))
+    .filter((l) => l.decided >= 5 && l.completion_pct != null)
+    .map((l) => ({ ...l, through_pct: pct(l.completed, l.decided) }));
   if (!endless && judged.filter((l) => l.completed > 0).length >= 2) {
     for (const l of judged) {
-      if (spiked.has(l.level) || l.completion_pct > 70) continue;
-      const others = judged.filter((o) => o !== l).map((o) => o.completion_pct);
+      if (spiked.has(l.level) || l.through_pct > 70) continue;
+      const others = judged.filter((o) => o !== l).map((o) => o.through_pct);
       const typical = others.length ? round(quantile(others, 0.5), 1) : null;
-      if (typical == null || typical - l.completion_pct < 25) continue;
+      if (typical == null || typical - l.through_pct < 25) continue;
+      const left = l.abandoned ? ` ${l.abandoned} more left it before it ended and aren't counted.` : '';
       out.push({
         id: `design-wall-${l.level}`,
-        severity: l.completion_pct < 50 || l.rage_quit_pct >= 25 ? 'high' : 'medium',
+        severity: (l.through_pct < 50 || l.rage_quit_pct >= 25) && l.decided >= CONFIDENT_SESSIONS ? 'high' : 'medium',
         category: 'design',
-        title: `${l.level} is a wall: ${l.completion_pct}% of the sessions that reach it get through`,
+        title: `${l.level} is a wall: ${l.through_pct}% of the sessions that reach it get through`,
         summary:
-          `${l.completed} of the ${l.sessions} sessions that start ${l.level} complete it, against a median of ${typical}% on the other levels.` +
+          `${l.completed} of the ${l.decided} sessions that play ${l.level} to an end complete it, against a median of ${typical}% on the other levels.` +
+          left +
           (l.deaths ? ` Its ${l.deaths} deaths (${l.deaths_per_session} per session) are spread out, not at one spot.` : ` Nobody dies on it: ${l.fails ? `${l.fails} fails end the attempts` : 'sessions end before they finish it'}.`) +
-          (l.rage_quits ? ` ${l.rage_quits} sessions rage-quit here (${l.rage_quit_pct}% of sessions that reached it).` : ''),
-        evidence: { level: l.level, sessions: l.sessions, completed: l.completed, completion_pct: l.completion_pct, other_levels_median_pct: typical, deaths: l.deaths, deaths_per_session: l.deaths_per_session, fails: l.fails, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct },
+          (l.rage_quits ? ` ${l.rage_quits} sessions rage-quit here (${l.rage_quit_pct}% of sessions that reached it).` : '') +
+          smallSample(l.decided),
+        evidence: { level: l.level, sessions: l.sessions, abandoned: l.abandoned, completed: l.completed, completion_pct: l.through_pct, other_levels_median_pct: typical, deaths: l.deaths, deaths_per_session: l.deaths_per_session, fails: l.fails, abandons: l.abandons, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct },
         suggestion: `Play ${l.level} against the level before it and list what steps up (enemy count, speed, timers, resources, the rules). Ease the biggest step, or add a level that teaches it, then compare ${l.level}'s completion rate between versions.`,
         link: { page: 'players', level: l.level },
         impact: l.sessions / totalSessions,
@@ -300,29 +364,46 @@ export function findings(ctx, maps = []) {
     }
   }
 
-  // 5. Version-over-version regressions and wins.
+  // 5. Version-over-version regressions and wins. Improved only when nothing got worse: fewer errors don't make up
+  // for slower frames. Versions that ran on different screens (refresh rates) compare frame times only on the
+  // devices both had at one frame budget, or not at all.
   const vers = versions(ctx).filter((v) => v.sessions >= 5);
   if (vers.length >= 2) {
     const [prev, cur] = vers.slice(-2);
-    const p95Delta = prev.frame_p95 && cur.frame_p95 ? (cur.frame_p95 - prev.frame_p95) / prev.frame_p95 : 0;
-    const changes = [];
+    const fewest = prev.sessions <= cur.sessions ? prev : cur;
+    const frames = versionFrames(ctx, prev, cur);
+    const mixGap = frames ? frames.mixGap : budgetGap(prev.frame_budgets, cur.frame_budgets);
+    const on = frames?.budget ? ` on ${hz(frames.budget)} Hz screens` : '';
+    const p95Delta = frames?.prev.frame_p95 && frames.cur.frame_p95 ? (frames.cur.frame_p95 - frames.prev.frame_p95) / frames.prev.frame_p95 : 0;
+    const hitchRise = frames && frames.prev.hitches_per_min != null && frames.cur.hitches_per_min != null ? frames.cur.hitches_per_min - frames.prev.hitches_per_min : 0;
+    const changes = []; // { name, text, worse }
     // Percentage points of crash-free sessions lost (an alert's crash-free rule names this finding).
     const crashDrop = (prev.crash_free_pct ?? 100) - (cur.crash_free_pct ?? 100);
-    if (Math.abs(p95Delta) >= 0.15) changes.push(`p95 frame time ${prev.frame_p95}ms → ${cur.frame_p95}ms`);
-    if (Math.abs(crashDrop) >= 2) changes.push(`crash-free sessions ${prev.crash_free_pct}% → ${cur.crash_free_pct}%`);
-    if (Math.abs((cur.error_free_pct ?? 0) - (prev.error_free_pct ?? 0)) >= 5) changes.push(`error-free sessions ${prev.error_free_pct}% → ${cur.error_free_pct}%`);
-    if (Math.abs((cur.level_completion_pct ?? 0) - (prev.level_completion_pct ?? 0)) >= 5) changes.push(`level completion ${prev.level_completion_pct}% → ${cur.level_completion_pct}%`);
-    if (Math.abs((cur.rage_quit_pct ?? 0) - (prev.rage_quit_pct ?? 0)) >= 3) changes.push(`rage quits ${prev.rage_quit_pct}% → ${cur.rage_quit_pct}%`);
+    if (Math.abs(p95Delta) >= 0.15) changes.push({ name: 'frame time', text: `p95 frame time${on} ${frames.prev.frame_p95}ms → ${frames.cur.frame_p95}ms`, worse: p95Delta > 0 });
+    if (Math.abs(hitchRise) >= 0.5 && Math.abs(hitchRise) >= 0.25 * Math.min(frames.prev.hitches_per_min, frames.cur.hitches_per_min)) changes.push({ name: 'hitches', text: `hitches${on} ${frames.prev.hitches_per_min} → ${frames.cur.hitches_per_min} a minute`, worse: hitchRise > 0 });
+    if (Math.abs(crashDrop) >= 2) changes.push({ name: 'crash-free sessions', text: `crash-free sessions ${prev.crash_free_pct}% → ${cur.crash_free_pct}%`, worse: crashDrop > 0 });
+    if (Math.abs((cur.error_free_pct ?? 0) - (prev.error_free_pct ?? 0)) >= 5) changes.push({ name: 'error-free sessions', text: `error-free sessions ${prev.error_free_pct}% → ${cur.error_free_pct}%`, worse: cur.error_free_pct < prev.error_free_pct });
+    if (Math.abs((cur.level_completion_pct ?? 0) - (prev.level_completion_pct ?? 0)) >= 5) changes.push({ name: 'level completion', text: `level completion ${prev.level_completion_pct}% → ${cur.level_completion_pct}%`, worse: cur.level_completion_pct < prev.level_completion_pct });
+    if (Math.abs((cur.rage_quit_pct ?? 0) - (prev.rage_quit_pct ?? 0)) >= 3) changes.push({ name: 'rage quits', text: `rage quits ${prev.rage_quit_pct}% → ${cur.rage_quit_pct}%`, worse: cur.rage_quit_pct > prev.rage_quit_pct });
     if (changes.length) {
-      const better = crashDrop < 2 && (p95Delta < 0 || (cur.error_free_pct ?? 0) > (prev.error_free_pct ?? 0));
+      const worse = changes.filter((c) => c.worse);
+      const verdict = !worse.length ? 'improved' : worse.length === changes.length ? 'regressed' : 'mixed';
+      const screens = (v) => `${v.version} ${Object.entries(v.frame_budgets).map(([b, p]) => `${p}% at ${hz(b)} Hz`).join(', ')}`;
+      const mixNote =
+        mixGap >= BUDGET_MIX_GAP
+          ? ` The versions ran on different screens (${screens(prev)}; ${screens(cur)}), so frame times are compared ${frames ? `on ${hz(frames.budget)} Hz screens only` : 'not at all: no refresh rate had enough sessions in both'}.`
+          : '';
       out.push({
         id: `version-${prev.version}-${cur.version}`,
-        severity: better ? 'info' : p95Delta > 0.3 || crashDrop >= 5 ? 'high' : 'medium',
+        severity: verdict === 'improved' ? 'info' : (p95Delta > 0.3 || crashDrop >= 5) && fewest.sessions >= CONFIDENT_SESSIONS ? 'high' : 'medium',
         category: 'release',
-        title: `${cur.version} vs ${prev.version}: ${better ? 'improved' : 'regressed'} — ${changes[0]}`,
-        summary: changes.join('; ') + '.',
-        evidence: { previous: prev, current: cur },
-        suggestion: better ? 'Ship it. Keep the monitor on p95 frame time so this improvement is protected.' : `Diff ${prev.version}..${cur.version} for changes to rendering, effects or level loading.`,
+        title: `${cur.version} vs ${prev.version}: ${verdict} — ${(worse[0] || changes[0]).text}`,
+        summary: changes.map((c) => c.text).join('; ') + '.' + mixNote + (fewest.sessions < CONFIDENT_SESSIONS ? ` Only ${fewest.sessions} sessions on ${fewest.version}, so this could be chance.` : ''),
+        evidence: { previous: prev, current: cur, ...(mixGap >= BUDGET_MIX_GAP ? { frames_compared_at_budget_ms: frames?.budget ?? null, previous_frames: frames?.prev ?? null, current_frames: frames?.cur ?? null } : {}) },
+        suggestion:
+          verdict === 'improved'
+            ? 'Ship it. Keep the monitor on p95 frame time so this improvement is protected.'
+            : `Diff ${prev.version}..${cur.version} for changes to rendering, effects or level loading${verdict === 'mixed' ? `: ${changes.filter((c) => !c.worse).map((c) => c.name).join(' and ')} got better, but ${worse.map((c) => c.name).join(' and ')} got worse` : ''}.`,
         link: { page: 'versions' },
         impact: cur.sessions / totalSessions,
       });
@@ -346,22 +427,25 @@ export function findings(ctx, maps = []) {
     });
   }
 
-  // 7. Slow first frame.
-  if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > 4000) {
+  // 7. Slow first frame. It hits the sessions that waited longer than SLOW_START_MS, not every session.
+  if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > SLOW_START_MS) {
     const engine = engineIn(ctx, (s) => s.ttff != null);
+    const slow = perf.kpis.ttff_slow_pct ?? 100;
     out.push({
       id: 'load-ttff',
       severity: perf.kpis.ttff_p95 > 8000 ? 'high' : 'medium',
       category: 'performance',
       title: `Slow start: p95 time-to-first-frame is ${(perf.kpis.ttff_p95 / 1000).toFixed(1)}s`,
       summary:
-        engine === 'godot' || engine === 'unity' || engine === 'unreal' || engine === 'gamemaker'
+        `${slow}% of sessions waited more than ${SLOW_START_MS / 1000}s for the first frame (median ${(perf.kpis.ttff_p50 / 1000).toFixed(1)}s). ` +
+        launchNote(perf.kpis.ttff_first_launch) +
+        (engine === 'godot' || engine === 'unity' || engine === 'unreal' || engine === 'gamemaker'
           ? 'Players expect to be playing within seconds of opening the game, and some give up during a long splash screen.'
-          : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.',
-      evidence: { ttff_p50: perf.kpis.ttff_p50, ttff_p95: perf.kpis.ttff_p95 },
+          : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.'),
+      evidence: { ttff_p50: perf.kpis.ttff_p50, ttff_p95: perf.kpis.ttff_p95, slow_sessions_pct: slow, ...(perf.kpis.ttff_first_launch ? { by_launch: perf.kpis.ttff_first_launch } : {}) },
       suggestion: SLOW_START_TIPS[engine],
       link: { page: 'performance', section: 'load' },
-      impact: 1,
+      impact: slow / 100,
     });
   }
 
@@ -451,11 +535,34 @@ function fatalWords(ctx, issue) {
   return WEB_ENGINE_FATAL_WORDS[`${engineIn(ctx, (s) => s.session_id === issue.sample_session)}:${issue.kind}`] || FATAL_WORDS[issue.kind];
 }
 
-function errorSuggestion(engine, issue, crumbs) {
-  const where = `Start at ${issue.location}. The error fires during normal play (not on load), so look for`;
+// When an issue fired, from its first occurrence: as the game started (in the first STARTUP_MS of its session,
+// before any level), outside levels, or during play. A daily context has no sessions, so only levels say.
+const STARTUP_MS = 15_000;
+const WHEN_WORDS = {
+  startup: 'The error fires as the game starts (in the first seconds of a session, before any level)',
+  menus: 'The error fires outside levels (in menus, or between them)',
+  play: 'The error fires during play',
+};
+function errorWhen(ctx, issue) {
+  const s = ctx.sessions.get(issue.sample_session);
+  const level = s?.marks?.find((m) => m.k === MARK.start);
+  if (s?.start != null && issue.sample_ts - s.start <= STARTUP_MS && !(level?.ts <= issue.sample_ts)) return 'startup';
+  return issue.levels.length || !cellsOf(ctx).some(({ c }) => c.level != null) ? 'play' : 'menus';
+}
+
+// Godot errors raised by the renderer (a shader that would not compile or link), not by the game's scripts.
+const GODOT_RENDERER = /drivers\/|shader|render/i;
+
+function errorSuggestion(engine, issue, crumbs, when = 'play') {
+  const where = `Start at ${issue.location}. ${WHEN_WORDS[when]}, so look for`;
   const trigger = crumbs.at(-1) || 'the preceding game event';
   switch (engine) {
     case 'godot':
+      // The engine's own errors: a renderer that can't build a shader on this device, or a check in the engine's
+      // C++ that a script call broke. Null-node advice is for GDScript errors.
+      if (issue.kind === 'shader' || (issue.kind === 'engine' && GODOT_RENDERER.test(`${issue.source} ${issue.stack}`)))
+        return `Start at ${issue.location}. ${WHEN_WORDS[when]}. It comes from Godot's renderer, not your scripts: a shader that this device's GPU or driver can't compile or link (the Compatibility renderer, on OpenGL, has the tightest limits). See which devices send it (renderer, GPU, screen) before changing the game, then simplify the shader or material it names (fewer uniforms, lights or texture slots) or give those devices a simpler one.`;
+      if (issue.kind === 'engine') return `${where} the call that broke the engine check the message names, on the code path triggered by ${trigger}: usually a node used before it is in the tree or after it was freed (check is_inside_tree() and is_instance_valid()), or a resource that failed to load. The engine skips the call and carries on, so make the path fail safe and apply game state (score, pickups) before it.`;
       return `${where} a node that is null or already freed (a get_node() path that no longer exists, or a node freed earlier: check is_instance_valid()) or a missing dictionary key on the code path triggered by ${trigger}. Make it fail safe and apply game state (score, pickups) before anything that can fail: release exports skip most script errors silently, and a call on a typed null crashes the game.`;
     case 'unity':
       return `${where} a reference that is missing or already destroyed (a GetComponent() or Find() that returned null, an inspector field left empty, an object Destroy()ed earlier: a MissingReferenceException) or a dictionary or array lookup on the code path triggered by ${trigger}. Make it fail safe and apply game state (score, pickups) before anything that can throw: the rest of that Update() or coroutine is skipped every time it throws.`;
@@ -508,6 +615,15 @@ const SLOW_START_TIPS = {
   ...WEB_ENGINE_SLOW_START_TIPS,
 };
 
+// First launches of a version against the launches after (SPEC §2 load first_launch), when both have enough sessions:
+// a first launch builds the shader and pipeline caches and reads files the OS hasn't cached, so a start slow only
+// then is a cache to warm, not a game that is slow to load.
+function launchNote(by) {
+  if (!by || by.first.sessions < 3 || by.later.sessions < 3) return '';
+  const s = (ms) => `${(ms / 1000).toFixed(1)}s`;
+  return `First launches of a version take a median ${s(by.first.p50)} (${by.first.slow_pct}% over ${SLOW_START_MS / 1000}s, ${by.first.sessions} sessions), later launches ${s(by.later.p50)} (${by.later.slow_pct}%, ${by.later.sessions}). `;
+}
+
 // One tip per Godot hitch cause. The SDK names causes from what the long frame measured: pipeline
 // compiles, a scene swap, 50+ nodes added, or process / physics / render time taking the frame.
 const GODOT_CAUSE_TIPS = {
@@ -518,6 +634,7 @@ const GODOT_CAUSE_TIPS = {
   physics: 'Some hitches are long physics steps: cut the number of active bodies and Area overlaps, use simple collision shapes, and turn off monitoring on areas that don\'t need it.',
   render: 'Some hitches are long render frames: cut draw calls and shadow-casting lights, and batch repeated meshes with MultiMesh.',
   frozen: 'Some frames froze for over 0.7s: something blocked the main thread (a large load() or instantiate(), or a long loop); move it to a background thread or behind a loading screen.',
+  gpu_or_os: 'Some hitches spent their time outside the game\'s code: on the GPU (Godot times it only on Vulkan and Direct3D 12, so on iPhones and the Compatibility renderer GPU time lands here), presenting the frame, or the OS. If they bunch on one level or effect it is the GPU: cut overdraw, full-screen effects, transparent layers and shadow-casting lights there. Spread thinly over phones and sessions, it is the OS (heat, background work), not the game.',
 };
 
 function godotPerfSuggestion(corr, preceding, causes, level) {

@@ -1,16 +1,16 @@
 // The game's own dashboard: read its pages and one board's numbers, and save a new design.
 import { z } from 'zod';
-import { server, query, write, resolveService, range, reply, fail, common, tool } from '../context.js';
+import { server, query, write, resolveService, range, reply, fail, common, tool, filters } from '../context.js';
 
 tool(
   'glitchless_dashboard',
   "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports), and one board's panels with their numbers for the window. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency`, and `mismatch` lists amounts sent in another currency, which are left out.",
   { ...common, page: z.string().optional().describe('Id of the board page to evaluate (default: the first board)') },
-  async ({ service, hours, version, steam_branch, page }) => {
+  async ({ service, hours, page, ...f }) => {
     const svc = await resolveService(service);
-    const { dashboard } = await query('dashboard', { service: svc, version, steam_branch, ...range(hours) });
+    const { dashboard } = await query('dashboard', { service: svc, ...filters(f), ...range(hours) });
     if (!dashboard) return reply(`${svc} has sent no data yet`, {});
-    const b = await query('board', { service: svc, version, steam_branch, page, ...range(hours) });
+    const b = await query('board', { service: svc, ...filters(f), page, ...range(hours) });
     const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...(p.view ? { view: p.view, ...(p.options ? { options: p.options } : {}) } : { panels: p.panels }) }));
     // A positions panel can hold thousands of bins: its busiest ten say where players die.
     const brief = (p) => (p.type === 'positions' && !p.empty ? { ...p, deaths: p.deaths?.slice(0, 10), path: p.path && { ...p.path, cells: p.path.cells.slice(0, 10) } } : p);

@@ -10,7 +10,7 @@
 // conditional write, so it fires once however many checks run. It stays active while the signal holds at a
 // lower bar, and clears only after it has not held for a day, so an alert never flaps.
 import { buildContext, errorList, versions } from './analytics.js';
-import { findings } from './findings.js';
+import { findings, versionFrames } from './findings.js';
 import { reportsOf } from './reports.js';
 import { DEFAULT_PROJECT } from './auth.js';
 
@@ -55,12 +55,15 @@ export async function contextFor(store, projectId, q) {
 
 // The rules, on what one check measured. Pure: everything it knows comes in.
 //   errors, versions, findings   errorList(), versions() and findings() of the last day
+//   frames                        the two newest versions' frame times like with like (findings.js versionFrames():
+//                                 at one refresh rate when they ran on different screens; null: no rate to compare
+//                                 at). Left out (undefined), the versions' own frame_p95 are compared
 //   history                       errorList() of the last LIMITS.seedDays, on a service's first check (else null)
 //   seen                          { fingerprint: [first, last] } from earlier checks (null on the first)
 //   active                        Map key → { firedAt, heldAt } of keys that fired and haven't cleared
 //   settings                      { rules, newErrorSessions }; enabledAt (ms) when alerts were turned on
 // → { signals: [{ key, rule, finding, holds, ...data }], seen }, one signal per key.
-export function evaluate({ errors = [], versions: vers = [], findings: found = [], history = null, seen = null, active = new Map(), settings = {}, enabledAt = 0, now }) {
+export function evaluate({ errors = [], versions: vers = [], frames, findings: found = [], history = null, seen = null, active = new Map(), settings = {}, enabledAt = 0, now }) {
   const rules = { ...ALERT_DEFAULTS.rules, ...settings.rules };
   const minSessions = settings.newErrorSessions ?? ALERT_DEFAULTS.newErrorSessions;
   const next = new Map(Object.entries(seen || {}));
@@ -94,11 +97,14 @@ export function evaluate({ errors = [], versions: vers = [], findings: found = [
       const holds = enough && (active.has(key) ? drop >= LIMITS.crashFreeHold : drop >= LIMITS.crashFreeDrop && z >= 2);
       signals.push({ key, rule: 'crash_free', finding, holds, prev, cur, drop, z });
     }
-    if (rules.frame_p95 && prev.frame_p95 > 0 && cur.frame_p95 > 0) {
+    // A release that runs on more 60 Hz phones has a higher p95 without being any slower: frame times compare on the
+    // screens both versions ran on (frames), or not at all.
+    const like = frames === undefined ? { prev, cur, budget: null } : frames;
+    if (rules.frame_p95 && like && like.prev.frame_p95 > 0 && like.cur.frame_p95 > 0) {
       const key = `frame-p95-${prev.version}-${cur.version}`;
-      const rise = cur.frame_p95 / prev.frame_p95 - 1;
-      const holds = enough && (active.has(key) ? rise >= LIMITS.p95Hold : rise >= LIMITS.p95Rise && cur.frame_p95 - prev.frame_p95 >= LIMITS.p95MinMs);
-      signals.push({ key, rule: 'frame_p95', finding, holds, prev, cur, rise });
+      const rise = like.cur.frame_p95 / like.prev.frame_p95 - 1;
+      const holds = enough && (active.has(key) ? rise >= LIMITS.p95Hold : rise >= LIMITS.p95Rise && like.cur.frame_p95 - like.prev.frame_p95 >= LIMITS.p95MinMs);
+      signals.push({ key, rule: 'frame_p95', finding, holds, prev, cur, rise, frames: like });
     }
   }
 
@@ -137,10 +143,13 @@ function crashZ(prev, cur) {
 export async function measure(store, projectId, { service, env = null, plan = null, now, history = false }) {
   const q = { service, env, plan };
   const ctx = await contextFor(store, projectId, { ...q, from: now - DAY, to: now });
+  const vers = versions(ctx);
+  const recent = vers.filter((v) => v.sessions >= 5);
   return {
     history: history ? errorList(await contextFor(store, projectId, { ...q, from: now - LIMITS.seedDays * DAY, to: now })) : null,
     errors: errorList(ctx),
-    versions: versions(ctx),
+    versions: vers,
+    frames: recent.length >= 2 ? versionFrames(ctx, ...recent.slice(-2)) : undefined,
     findings: findings(ctx, await store.getMaps(projectId, service)),
   };
 }
@@ -246,10 +255,14 @@ export function alertMessage(s, { link = () => null } = {}) {
   }
   if (s.rule === 'frame_p95') {
     const { prev, cur } = s;
+    const like = s.frames ?? { prev, cur, budget: null };
+    const on = like.budget ? ` on ${Math.round(1000 / like.budget)} Hz screens` : '';
     return {
       ...base,
-      title: `${game} ${clean(cur.version, 40)} runs slower than ${clean(prev.version, 40)}: p95 frame time ${prev.frame_p95}ms → ${cur.frame_p95}ms`,
-      facts: [`${clean(cur.version, 40)}: p95 ${cur.frame_p95}ms, p50 ${cur.frame_p50}ms over ${count(cur.sessions, 'session')} in the last day.`, `${clean(prev.version, 40)}: p95 ${prev.frame_p95}ms, p50 ${prev.frame_p50}ms over ${count(prev.sessions, 'session')}.`, `${Math.round(s.rise * 100)}% slower at p95.`],
+      title: `${game} ${clean(cur.version, 40)} runs slower than ${clean(prev.version, 40)}: p95 frame time${on} ${like.prev.frame_p95}ms → ${like.cur.frame_p95}ms`,
+      facts: like.budget
+        ? [`The versions ran on different screens, so this compares the ${Math.round(1000 / like.budget)} Hz ones: ${clean(cur.version, 40)} p95 ${like.cur.frame_p95}ms over ${count(like.cur.sessions, 'session')}, ${clean(prev.version, 40)} ${like.prev.frame_p95}ms over ${count(like.prev.sessions, 'session')}.`, `${Math.round(s.rise * 100)}% slower at p95.`]
+        : [`${clean(cur.version, 40)}: p95 ${cur.frame_p95}ms, p50 ${cur.frame_p50}ms over ${count(cur.sessions, 'session')} in the last day.`, `${clean(prev.version, 40)}: p95 ${prev.frame_p95}ms, p50 ${prev.frame_p50}ms over ${count(prev.sessions, 'session')}.`, `${Math.round(s.rise * 100)}% slower at p95.`],
       paste: `${base.paste}.`,
       link: link('versions'),
       figure: {

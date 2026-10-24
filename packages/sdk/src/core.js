@@ -19,6 +19,7 @@ const RAGE_INPUT_WINDOW_MS = 1000;
 const MAX_QUEUE = 2000;
 const MAX_HITCH_EVENTS_PER_WINDOW = 3; // detail events; frame_window.hitches still counts every hitch
 const BEACON_LIMIT = 60_000;
+const MAX_RETRY_EVENTS = MAX_QUEUE / 2; // events in batches waiting to be sent again
 
 const DEFAULTS = {
   service: 'unknown-game',
@@ -73,9 +74,12 @@ export class Glitchless {
     this.startedAt = Date.now();
     this.level = null;
     this.levelStartedAt = 0;
+    this.levelOpen = false; // a level started and not yet completed, failed or abandoned
+    this.leftLevel = null; // the level abandoned for the game as the page went (end())
     this.ctx = {};
     this.recent = [];
     this.queue = [];
+    this.retries = []; // batches whose send failed, kept whole with their batch_id to send again
     this.stats = { sent: 0, failed: 0, errors: 0, hitches: 0, deaths: 0, lastStatus: 'idle' };
     this.errorCounts = new Map();
     this.position = null;
@@ -85,6 +89,7 @@ export class Glitchless {
     this.render = null; // filled by instrumentThree
     this.sessionStartSent = false;
     this.firstFrameAt = 0;
+    this.firstFrameWall = 0; // Date.now() at the first frame: the load event's ts
     this.firstInputAt = 0;
     this.keyHistory = new Map();
     this.history = []; // recent gameplay events, for agents (WebMCP) and the overlay
@@ -133,6 +138,8 @@ export class Glitchless {
     if (this.win.frames || this.posBuffer.length) this.closeWindow();
     this.level = String(levelId);
     this.levelStartedAt = Date.now();
+    this.levelOpen = true;
+    this.leftLevel = null;
     this.push({ type: 'level_start' });
     this.remember('level_start');
     this.datadog?.levelStart(this.level);
@@ -141,16 +148,41 @@ export class Glitchless {
   levelComplete(levelId, { durationS, score } = {}) {
     const level = String(levelId ?? this.level);
     const duration_s = durationS ?? (Date.now() - this.levelStartedAt) / 1000;
+    this.levelOpen = false;
     this.push({ type: 'level_complete', level, duration_s: round(duration_s, 2), score: score ?? null });
     this.remember('level_complete');
     this.datadog?.levelComplete(level, { duration_s, score });
   }
 
+  // The player lost the level (died, ran out of time). Leaving it is levelAbandon.
   levelFail(levelId, { cause } = {}) {
     const level = String(levelId ?? this.level);
+    if (this.outcomeSent(level)) return;
+    this.levelOpen = false;
     this.push({ type: 'level_fail', level, cause: cause ?? null });
     this.remember('level_fail');
     this.datadog?.levelFail(level, cause);
+  }
+
+  // The player left the level before it ended: went to the menu, restarted it, closed the tab. Never counted as a
+  // fail. The page going away mid-level sends one by itself (SPEC §2 level_abandon).
+  levelAbandon(levelId) {
+    const level = String(levelId ?? this.level);
+    if (this.outcomeSent(level)) return;
+    this.abandon(level);
+  }
+
+  abandon(level, reason = null) {
+    this.levelOpen = false;
+    this.push({ type: 'level_abandon', level, duration_s: round((Date.now() - this.levelStartedAt) / 1000, 2), ...(reason ? { reason } : {}) });
+    this.remember('level_abandon');
+    this.datadog?.action('level_abandon', { level, reason });
+  }
+
+  // A game that ends its level as the page goes (in its own pagehide handler) does it after the SDK's abandon: that
+  // attempt has its outcome.
+  outcomeSent(level) {
+    return !!this.ended && this.leftLevel != null && level === this.leftLevel;
   }
 
   death({ x = 0, y = 0, z = 0, cause = 'unknown' } = {}) {
@@ -399,6 +431,7 @@ export class Glitchless {
 
     if (!this.firstFrameAt) {
       this.firstFrameAt = performance.now();
+      this.firstFrameWall = Date.now();
     }
 
     if ((this.frameId & 15) === 0 && this.ringCount >= 30) this.recentMedian = median(this.frameHistory().slice(-60));
@@ -547,6 +580,11 @@ export class Glitchless {
 
   end(reason) {
     if (this.ended) return;
+    // An engine adapter sets the level to null back in a menu: then no level is going.
+    if (this.levelOpen && this.level != null) {
+      this.leftLevel = this.level;
+      this.abandon(this.level, reason);
+    }
     this.ended = true;
     this.push({ type: 'session_end', reason, duration_s: round((Date.now() - this.startedAt) / 1000, 1) });
     this.flush({ beacon: true });
@@ -575,6 +613,7 @@ export class Glitchless {
         if (this.loafEntries.length > 100) this.loafEntries.splice(0, this.loafEntries.length - 100);
       });
       po.observe({ type: 'long-animation-frame', buffered: true });
+      this.loafSupported = true;
     } catch {
       // Not supported (Firefox/Safari) — hitches still get engine-level attribution.
     }
@@ -703,6 +742,9 @@ export class Glitchless {
       if (h._assetsInFlight > 0) causes.push('asset_load');
       if (loaf?.scripts?.length) causes.push('script');
       for (const c of h._engine?.causes || []) if (!causes.includes(c)) causes.push(c);
+      // Where the browser reports long animation frames (Chromium), a long frame without one didn't block the page's
+      // main thread: the time went to the GPU, the compositor or the OS.
+      if (!causes.length && this.loafSupported && !loaf) causes.push('gpu_or_os');
       if (h.frozen) causes.push('frozen');
       const { _perfEnd, _programsBefore, _heapBefore, _heapAfter, _assetsInFlight, _engine, ...rest } = h;
       const hitch = { ...rest, ...(_engine?.fields || {}), causes, loaf: loaf?.scripts || [] };
@@ -719,25 +761,32 @@ export class Glitchless {
     if (!this.sessionStartSent && (this.render || Date.now() - this.startedAt > 3000 || beacon)) {
       this.queue.unshift(this.sessionStartEvent());
       this.sessionStartSent = true;
-      if (this.firstFrameAt) this.queue.push({ type: 'load', ts: Date.now(), level: this.level, ttff_ms: Math.round(this.firstFrameAt), assets: this.render?.assetStats?.() || null });
+      if (this.firstFrameAt) this.queue.push({ type: 'load', ts: this.firstFrameWall, level: this.level, ttff_ms: Math.round(this.firstFrameAt), assets: this.render?.assetStats?.() || null });
     }
-    if (!this.queue.length || !this.sessionStartSent) return;
+    if ((!this.queue.length && !this.retries.length) || !this.sessionStartSent) return;
     if (!this.opts.intake || !this.sampled) {
       this.queue = [];
+      this.retries = [];
       this.stats.lastStatus = this.opts.intake ? 'unsampled' : 'offline';
       return;
     }
     const events = this.queue;
     this.queue = [];
+    // Batches that failed go again first, whole and under their own batch_id, so the server stores each once even
+    // when an earlier try reached it and only the answer was lost.
+    const batches = this.retries;
+    this.retries = [];
     // Large events (map thumbnails, bug reports) go in their own request so batches stay under beacon limits.
     const big = events.filter((e) => e.type === 'map' || e.type === 'bug_report');
     const small = events.filter((e) => e.type !== 'map' && e.type !== 'bug_report');
-    for (const chunk of chunkBySize(small, BEACON_LIMIT)) this.send(chunk, beacon);
-    for (const e of big) this.send([e], false);
+    for (const chunk of chunkBySize(small, BEACON_LIMIT)) batches.push({ id: batchId(), events: chunk });
+    for (const e of big) batches.push({ id: batchId(), events: [e], big: true });
+    for (const b of batches) this.send(b.events, beacon && !b.big, b.id);
   }
 
-  // Resolves true once the intake took the events (a beacon: once the browser queued it).
-  send(events, beacon) {
+  // Resolves true once the intake took the events (a beacon: once the browser queued it). `id` is the batch's own
+  // ID (SPEC §2 batch_id), the same on every try of it.
+  send(events, beacon, id = batchId()) {
     const body = JSON.stringify({
       service: this.opts.service,
       env: this.opts.env,
@@ -745,6 +794,7 @@ export class Glitchless {
       session_id: this.sessionId,
       player_id: this.playerId,
       sdk: this.sdk,
+      batch_id: id,
       events,
     });
     const url = `${this.opts.intake}/v1/intake?token=${encodeURIComponent(this.opts.clientToken)}`;
@@ -758,6 +808,12 @@ export class Glitchless {
     return gzip(body)
       .then((payload) => fetch(url, { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain' }, keepalive: (payload.byteLength ?? payload.length) < BEACON_LIMIT }))
       .then((r) => {
+        // Turned away (a bad payload, a revoked key): it would only be turned away again. 408 and 429 are worth another try.
+        if (r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429) {
+          this.stats.failed += events.length;
+          this.stats.lastStatus = `rejected ${r.status}`;
+          return false;
+        }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         this.stats.sent += events.length;
         this.stats.lastStatus = 'ok';
@@ -767,7 +823,8 @@ export class Glitchless {
         this.stats.failed += events.length;
         this.stats.lastStatus = 'error';
         this.log('send failed', err.message);
-        if (this.queue.length < MAX_QUEUE / 2) this.queue.unshift(...events.filter((e) => e.type !== 'pos'));
+        const waiting = this.retries.reduce((n, b) => n + b.events.length, 0);
+        if (waiting + events.length <= MAX_RETRY_EVENTS) this.retries.push({ id, events, big: events.length === 1 && (events[0].type === 'map' || events[0].type === 'bug_report') });
         return false;
       });
   }
@@ -910,3 +967,8 @@ function topFrame(stack) {
   return null;
 }
 
+
+// A batch's own ID (SPEC §2 batch_id): random, the same on every try of the batch.
+function batchId() {
+  return 'b_' + randomId(16);
+}

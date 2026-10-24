@@ -39,18 +39,20 @@ func count(event: String, what: String = "all") -> void:
 
 ## 3. Use the level calls where a count is really a level
 
-The funnel, completion rates, rage quits and per-level frame times come from `level_start` / `level_complete` / `level_fail`, not from custom events. So the counts that mark a stop's start and end are worth a real level call too:
+The funnel, completion rates, rage quits and per-level frame times come from `level_start` / `level_complete` / `level_fail` / `level_abandon`, not from custom events. So the counts that mark a stop's start and end are worth a real level call too:
 
 | game | today | Glitchless |
 | --- | --- | --- |
 | Linebreakers | `Metrics.count("stop_start", id)` | `Glitchless.level_start(id)` |
 | Linebreakers | `Metrics.count("stop_won" if won else "stop_lost", _stop)` | `Glitchless.level_complete(_stop)` or `Glitchless.level_fail(_stop, "lost")` |
-| Linebreakers | `Metrics.count("stop_left", _stop)` | `Glitchless.level_fail(_stop, "left")` |
+| Linebreakers | `Metrics.count("stop_left", _stop)` | `Glitchless.level_abandon(_stop)`: leaving is not losing, and a fail would count as one (and, sent as the app closes, as a rage quit) |
 | Linebreakers | `Metrics.count("battle", "won" if won else "lost")` | keep as `track`, or `level_complete` / `level_fail` with the map as the level |
 | Starlift | `Metrics.count("play", "voyage")`, then a stop begins | `Glitchless.level_start(stop_id)` where the stop begins |
 | Starlift | `Metrics.count("stop_won" if won else "stop_lost", id + hard)` | `Glitchless.level_complete(id + hard)` or `Glitchless.level_fail(id + hard, "lost")` |
 | Starlift | `Metrics.count("play", _mode)` for endless, daily or duel | keep as `track`; for per-mode frame times, `level_start(_mode)` when the run begins |
 | both | `Metrics.count("open", …)`, `("paywall", why)`, `("buy", …)`, `("tutorial", …)`, `("sheet", …)` | `track`, as forwarded in step 2 |
+
+Starlift's runs torn down as "left" (Home, Retry, or the app closed mid-run) are `Glitchless.level_abandon(level_id())`. Glitchless already sends that when the app goes to the background or closes mid-level, and drops a fail or abandon the game sends for the level after that.
 
 Starlift would have both a `stop_won` custom event and a `level_complete` for the same moment, which is fine: they answer different questions.
 
