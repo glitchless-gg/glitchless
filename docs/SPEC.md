@@ -618,7 +618,9 @@ less.
 store gets a **page per store** on the automatic dashboard, after the Overview (`steam`, `app-store`, `google-play`):
 `store_reviews`, `store_vitals` where the store reports vitals, `store_players` where the store counts players,
 `frame_time` when the game sends frame times, and `store_sales` when there are sales (or, on Steam, a financial key).
-A saved dashboard adds the panels like any other. A share link shows `store_reviews`, `store_vitals` and
+A saved dashboard adds the panels like any other, and Glitchless Cloud adds the store's page to a game's saved
+dashboards when the game is first connected to that store (`withStorePage`: after the first page, unless a page already
+shows that store; taken off, it isn't added again). A share link shows `store_reviews`, `store_vitals` and
 `store_players` (counts, never review text) and `store_sales` only when made with sums.
 
 **The finding** (`store-reviews-<store>-<release key>`, category `reviews`), per store: of the releases in the last

@@ -574,8 +574,12 @@ export function storePanelFields(p, at, BoardError) {
 // A page per connected store on the automatic dashboard: its reviews by build, its vitals next to Glitchless's, its
 // players online, frame times (to read next to the reviews), its units, returns and wishlists.
 export function storePages(ctx, { frames = false } = {}) {
-  return Object.entries(ctx.stores ?? {}).map(([store, st]) => ({
-    id: store.replace(/_/g, '-'),
+  return Object.entries(ctx.stores ?? {}).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) }));
+}
+
+function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales = false } = {}) {
+  return {
+    id,
     title: storeName(store),
     icon: 'flag',
     panels: [
@@ -583,9 +587,22 @@ export function storePages(ctx, { frames = false } = {}) {
       ...(STORES[store]?.vitals.length ? [{ type: 'store_vitals', store, size: 'l' }] : []),
       ...(STORES[store]?.players ? [{ type: 'store_players', store, size: 'm' }] : []),
       ...(frames ? [{ type: 'frame_time', size: 'm' }] : []),
-      ...(st.sales || st.wishlists || st.keys?.financial ? [{ type: 'store_sales', store, size: 'l' }] : []),
+      ...(sales ? [{ type: 'store_sales', store, size: 'l' }] : []),
     ],
-  }));
+  };
+}
+
+// A saved dashboard with the page the automatic one gets for a store just connected, after its first page, so
+// connecting a store shows it whoever designed the dashboard. → the new dashboard, or null when there is no saved one
+// (the automatic dashboard has the page already) or a page shows that store (a store panel naming it, or naming none).
+export function withStorePage(dashboard, store, { sales = false } = {}) {
+  if (!dashboard?.pages) return null;
+  const pages = dashboard.pages;
+  if (pages.some((p) => (p.panels ?? []).some((x) => STORE_PANELS[x.type] && (x.store ?? store) === store))) return null;
+  const ids = new Set(pages.map((p) => p.id));
+  let id = store.replace(/_/g, '-');
+  for (let n = 2; ids.has(id); n++) id = `${store.replace(/_/g, '-')}-${n}`;
+  return { ...dashboard, pages: [...pages.slice(0, 1), storePage(store, { id, sales }), ...pages.slice(1)] };
 }
 
 export function storePanel(ctx, p) {
@@ -794,10 +811,17 @@ function disagreements(store, version, s, m) {
   return out;
 }
 
+// Why a store that reports vitals has none yet.
+function vitalsLate(st) {
+  if (st.store === 'google_play') return 'Google Play reports them a day or two late, and only for a version enough people have played';
+  if (!st.keys?.api) return 'they need an App Store Connect API key';
+  return 'Apple publishes them for a version once enough people have used it, and they are read once a day';
+}
+
 function vitalsPanel(ctx, st) {
   if (!STORES[st.store]?.vitals.length) return { empty: true, why: `${storeName(st.store)} reports no vitals.` };
   const rows = vitalsByVersion(ctx, st);
-  if (!rows.length) return { empty: true, why: st.synced_at ? `No ${storeName(st.store)} vitals in this window yet: ${st.store === 'google_play' ? 'Google Play reports them a day or two late' : 'they need an App Store Connect API key'}.` : notSynced(st) };
+  if (!rows.length) return { empty: true, why: st.synced_at ? `No ${storeName(st.store)} vitals in this window yet: ${vitalsLate(st)}.` : notSynced(st) };
   const keys = [...new Set(rows.flatMap((r) => Object.keys(r.store)))].sort((a, b) => STORES[st.store].vitals.indexOf(a.split(':')[0]) - STORES[st.store].vitals.indexOf(b.split(':')[0]) || a.localeCompare(b));
   return {
     columns: keys.map((key) => {

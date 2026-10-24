@@ -10,9 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { FileStore } from '../src/stores/file.js';
-import { createStoreData, reviewText } from '../src/reviews.js';
+import { createStoreData, reviewText, withStorePage, storePanel } from '../src/reviews.js';
 import { steamClient, syncKeyless, steamMarks } from '../src/steam.js';
 import { validateDashboard } from '../src/board.js';
+import { buildContext } from '../src/analytics.js';
 import { steamScenario, steamFetch, scenarioSessions, memoryKv, APP_ID } from './helpers/steam-data.js';
 
 const HOUR = 3_600_000;
@@ -288,4 +289,25 @@ test("store vitals next to what Glitchless measured, by version, with a line whe
   } finally {
     await g.close();
   }
+});
+
+test("withStorePage: a saved dashboard gets a store's page after its first, unless a page already shows that store", () => {
+  const saved = { pages: [{ id: 'overview', title: 'Overview', panels: [{ type: 'stat', title: 'Players', metric: 'players' }] }, { id: 'app-store', title: 'Notes', view: 'events' }], currency: 'USD' };
+  const next = withStorePage(saved, 'app_store');
+  assert.deepEqual(next.pages.map((p) => p.id), ['overview', 'app-store-2', 'app-store'], 'a free id');
+  assert.equal(next.currency, 'USD');
+  assert.deepEqual(next.pages[1].panels.map((p) => p.type), ['store_reviews', 'store_vitals']);
+  assert.deepEqual(validateDashboard(next).pages.map((p) => p.id), ['overview', 'app-store-2', 'app-store']);
+  assert.deepEqual(withStorePage(saved, 'steam', { sales: true }).pages[1].panels.map((p) => p.type), ['store_reviews', 'store_players', 'store_sales']);
+  assert.equal(withStorePage(next, 'app_store'), null, 'already there');
+  assert.equal(withStorePage({ pages: [{ id: 'o', title: 'O', panels: [{ type: 'store_reviews' }] }] }, 'google_play'), null, 'a store panel naming no store shows it');
+  assert.equal(withStorePage(null, 'steam'), null, 'the automatic dashboard has it already');
+});
+
+test('an empty vitals panel says why: no App Store key, Apple not reporting yet, or Google Play running late', () => {
+  const why = (store, keys) =>
+    storePanel(Object.assign(buildContext([], { service: 'g', from: 0, to: 1, type: 'all' }), { stores: { [store]: { store, synced_at: 1, keys, reviews: [], hours: [], vitals: [], versions: [] } } }), { type: 'store_vitals', store }).why;
+  assert.match(why('app_store', { api: false }), /need an App Store Connect API key/);
+  assert.match(why('app_store', { api: true }), /Apple publishes them for a version once enough people have used it/);
+  assert.match(why('google_play', {}), /a day or two late/);
 });
