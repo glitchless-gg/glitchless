@@ -1,7 +1,7 @@
 {
 	"FileVersion": 3,
-	"Version": 2,
-	"VersionName": "0.2.0",
+	"Version": 3,
+	"VersionName": "0.3.0",
 	"FriendlyName": "Glitchless",
 	"Description": "Game observability for Unreal: frame times and hitches with their likely causes, errors, ensures and crashes, maps as levels, deaths, bug reports and where players quit. Anonymous by default. An MCP server lets coding agents read the data and fix the game.",
 	"Category": "Analytics",

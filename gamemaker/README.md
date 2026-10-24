@@ -18,7 +18,7 @@ Anonymous mode, the default, sends nothing that can be tied to a person. [PRIVAC
 
 ## Install
 
-1. Get the local package, `Glitchless-0.1.0.yymps`: from the [0.1.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.1.0), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
+1. Get the local package, `Glitchless-0.2.0.yymps`: from the [0.2.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.2.0), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
 2. In GameMaker: **Tools → Import Local Package**, pick the file, **Add All**, **Import**. It adds a *Glitchless* folder with eight scripts and two objects, `obj_glitchless` and `obj_glitchless_tail`. Don't place the objects in a room: `glitchless_init` makes them.
 3. Call `glitchless_init` once, as early as you can: the first room's creation code, or the Create event of your first object.
 4. For a sandboxed macOS build (the Mac App Store): **Game Options → macOS → Allow outgoing network connections**.
@@ -207,7 +207,7 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-gamemaker/0.1.0"`, as gzip with `Content-Type: text/plain` (the server knows gzip by its first bytes). GameMaker has no gzip, so the SDK wraps `buffer_compress`'s zlib stream in a gzip header and trailer. It checks once what `buffer_crc32` gives for a known input and corrects for it: runtime 2026.0.0.23 returns the inverted CRC-32. A runner where neither fits sends plain JSON. See [docs/SPEC.md](../docs/SPEC.md#5d-gamemaker-sdk) for what the GameMaker SDK adds; the browser fields it can't fill are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-gamemaker/0.2.0"`, as gzip with `Content-Type: text/plain` (the server knows gzip by its first bytes). GameMaker has no gzip, so the SDK wraps `buffer_compress`'s zlib stream in a gzip header and trailer. It checks once what `buffer_crc32` gives for a known input and corrects for it: runtime 2026.0.0.23 returns the inverted CRC-32. A runner where neither fits sends plain JSON. See [docs/SPEC.md](../docs/SPEC.md#5d-gamemaker-sdk) for what the GameMaker SDK adds; the browser fields it can't fill are sent as null or empty.
 
 ## Limits
 

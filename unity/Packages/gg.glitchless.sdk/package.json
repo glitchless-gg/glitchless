@@ -1,9 +1,9 @@
 {
   "name": "gg.glitchless.sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "displayName": "Glitchless",
   "description": "Game observability for Unity: frame times and stutter with their likely causes, errors and exceptions, scenes as levels, deaths and where players quit. Anonymous by default. An MCP server lets coding agents read the data and fix the game.",
-  "unity": "2022.3",
+  "unity": "6000.3",
   "dependencies": {
     "com.unity.modules.unitywebrequest": "1.0.0",
     "com.unity.modules.imgui": "1.0.0",

@@ -7,7 +7,7 @@
 
 # Glitchless
 
-Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (2022.3 LTS and 6) Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
+Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.
@@ -31,7 +31,7 @@ It's open source and runs anywhere Node runs: one server with a file store, on a
 | --- | --- |
 | [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js, Phaser (3 and 4), Babylon.js and PlayCanvas adapters, overlay, WebMCP tools, Datadog RUM bridge. ~120 KB as one `<script>` (about 38 KB gzipped) |
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
-| [`unity`](unity) | Glitchless for **Unity 2022.3 LTS and Unity 6** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
+| [`unity`](unity) | Glitchless for **Unity 6.3 LTS and later** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
 | [`gamemaker`](gamemaker) | Glitchless for **GameMaker 2024.2+** (GML scripts, a local package or `tools/install.mjs`): frame windows from `delta_time`, hitches named by what GameMaker can see (texture pages, room changes, collections, instance bursts), instance, surface and DS counts for leaks, rooms as levels, crashes sent on the next launch, bug reports and `-glitchless-measure` for agents. A demo with planted problems, a Node test that runs the GML without GameMaker, and an end-to-end test sit alongside |
 | [`server`](server) | Intake, query API, findings and alerts: one Node 20+ server with a file store and no npm dependencies (`npm run server`, or the [Docker image](#run-it-on-a-server)) |
@@ -74,7 +74,7 @@ you, the coding agent, read that data, fix what players hit and check that the f
    the same address.
 
 2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It
-   covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 2022.3 or
+   covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 6.3 or
    later, Godot 4.5 or later, Unreal Engine 5.8, and GameMaker 2024.2 or later; for Godot it sends
    you to ~/.glitchless/godot/addons/glitchless/README.md.
    Use these settings:
@@ -221,7 +221,7 @@ then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake =
 
 For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless) into the project's `Plugins` folder, enable it in **Edit → Plugins**, and fill in **Service** and **Intake** in **Project Settings → Plugins → Glitchless**; no code is needed. See its [README](unreal/Plugins/Glitchless/README.md), and [`unreal/demo`](unreal/demo) for a small game with planted problems.
 
-For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.1.0.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.1.0) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
+For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.2.0.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.2.0) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
 
 ## Connect your coding agent
 

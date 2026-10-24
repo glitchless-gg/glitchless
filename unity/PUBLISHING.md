@@ -42,7 +42,7 @@ The Asset Store takes UPM packages through its UPM publishing workflow. It needs
 6. Fill in the listing in the Publisher Portal:
    - Title: Glitchless: game observability. Category: Tools.
    - Price: free.
-   - Unity versions: 2022.3 and 6. Render pipelines: Built-in, URP, HDRP (the SDK draws nothing).
+   - Unity versions: 6.3 LTS and later (tested on 6.3 LTS and 6.5). Render pipelines: Built-in, URP, HDRP (the SDK draws nothing).
    - Description: start from the package README's first section. Say plainly that the package sends performance and error reports to a Glitchless server the developer chooses, and link PRIVACY.md.
    - Images: an icon (160×160), a card image (420×280) and a cover (1200×630), plus a few screenshots of the dashboard and the sample. The brand files are in `assets/brand/glitchless`.
 7. Submit for review. Reviews take one to two weeks; answer any questions from the reviewers in the Publisher Portal.

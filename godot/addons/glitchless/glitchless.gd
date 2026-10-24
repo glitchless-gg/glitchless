@@ -32,7 +32,7 @@ extends Node
 ##   --glitchless-synthetic        mark the session as a bot's (--autoplay does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.3.0"
+const SDK_VERSION := "0.4.0"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")

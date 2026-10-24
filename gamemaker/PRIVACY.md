@@ -29,7 +29,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-gamemaker/0.1.0`) and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-gamemaker/0.2.0`) and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level or room name, or null).
 

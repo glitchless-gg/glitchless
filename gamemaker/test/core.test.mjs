@@ -380,7 +380,7 @@ test('frame windows: the server reads the GML sketch back, a window never spans 
     const s = Sketch.from(w.ft);
     assert.equal(s.n, w.frames);
     assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
-    assert.equal(w.sdk, 'glitchless-gamemaker/0.1.0');
+    assert.equal(w.sdk, 'glitchless-gamemaker/0.2.0');
     assert.equal(w.hz, 60);
     assert.equal(typeof w.process_ms, 'number');
     assert.equal(typeof w.render_ms, 'number');
@@ -497,7 +497,7 @@ test('bug reports: from code straight away, through the form, and an offline one
   assert.ok(reports.some((r) => r.note === 'the bonus on rm_level_1 never paid out' && r.session_id !== game.g.session_id), 'the offline run\'s report arrived');
   const one = (await query('report', { id: reports.find((r) => r.session_id === game.g.session_id && r.note.startsWith('sparks')).id })).report;
   assert.equal(one.screenshot, 'data:image/png;base64,' + PNG_1PX);
-  assert.equal(one.sdk, 'glitchless-gamemaker/0.1.0');
+  assert.equal(one.sdk, 'glitchless-gamemaker/0.2.0');
   assert.equal(one.level, 'rm_level_2');
   assert.match(one.device, /^GameMaker 2026\./);
   assert.ok(one.recent.some((e) => e.type === 'level_start' && e.level === 'rm_level_2'), JSON.stringify(one.recent));

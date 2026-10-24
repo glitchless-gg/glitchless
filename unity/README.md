@@ -1,6 +1,6 @@
 # Glitchless for Unity
 
-- [`Packages/gg.glitchless.sdk`](Packages/gg.glitchless.sdk): the SDK, a Unity package (2022.3 LTS and Unity 6). Read its [README](Packages/gg.glitchless.sdk/README.md) and what it sends in [PRIVACY.md](Packages/gg.glitchless.sdk/PRIVACY.md). Its `Samples~/Fetch` is a small game with planted bugs.
+- [`Packages/gg.glitchless.sdk`](Packages/gg.glitchless.sdk): the SDK, a Unity package (Unity 6.3 LTS and later). Read its [README](Packages/gg.glitchless.sdk/README.md) and what it sends in [PRIVACY.md](Packages/gg.glitchless.sdk/PRIVACY.md). Its `Samples~/Fetch` is a small game with planted bugs.
 - [`test`](test):
   - `e2e.mjs` builds the sample as a macOS player, plays it against a fresh local Glitchless server and checks the results through `/v1/query`.
   - `make-fixtures.mjs` writes the fixture the EditMode tests check the C# sketch and fingerprints against.

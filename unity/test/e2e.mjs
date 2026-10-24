@@ -221,7 +221,7 @@ try {
     assert.ok(m.frames > 30, `frames ${m.frames}`);
     for (const k of ['p50', 'p95', 'p99', 'worst']) assert.equal(typeof m.frame_ms[k], 'number', `frame_ms.${k}`);
     for (const k of ['fps', 'frame_budget_ms', 'pct_frames_over_budget', 'hitch_count', 'update_cpu_ms', 'physics_ms', 'memory_delta', 'new_errors']) assert.ok(k in m, k);
-    assert.equal(m.sdk, 'glitchless-unity/0.3.0');
+    assert.equal(m.sdk, 'glitchless-unity/0.4.0');
   });
 
   await new Promise((r) => setTimeout(r, 300));
@@ -275,7 +275,7 @@ try {
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
       for (const k of ['process_ms', 'physics_ms', 'render_ms']) assert.equal(typeof w[k], 'number', k);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.3.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.4.0'));
     assert.ok(windows.some((w) => typeof w.geometries === 'number'), 'no mesh count (a development build has it)');
   });
   check('the confetti bodies show up in the physics time', () => {
@@ -310,7 +310,7 @@ try {
   const opened = reports[0] && (await query(port, 'report', { id: reports[0].id })).report;
   check('bug reports: recent events and frame windows arrive (no screenshot in -nographics)', () => {
     assert.ok(opened, 'no report');
-    assert.equal(opened.sdk, 'glitchless-unity/0.3.0');
+    assert.equal(opened.sdk, 'glitchless-unity/0.4.0');
     assert.ok(opened.recent.some((e) => e.type === 'level_start'), JSON.stringify(opened.recent));
     assert.ok(opened.frames.length > 0 && opened.frames.every((f) => typeof f.fps === 'number'), JSON.stringify(opened.frames));
     assert.equal(opened.screenshot, null);

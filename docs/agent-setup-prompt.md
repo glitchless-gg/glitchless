@@ -22,7 +22,7 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
    If that folder already exists, run `git -C ~/.glitchless pull` instead.
    If the intake URL in step 2 starts with http://localhost, make sure a local Glitchless server is running there: if {{INTAKE_URL}}/v1/health answers, use it. Otherwise, with Docker, run `docker run -d --name glitchless -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless` (or `docker start glitchless` if that container already exists). Without Docker, in ~/.glitchless run `npm install && npm run build`, then `npm run server` in the background. The dashboard is at the same address.
 
-2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 2022.3 or later, Godot 4.5 or later, Unreal Engine 5.8, and GameMaker 2024.2 or later; for Godot it sends you to ~/.glitchless/godot/addons/glitchless/README.md.
+2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 6.3 or later, Godot 4.5 or later, Unreal Engine 5.8, and GameMaker 2024.2 or later; for Godot it sends you to ~/.glitchless/godot/addons/glitchless/README.md.
    Use these settings:
    - intake URL: {{INTAKE_URL}}
    - client token: {{CLIENT_TOKEN}} (it's public and can only send data, so it's fine inside the game build). On Glitchless Cloud without a token for this game, do the sign-in in step 3 first and make the game with the glitchless_create_game tool: it returns the token.

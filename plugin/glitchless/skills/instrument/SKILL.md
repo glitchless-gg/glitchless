@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Add Glitchless observability to a game: Three.js or React Three Fiber, Phaser 3 or 4, Babylon.js, PlayCanvas, Unity 2022.3+, Godot 4.5+, Unreal Engine 5.8 or GameMaker 2024.2+. Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
+description: Add Glitchless observability to a game: Three.js or React Three Fiber, Phaser 3 or 4, Babylon.js, PlayCanvas, Unity 6.3+, Godot 4.5+, Unreal Engine 5.8 or GameMaker 2024.2+. Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
 ---
 
 # Instrument a game with Glitchless
@@ -17,7 +17,7 @@ have a way to measure the running game before and after a change.
 | `phaser` in package.json, or a `<script>` that loads Phaser | Phaser 3.60+ or 4 | [Phaser](#phaser) |
 | `@babylonjs/core` or `babylonjs` in package.json, or a `<script>` that loads Babylon.js | Babylon.js 5+ | [Babylon.js](#babylonjs) |
 | `playcanvas` in package.json, a PlayCanvas Editor project (scripts using `pc.createScript` or `pc.Script`), or a `<script>` that loads PlayCanvas | PlayCanvas 2.x | [PlayCanvas](#playcanvas) |
-| `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 2022.3+ | [Unity](#unity) |
+| `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 6.3+ | [Unity](#unity) |
 | `project.godot` | Godot 4.5+ | the Godot addon's README: `godot/addons/glitchless/README.md` in the Glitchless repo (`~/.glitchless/godot/addons/glitchless/README.md` if it's cloned there), then [Godot](#godot) here for bug reports |
 | a `*.uproject` file | Unreal Engine 5.8 (5.7 untested) | [Unreal](#unreal) |
 | a `*.yyp` file | GameMaker 2024.2+ | [GameMaker](#gamemaker) |
@@ -380,11 +380,11 @@ WebMCP connected, `glitchless_inspect_scene` lists entity groups and flags copie
 
 ## Unity
 
-The `gg.glitchless.sdk` package, for Unity 2022.3 LTS and Unity 6.
+The `gg.glitchless.sdk` package, for Unity 6.3 LTS and later (6.5 included).
 
 ### 1. Read the project
 
-Note: the Unity version (`ProjectSettings/ProjectVersion.txt`; 2022.3 or later), the first scene
+Note: the Unity version (`ProjectSettings/ProjectVersion.txt`; 6000.3 or later: on an older Unity, say Glitchless needs Unity 6.3 LTS or later), the first scene
 (`ProjectSettings/EditorBuildSettings.asset`), which scenes are levels, the scripts for player death and respawn,
 level complete and fail, pickups, and anything spawned in bulk; where the version lives (`bundleVersion` in
 `ProjectSettings/ProjectSettings.asset` is `Application.version`).
@@ -397,7 +397,7 @@ Add one line to `dependencies` in `Packages/manifest.json`:
 "gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"
 ```
 
-Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.3.0`.
+Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.4.0`.
 
 ### 3. Initialize, without touching a scene file
 

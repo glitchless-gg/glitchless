@@ -15,7 +15,7 @@ It sends the same events as the browser, Unity and Godot SDKs, so the dashboard,
 
 From Fab: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is.
 
-From GitHub: download `glitchless-unreal-0.2.0.zip` from the [glitchless-unreal 0.2.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.2.0) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
+From GitHub: download `glitchless-unreal-0.3.0.zip` from the [glitchless-unreal 0.3.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.3.0) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
 
 ## Set it up
 
@@ -127,7 +127,7 @@ Enable **Unreal MCP**, **All Toolsets** (or just Toolset Registry) and **Glitchl
 
 ## For the Glitchless server and docs (SPEC §5c)
 
-The envelope's `sdk` is `glitchless-unreal/0.2.0`. Differences from the browser SDK on the wire:
+The envelope's `sdk` is `glitchless-unreal/0.3.0`. Differences from the browser SDK on the wire:
 
 | | |
 | --- | --- |

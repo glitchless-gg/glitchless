@@ -7,7 +7,7 @@ import { fingerprint as fingerprintOf } from './fingerprint.js';
 import { BugReportForm, snapshot, sendReport } from './bugreport.js';
 import { readSteam, withSteam, steamVersion } from './steam.js';
 
-export const SDK_VERSION = '0.4.0';
+export const SDK_VERSION = '0.5.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)

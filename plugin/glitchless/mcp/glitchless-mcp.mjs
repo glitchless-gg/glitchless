@@ -37706,6 +37706,7 @@ __export(context_exports, {
   agent: () => agent,
   common: () => common,
   fail: () => fail,
+  filters: () => filters,
   isWorkspace: () => isWorkspace,
   projectFor: () => projectFor,
   query: () => query,
@@ -37822,6 +37823,9 @@ ${JSON.stringify(data, null, 2)}` }] };
 function fail(err) {
   return { content: [{ type: "text", text: `Glitchless error: ${err.message}` }], isError: true };
 }
+function filters({ version: version2, steam_branch, env, session_type } = {}) {
+  return { version: version2, steam_branch, env, type: session_type };
+}
 function tool(name, description, schema, handler) {
   server.registerTool(
     name,
@@ -37853,7 +37857,7 @@ var init_context = __esm({
     DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || "";
     isWorkspace = () => API_KEY.startsWith("gl_ws_");
     server = new McpServer(
-      { name: "glitchless", version: "0.5.0" },
+      { name: "glitchless", version: "0.6.0" },
       {
         instructions: `Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker. On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.`
       }
@@ -37865,7 +37869,9 @@ var init_context = __esm({
       service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
       hours: external_exports.number().min(0.25).max(9600).optional().describe("Look-back window in hours (default 24). Up to the plan's retention on Glitchless Cloud: 336 (14 days) on Free, 2160 (90 days) on Indie, 9600 (400 days) on Studio. Past 744 (31 days) answers are by day."),
       version: external_exports.string().optional().describe("Only include sessions from this game version"),
-      steam_branch: external_exports.string().optional().describe(`Only include sessions that ran this Steam branch ("public", or a beta's name); games that use Steamworks send it`)
+      steam_branch: external_exports.string().optional().describe(`Only include sessions that ran this Steam branch ("public", or a beta's name); games that use Steamworks send it`),
+      env: external_exports.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
+      session_type: external_exports.enum(["user", "synthetic", "all"]).optional().describe(`"user": players only; "synthetic": bots, playtests and store test devices only; "all" or unset: both. Findings (glitchless_triage, and the overview's) read the production sessions of players unless env or session_type is given`)
     };
     gameField = external_exports.string().optional().describe("The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.");
     register = server.registerTool.bind(server);
@@ -37991,28 +37997,29 @@ var init_core3 = __esm({
       "glitchless_triage",
       "Ranked findings for a game: performance spikes per level (with the gauges and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots and version regressions \u2014 ranked by severity and player impact, each with evidence and a suggested fix. Start here when asked 'what's wrong with my game?'.",
       { ...common },
-      async ({ service, hours, version: version2, steam_branch }) => {
+      async ({ service, hours, ...f }) => {
         const svc = await resolveService(service);
-        const { findings, meta: meta3 } = await query("findings", { service: svc, version: version2, steam_branch, ...range(hours) });
-        const brief = findings.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}`).join("\n");
+        const { version: version2 } = f;
+        const { findings, meta: meta3 } = await query("findings", { service: svc, ...filters(f), ...range(hours) });
+        const brief = findings.map((f2, i) => `${i + 1}. [${f2.severity.toUpperCase()}] ${f2.title}`).join("\n");
         return reply(`Findings for ${svc} (${hours || 24}h${version2 ? `, ${version2}` : ""}):
 ${brief || "Nothing unusual."}
 
 Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u2192 now):`, findings);
       }
     );
-    tool("glitchless_overview", "Headline KPIs for a game: sessions, players, crash-free and error-free sessions, frame-time p50/p95/p99 vs budget, hitches per minute, rage quits, top errors and the level funnel.", { ...common }, async ({ service, hours, version: version2, steam_branch }) => {
+    tool("glitchless_overview", "Headline KPIs for a game: sessions, players, crash-free and error-free sessions, frame-time p50/p95/p99 vs budget, hitches per minute, rage quits, top errors and the level funnel.", { ...common }, async ({ service, hours, ...f }) => {
       const svc = await resolveService(service);
-      const d = await query("overview", { service: svc, version: version2, steam_branch, ...range(hours) });
+      const d = await query("overview", { service: svc, ...filters(f), ...range(hours) });
       return reply(`Overview for ${svc}`, { kpis: d.kpis, deployments: d.deployments, top_errors: d.top_errors.map(slimIssue), funnel: d.funnel });
     });
     tool(
       "glitchless_performance",
       "Frame-time breakdown for a game: global percentiles vs the frame budget, per-level p50/p95/p99 with draw calls / triangles / geometry counts / game-context gauges, hitch causes (script, shader compile, PSO compile in Unreal, GC, asset or map load), what is on screen during hitches, which events precede hitches, per GPU tier / browser / version, memory growth per level load and the slowest recent hitches with script attribution.",
       { ...common, level: external_exports.string().optional().describe('Focus on one level id, e.g. "level-2"') },
-      async ({ service, hours, version: version2, steam_branch, level }) => {
+      async ({ service, hours, level, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("performance", { service: svc, version: version2, steam_branch, ...range(hours) });
+        const d = await query("performance", { service: svc, ...filters(f), ...range(hours) });
         const hitches = (level ? d.hitches.filter((h) => h.level === level) : d.hitches).slice(0, 12);
         return reply(`Frame performance for ${svc}${level ? ` (${level})` : ""}`, {
           kpis: d.kpis,
@@ -38032,9 +38039,9 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
       "glitchless_get_error",
       "Error Tracking for a game. Without a fingerprint: the list of error issues ranked by sessions affected. With a fingerprint: the full issue \u2014 message, location, stack trace, affected levels/versions, occurrence counts and breadcrumbs (the game events right before it fired). For a minified web build whose source maps were uploaded (glitchless-sourcemaps), location and stack are the original ones, `frames` gives each frame with its line of code, and `minified` what the browser reported.",
       { ...common, fingerprint: external_exports.string().optional().describe("Issue fingerprint from the list or from glitchless_triage") },
-      async ({ service, hours, version: version2, steam_branch, fingerprint }) => {
+      async ({ service, hours, fingerprint, ...f }) => {
         const svc = await resolveService(service);
-        const { issues } = await query("errors", { service: svc, version: version2, steam_branch, ...range(hours) });
+        const { issues } = await query("errors", { service: svc, ...filters(f), ...range(hours) });
         if (!fingerprint) return reply(`${issues.length} error issue(s) in ${svc}`, issues.map(slimIssue));
         const issue2 = issues.find((i) => i.fingerprint === fingerprint || i.fingerprint?.startsWith(fingerprint));
         if (!issue2) return reply(`No issue ${fingerprint} in ${svc} in this window. Known issues:`, issues.map(slimIssue));
@@ -38042,18 +38049,18 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
         return reply(`Error issue ${issue2.fingerprint} in ${svc}`, rest);
       }
     );
-    tool("glitchless_player_funnel", 'Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, average clear time, rage quits (quit \u226420s after dying), session length distribution and recent rage quits with positions. Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on.', { ...common }, async ({ service, hours, version: version2, steam_branch }) => {
+    tool("glitchless_player_funnel", 'Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, average clear time, rage quits (quit \u226420s after dying), session length distribution and recent rage quits with positions. Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on.', { ...common }, async ({ service, hours, ...f }) => {
       const svc = await resolveService(service);
-      const d = await query("players", { service: svc, version: version2, steam_branch, ...range(hours) });
+      const d = await query("players", { service: svc, ...filters(f), ...range(hours) });
       return reply(`Player funnel for ${svc}`, { kpis: d.kpis, funnel: d.funnel, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15), retention: d.retention });
     });
     tool(
       "glitchless_death_hotspots",
       "Where players die on a level: clustered death positions in world coordinates (x range, share of the level\u2019s deaths, top cause, rage quits at that spot), plus the level bounds and completion stats. Use it to find difficulty spikes, then look up the level data around those coordinates.",
       { ...common, level: external_exports.string().describe('Level id, e.g. "level-3"') },
-      async ({ service, hours, version: version2, steam_branch, level }) => {
+      async ({ service, hours, level, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("heatmap", { service: svc, version: version2, steam_branch, level, ...range(hours) });
+        const d = await query("heatmap", { service: svc, ...filters(f), level, ...range(hours) });
         return reply(`Death hotspots on ${level} in ${svc}`, { level: d.level, axis: d.axis, bounds: d.bounds, hotspots: d.hotspots, level_stats: d.stats, total_deaths: d.deaths?.length ?? 0, position_samples: d.density?.samples ?? 0 });
       }
     );
@@ -38085,9 +38092,9 @@ var init_analytics = __esm({
         name: external_exports.string().optional().describe('Only this event, e.g. "paywall"'),
         funnel: external_exports.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"')
       },
-      async ({ service, hours, version: version2, steam_branch, name, funnel }) => {
+      async ({ service, hours, name, funnel, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("events", { service: svc, version: version2, steam_branch, name, funnel, ...range(hours) });
+        const d = await query("events", { service: svc, ...filters(f), name, funnel, ...range(hours) });
         const brief = d.events.slice(0, 15).map((e) => `${e.name}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ""}`).join(", ")}` : ""}`).join("\n");
         return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions):
 ${brief || "None in this window. A game sends them with track(name, attrs)."}`, {
@@ -38102,14 +38109,16 @@ ${brief || "None in this window. A game sends them with track(name, attrs)."}`, 
       {
         service: common.service,
         hours: common.hours,
+        env: common.env,
+        session_type: common.session_type,
         a: external_exports.string().optional().describe("Baseline version, branch or build (default: second newest)"),
         b: external_exports.string().optional().describe("New version, branch or build (default: newest)"),
         by: external_exports.enum(["version", "steam_branch", "steam_build"]).optional().describe("What to compare (default version). steam_branch and steam_build need a game that uses Steamworks")
       },
-      async ({ service, hours, a, b, by }) => {
+      async ({ service, hours, a, b, by, env, session_type }) => {
         const svc = await resolveService(service);
         const steam = by && by !== "version" ? by : null;
-        const { versions, has = {}, board = [] } = await query("versions", { service: svc, ...steam ? { by: steam } : {}, ...range(hours || 72) });
+        const { versions, has = {}, board = [] } = await query("versions", { service: svc, ...filters({ env, session_type }), ...steam ? { by: steam } : {}, ...range(hours || 72) });
         const what = steam === "steam_branch" ? "Steam branch" : steam === "steam_build" ? "Steam build" : "version";
         if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
         if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);
@@ -38139,11 +38148,11 @@ var init_dashboard = __esm({
       "glitchless_dashboard",
       "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports), and one board's panels with their numbers for the window. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency`, and `mismatch` lists amounts sent in another currency, which are left out.",
       { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
-      async ({ service, hours, version: version2, steam_branch, page }) => {
+      async ({ service, hours, page, ...f }) => {
         const svc = await resolveService(service);
-        const { dashboard } = await query("dashboard", { service: svc, version: version2, steam_branch, ...range(hours) });
+        const { dashboard } = await query("dashboard", { service: svc, ...filters(f), ...range(hours) });
         if (!dashboard) return reply(`${svc} has sent no data yet`, {});
-        const b = await query("board", { service: svc, version: version2, steam_branch, page, ...range(hours) });
+        const b = await query("board", { service: svc, ...filters(f), page, ...range(hours) });
         const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...p.view ? { view: p.view, ...p.options ? { options: p.options } : {} } : { panels: p.panels } }));
         const brief = (p) => p.type === "positions" && !p.empty ? { ...p, deaths: p.deaths?.slice(0, 10), path: p.path && { ...p.path, cells: p.path.cells.slice(0, 10) } } : p;
         const board = b.board ? { page: b.board.page, title: b.board.title, panels: b.board.panels.map(({ ts, series, p50: p502, p95, ...p }) => brief(p)) } : { error: b.error };
@@ -40875,12 +40884,12 @@ var init_store_reviews = __esm({
         const r = await query("store_reviews", { service: svc, store, build, sentiment, keyword, device, deck: deck ? 1 : void 0, limit, ...range(hours || 720) });
         if (r.connected === false || r.empty) return reply(`${svc}: ${r.why || "not connected to a store. Connect one in Glitchless Cloud: Settings \u2192 Integrations."}${r.stores?.length ? ` Connected: ${r.stores.join(", ")}.` : ""}`, {});
         if (r.error) return reply(`${r.error}. Releases: ${(r.releases || []).join(", ") || "none known"}.`, {});
-        const filters = [build && `build ${build}`, sentiment, keyword && `"${keyword}"`, device && `device ${device}`, deck && "Steam Deck"].filter(Boolean).join(", ");
+        const filters2 = [build && `build ${build}`, sentiment, keyword && `"${keyword}"`, device && `device ${device}`, deck && "Steam Deck"].filter(Boolean).join(", ");
         const topics = Object.entries(r.topics || {}).map(([t, n]) => `${t} ${n}`).join(", ");
         const builds = r.builds.map((b) => `- ${b.label}${b.from ? ` (live ${day(b.from)})` : ""}: ${b.reviews} reviews, ${b.positive_pct ?? "\u2013"}% positive, ${b.perf_negative} negative about performance${b.frame_p95 != null ? `; measured p95 ${b.frame_p95}ms, crash-free ${b.crash_free_pct}% over ${b.sessions} sessions` : ""}`).join("\n");
         const other = r.stores?.length > 1 ? ` (also connected: ${r.stores.filter((s) => s !== r.store).join(", ")})` : "";
         return reply(
-          `${r.store_name} reviews of ${svc} (app ${r.app_id})${other} in the last ${hours || 720}h${filters ? `, ${filters}` : ""}: ${r.matched} matched of ${r.window_reviews} written${r.summary ? `; on ${r.store_name} overall: ${r.summary.desc} (${r.summary.positive} positive, ${r.summary.negative} negative)` : ""}.${r.matched ? `
+          `${r.store_name} reviews of ${svc} (app ${r.app_id})${other} in the last ${hours || 720}h${filters2 ? `, ${filters2}` : ""}: ${r.matched} matched of ${r.window_reviews} written${r.summary ? `; on ${r.store_name} overall: ${r.summary.desc} (${r.summary.positive} positive, ${r.summary.negative} negative)` : ""}.${r.matched ? `
 ${r.negative} negative${r.segment ? `, ${r.segment.reviews} mostly on ${r.segment.name}` : ""}${topics ? `; topics: ${topics}` : ""}${r.devices.length ? `; devices: ${r.devices.map((g) => `${g.value} (${g.count})`).join(", ")}` : ""}.` : ""}${builds ? `
 By build:
 ${builds}` : ""}${r.capped ? "\n(Texts: the latest reviews only; the counts are complete.)" : ""}${r.texts_from > Date.now() - (hours || 720) * 36e5 + 36e5 ? `

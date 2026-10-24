@@ -1,6 +1,6 @@
 # Glitchless for Unity
 
-Game observability for Unity 2022.3 LTS and Unity 6. Glitchless records how your game runs for real players and gives your coding agent the same data, over MCP, so it can fix what they hit.
+Game observability for Unity 6.3 LTS and later. Glitchless records how your game runs for real players and gives your coding agent the same data, over MCP, so it can fix what they hit.
 
 - **Stutter.** Every frame is timed from `Time.unscaledDeltaTime`. Each frame window carries a mergeable frame-time sketch and where the time went: physics, your `Update` code, rendering, the GPU. Each hitch (a frame over 50 ms and twice the recent median) comes with its likely causes: a garbage collection, a shader compile, a scene load, a burst of new objects, or long script, physics or render work. When none of those fit and the parts Glitchless times add up to little of the frame, the cause is `gpu_or_os`: the time went to the GPU, presenting the frame or the OS.
 - **Errors.** Uncaught exceptions, `Debug.LogError`, assertions and engine errors, through `Application.logMessageReceivedThreaded`, grouped by the same fingerprint the web and Godot SDKs use, with the game events just before each one.
@@ -22,7 +22,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.3.0"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.4.0"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
