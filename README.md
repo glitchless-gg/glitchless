@@ -99,11 +99,14 @@ you, the coding agent, read that data, fix what players hit and check that the f
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example,
    `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
-   - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variables
-     GLITCHLESS_URL=http://localhost:7777 and GLITCHLESS_API_KEY set to my secret key. Take the key
-     from GLITCHLESS_API_KEY in my environment, or ask me for it; a local server from step 1 has no
-     key, so leave it out. Never put the secret key in the game, in a file that gets committed, or
-     in your reply.
+   - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variable
+     GLITCHLESS_URL=http://localhost:7777. A local server from step 1 needs nothing more. On
+     Glitchless Cloud, connect it to my workspace once: run `npx -y glitchless-mcp login` in a
+     terminal (or, once the server is loaded, call its glitchless_sign_in tool), show me the link
+     and the code it gives, and wait while I approve it. That saves a workspace key that reaches
+     every game I have, so name this game in its tools (game: "<the game's name>"). If I'd rather
+     give you a secret key for this one game, it's GLITCHLESS_API_KEY in my environment: set that
+     instead. Never put a key in the game, in a file that gets committed, or in your reply.
    - webmcp, for a game that runs in a browser (Three.js, Phaser, Babylon.js, PlayCanvas): command
      `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game:
      measure frame times, inspect the scene and reproduce problems. Unity, Godot, Unreal and

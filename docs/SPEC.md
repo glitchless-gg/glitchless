@@ -711,6 +711,52 @@ Steam (Valve's Web API terms allow 100,000 and ask that only what is needed is r
 a game) and 20,000 on Apple's feed. A part a store refuses or rate-limits (`errors`) waits for the next sync from where
 it was; the others go on.
 
+### 3g. Agents across a workspace (Glitchless Cloud)
+
+A coding agent can work across a Glitchless Cloud workspace without a browser: list and create games, read any of
+them, save their dashboards and make share links. It does that with a **workspace key** (`gl_ws_…`), which acts for
+the person who approved it, with their current role, and within its scopes:
+
+| Scope | What it allows |
+| --- | --- |
+| `read` | Every game's queries (always included) |
+| `dashboard` | Save a game's dashboard |
+| `manage` | Create games and their public keys, make and revoke share links |
+| `sourcemaps` | Upload a web game's source maps |
+
+A workspace key never deletes data and never touches billing or people. It stops working when it's revoked
+(Settings → Agent access) or when its person leaves the workspace, and loses `dashboard`, `manage` and `sourcemaps`
+if their role drops to Viewer.
+
+**Signing an agent in** is a device flow, like `gh auth login`:
+
+1. The agent calls `POST /v1/agent/connect` with `{ client }` (what it calls itself) and gets `{ device_code,
+   user_code, verification_url, expires_in, interval }`. The code lasts 10 minutes.
+2. It shows the person `verification_url` (`…/#/connect?code=XXXX-XXXX`). Signed in there, they check the code,
+   pick the workspace and the scopes, and approve or decline.
+3. The agent polls `POST /v1/agent/connect/poll` with `{ device_code }` every `interval` seconds: `pending`,
+   `slow_down`, `denied`, `expired`, or `approved` with `{ token, workspace, scopes }`, which comes back once.
+
+`npx -y glitchless-mcp login` does all three and saves the key; the MCP server's `glitchless_sign_in` tool does it
+from inside a chat.
+
+**With the key**, sent as `Authorization: Bearer gl_ws_…` or in `x-glitchless-api-key`:
+
+| Route | What | Scope |
+| --- | --- | --- |
+| `GET /v1/agent/whoami` | The key's workspace, role, scopes and games | read |
+| `GET /v1/agent/games` | Every game: id, name, client token, the services reporting to it | read |
+| `POST /v1/agent/games` | `{ name }` → the new game, its client token and the intake URL | manage |
+| `GET /v1/agent/games/{game}` | One game | read |
+| `GET /v1/agent/games/{game}/shares` | Its share links | manage |
+| `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, from?, to? }` → the link (shown once) | manage |
+| `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
+
+Every other `/v1/` route (queries, `/v1/dashboard`, source maps) takes the same key with the game named in
+`x-glitchless-project` (or `?project=`). `/v1/agent/` reads no cookies and sends no CORS headers: it's for programs,
+not web pages. In the browser, the dashboard registers the same abilities as WebMCP tools
+(`document.modelContext`), acting as the signed-in person.
+
 ## 4. Derived concepts
 
 - **Crash-free session**: a session that didn't crash. A session crashed when the run broke: the WebGL context

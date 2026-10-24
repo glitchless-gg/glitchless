@@ -11,13 +11,29 @@ It's a stdio server. Run it with `npx`, no install needed:
 npx -y glitchless-mcp
 ```
 
+## Sign in to a workspace (Glitchless Cloud)
+
+```bash
+npx -y glitchless-mcp login
+```
+
+It prints a link and a code; you approve the code in the Glitchless dashboard, and it saves a workspace key in
+`~/.config/glitchless/credentials.json` (readable only by you). From then on the server reaches every game in that
+workspace: `glitchless_list_games` lists them, `glitchless_create_game` makes one and returns its client token, and
+every tool takes `game` (a name or id). The key acts as you, with your role in the workspace, and never deletes data
+or touches billing or people. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
+key, and Settings → Agent access in the dashboard lists and revokes keys. An agent can also sign in from inside a
+chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
+approve.
+
 ## Settings
 
 | Variable | What |
 | --- | --- |
-| `GLITCHLESS_URL` | Your Glitchless server. Default `http://localhost:7777` |
-| `GLITCHLESS_API_KEY` | A secret read key (`gl_sk_…`), if the server needs one. Keep it out of git and out of the game |
-| `GLITCHLESS_SERVICE` | The game to use when a tool call doesn't name one. Optional |
+| `GLITCHLESS_URL` | Your Glitchless server. Default: the signed-in workspace's, else `http://localhost:7777` |
+| `GLITCHLESS_API_KEY` | A key, if the server needs one: a workspace key (`gl_ws_…`) for every game, or a secret key (`gl_sk_…`) for one. Overrides a sign-in. Keep it out of git and out of the game |
+| `GLITCHLESS_GAME` | With a workspace key, the game to use when a call doesn't name one. Optional |
+| `GLITCHLESS_SERVICE` | The service to use when a call doesn't name one. Optional |
 
 ## Add it to your agent
 
@@ -57,7 +73,10 @@ above go in its environment.
 
 | Tool | What it answers |
 | --- | --- |
-| `glitchless_list_games` | Which games report to the server, with their versions and environments |
+| `glitchless_list_games` | Which games report to the server, with their versions and environments; signed in to a workspace, every game in it with its client token |
+| `glitchless_sign_in` | Connect to a Glitchless Cloud workspace: a link and a code for the person to approve |
+| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL |
+| `glitchless_share_board` | A read-only link to one board page, for a dev log, Discord or a game's "Live stats" link; `glitchless_list_share_links` and `glitchless_revoke_share_link` manage them |
 | `glitchless_triage` | Ranked findings: stutter per level and what it correlates with, leaks, top errors, difficulty spikes. Start here |
 | `glitchless_overview` | Headline numbers: sessions, players, crash-free sessions, frame time against the budget, rage quits |
 | `glitchless_performance` | Frame time per level, with draw calls, geometry counts and game gauges |

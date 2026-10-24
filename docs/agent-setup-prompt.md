@@ -10,8 +10,9 @@ project. The README's quickstart has it filled in for a local server (`node scri
 copy; `--check` fails when it's out of date). Self-hosters on another server use its address for both URLs and a token
 from `GLITCHLESS_CLIENT_TOKENS`.
 
-It never contains the secret key: the agent reads it from the environment or asks for it, so the key
-doesn't end up in a chat log or a pasted snippet.
+It never contains a secret key. On Glitchless Cloud the agent signs its MCP server in (`glitchless-mcp login`: the
+person approves a code in the dashboard) or reads a key from the environment, so no key ends up in a chat log or a
+pasted snippet.
 
 <!-- prompt:start -->
 Add Glitchless to this game. Glitchless shows how the game runs and plays for real players: stutters and what causes them, crashes and errors, the game's own moments (modes, rounds, levels, purchases), where players get stuck or quit, who comes back, and bug reports players send. Its MCP server lets you, the coding agent, read that data, fix what players hit and check that the fix worked.
@@ -32,7 +33,7 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
    For a web game with a production build (Vite or another bundler), also add the source map upload the skill describes (glitchless-sourcemaps), so errors from the minified build show the real file and line. It uploads with a secret key that can upload source maps, read from GLITCHLESS_API_KEY at build time; ask me for one. Skip this while the game sends to a local server.
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example, `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
-   - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variables GLITCHLESS_URL={{INTAKE_URL}} and GLITCHLESS_API_KEY set to my secret key. Take the key from GLITCHLESS_API_KEY in my environment, or ask me for it; a local server from step 1 has no key, so leave it out. Never put the secret key in the game, in a file that gets committed, or in your reply.
+   - glitchless: command `npx`, arguments `-y glitchless-mcp`, with the environment variable GLITCHLESS_URL={{INTAKE_URL}}. A local server from step 1 needs nothing more. On Glitchless Cloud, connect it to my workspace once: run `npx -y glitchless-mcp login` in a terminal (or, once the server is loaded, call its glitchless_sign_in tool), show me the link and the code it gives, and wait while I approve it. That saves a workspace key that reaches every game I have, so name this game in its tools (game: "<the game's name>"). If I'd rather give you a secret key for this one game, it's GLITCHLESS_API_KEY in my environment: set that instead. Never put a key in the game, in a file that gets committed, or in your reply.
    - webmcp, for a game that runs in a browser (Three.js, Phaser, Babylon.js, PlayCanvas): command `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game: measure frame times, inspect the scene and reproduce problems. Unity, Godot, Unreal and GameMaker builds don't need it: they measure themselves with --glitchless-measure (-glitchless-measure in Unreal and GameMaker).
    - For an Unreal game, Epic's Unreal MCP (UE 5.8, Experimental) can sit beside Glitchless: it is your hands in the editor (open maps, look inside Blueprints, edit actors, start Play In Editor), and Glitchless says what is wrong and whether a change fixed it. If the project uses it, or I ask for it, follow the "Agents in the editor: Unreal MCP" part of the instrument skill: it adds the Glitchless Toolset plugin, so Unreal MCP can also measure the game in Play In Editor. Unreal MCP listens on http://localhost:8000/mcp; the Glitchless server stays on its own address.
    If your tool needs a restart to load new MCP servers, tell me.

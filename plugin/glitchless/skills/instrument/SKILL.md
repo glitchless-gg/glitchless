@@ -26,8 +26,11 @@ Settings, for every engine:
 
 - **Intake URL and client token.** If the user gave you them (a hosted Glitchless server prints both, for example
   `Send telemetry to https://api.example.com with client token gl_pub_…`), use those. Otherwise use
-  `http://localhost:7777` and `gl_pub_dev`, a local server. The client token is public and write-only, so it may
-  live in the game's source. A secret key (`gl_sk_…`) never goes in the game.
+  `http://localhost:7777` and `gl_pub_dev`, a local server. On Glitchless Cloud with no token yet, sign the MCP
+  server in (`glitchless_sign_in`, or `npx -y glitchless-mcp login`; the user approves a code) and call
+  `glitchless_create_game`: it returns the game's client token and intake URL. The client token is public and
+  write-only, so it may live in the game's source. A secret or workspace key (`gl_sk_…`, `gl_ws_…`) never goes in
+  the game.
 - **Privacy.** Keep the default anonymous mode: no player ID, coarse device facts, no positions. Ask the user
   before choosing another mode, since the game's privacy policy and store answers must then say so (each SDK's
   PRIVACY.md lists every field and has the wording). If they want to know whether players come back (retention:

@@ -1,9 +1,13 @@
 // The built-in reads: which games report, findings, headline numbers, frame time, errors, levels,
 // death hotspots and one session in detail.
 import { z } from 'zod';
-import { BASE, query, resolveService, range, reply, common, tool, slimIssue, slimGroup } from '../context.js';
+import { BASE, query, resolveService, range, reply, common, tool, slimIssue, slimGroup, isWorkspace, workspaceGames } from '../context.js';
 
-tool('glitchless_list_games', 'List the games reporting to Glitchless, with their versions, environments and when they were last seen.', {}, async () => {
+tool('glitchless_list_games', 'List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.', {}, async () => {
+  if (isWorkspace()) {
+    const list = await workspaceGames(true);
+    return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list);
+  }
   const { services } = await query('services');
   return reply(`${services.length} game(s) reporting to ${BASE}`, services.map((s) => ({ ...s, last_seen: new Date(s.last_seen).toISOString() })));
 });
