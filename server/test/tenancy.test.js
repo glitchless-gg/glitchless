@@ -311,6 +311,8 @@ test('a share reader reads its one board and nothing else', async () => {
   const t0 = now - 3_600_000;
   readers.pinned = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'pin', from: t0 - 7_200_000, to: t0 + 1500 }, keyId: 'pin', rps: 1000 };
   readers.wide = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'wide', from: now - 60 * 86_400_000, to: now }, keyId: 'wide', rps: 1000 };
+  // A game polling its link (Dead Reckoning draws everyone's deaths): pinned around now, one read a second.
+  readers.game = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'game', from: t0 - 3_600_000, to: now + 600_000 }, keyId: 'game', rps: 1 };
   const auth = {
     resolveIngest: () => ({ projectId: 'A' }),
     resolveReader(req) {
@@ -327,13 +329,15 @@ test('a share reader reads its one board and nothing else', async () => {
         { type: 'session_start', ts: t0 + i * 1000, session_type: 'user', device: { browser: 'SecretBrowser', os: 'SecretOS', gpu: 'SecretGPU', gpu_tier: 'high' } },
         { type: 'level_start', ts: t0 + i * 1000 + 10, level: 'level-1' },
         { type: 'custom', ts: t0 + i * 1000 + 20, level: 'level-1', name: 'opened_secret_door', attrs: { kind: i % 2 ? 'big' : 'small' } },
+        { type: 'pos', ts: t0 + i * 1000 + 25, level: 'level-1', pts: [[t0 + i * 1000 + 25, 4 * i, 1, 0], [t0 + i * 1000 + 26, 4 * i + 2, 1, 0]] },
         { type: 'error', ts: t0 + i * 1000 + 30, level: 'level-1', kind: 'js', message: 'TypeError: boom', fn: 'tick', source: 'secret-file.js', line: 7, stack: 'TypeError: boom\n    at tick (secret-file.js:7:1)' },
+        { type: 'death', ts: t0 + i * 1000 + 35, level: 'level-1', x: 10 + (i % 2), y: 3, z: 0, cause: 'spikes' },
         { type: 'session_end', ts: t0 + i * 1000 + 40, reason: 'pagehide' },
       ].map((e) => ({ ...base, ...e }));
       assert.equal((await app.send('any', payload(events))).status, 202);
     }
     assert.equal((await app.send('any', payload([{ service: 'other', env: 'prod', version: '1', session_id: 'o1', player_id: 'o1', type: 'session_start', ts: t0 }]))).status, 202);
-    const board = { id: 'jam', title: 'Jam', panels: [{ type: 'stat', metric: 'sessions' }, { type: 'sessions' }, { type: 'errors' }, { type: 'findings' }, { type: 'live' }, { type: 'breakdown', event: 'opened_secret_door', by: 'kind' }] };
+    const board = { id: 'jam', title: 'Jam', panels: [{ type: 'stat', metric: 'sessions' }, { type: 'sessions' }, { type: 'errors' }, { type: 'findings' }, { type: 'live' }, { type: 'breakdown', event: 'opened_secret_door', by: 'kind' }, { type: 'positions', level: 'level-1', show: 'both', bin: 1 }] };
     const put = await fetch(`${app.base}/v1/dashboard?service=zoomies`, { method: 'PUT', headers: { 'x-glitchless-api-key': 'full' }, body: JSON.stringify({ pages: [board, { id: 'private', title: 'Private', panels: [{ type: 'sessions' }] }, { id: 'errors', view: 'errors' }] }) });
     assert.equal(put.status, 200);
 
@@ -359,6 +363,16 @@ test('a share reader reads its one board and nothing else', async () => {
     const text = JSON.stringify(shared.body);
     for (const secret of ['secret_session', 'secret_player', 'SecretBrowser', 'SecretOS', 'SecretGPU', 'secret-file.js', 'stack', 'breadcrumbs', 'evidence', 'Private'])
       assert.equal(text.includes(secret), false, `a shared board shows ${secret}`);
+    // Positions: counts per bin and the level's plane, nothing that names a session, player, version or time.
+    const where = panel('positions');
+    assert.deepEqual(where.deaths, [[10.5, 3.5, 2], [11.5, 3.5, 2]]);
+    assert.equal(where.total, 4);
+    assert.deepEqual(Object.keys(where).sort(), ['axis', 'bin', 'bounds', 'deaths', 'id', 'level', 'path', 'show', 'size', 'title', 'total', 'truncated', 'type']);
+    assert.deepEqual(Object.keys(where.path).sort(), ['bin', 'cells', 'samples', 'truncated']);
+    assert.equal(where.path.samples, 8);
+    const numbers = JSON.stringify(where).match(/-?\d+(\.\d+)?/g).map(Number);
+    assert.ok(numbers.every((n) => Math.abs(n) < 1e9), 'no timestamps');
+    assert.equal(JSON.stringify(where).includes('1.0.0'), false, 'no versions');
 
     // Members still get the whole board at the same URL, before and after (the query cache keeps them apart).
     const full = (await app.get(`/v1/query/board?service=zoomies&page=jam&from=${now - 7_200_000}&to=${now}`, 'full')).body;
@@ -414,14 +428,59 @@ test('a share reader reads its one board and nothing else', async () => {
       assert.equal((await fetch(app.base + p, { method, headers: { 'x-glitchless-api-key': 'share' }, body: method === 'PUT' ? JSON.stringify({ pages: [board] }) : undefined })).status, 403, `${method} ${p}`);
     assert.equal((await app.get('/v1/query/sessions?service=zoomies', 'full')).body.sessions.length, 4, 'nothing was deleted');
 
-    // Share readers are rate limited: by their own rps, or DEFAULT_SHARE_RPS (10/s, bursts of 20).
+    // Share readers are rate limited where their reads compute: by their own rps, or DEFAULT_SHARE_RPS (10/s,
+    // bursts of 20). Each of these asks for a window nobody has asked for yet.
+    const fresh = (i) => `/v1/query/board?from=${now - 5_000_000 - i}&to=${now}`;
     const slow = [];
-    for (let i = 0; i < 3; i++) slow.push((await app.get('/v1/query/services', 'slow')).status);
+    for (let i = 0; i < 3; i++) slow.push((await app.get(fresh(i), 'slow')).status);
     assert.deepEqual(slow, [200, 200, 429]);
-    assert.equal((await app.get('/v1/query/services', 'slow')).res.headers.get('retry-after'), '1');
-    const burst = await Promise.all(Array.from({ length: 30 }, () => app.get('/v1/query/services', 'plain').then((r) => r.status)));
+    assert.equal((await app.get(fresh(3), 'slow')).res.headers.get('retry-after'), '1');
+    assert.equal((await app.get(fresh(0), 'slow')).status, 200, 'an answer already made costs the link nothing');
+    const burst = await Promise.all(Array.from({ length: 30 }, (_, i) => app.get(fresh(100 + i), 'plain').then((r) => r.status)));
     assert.ok(burst.filter((s) => s === 429).length >= 5, `statuses: ${burst}`);
     assert.equal((await app.get('/v1/query/services', 'full')).status, 200, 'members are not limited by a link');
+
+    // A game polls its link once a minute from every player's browser: the answer is cacheable for a minute
+    // (by the browser and any CDN in front), stays the same however many players die meanwhile, and costs
+    // nothing after the first read. Members see each new batch at once, and their answers are never cached.
+    const polled = await app.get('/v1/query/board', 'game');
+    assert.equal(polled.status, 200);
+    assert.equal(polled.res.headers.get('cache-control'), 'public, max-age=60');
+    assert.equal(polled.res.headers.get('vary'), 'x-glitchless-share');
+    assert.equal(polled.body.board.panels.find((p) => p.type === 'positions').total, 4);
+    const late = { service: 'zoomies', env: 'prod', version: '1.0.0', session_id: 'secret_session_late', player_id: 'secret_player_late' };
+    const died = [{ type: 'session_start', ts: now - 2000 }, { type: 'level_start', ts: now - 1900, level: 'level-1' }, { type: 'death', ts: now - 1800, level: 'level-1', x: 30, y: 3, z: 0, cause: 'spikes' }];
+    assert.equal((await app.send('any', payload(died.map((e) => ({ ...late, ...e }))))).status, 202);
+    for (let i = 0; i < 5; i++) {
+      const again = await app.get(`/v1/query/board${i % 2 ? '?days=3' : ''}`, 'game');
+      assert.equal(again.status, 200, `poll ${i}: from the cache, past the link's rate`);
+      assert.deepEqual(again.body, polled.body);
+    }
+    const member = await app.get(`/v1/query/board?service=zoomies&page=jam&from=${t0 - 3_600_000}&to=${now + 600_000}`, 'full');
+    assert.equal(member.body.board.panels.find((p) => p.type === 'positions').total, 5);
+    assert.equal(member.res.headers.get('cache-control'), 'no-store');
+    // Half a minute on, the same answer; past the minute, a new one with the late death.
+    const clock = Date.now;
+    try {
+      Date.now = () => clock() + 30_000;
+      assert.deepEqual((await app.get('/v1/query/board', 'game')).body, polled.body);
+      Date.now = () => clock() + 61_000;
+      assert.equal((await app.get('/v1/query/board', 'game')).body.board.panels.find((p) => p.type === 'positions').total, 5);
+    } finally {
+      Date.now = clock;
+    }
+    // Saving the dashboard is a new board: a link answers it at once (one that was read before the save, with
+    // reads to spare: the clock above has moved the game link's rate limit on).
+    const rebinned = { ...board, panels: board.panels.map((p) => (p.type === 'positions' ? { ...p, bin: 2 } : p)) };
+    assert.equal((await fetch(`${app.base}/v1/dashboard?service=zoomies`, { method: 'PUT', headers: { 'x-glitchless-api-key': 'full' }, body: JSON.stringify({ pages: [rebinned, { id: 'private', title: 'Private', panels: [{ type: 'sessions' }] }] }) })).status, 200);
+    assert.equal((await app.get('/v1/query/board', 'pinned')).body.board.panels.find((p) => p.type === 'positions').bin, 2);
+    // A rolling link answers up to the last whole minute, so the same URL is the same answer for a minute;
+    // `days` (up to 30) is the window, for a game that wants more than the last day.
+    const rolling = (await app.get('/v1/query/board?days=7', 'share')).body.meta;
+    assert.equal(rolling.to % 60_000, 0);
+    assert.equal(rolling.to - rolling.from, 7 * 86_400_000);
+    const most = (await app.get('/v1/query/board?days=400', 'share')).body.meta;
+    assert.equal(most.to - most.from, 30 * 86_400_000);
   } finally {
     await app.close();
   }

@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07080c" />
+    <title>Dead Reckoning</title>
+    <meta name="description" content="A precision platformer with invisible platforms. Every death by every player leaves a mark, and the dead show the way." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dead Reckoning" />
+    <meta property="og:title" content="Dead Reckoning" />
+    <meta property="og:description" content="You can't see the level. Every player who died in it left a mark. Read the dead and find the way across." />
+    <meta property="og:url" content="%GAME_URL%" />
+    <meta property="og:image" content="%OG_IMAGE%" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Dead Reckoning: glowing marks where players died, over a level you can't see" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dead Reckoning" />
+    <meta name="twitter:description" content="You can't see the level. Every player who died in it left a mark. Read the dead and find the way across." />
+    <meta name="twitter:image" content="%OG_IMAGE%" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307080c'/%3E%3Cpath d='M20 20l24 24M44 20L20 44' stroke='%23ff7a3d' stroke-width='7' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg: #07080c;
+        --ink: #f4f1ea;
+        --dim: #8a93a8;
+        --faint: #3a4256;
+        --ember: #ff7a3d;
+        --ice: #86ecff;
+        --gold: #ffcf5a;
+        --panel: rgba(12, 14, 20, 0.86);
+        --line: rgba(244, 241, 234, 0.14);
+        --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+        --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+        --hud-top: 56px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--mono);
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      #game {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100dvh;
+        display: block;
+        outline: none;
+        touch-action: none;
+      }
+      a {
+        color: inherit;
+      }
+      .lbl {
+        color: var(--dim);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      /* ── HUD ─────────────────────────────── */
+      #hud {
+        position: fixed;
+        top: env(safe-area-inset-top, 0);
+        left: 0;
+        right: 0;
+        height: var(--hud-top);
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        padding: 0 16px;
+        pointer-events: none;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+      }
+      .hud-l {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+        white-space: nowrap;
+      }
+      .hud-l .num {
+        font-weight: 700;
+        font-size: 22px;
+        line-height: 1;
+        color: var(--ink);
+      }
+      .hud-l .name {
+        color: var(--dim);
+        text-transform: uppercase;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hud-c {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .hud-c b {
+        font-weight: 700;
+        font-size: 26px;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      .bump {
+        animation: bump 0.28s ease-out;
+      }
+      @keyframes bump {
+        35% {
+          transform: scale(1.25);
+          color: var(--ice);
+        }
+      }
+      .hud-r {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 12px;
+        white-space: nowrap;
+      }
+      .dead {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--ember);
+      }
+      .dead b {
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .dead svg {
+        width: 12px;
+        height: 12px;
+      }
+      .tag {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        padding: 3px 6px;
+        border-radius: 3px;
+      }
+      .tag.mock {
+        color: #1a1200;
+        background: repeating-linear-gradient(-45deg, var(--gold) 0 6px, #e8b23f 6px 12px);
+      }
+      .tag.stale {
+        color: var(--dim);
+        border: 1px solid var(--faint);
+      }
+      .live {
+        pointer-events: auto;
+        white-space: nowrap;
+        color: var(--ink);
+        text-decoration: none;
+        border-bottom: 1px solid var(--faint);
+        padding-bottom: 1px;
+      }
+      .live:hover {
+        border-color: var(--ink);
+      }
+      .icon {
+        pointer-events: auto;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .icon svg {
+        width: 15px;
+        height: 15px;
+      }
+      #bot-tag {
+        position: fixed;
+        top: calc(var(--hud-top) + env(safe-area-inset-top, 0));
+        left: 16px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        color: var(--ember);
+      }
+
+      #hint {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        color: var(--dim);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+        transition: opacity 1.2s;
+        pointer-events: none;
+      }
+      #hint.gone {
+        opacity: 0;
+      }
+      kbd {
+        font-family: var(--mono);
+        color: var(--ink);
+        border: 1px solid var(--faint);
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin: 0 2px;
+      }
+
+      #toast {
+        position: fixed;
+        left: 50%;
+        top: calc(var(--hud-top) + 18px);
+        transform: translate(-50%, -6px);
+        padding: 8px 14px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 6px;
+        font-size: 13px;
+        opacity: 0;
+        transition: opacity 0.2s, transform 0.2s;
+        pointer-events: none;
+        width: max-content;
+        max-width: calc(100vw - 32px);
+        text-align: center;
+      }
+      #toast.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      /* ── touch pad ───────────────────────── */
+      #pad {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 0 18px calc(22px + env(safe-area-inset-bottom, 0));
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        pointer-events: none;
+      }
+      #pad-move,
+      #pad-jump {
+        pointer-events: auto;
+        touch-action: none;
+        border: 1.5px solid rgba(244, 241, 234, 0.28);
+        background: rgba(244, 241, 234, 0.04);
+        color: rgba(244, 241, 234, 0.7);
+        display: flex;
+        align-items: center;
+      }
+      #pad-move {
+        width: 168px;
+        height: 88px;
+        border-radius: 44px;
+        justify-content: space-around;
+        font-size: 22px;
+      }
+      #pad-move[data-dir='left'] .l,
+      #pad-move[data-dir='right'] .r {
+        color: var(--ice);
+        transform: scale(1.2);
+      }
+      #pad-move span {
+        transition: transform 0.08s;
+      }
+      #pad-jump {
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+      }
+      #pad-jump.down {
+        background: rgba(134, 236, 255, 0.16);
+        border-color: var(--ice);
+        color: var(--ice);
+      }
+
+      /* ── screens ─────────────────────────── */
+      .screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.35s;
+        overflow-y: auto;
+      }
+      .screen.on {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      #title {
+        background: radial-gradient(ellipse at 50% 46%, rgba(7, 8, 12, 0.35) 0%, rgba(7, 8, 12, 0.82) 70%);
+      }
+      .title-wrap {
+        text-align: center;
+        max-width: 640px;
+      }
+      .kicker {
+        margin: 0 0 14px;
+        color: var(--dim);
+        font-size: 12px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 0;
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: clamp(64px, 12vw, 132px);
+        line-height: 0.9;
+        letter-spacing: -0.01em;
+      }
+      h1 em {
+        color: var(--ember);
+      }
+      .pitch {
+        margin: 22px auto 0;
+        max-width: 30em;
+        color: #c9c5bb;
+        font-family: var(--serif);
+        font-size: clamp(20px, 2.4vw, 25px);
+        line-height: 1.3;
+      }
+      .btn {
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid rgba(244, 241, 234, 0.3);
+        border-radius: 6px;
+        padding: 11px 18px;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        border-color: var(--ink);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--ice);
+        outline-offset: 2px;
+      }
+      .btn.primary {
+        background: var(--ink);
+        color: var(--bg);
+        border-color: var(--ink);
+        font-weight: 700;
+      }
+      .btn.primary:hover {
+        background: #fff;
+      }
+      #play {
+        margin-top: 30px;
+        font-size: 17px;
+        padding: 14px 44px;
+      }
+      .levels {
+        margin: 22px auto 0;
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+      }
+      .levels button {
+        width: 44px;
+        height: 44px;
+        font: inherit;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        cursor: pointer;
+      }
+      .levels button.on {
+        border-color: var(--ink);
+        background: rgba(244, 241, 234, 0.08);
+      }
+      .levels button:disabled {
+        color: var(--faint);
+        cursor: default;
+      }
+      .foot {
+        margin-top: 26px;
+        color: var(--dim);
+        font-size: 12px;
+        letter-spacing: 0.06em;
+        line-height: 1.8;
+      }
+      .foot a {
+        color: var(--ink);
+        text-decoration: none;
+        border-bottom: 1px solid var(--faint);
+      }
+      /* ?poster=1: the title alone, for the link-preview picture (scripts/og-image.mjs) */
+      body.poster #play,
+      body.poster .levels,
+      body.poster .controls,
+      body.poster .foot {
+        display: none !important;
+      }
+      body.poster .pitch {
+        max-width: 24em;
+      }
+      body.poster #title {
+        background: radial-gradient(ellipse at 50% 50%, rgba(7, 8, 12, 0.72) 0%, rgba(7, 8, 12, 0.35) 45%, rgba(7, 8, 12, 0) 75%);
+      }
+      .controls {
+        margin-top: 14px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+
+      /* ── replay ──────────────────────────── */
+      #replay-hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      .rp-top {
+        position: absolute;
+        top: calc(14px + env(safe-area-inset-top, 0));
+        left: 0;
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+      }
+      .rp-top .lbl {
+        color: var(--ice);
+      }
+      .rp-count {
+        font-weight: 700;
+        font-size: 46px;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
+      }
+      .rp-count small {
+        font-family: var(--serif);
+        font-weight: 400;
+        font-size: 28px;
+        color: var(--dim);
+        margin-left: 10px;
+      }
+      .rp-skip {
+        position: absolute;
+        bottom: calc(20px + env(safe-area-inset-bottom, 0));
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: var(--dim);
+        font-size: 12px;
+        letter-spacing: 0.08em;
+      }
+
+      /* ── share card ──────────────────────── */
+      #card {
+        background: rgba(7, 8, 12, 0.72);
+      }
+      .card {
+        width: min(760px, 100%);
+        padding: 22px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        transform: translateY(14px);
+        transition: transform 0.4s cubic-bezier(0.2, 1.2, 0.4, 1);
+      }
+      .screen.on .card {
+        transform: none;
+      }
+      .card img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1200 / 630;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+      }
+      .card .meta {
+        margin: 12px 0 0;
+        color: var(--dim);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+      .actions.second {
+        margin-top: 10px;
+        justify-content: space-between;
+      }
+      .actions .grow {
+        flex: 1;
+      }
+
+      @media (max-width: 640px) {
+        :root {
+          --hud-top: 52px;
+        }
+        #hud {
+          padding: 0 12px;
+          font-size: 12px;
+        }
+        .hud-l .name,
+        .dead .lbl,
+        #hud .live,
+        #hint {
+          display: none;
+        }
+        #hud {
+          grid-template-columns: auto 1fr auto;
+          gap: 10px;
+        }
+        .hud-c {
+          justify-content: center;
+        }
+        .tag {
+          font-size: 9px;
+          padding: 2px 4px;
+        }
+        .hud-c b {
+          font-size: 24px;
+        }
+        .hud-r {
+          gap: 8px;
+        }
+        .card {
+          padding: 14px;
+        }
+        .actions .btn {
+          flex: 1 1 40%;
+          padding: 11px 8px;
+        }
+        .actions.second .btn {
+          flex: 1 1 40%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" tabindex="0" aria-label="Dead Reckoning"></canvas>
+
+    <div id="hud" hidden>
+      <div class="hud-l"><span class="lbl">Lv</span><span class="num" id="hud-num">1</span><span class="name" id="hud-name">First Steps</span></div>
+      <div class="hud-c"><span class="lbl">Try</span><b id="hud-try">1</b></div>
+      <div class="hud-r">
+        <span class="dead" title="Deaths on this level, by everyone"
+          ><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2L2 10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" /></svg><b id="hud-dead">0</b><span class="lbl">died here</span></span
+        >
+        <span class="tag mock" id="hud-mock" hidden title="These markers are simulated, not real players">MOCK DATA</span>
+        <span class="tag stale" id="hud-stale" hidden>STALE</span>
+        <a class="live" id="hud-live" href="#" target="_blank" rel="noopener">Live stats ↗</a>
+        <button class="icon" id="hud-menu" aria-label="Levels" title="Levels (Esc)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+        </button>
+        <button class="icon" id="hud-mute" aria-label="Sound on" title="Sound (M)">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path id="mute-path" fill="currentColor" d="M2 6h3l4-3v10L5 10H2z" /><path id="wave-path" d="M11 5.5c1 .8 1 4.2 0 5M12.8 4c2 1.6 2 6.4 0 8" stroke="currentColor" fill="none" stroke-width="1.3" stroke-linecap="round" /></svg>
+        </button>
+      </div>
+    </div>
+    <div id="bot-tag" hidden>AUTOPLAY · SYNTHETIC SESSION</div>
+    <div id="hint" class="gone"><kbd>←</kbd><kbd>→</kbd> move &nbsp; <kbd>Space</kbd> jump (hold for higher) &nbsp; <kbd>R</kbd> restart</div>
+    <div id="toast"></div>
+    <div id="nogl" class="screen" hidden>
+      <div class="title-wrap">
+        <h1>Dead <em>Reckoning</em></h1>
+        <p class="pitch">This browser can't draw the game (it needs WebGL). Try a recent Chrome, Safari, Firefox or Edge.</p>
+      </div>
+    </div>
+
+    <div id="pad" hidden>
+      <div id="pad-move" aria-label="Move left or right"><span class="l">◀</span><span class="r">▶</span></div>
+      <div id="pad-jump" aria-label="Jump">JUMP</div>
+    </div>
+
+    <section class="screen" id="title">
+      <div class="title-wrap">
+        <p class="kicker">A platformer with invisible platforms</p>
+        <h1>Dead <em>Reckoning</em></h1>
+        <p class="pitch">You can't see the level. Every player who died in it left a mark where they fell. Read the dead and find the way across.</p>
+        <button class="btn primary" id="play">Play</button>
+        <div class="levels" id="levels" aria-label="Levels"></div>
+        <p class="controls" id="title-controls"><kbd>←</kbd><kbd>→</kbd> move · <kbd>Space</kbd> jump · <kbd>R</kbd> restart</p>
+        <p class="foot">
+          <span id="title-live-wrap"><a id="title-live" href="#" target="_blank" rel="noopener">Live stats ↗</a> &nbsp;·&nbsp; </span>every death is recorded with <a href="https://www.glitchless.gg" target="_blank" rel="noopener">Glitchless</a> &nbsp;·&nbsp; <a href="privacy.html" target="_blank" rel="noopener">Privacy</a>
+          <br /><span id="title-bots" hidden>Some of the early marks are from our playtest bots.</span>
+        </p>
+      </div>
+    </section>
+
+    <div id="replay-hud" hidden>
+      <div class="rp-top">
+        <span class="lbl" id="rp-level">Every attempt</span>
+        <div class="rp-count"><span id="rp-tries">0</span><small id="rp-word">tries</small></div>
+      </div>
+      <div class="rp-skip">Tap or press Space to skip</div>
+    </div>
+
+    <section class="screen" id="card" aria-live="polite">
+      <div class="card">
+        <img id="card-img" alt="" />
+        <p class="meta"><span id="card-meta"></span><span id="card-live-wrap"> &nbsp;·&nbsp; <a class="live" id="card-live" href="#" target="_blank" rel="noopener">Live stats ↗</a></span></p>
+        <div class="actions">
+          <button class="btn primary" id="card-share">Share</button>
+          <button class="btn" id="card-x">Post on X</button>
+          <button class="btn" id="card-copy">Copy text</button>
+          <button class="btn" id="card-save">Save image</button>
+        </div>
+        <div class="actions second">
+          <button class="btn" id="card-again">Watch again</button>
+          <button class="btn primary" id="card-next">Next level →</button>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

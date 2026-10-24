@@ -23,6 +23,7 @@ const glitchless = Glitchless.init({
   flushIntervalMs: 15000,          // batches go out this often, gzipped, on a window boundary
   datadog: null,                   // optional { applicationId, clientToken, site } → mirrors to Datadog RUM
   bugReports: null,                // { hotkey: 'F8', onOpen, onClose } (or true): an in-game form players send bug reports from (§2 bug_report)
+  steam: null,                     // an Electron game's steamworks.js client (what steamworks.init() returned): Steam facts per session (§4c)
 });
 
 instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is optional (enables LoadingManager hooks)
@@ -122,7 +123,7 @@ Every event has `type`, `ts` (epoch ms) and `level` (current level or `null`). T
 
 | type | fields |
 | --- | --- |
-| `session_start` | `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b) |
+| `session_start` | `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c) |
 | `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}`, `budget_ms` (from the display's refresh rate, read off the fastest frames and checked again as the session goes). A window never spans two levels: `levelStart` closes it, with the positions sampled so far |
 | `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
 | `load` | `ttff_ms` (navigation → first rendered frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}` |
@@ -182,27 +183,31 @@ sessions to compute exact-within-2% global percentiles (never average percentile
 
 ## 3. Query API
 
-`GET {api}/v1/query/{name}?service=zoomies&from={ms}&to={ms}[&version=][&env=][&level=]`
+`GET {api}/v1/query/{name}?service=zoomies&from={ms}&to={ms}[&version=][&env=][&level=][&steam_branch=]…`
 Header `x-glitchless-api-key: …` when the server has a read key configured. Every query reads only the project
-its key belongs to (§6); `service` picks a game inside that project.
+its key belongs to (§6); `service` picks a game inside that project. Each Steam fact (§4c: `steam_branch`,
+`steam_build`, `steam_hardware`, `steam_controller`, `steam_language`, `proton`, `big_picture`, `family_shared`,
+`timed_trial`) is a filter too: `steam_branch=beta` keeps only the sessions that ran the beta (`meta.where` says so).
 
 | name | returns |
 | --- | --- |
 | `services` | `{services:[{service, versions[], envs[], last_seen}], max_range_days}`: the longest range this store answers for the reader (the plan's retention on Glitchless Cloud; `null`: no limit) |
 | `overview` | `{kpis, series, top_errors, funnel, findings}` |
-| `performance` | `{distribution, by_level, by_gpu_tier, by_browser, by_version, hitches, memory, load}` |
+| `performance` | `{distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, hitches, memory, load}`; the Steam breakdowns hold only sessions that sent the fact (§4c) |
 | `errors` | `{issues:[{fingerprint, message, kind, location, fn, source, line, count, sessions, players, first_seen, last_seen, first_version, versions, levels, stack, sample_session, breadcrumbs}]}`; for a web build with source maps (§3d), original frames with `frames` and `minified` |
 | `players` | `{kpis, funnel, session_length, death_causes, rage_quits, retention}`. `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range) |
 | `players_now` | `{players_now, window_s}`: sessions of the game that sent anything in the last two minutes (§4), whatever the range |
 | `heatmap` | `{level, map, deaths:[{x,y,z,cause,version}], density:{…}, stats}` (requires `level`); `stats` is the level's funnel row plus `no_win`, true for a game nobody wins (§4), which has runs rather than a completion rate |
 | `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports) |
-| `reports` | Players' bug reports, newest first (at most 500): `{reports:[{id, ts, session_id, level, version, env, note, position: {x, y, z} \| null, device (one line), has_screenshot}]}`. Filters: `env`, `version`, `type`, `sessions` |
+| `reports` | Players' bug reports, newest first (at most 500): `{reports:[{id, ts, session_id, level, version, env, note, position: {x, y, z} \| null, device (one line), has_screenshot}]}`. Filters: `env`, `version`, `type`, `sessions`, the Steam facts |
 | `report` | One bug report: `id=` → `{report:{…as listed, sdk, recent, frames, screenshot}}` (`screenshot=0` leaves the picture out), from any time the store still keeps; `{error}` if there is none |
-| `versions` | `{versions:[{version, sessions, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; `has` says which built-in measures the game reports |
+| `versions` | `{versions:[{version, sessions, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact |
 | `findings` | Ranked findings with evidence — what the MCP server hands to coding agents |
 | `events` | The game's own metrics (`custom` events): `{ts, sessions, events:[{name, count, sessions, players, per_session, series, attrs:[{key, values:[{value, count, sessions}], avg}], sums:[{attr, currency, sum, events}]}]}`. `sums` adds up each numeric attribute, per currency (null for events sent without one, §3b), the most sent first. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]` |
 | `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{currency?, pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
+| `store_reviews` | One store's reviews of the game (Steam, Google Play, the App Store), filtered, with counts by build, topic and device (§3f); `{connected: false}` without a store |
+| `store_vitals` | One store's own measures of the game (Google Play's Android vitals, the App Store's hang, launch and animation metrics) by version, next to Glitchless's, with where they disagree (§3f) |
 
 ### 3b. Dashboards and boards
 
@@ -238,20 +243,43 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 | --- | --- | --- |
 | `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now) or `event`, optional `per`, optional `sum` | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
 | `series` | `event`, optional `by`, `limit`, `sum` | the event's count (or its `sum`) over time, split by an attribute's top values; `by` can also be `$version` or `$level` |
-| `breakdown` | `event`, `by`, `limit`, `sum` | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item) |
+| `breakdown` | `event`, `by`, `limit`, `sum` | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item); `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), counted by count, with `(none)` for sessions without it |
 | `funnel` | `steps` | sessions through the steps, in order |
 | `levels` | `label` | starts, completion, fails, deaths and times per level; columns only for what the game reports |
 | `frame_time`, `errors`, `deaths`, `events` | `limit` (errors) | frame-time p50/p95, top errors, deaths by level and cause, every custom event |
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
+| `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, §3f): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `retention` | `limit` (days, 1 to 90; default 14) | D1, D7 and D30 by first-seen day (§4), the latest days; a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
-| `versions` | none | the board's own stat panels, version by version |
+| `versions` | `by` | the board's own stat panels, version by version; with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
 | `live` | `events` | events as they arrive, optionally only these names or types |
+| `positions` | `level`, `show` (`deaths`, `path` or `both`; default `deaths`), `bin` | where players died on one level, and where they went, as counts per bin (below) |
 
 Every panel takes `title`, `note` and `size` (`s`, `m` or `l`). An event is written like a funnel step: `name`,
 `name=value` (any attribute) or `name:key=value`. A panel with no data in the window says why instead of showing
 zeros.
+
+**Positions** (`levelPositions` in `server/src/analytics.js`). A `positions` panel answers
+
+```json
+{ "level": "cave", "axis": "xy", "bounds": { "min": [0, 0], "max": [300, 20] }, "bin": 2,
+  "deaths": [[101, 13, 6], [137, 13, 4]], "total": 10, "truncated": false,
+  "path": { "bin": 5, "cells": [[2.5, 7.5, 2], …], "samples": 60, "truncated": false } }
+```
+
+`a` and `b` are world coordinates on the level's plane: `axis` is the captured map's, else `xz` (top-down) once
+positions or deaths leave z = 0, else `xy` (a side view; side-scrollers send z ≈ 0), as the Heatmaps view decides.
+Each row of `deaths` is a bin's centre and how many deaths fell in it, the busiest first, at most 2,000 (`truncated`
+says if more were left out); `total` is every death placed on the level (deaths sent without x and y can't be).
+Bins are squares `bin` world units wide on a fixed grid, so a bin stays where it is as players come and go; without
+`bin` it is 1, 2 or 5 times a power of ten near a hundredth of the level, and changes as the level fills in. With
+`show` `path` or `both`, `path` counts position samples (`setPosition`) the same way on a coarser grid (about 64
+bins across, never finer than `bin`); `show: "path"` leaves `deaths`, `total` and `truncated` out. `bounds` are the
+captured map's, else the data's rounded out to whole bins. Nothing in the answer names a session, player, version
+or time. A level with nothing to place says why (`{empty: true, why}`). Stores that keep summaries read the paths
+apart, for the levels a board draws paths of (Glitchless Cloud: the last 31 days of a longer range, which
+`meta.note` says).
 
 Custom events are counted in the per-minute cells (by name, and by name, attribute and value) and in the session
 states (the first 16 occurrences of each name with their attributes, for ordered funnels), so every event store
@@ -330,9 +358,20 @@ who opens one sees what everyone sees. A share reader may only:
 Everything else is 403: other pages, services and queries, `/v1/live`, `/v1/dashboard` and `/v1/data`. The
 request's parameters are replaced by `service`, `page`, `from` and `to` (a pinned link's own, whatever the request
 asked), with `from` no earlier than 30 days before `to`, so env, version, session-type and session-id filters never
-reach the query. Share readers are rate limited per link (10 requests a second per server process with bursts of
-20 by default; `GLITCHLESS_SHARE_RPS` on Glitchless Cloud), and their answers are cached apart from members' (and
-pinned links' apart from rolling ones', and links with sums apart from those without).
+reach the query. A rolling link's request may give `from` and `to`, or `days` (1 to 30, default 1): the last days up
+to the last whole minute, so the same URL is the same answer for a minute.
+
+**Polling.** A share link's answers are cacheable: `Cache-Control: public, max-age=60` and
+`Vary: x-glitchless-share` (every other API answer is `no-store`). The server keeps them for that minute too, apart
+from members' (pinned links' apart from rolling ones', and links with sums apart from those without), and new
+events don't clear them; saving the dashboard does. Share readers are rate limited per link where an answer is
+made (10 a second per server process with bursts of 20 by default; `GLITCHLESS_SHARE_RPS` on Glitchless Cloud): an
+answer already made costs nothing. So a game can read its own board, polling one URL from every player's browser
+about once a minute: `GET {api}/v1/query/board?share=gl_share_…&days=30`, the token in the URL rather than the
+header, so the browser sends no CORS preflight and the URL is the cache key. An answer may be up to a minute old
+where it is made, and as much again in a cache in front; a revoked link may keep answering from such a cache for
+that minute. On Glitchless Cloud that cache is CloudFront: `/v1/query/*` keeps an answer only for as long as it
+says (so only share links'), keyed on the query string, cookies and the share, key and project headers.
 
 **What a shared board leaves out** (`evaluateBoard(…, { shared: true })` in `server/src/board.js`):
 
@@ -340,6 +379,8 @@ pinned links' apart from rolling ones', and links with sums apart from those wit
 - errors panels: anything but the message, kind, counts, last seen and levels (no stacks)
 - findings: their evidence; an error finding's summary becomes its counts, with no breadcrumbs, code location
   or suggested fix, and a bug-report finding's becomes its counts, without the players' notes
+- positions panels: anything but `level`, `axis`, `bounds`, `bin`, `deaths`, `total`, `truncated` and `path`
+  (`bin`, `cells`, `samples`, `truncated`): counts per bin, never a session, player, version or time
 - live panels, and any panel type not listed as safe. Stat, series, breakdown, funnel, levels, frame_time, deaths,
   events, versions and retention panels show counts and the game's own event names (retention: new players and
   returns per day, never an id), and pass as they are; a new panel type stays off shared boards until it is added
@@ -445,13 +486,16 @@ the next.
 
 **The message**: a title (one line: what changed), facts (the numbers), a link to the dashboard page, the finding id
 and the line to paste: `Use glitchless_triage on <service>, then look at finding <id>.` (a new error adds
-`(glitchless_get_error with fingerprint <fp> has its stack)`).
+`(glitchless_get_error with fingerprint <fp> has its stack)`). A figure carries the headline number for channels
+that draw one: `{kind, headline, value, label, series, stats}` (a new error's `series` is its count over the last
+day).
 
 - Discord: `content` is the title in bold; one embed has the facts, the finding, the paste line in a code block,
   the page as `url`, and a colour by severity. `allowed_mentions: {parse: []}`.
 - Slack: Block Kit sections (title, facts, paste line, a context line with the link and the finding), no unfurls.
-- Email: plain text and simple HTML, from `Glitchless alerts <alerts@glitchless.gg>`, saying why the reader gets it
-  and linking to Settings → Alerts.
+- Email (Glitchless Cloud): HTML with the figure as a card (big number, the error's last day in hourly bars, up to
+  three stats), the facts, a button to the page and the paste line, plus a plain-text part; from
+  `Glitchless alerts <alerts@glitchless.gg>`, saying why the reader gets it and linking to Settings → Alerts.
 
 Text from a game (error messages, level and version names) is cut to one line without control characters, then
 escaped for each channel (Discord markdown and `@`, Slack's `&<>`, HTML), so it can't ping, link or format.
@@ -473,6 +517,199 @@ could not connect, never the URL. Links open the game: `https://app.glitchless.g
 | `POST /api/dev/alerts/check` | the dev server only: runs the check now |
 
 Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time.
+
+### 3f. Store reviews and vitals: Steam, Google Play, the App Store
+
+What players write about a game on its store pages is joined to what Glitchless measures, **by build**: "the
+reviews say it stutters since the update" becomes which build, which devices, how many reviewers played on a Steam
+Deck, and the frame-time p95 and crash-free sessions measured on that build's version. Where a store measures the game
+itself (Google Play's Android vitals, Apple's hang, launch and animation metrics), its numbers sit next to
+Glitchless's for the same version, with a line wherever the two disagree. The pipeline is store-neutral
+([`server/src/reviews.js`](../server/src/reviews.js)): a store adapter turns its answers into reviews, release marks
+and vitals, and storage, the join, the panels, the finding and the queries are the same for every store. The
+adapters: Steam ([`server/src/steam.js`](../server/src/steam.js), its keyless calls; Glitchless Cloud adds the
+publisher's keys and the partner calls), the App Store
+([`server/src/app-store.js`](../server/src/app-store.js), Apple's public review feed; Glitchless Cloud adds the App
+Store Connect API) and Google Play (Glitchless Cloud only, with a service account).
+A host hands the core a game's stores with `createApp({ stores: { read(projectId, service, { from, to, recordsFrom }) } })`,
+which answers `{ steam: {…}, google_play: {…}, app_store: {…} }` (the connected ones) or null; without it the store
+panels say the game has no store connected, and nothing else changes. Every adapter is read only: none replies to a
+review or writes anything to a store.
+
+**A review**, whatever the store: `{store, id, ts, up, rating, lang, text, topics, version, device, <store>: {…}}`.
+`up` is the thumbs-up (a rating of 4 or 5 where a store has stars; `rating` is then 1–5, else null); `version` is the
+game's version when the store says which one was reviewed (Google Play and the App Store do; Steam doesn't: the join
+finds it); `device` is the hardware the reviewer shows (`os`, `cpu`, `gpu`, `ram_mb`, or a phone's `model`); the text
+has BBCode and markup taken out and is cut to 500 characters. Its **topics** are found in the whole text first: `stutter`, `lag`, `fps`, `freeze`, `crash`, in
+English and the languages most reviews are written in (German, French, Spanish, Portuguese, Russian, Chinese,
+Japanese, Korean). What only one store has goes under its name: Steam's `steam: {playtime_min, deck_min, deck,
+refunded, early_access}` (`deck`: played mostly on Steam Deck; `deck_min`: Steam Deck playtime at review); Google
+Play's `google_play: {version_code, device, device_class}` (the device's code name, and Play's class: phone, tablet,
+Chromebook); the App Store's `app_store: {territory}`. The author (a Steam ID, a Play or App Store reviewer's name or
+nickname, their other reviews) is never read or kept.
+
+**Releases.** Reviews and measurements are joined through a store's releases, oldest first, from the first of:
+the store's release history (Steam: the builds set live on the default branch, with the publisher key; the App Store,
+with an API key: its versions as Apple dates them), the versions the store's reviews and vitals name (Google Play and
+the App Store, each from the first day it is named), the builds the game's sessions name (the SDKs send the Steam build on `session_start`, §4c; a build seen in 3 or more sessions,
+from its first), the store's patch notes (Steam: announcements tagged `patchnotes`, or titled like a release), the
+versions Glitchless saw first. A release's **version** is the one its sessions ran (for a build the sessions name),
+else a version the game sent that its build description or patch-notes title names ("1.4.2 caves update", "Patch
+1.4.2"), else the version most sessions ran among those first seen while it was live. Its label is
+`build <id> (<version>)`, the version, or the title. A review belongs to the release it names (`version`), else the
+one live when it was written; reviews before the first known release are a row of their own, measured on the
+version most sessions ran before it. A store whose reviews name their version is counted by its reviews' versions
+(a 1.4.1 review written after 1.4.2 shipped still counts for 1.4.1), not by when they were written.
+
+**Vitals**, whatever the store: `{metric, value, version, build, day, period, users, percentile, device}`, by day
+(`period: 'day'`, with the users the store counted that day) or as the store's latest figure for a version
+(`period: 'version'`). `build` is the store's build number (Google Play's version code, the App Store's build), so a
+game that passes either to `Glitchless.init` is matched too.
+
+| `metric` | store | what the store counts | next to Glitchless's |
+| --- | --- | --- | --- |
+| `slow_rendering_20fps`, `slow_rendering_30fps` | Google Play | % of users in a day with slow rendering (frames slower than 20 or 30 fps) | % of sessions whose frame times' 75th percentile is slower than 50 ms (33.3 ms) |
+| `crash_rate` | Google Play | % of users in a day with a crash | % of sessions that crashed (100 − crash-free) |
+| `anr_rate` | Google Play | % of users in a day whose game stopped answering for 5 seconds | (nothing Glitchless measures) |
+| `hang_rate` | App Store | seconds hung per hour of use (p50, p90) | hitches a minute |
+| `launch_time` | App Store | launch to first frame, ms (p50, p90) | time to first frame, median |
+| `animation_hitch_rate` | App Store | ms of hitches per second of animation (p50, p90) | hitches a minute |
+
+They **disagree** when, for a version, the store's slow rendering is at least twice Glitchless's and 3 points more
+(or the reverse), its crash rate twice and 0.5 points more (or the reverse), or its launch time and Glitchless's time
+to first frame differ two-fold and by 500 ms. Each disagreement is a line saying which side counts more and the likely
+reason: a store counts a user once a day and only on the devices it watches, Glitchless counts sessions; native
+crashes and crashes before the SDK starts never reach Glitchless; Glitchless also counts a stopped game loop or a
+fatal script error, which the OS doesn't see as a crash; a launch includes what runs before the SDK starts (the
+engine, a splash screen). Sessions-based measures (slow sessions, time to first frame) need a range of 31 days or
+less.
+
+| panel `type` | fields | shows |
+| --- | --- | --- |
+| `store_reviews` | `store` | positive, negative and negative-about-performance reviews (any topic) by day (by hour under 3 days), each release marked; a row per release in the window: reviews, positive %, negative about performance (count and %), the store's segment (Steam Deck %), and the sessions, frame p95 and crash-free % measured on its version; the store's all-time score |
+| `store_players` | `store` | players online as the store counted them each sync (Steam), next to the sessions Glitchless saw playing in that minute (for ranges of 31 days or less): `coverage_pct`, measured over counted, is how much of the game's play has telemetry |
+| `store_sales` | `store` | units sold, returns (and the return rate), wishlist adds and deletes by day (Steam: from the Financial API Group key) |
+| `store_vitals` | `store` | the store's vitals version by version (newest first; by day weighted by users, or the store's latest for the version), next to the sessions, frame p95, crash-free % and the matching measures Glitchless has of the same version; the lines where the two disagree; Google Play's slowest devices and GPUs on its freshest day; the App Store's heaviest hang signatures in the latest build |
+
+`store` is `steam`, `app_store` or `google_play` (default: the game's first connected store). A game connected to a
+store gets a **page per store** on the automatic dashboard, after the Overview (`steam`, `app-store`, `google-play`):
+`store_reviews`, `store_vitals` where the store reports vitals, `store_players` where the store counts players,
+`frame_time` when the game sends frame times, and `store_sales` when there are sales (or, on Steam, a financial key).
+A saved dashboard adds the panels like any other. A share link shows `store_reviews`, `store_vitals` and
+`store_players` (counts, never review text) and `store_sales` only when made with sums.
+
+**The finding** (`store-reviews-<store>-<release key>`, category `reviews`), per store: of the releases in the last
+30 days, the latest with 5 or more reviews since it went live (on Google Play and the App Store, 5 or more reviews of
+that version), when 3 or more of them are negative about performance, and their share is 10 or more points above,
+and at least 1.5 times, the share in the 30 days before it (there: of the earlier versions' reviews in those days) (z ≥ 1.64 when
+there are 5 or more reviews to compare with; else a share of 25% or more). High when that share is 30% or more with 10
+or more such reviews, or when the version's frame p95 is 15% worse or its crash-free sessions 2 points lower than the
+version before's; else medium. Its summary counts the topics, the segment's share (Steam Deck) and the devices
+reviewers show, then what Glitchless measured on the version and the one before; `evidence` has the counts,
+`segment`, `devices`, `version`, `previous_version`, the performance findings to start with (`related_findings`) and up
+to three short examples. The suggestion names `glitchless_compare_versions`, `glitchless_performance` with that
+version, `glitchless_deck_measure` when most of these reviewers are on a Deck, `glitchless_store_reviews` for the
+build, and `glitchless_store_vitals` on a store that reports vitals.
+
+**Query** `store_reviews`: one store's reviews in the range (`store`, default the first connected), newest first,
+filtered by `build` (a build ID, a version or a release's label), `sentiment` (`positive` or `negative`), `keyword` (a
+topic, or any text), `deck=1` (Steam), `device` (part of the GPU or device name; `gpu` is the same) and `limit`
+(default 20, at most 100) → `{connected, store, store_name, stores, app_id, summary, synced_at, window_reviews,
+matched, negative, segment?, topics, devices, builds, reviews:[{…review, build, version}], texts_from, capped}`.
+`builds` are the panel's rows. Texts are read for the range (other queries read the last 62 days), at most the latest
+3,000; counts are always complete. An unknown build answers `{error, releases}`. The MCP tool
+`glitchless_store_reviews` reads it.
+
+**Query** `store_vitals`: one store's vitals (`store`, default the first connected one that reports vitals; `version`,
+a version name or build number) → `{connected, store, store_name, stores, app_id, synced_at, columns:[{key, metric,
+percentile, label, unit}], rows:[{version, build, latest, store: {<key>: value}, glitchless: {sessions, frame_p95,
+hitches_per_min, crash_free_pct, crashed_pct, slow20_pct, slow30_pct, ttff_p50} | null, notes}], notes:[{version,
+metric, store_value, glitchless_value, says}], devices, hangs}`, or `{empty, why}` before any. A column's `key` is the
+metric, with `:p50` or `:p90` where the store gives percentiles. The MCP tool `glitchless_store_vitals` reads it.
+
+**Stored** (a pk/sk store: Glitchless Cloud's control table), under `STORE#<project>#<store>`: `R#<day>` (that day's
+reviews, up to 300 KB of UTF-8: past that a review is counted but its text not kept), `RH#<month>` (review counts per
+hour: up, down, down about performance, and the same in the store's segment), `PL#<month>` (players-online samples),
+`SALES#<month>` and `WISH#<month>` (by day; a day the store sends again replaces what was there), `VIT#<month>`
+(vitals by day; likewise), `VITV` (each version's latest vitals), `SNAP#devices` and `SNAP#hangs` (the latest
+snapshot of each), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
+itself (Steam: its builds). Each day or month item expires 400 days after its period.
+
+**Steam.** What a sync takes, per game, from where its last sync stopped:
+
+| from | call | when | key |
+| --- | --- | --- | --- |
+| reviews | `IUserReviewsService/GetAppReviews` (newest first, every language, any purchase, by creation date) | every sync: weekly date windows of 100-review pages from an hour before the last window ended; the first sync goes back the plan's retention (at most 90 days) | none (the publisher key gives a higher rate limit) |
+| the review score | `GetAppReviews` (one review, all time) | every 6 hours | none |
+| players online | `ISteamUserStats/GetNumberOfCurrentPlayers` | every sync | none |
+| patch notes | `ISteamNews/GetNewsForApp` (the developer's announcements, titles and tags only) | every 6 hours | none |
+| builds and branches | `ISteamApps/GetAppBetas`; `GetAppBuilds` when a branch changed, else every 6 hours | every sync | publisher Web API key |
+| wishlists | `IPartnerFinancialsService/GetAppWishlistReporting` (GMT days) | once a day: the last 30 days on the first, then from the day before the last | Financial API Group key |
+| units and returns | `GetChangedDatesForPartner`, then `GetDetailedSales` per changed date (Pacific days, the app's packages only) | once a day; changed dates back 90 days, 20 a run | Financial API Group key |
+
+A build's history comes from the branches: a branch whose build changed between two syncs went live in between
+(`from`, the time it was seen); on a game's first sync each branch's build is dated by its creation time and marked
+`approx`. When the game's sessions send their Steam build (§4c), the join knows each session's build exactly.
+
+**Google Play** (Glitchless Cloud). The developer creates a service account in a Google Cloud project, turns on
+the Google Play Developer Reporting API there, and invites the account's email in Play Console → Users and
+permissions with access to the app: "View app information (read only)" and "Reply to reviews" (the reviews API asks
+for it even to read; Glitchless never replies). Its JSON key is pasted in Settings and sealed. A call is signed with a
+token from the key (RS256, scopes `androidpublisher` and `playdeveloperreporting`, an hour).
+
+| from | call | when |
+| --- | --- | --- |
+| reviews | Android Publisher `reviews.list` (Play keeps only reviews with text, on production versions, from the last week) | every 6 hours: every page (at most 10), skipping reviews already kept (an edit keeps the first text) |
+| vitals by version code | Reporting API `slowRenderingRateMetricSet`, `crashRateMetricSet`, `anrRateMetricSet`: `:query` by `versionCode`, daily, Pacific days; each set's freshest day from its own `GET` | once a day: 30 days on the first sync, then from two days before the last day read (Play fills days in late) |
+| slowest devices and GPUs | the same sets on the freshest day, by `deviceModel` and `deviceGpuModel` | once a day: the ten with the most users affected (10 users or more) |
+
+Play's review history beyond a week is in the monthly review CSVs in its Cloud Storage bucket (`reviews_<package>_<YYYYMM>.csv`): an import of them is a later step.
+
+**The App Store** (Glitchless Cloud). Without a key, the public review feed of each country set (default `us`, at
+most 10): 50 reviews a page, 10 pages deep (Apple refuses page 11), newest first, each with the version it was written
+on and its stars, read every 6 hours until a page brings nothing new (the newest 1,500 review IDs are remembered).
+With an App Store Connect API key (an Admin creates a team key in Users and Access → Integrations, with a role that
+can read the app; its issuer ID, key ID and `.p8` are pasted in Settings and sealed; calls are signed with an ES256
+token, 20 minutes):
+
+| from | call | when |
+| --- | --- | --- |
+| versions | `GET /v1/apps/{id}/appStoreVersions` | once a day: the release marks |
+| reviews | `GET /v1/apps/{id}/customerReviews` (newest first), and `GET /v1/appStoreVersions/{id}/customerReviews` for the latest 3 versions, which name each review's version | every 6 hours, from a day before the newest kept (first: the plan's retention, at most 90 days), at most 5 pages |
+| hang rate, launch time, animation hitches | `GET /v1/apps/{id}/perfPowerMetrics` (iOS, all devices, p50 and p90, by version) | once a day |
+| heaviest hangs | the latest build's `GET /v1/builds/{id}/diagnosticSignatures` (`HANGS`), the top 5 by weight | once a day |
+
+The feed's and the API's review IDs differ, so adding or removing the key starts the game's App Store data again.
+Apple's crash counts come from the Analytics Reports API ("App Crashes"), which an Admin must request once in App
+Store Connect before any report exists: a later step.
+
+**Not connected (yet).** Microsoft Partner Center, Epic, itch.io, GOG, PlayStation and Nintendo have no adapter;
+Meta Quest's reviews and vitals have no API, so they would come in as a CSV import (a later step).
+
+**Glitchless Cloud.** Settings → Integrations, per game, a card per store: Steam's App ID (required) and its two
+optional keys; Google Play's package name and service account key; the App Store's Apple ID (the number in its App
+Store URL), its countries and the optional API key. Each card also takes the game in the project it is for (default:
+every game). A credential is checked with one read when saved (the store refusing it refuses the save, saying what to
+fix) and sealed like an exporter's secrets (KMS, encryption context `{project}`); it is never sent back: the dashboard
+gets a hint (a key's last four characters, a service account's email, an API key's ID). A new App ID or package name
+forgets the old one's data (and Steam's publisher key). Changing a connection and syncing need the exporters'
+permission (Owner, Admin).
+
+| route | does |
+| --- | --- |
+| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play` and `app_store` |
+| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
+| `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
+| `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour, within 20 seconds; the hourly sync does the rest) |
+| `GET`, `PUT`, `DELETE /api/projects/{p}/steam`, `POST …/steam/sync` | Steam's, as before the other stores: `{steam, status, data}` |
+| `POST /api/dev/stores/sync` (or `/api/dev/steam/sync`) | the dev server only: runs the hourly sync now |
+
+The `glitchless-stores` Lambda syncs every connected game of every store every hour, one run at a time, each game and
+store under a 15-minute lease (`deploy.js` puts it up with everything else; `--stores off` leaves it out). A sync
+stops for the day at 1,500 calls a game and store, and without credentials at 80,000 calls a day across every game on
+Steam (Valve's Web API terms allow 100,000 and ask that only what is needed is retrieved: an ordinary hour is 3 calls
+a game) and 20,000 on Apple's feed. A part a store refuses or rate-limits (`errors`) waits for the next sync from where
+it was; the others go on.
 
 ## 4. Derived concepts
 
@@ -505,8 +742,9 @@ Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a
 - **Players now**: sessions that sent anything in the last two minutes, counted as batches arrive. The open-source
   server counts in memory, per process; Glitchless Cloud counts across every server instance (whole minutes: this
   one and the two before) through the `auth.playersNow` hook.
-- **Platform**: a Steam Deck (`steam_deck`), whatever OS the build is for, else the OS. Performance breaks frame times
-  down by it (`by_platform`).
+- **Platform**: Valve's hardware named by Steamworks (`steam_hardware`: Steam Deck, Steam Machine, Steam Frame, §4c),
+  else a Steam Deck (`steam_deck`), whatever OS the build is for, else the OS. Performance breaks frame times down by
+  it (`by_platform`).
 
 ## 4b. Privacy levels
 
@@ -541,6 +779,53 @@ browser SDK sends `steam_deck: true` when the browser shows the Deck's GPU (AMD 
 "vangogh") or a user agent names it, with `gpu_tier: "low"`, and nothing when unsure. Only these fields are sent,
 never what they were read from.
 
+## 4c. Steam facts
+
+A game that already uses Steamworks gets Steam facts on each session, so every chart, filter and comparison can split
+by Steam build, beta branch and Steam hardware. Each SDK reads only what the game has set up, with no dependency on
+Steam: nothing until Steamworks is initialised, and nothing at all without it. They go in `session_start.device`, in
+every privacy mode, each only when the game's wrapper has the call:
+
+| field | from | value |
+| --- | --- | --- |
+| `steam_build` | `ISteamApps::GetAppBuildId` | the Steam build ID; left out when 0 (not a build downloaded from Steam) |
+| `steam_branch` | `ISteamApps::GetCurrentBetaName` | the beta's name, or `public` on the default branch |
+| `steam_hardware` | `ISteamUtils::IsRunningOnSteamHardware` (SDK 1.65), before it `IsSteamRunningOnSteamDeck` | `deck`, `machine`, `frame` or `none` |
+| `proton` | `ISteamUtils::IsRunningUnderProton` | true or false |
+| `big_picture` | `ISteamUtils::IsSteamInBigPictureMode` | true or false |
+| `steam_controller` | `ISteamInput::GetInputTypeForHandle` of the first connected controller, once the game has started Steam Input | `steam_controller`, `xbox_360`, `xbox_one`, `generic_xinput`, `ps4`, `apple_mfi`, `android`, `switch_joycon_pair`, `switch_joycon_single`, `switch_pro`, `mobile_touch`, `ps3`, `ps5`, `steam_deck`, `steamos_handheld`, `switch2_pro`, `steam_controller_2026`, `steam_frame_controllers`, `unknown`, or `other` for a newer type |
+| `family_shared` | `ISteamApps::BIsSubscribedFromFamilySharing` | true or false |
+| `timed_trial` | `ISteamApps::BIsTimedTrial` | true or false (not the seconds) |
+| `steam_language` | `ISteamApps::GetCurrentGameLanguage` | the game's Steam language, such as `english` or `schinese` |
+
+**No Steam ID, ever.** No SDK reads the player's Steam ID, the app's owner (`GetAppOwner`) or their name, in any mode.
+Valve's rules on sending Steam IDs to third parties are unclear, so none is sent; each PRIVACY.md lists the fields and
+has lines a game can adapt for its own privacy policy.
+
+**Where they come from.** Unity: Steamworks.NET (after `SteamAPI.Init`, or once its `SteamManager` says initialised)
+or Facepunch.Steamworks (`SteamClient.IsValid`), found by reflection. Godot: the `Steam` singleton GodotSteam registers
+(`Engine.has_singleton("Steam")`), once `get_steam_init_result()` says OK or `current_app_id` is set. Unreal: only
+while the `SteamShared` or `OnlineSubsystemSteam` module is loaded, through Steam's flat C API in the steam_api
+library that module loaded (the plugin links nothing of Steam's). Browser: steamworks.js in Electron, only from the
+client the game passes as `steam` (steamworks.js aborts the process if called before its `init()`, so the SDK never
+probes for it); it has no family sharing, timed trial, Proton or Steam hardware calls, so those are left out. An
+engine SDK reads them when `session_start` is built and again until Steamworks answers, so a game that initialises
+Steam after Glitchless still sends them.
+
+**Version.** A game that passes no version to init reports `steam-<build>` (`steam-18231`) when it runs a Steam build,
+so version comparisons work build by build out of the box; a version the game passes always wins, and without a Steam
+build the SDKs fall back as before (Application.version, `application/config/version`, the project's version).
+
+**Server.** Intake keeps the facts in one shape (`server/src/ingest.js`: a build is a positive integer, the hardware
+one of the four words, flags booleans, words trimmed and capped) and `steam_hardware: deck` sets `steam_deck: true`.
+Every query takes them as filters (§3); boards split breakdowns by them (`$steam_branch`) and versions panels and the
+`versions` query compare branches or builds (§3b). The platform (§4) is `Steam Deck`, `Steam Machine` or `Steam
+Frame` from `steam_hardware`, else the SDKs' `steam_deck` tag finds a Deck. Filters and comparisons by them read
+sessions: a store that keeps hour summaries reads raw events for a filter (as for session types), and a range of more
+than 31 days is answered over its last 31 days (`meta.note`); `by_steam_branch` and `by_steam_build` in performance
+work over any range. A breakdown by a Steam fact counts events per session, so a series can't be split by one, and
+sums (kept per minute and currency) aren't split by one either.
+
 ## 5. Godot SDK
 
 `godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.2.0"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
@@ -548,7 +833,7 @@ never what they were read from.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default), and the server files the session under `session_id`; install and full mode send the stored `p_…` player ID (`user://glitchless/player_id`, §4b) |
-| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. `page` and `nav_ms` are null |
+| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null |
 | `frame_window` | adds `gpu_ms`, `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. A window never spans two levels |
 | `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
 | `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events) |
@@ -564,7 +849,7 @@ never what they were read from.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); `Privacy.Install` and `Privacy.Full` send the stored `p_…` player ID (§4b) |
-| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. `page` and `nav_ms` are null |
+| `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
 | `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. A window never spans two levels |
 | `hitch` | `causes` from `gc`, `shader_compile`, `scene_change`, `object_spawn`, `script`, `physics`, `render`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `gc_collections`, `gc_alloc_kb`, `shader_compiles`, `objects_added`; `loaf` is empty |
 | `level_start` | also sent when a scene that reads as a level becomes active |
@@ -581,7 +866,7 @@ never what they were read from.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID |
-| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only), `steam_deck`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. `page` and `nav_ms` are null |
+| `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only), `steam_deck`; full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null |
 | `frame_window` | frame times from a clock at the start of each frame. Adds `game_ms` (game thread, GGameThreadTime), `process_ms` (the same, under the name the playtest gate reads), `render_ms` (render thread), `rhi_ms` (null without an RHI thread), `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles` (pipeline states created at draw time that took over 20 ms, UE 5.8), `shader_compiles` (the editor only), `packages_loaded`, `objects` (UObjects), `actors`, `heap_mb` (the process), `texture_mb`, `screen`, `window`. `draw_calls` and `triangles` only while the RHI counts them (usually null in a packaged build); `geometries`, `textures`, `programs` are null. `ctx` also holds `objects` and `actors`. A window never spans two levels |
 | `hitch` | `duration_ms` is the frame's time on the clock (Unreal leaves waits out of its thread times, so a frame stalled on a pipeline state, the GPU or the disk would look short by them). `causes` from `pso_compile`, `shader_compile`, `gc`, `map_load`, `level_stream`, `asset_load`, `script` (game thread at 40% of the frame), `render` (render, RHI or GPU at 40%), `frozen` (over 700 ms). Adds `bound` (the slowest of `game`, `render`, `rhi`, `gpu`), `game_ms`, `process_ms`, `render_ms`, `rhi_ms`, `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles`, `shader_compiles`, `packages_loaded`; `loaf` is empty |
 | `level_start` | also sent when a map that reads as a level loads (not `Entry`, `MainMenu`, `Lobby`, `Loading`…); the game's first `LevelStart` turns that off |

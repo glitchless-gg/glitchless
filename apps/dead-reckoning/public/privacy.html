@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dead Reckoning: privacy</title>
+    <meta name="theme-color" content="#07080c" />
+    <style>
+      :root {
+        --bg: #07080c;
+        --ink: #f4f1ea;
+        --dim: #9aa2b4;
+        --ember: #ff7a3d;
+        --line: rgba(244, 241, 234, 0.14);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font: 17px/1.6 Georgia, 'Times New Roman', serif;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 48px 16px 64px;
+      }
+      h1 {
+        font-weight: 400;
+        font-size: 40px;
+        line-height: 1.1;
+        margin: 0 0 6px;
+      }
+      h1 em {
+        color: var(--ember);
+      }
+      h2 {
+        font: 600 13px/1.4 ui-monospace, Menlo, monospace;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--dim);
+        margin: 36px 0 8px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+      p,
+      li {
+        color: #d9d5cc;
+      }
+      ul {
+        padding-left: 1.2em;
+      }
+      a {
+        color: var(--ink);
+      }
+      .lede {
+        color: var(--dim);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Dead <em>Reckoning</em>: what it records</h1>
+      <p class="lede">Last changed 24 October 2026.</p>
+
+      <p>
+        The game has no accounts, no ads and no cookies. To draw everyone's deaths, and so we can see where the levels are too
+        hard and whether the game runs smoothly, it sends what happens in the game to Glitchless, the game observability
+        service made by the same people (<a href="https://www.glitchless.gg">glitchless.gg</a>).
+      </p>
+
+      <h2>What is sent</h2>
+      <ul>
+        <li>When you start and finish a level, and how many tries it took.</li>
+        <li>Where in the level you died and how (a fall, spikes or a saw), and where you moved in the level, four times a second. These are places in the game's world, not where you are.</li>
+        <li>How smoothly the game ran (frame rate and stutters) and any errors in the game's code.</li>
+        <li>Whether you watched your replay and whether you shared your result, and how (X, copy, image or your device's share menu). Not what you wrote or who you sent it to.</li>
+        <li>Your browser and its main version, your operating system, whether it's a phone, a rough graphics tier, and your screen size.</li>
+        <li>The page's address without its query string, and the address of the site that sent you, without the page.</li>
+      </ul>
+
+      <h2>What isn't</h2>
+      <ul>
+        <li>No name, email, account, advertising ID or location. Nothing you type.</li>
+        <li>No ID that follows you between visits: each visit gets a random number, kept in the page's memory only and gone when you close it.</li>
+        <li>Glitchless doesn't read or store the network address your requests come from, though the servers that host the game and Glitchless may keep it briefly in their access logs.</li>
+      </ul>
+
+      <h2>What everyone sees</h2>
+      <p>
+        Deaths are shown in the game, and on a public page of live numbers, as counts per half tile of each level, with nothing
+        that says whose they are or when. Some of the marks were left by our own playtest bots.
+      </p>
+
+      <h2>On your device</h2>
+      <p>
+        The game keeps the levels you've unlocked, your fewest tries and whether the sound is on in your browser's local
+        storage. It never leaves your device; clearing your site data removes it.
+      </p>
+
+      <h2>Others involved</h2>
+      <p>
+        The page loads its typefaces from Google Fonts, so Google sees that request. If you press "Post on X", X's page opens
+        with your text, under X's own privacy policy.
+      </p>
+
+      <h2>Questions</h2>
+      <p>Write to <a href="mailto:support@glitchless.gg">support@glitchless.gg</a>.</p>
+
+      <p><a href="./">Back to the game</a></p>
+    </main>
+  </body>
+</html>

@@ -17,5 +17,6 @@ import './tools/dashboard.js';
 import './tools/playtest.js';
 import './tools/reports.js';
 import './tools/deck.js';
+import './tools/store-reviews.js';
 
 await server.connect(new StdioServerTransport());

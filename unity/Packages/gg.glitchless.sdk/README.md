@@ -114,6 +114,26 @@ if (Glitchless.IsBugReportOpen) return;                // input you read from Un
 - **Sending:** a report goes on a request of its own straight away, from every session (`SampleRate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch.
 - **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
 
+## Steam
+
+If the game already uses [Steamworks.NET](https://steamworks.github.io) or [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks), every session also says which Steam build and beta branch it ran, whether on a Steam Deck (or, with an SDK 1.65 wrapper, a Steam Machine or Steam Frame), under Proton, in Big Picture mode, with which kind of controller, in which Steam language, and whether through Family Sharing or a timed trial. There is nothing to set up and no dependency: the SDK finds the wrapper by reflection and reads only what the game has set up. Nothing is read until Steam is initialised (`SteamAPI.Init`, or Steamworks.NET's `SteamManager`, or `SteamClient.Init`), and the facts are read when the first batch goes, so a `SteamManager` that wakes up after `Glitchless.Init` still counts. The controller is known only once the game has started Steam Input. No Steam ID, owner or name is ever read ([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).
+
+**Versions are Steam builds.** Leave `Version` empty and a Steam build reports `steam-<build>` (`steam-18231`), so every upload to Steam is a version the Versions page and `glitchless_compare_versions` can compare, without bumping anything. Outside Steam (the Editor, a build you run yourself) it falls back to `Application.version`. A `Version` you set always wins.
+
+**Branches.** Filter any dashboard query with `steam_branch=beta`, split a breakdown panel by `$steam_branch`, or compare branches with a versions panel `by: "$steam_branch"` or `glitchless_compare_versions` with `by: "steam_branch"`: the beta against `public` on the same numbers.
+
+**Code stripping.** At the default Managed Stripping Level (Minimal) nothing more is needed. At Low or higher, keep the calls the SDK makes by reflection with a `link.xml` in your Assets folder (use the wrapper's assembly name: `com.rlabrecque.steamworks.net` for Steamworks.NET from a package, `Assembly-CSharp-firstpass` from the .unitypackage, `Facepunch.Steamworks.Win64` or `.Posix` for Facepunch):
+
+```xml
+<linker>
+  <assembly fullname="com.rlabrecque.steamworks.net" ignoreIfMissing="1">
+    <type fullname="Steamworks.SteamApps" preserve="all" />
+    <type fullname="Steamworks.SteamUtils" preserve="all" />
+    <type fullname="Steamworks.SteamInput" preserve="all" />
+  </assembly>
+</linker>
+```
+
 ## What it measures, and where
 
 | | Release build | Development build and Editor |

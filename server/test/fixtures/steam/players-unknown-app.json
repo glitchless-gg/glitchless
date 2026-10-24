@@ -1,0 +1,5 @@
+{
+ "status": 404,
+ "contentType": "application/json; charset=UTF-8",
+ "body": "{\"response\":{\"result\":42}}"
+}

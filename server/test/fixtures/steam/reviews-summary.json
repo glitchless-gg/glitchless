@@ -1,0 +1,5 @@
+{
+ "status": 200,
+ "contentType": "application/json; charset=UTF-8",
+ "body": "{\"response\":{\"query_summary\":{\"num_reviews\":1,\"review_score\":9,\"review_score_desc\":\"Overwhelmingly Positive\",\"total_positive\":304073,\"total_negative\":6243,\"total_reviews\":310316},\"reviews\":[{\"recommendationid\":\"238430002\",\"author\":{\"steamid\":\"76561190000000017\",\"num_reviews\":1,\"playtime_forever\":809,\"playtime_last_two_weeks\":0,\"playtime_at_review\":809,\"deck_playtime_at_review\":733,\"last_played\":1763151116},\"language\":\"latam\",\"review\":\"Great on the Deck, the controls feel right and it looks sharp on the small screen.\",\"timestamp_created\":1792818626,\"timestamp_updated\":1792818626,\"voted_up\":true,\"votes_up\":0,\"votes_funny\":0,\"weighted_vote_score\":0.5,\"comment_count\":0,\"steam_purchase\":true,\"received_for_free\":false,\"written_during_early_access\":false,\"primarily_steam_deck\":true,\"refunded\":false}],\"cursor\":\"AoJw3aeUtqEDcvPEjQc=\",\"total_matching\":310316}}"
+}

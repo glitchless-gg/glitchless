@@ -1,6 +1,6 @@
 # What Glitchless for Unreal sends
 
-This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `GlitchlessDevice.cpp` and `GlitchlessRuntime.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
+This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `GlitchlessDevice.cpp`, `Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp` and `GlitchlessRuntime.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's, Google's and Valve's categories; check them against the forms as they are when you submit.
 
@@ -70,6 +70,26 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 **Bug reports** are the one place the player's own words and a picture of their screen are sent, and only when the player presses Send (or the game calls `ReportBug` on their behalf). Say so wherever the game offers it.
 
+## Steam facts
+
+When the game already uses Steamworks through Unreal's `SteamShared` or `OnlineSubsystemSteam` module, `session_start`'s `device` also carries these, in every mode (`Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp`). The plugin reads them through Steam's own library, only while one of those modules is loaded and once Steamworks is initialised, and links nothing of Steam's. A library without a call leaves that field out (Unreal 5.8 ships SDK 1.64, which tells a Steam Deck but not the other hardware, and has no Proton call).
+
+| field | example | what it says |
+| --- | --- | --- |
+| `steam_build` | `18231` | the Steam build the game runs; left out when it isn't a build downloaded from Steam |
+| `steam_branch` | `beta`, `public` | the beta branch it runs, or `public` on the default one |
+| `steam_hardware` | `deck`, `machine`, `frame`, `none` | whether it runs on Valve's hardware (Steam Deck, Steam Machine, Steam Frame), and which. `deck` also makes `steam_deck` true |
+| `proton` | `true` | running under Proton |
+| `big_picture` | `false` | Steam is in Big Picture mode |
+| `steam_controller` | `ps5`, `xbox_one`, `steam_deck` | the kind of the first controller Steam Input sees, once the game has started Steam Input |
+| `family_shared` | `false` | the player has the game through Family Sharing |
+| `timed_trial` | `false` | the game is played as a timed trial (not how long) |
+| `steam_language` | `english` | the language the player picked for the game in Steam |
+
+**Never read or sent, in any mode:** the player's Steam ID, the owner's Steam ID (`GetAppOwner`), the player's Steam name, friends, or anything else from their Steam account. Valve's rules on passing Steam IDs to third parties are unclear, so Glitchless leaves them out entirely. The facts above are about the build and the hardware, and many players share each one.
+
+**Version.** When the game passes no version, batches carry `steam-<build>` (`steam-18231`) on a Steam build, so each build is a version on the dashboard.
+
 ## Kept on the device
 
 | file | what | mode |
@@ -93,6 +113,11 @@ A paragraph for anonymous mode, to adapt to the game's own voice:
 > So that we can find and fix stutters, crashes and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers; a crash report is sent the next time you play. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and whether it is a Steam Deck. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
 >
 > If you send a bug report, it includes what you wrote and a picture of the game's screen at that moment.
+
+If the game ships on Steam and uses Steamworks, add:
+
+> **Steam**
+> On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
 
 Install mode needs one more sentence: a random number is saved with the game, so we can tell how many players come back; it is not linked to your account. Full mode needs that, the device model, and positions in the game world.
 
@@ -126,4 +151,4 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 
 ## When this file must change
 
-Read it again when any of these change: the events or fields in `GlitchlessCore.cpp`, the device fields in `GlitchlessDevice.cpp`, the counters in `GlitchlessRuntime.cpp`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.
+Read it again when any of these change: the events or fields in `GlitchlessCore.cpp`, the device fields in `GlitchlessDevice.cpp`, the Steam facts in `GlitchlessSteam.cpp` and `GlitchlessSteamworks.cpp`, the counters in `GlitchlessRuntime.cpp`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.

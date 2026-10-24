@@ -133,6 +133,8 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .dt tr.click:hover td { background: var(--brand-50); }
 .dt tr.sel td { background: var(--brand-100); }
 .dt td.num, .dt th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Long headers (a store's vitals) wrap instead of widening the table. */
+.dt.wrap-th th { white-space: normal; vertical-align: bottom; min-width: 64px; }
 .tablewrap { overflow: auto; max-height: 520px; }
 
 /* ─── charts ─── */
@@ -189,7 +191,7 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .segmented button { border: 0; background: #fff; padding: 4px 10px; cursor: pointer; font-size: 12px; border-right: 1px solid var(--border); }
 .segmented button:last-child { border-right: 0; }
 .segmented button.on { background: var(--brand-100); color: var(--brand); font-weight: 600; }
-.heatwrap { position: relative; width: 100%; background: #0f0b1a; border-radius: 4px; overflow: hidden; }
+.heatwrap { position: relative; width: 100%; background: #120c20; border-radius: 4px; overflow: hidden; }
 .heatwrap canvas { display: block; width: 100%; }
 .spotcard { border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; font-size: 12.5px; }
 .livefeed { font: 12px/1.5 var(--mono); }

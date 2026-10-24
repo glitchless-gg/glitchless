@@ -4,17 +4,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody } from './ingest.js';
-import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary } from './analytics.js';
+import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
-import { validateDashboard, autoDashboard, evaluateBoard, versionColumns, dashboardStats, VIEWS, BoardError } from './board.js';
+import { validateDashboard, autoDashboard, evaluateBoard, versionColumns, dashboardStats, pathLevels, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
 import { reportsOf, reportSummary, reportDetail, reportTimeline } from './reports.js';
 import { createSourcemaps, MAX_UPLOAD_BYTES } from './sourcemaps.js';
 import { eventSums } from './sums.js';
 import { Presence, PLAYERS_NOW_MS } from './presence.js';
+import { storeReviews, storeVitals } from './reviews.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
+const MINUTE = 60_000;
+// How long a share link's answer may be reused, here and by any cache in front (its Cache-Control): a game
+// polling a link gets the same answer for a minute, whatever arrives meanwhile.
+export const SHARE_MAX_AGE_S = 60;
+const SHARE_CACHE = { 'Cache-Control': `public, max-age=${SHARE_MAX_AGE_S}`, Vary: 'x-glitchless-share' };
 // Queries whose frame-time and count sections can come from per-minute rollups.
 const ROLLUP_QUERIES = new Set(['overview', 'performance', 'versions', 'findings', 'events', 'dashboard', 'board']);
 // Queries that show or rank bug reports (reports.js): they read the range's reports as ctx.reports.
@@ -23,6 +29,8 @@ const REPORT_QUERIES = new Set(['reports', 'overview', 'findings', 'dashboard', 
 const SOURCEMAP_QUERIES = new Set(['errors', 'overview', 'findings', 'board', 'playtest']);
 // Queries that show retention: they read who is new from the store's first-seen index (ctx.cohorts).
 const RETENTION_QUERIES = new Set(['players', 'board']);
+// Queries that join a game's store reviews and vitals (reviews.js) when the host has them: their panels, finding, queries.
+const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals']);
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -45,7 +53,9 @@ const MIME = {
 // `auth` is { resolveIngest, resolveReader } (see auth.js); the default is the open-source single project.
 // maxUploadBytes: the largest source map upload this host takes (a host behind a smaller body limit passes less,
 // so a big map gets a clear 413 rather than the host's own error).
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES }) {
+// stores: { read(projectId, service, { from, to, recordsFrom }) } → the game's store data by store ({ steam: … },
+// reviews.js), or null when it is connected to none; a host without stores leaves it out.
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -86,7 +96,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           await store.put(writer.projectId, events, writer);
           counters.received += events.length;
           presence?.record(writer.projectId, events);
-          clearCache(writer.projectId);
+          clearCache(writer.projectId, { shares: false });
           if (auth.recordIntake) await Promise.resolve(auth.recordIntake(writer, events)).catch((err) => logger.warn('[intake] record', err.message));
         }
         json(res, 202, { accepted: events.length, ...(admitted.dropped ? { dropped: admitted.dropped, reason: admitted.reason } : {}) });
@@ -99,11 +109,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       // Everything else under /v1/ reads (or deletes) one project's data, never the intake token's.
       const reader = p.startsWith('/v1/') ? checkIdentity(await auth.resolveReader(req)) : null;
       if (reader) {
-        const wait = readLimiter.take(`${reader.projectId}\n${reader.keyId ?? ''}`, reader.rps ?? (reader.share ? DEFAULT_SHARE_RPS : 0));
-        if (wait) {
-          res.setHeader('Retry-After', String(wait));
-          return json(res, 429, { error: 'rate limit exceeded' });
-        }
+        // A share link is limited where its reads compute (the query cache below): polling one costs nothing.
+        if (!reader.share && limited(res, reader)) return;
         const refused = reader.share && shareOnly(req, url, reader.share);
         if (refused) return json(res, 403, { error: refused });
       }
@@ -149,14 +156,18 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           activity.push({ projectId, ts: Date.now(), client, query: name, params });
           if (activity.length > 200) activity.shift();
         }
-        const key = `${projectId}\n${reader.share ? `${pinned(reader.share) ? 'pinned' : 'share'}${reader.share.sums ? '+sums' : ''}\n` : ''}${p}?${withoutKey(url.searchParams)}`;
+        // Share answers are kept apart from members' (pinned links' from rolling ones', with sums from without),
+        // for SHARE_MAX_AGE_S however many events arrive; members' for 4 s, until the next batch.
+        const share = reader.share ? `share ${pinned(reader.share) ? 'pinned' : 'rolling'}${reader.share.sums ? '+sums' : ''}\n` : '';
+        const key = `${projectId}\n${share}${p}?${withoutKey(url.searchParams)}`;
         const hit = cache.get(key);
-        if (hit && Date.now() - hit.at < 4000) return json(res, 200, hit.body);
+        if (hit && Date.now() - hit.at < (share ? SHARE_MAX_AGE_S * 1000 : 4000)) return json(res, 200, hit.body, share ? SHARE_CACHE : undefined);
+        if (share && limited(res, reader)) return;
         const body = await query(projectId, name, url.searchParams, reader);
         if (body === undefined) return json(res, 404, { error: `unknown query: ${name}` });
         cache.set(key, { at: Date.now(), body });
         if (cache.size > 200) cache.delete(cache.keys().next().value);
-        return json(res, 200, body);
+        return json(res, 200, body, share ? SHARE_CACHE : undefined);
       }
 
       // A web build's source maps (sourcemaps.js), one per POST: the body is the .map file (or its gzip), `file` the
@@ -238,13 +249,21 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     }
     const ids = params.get('sessions')?.split(',').map((s) => s.trim()).filter(Boolean);
     const q = { service, from, to, env: params.get('env') || null, version: params.get('version') || null, type: params.get('type') || 'all', sessions: ids?.length ? new Set(ids) : null, plan: reader.plan ?? null };
+    // The levels a board's positions panels draw paths for: a store that keeps summaries reads their position
+    // samples apart (only a saved dashboard has positions panels).
+    const saved = name === 'board' ? await store.getDashboard(projectId, service) : undefined;
+    const levels = saved ? pathLevels(boardPage(saved, params.get('page'))) : [];
+    if (levels.length) q.positions = levels;
     let ctx;
+    // Steam facts the sessions must have (steam_branch=beta…, SPEC §4c), and the one versions are grouped by instead.
+    q.where = steamWhere(params);
+    q.by = name === 'versions' && STEAM_DIMENSIONS.includes(params.get('by')) ? params.get('by') : null;
     if (store.context) {
       // Stores that keep summaries build the context themselves (and answer in whole minutes).
       ctx = await store.context(projectId, q, name, params);
     } else {
       const raw = await store.query(projectId, { service, from, to });
-      const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions ? await store.rollups(projectId, { service, from, to }) : null;
+      const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions && !q.where ? await store.rollups(projectId, { service, from, to }) : null;
       ctx = buildContext(raw, q, rollups);
     }
     // Reports are kept apart from the events (stored as they arrive), so they answer for the range as asked.
@@ -252,8 +271,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
     // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
     if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
+    if (stores && STORE_QUERIES.has(name)) ctx.stores = await storesOf(projectId, service, ctx, name === 'store_reviews' ? ctx.from : null, services);
     // A store's own notes (ctx.meta): resolution 'day' and what is approximate, for long ranges.
-    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
+    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(q.where ? { where: q.where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
     switch (name) {
       case 'overview':
         return { meta, ...overview(ctx), findings: findings(ctx, await store.getMaps(projectId, service)).slice(0, 6) };
@@ -277,13 +297,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       }
       case 'board': {
         // One board page with its numbers: `page` is its id (default: the first board).
-        const { saved, spec } = await dashboardOf(projectId, service, ctx);
-        const boards = spec.pages.filter((x) => x.panels);
+        const { spec } = await dashboardOf(projectId, service, ctx, saved);
         const id = params.get('page');
-        const page = id ? spec.pages.find((x) => x.id === id) : boards[0];
+        const page = boardPage(spec, id);
         if (!page) return { meta, error: id ? `no page "${id}" on this dashboard` : 'this dashboard has no boards', ...(reader.share ? {} : { pages: spec.pages.map((x) => x.id) }) };
         if (!page.panels) return { meta, error: `"${page.id}" is the built-in ${page.view} view, not a board`, view: page.view };
-        const maps = page.panels.some((x) => x.type === 'findings') ? await store.getMaps(projectId, service) : [];
+        const maps = page.panels.some((x) => x.type === 'findings' || x.type === 'positions') ? await store.getMaps(projectId, service) : [];
         if (page.panels.some((x) => x.metric === 'players_now')) ctx.playersNow = await playersNow(projectId, service);
         return { meta, board: { page: page.id, title: page.title, source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { panels: page.panels }, panels: evaluateBoard(ctx, page, { maps, shared: reader.share || false, currency: spec.currency }) } };
       }
@@ -306,7 +325,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // Compared per version: the numbers on the game's boards (their stat panels), then its own events.
         const { spec } = await dashboardOf(projectId, service, ctx);
         const stats = dashboardStats(spec);
-        const list = versions(ctx, { stats });
+        const list = versions(ctx, { stats, by: q.by });
         const has = {
           frames: list.some((v) => v.frame_p95 != null),
           levels: list.some((v) => v.level_attempts > 0),
@@ -314,7 +333,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           fails: list.some((v) => v.level_fails > 0),
           geometry: list.some((v) => v.geometries_growth_per_level_load != null),
         };
-        return { meta, versions: list, has, board: versionColumns(stats, ctx) };
+        return { meta, ...(q.by ? { by: q.by } : {}), versions: list, has, board: versionColumns(stats, ctx) };
       }
       case 'playtest':
         // Only meaningful for an explicit set of sessions (the ones a playtest run produced).
@@ -322,8 +341,28 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return { meta, summary: playtestSummary(ctx) };
       case 'findings':
         return { meta, findings: findings(ctx, await store.getMaps(projectId, service)) };
+      case 'store_reviews':
+        // A store's reviews of the game in the range, filtered (reviews.js storeReviews): what glitchless_store_reviews reads.
+        return { meta, ...storeReviews(ctx, params) };
+      case 'store_vitals':
+        // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store_vitals.
+        return { meta, ...storeVitals(ctx, params) };
       default:
         return undefined;
+    }
+  }
+
+  // The game's store data for the context's range, each store's with the versions the game ever sent (to find them in
+  // patch notes). A failing read leaves the stores out of the answer rather than failing it.
+  async function storesOf(projectId, service, ctx, recordsFrom, services) {
+    try {
+      const all = await stores.read(projectId, service, { from: ctx.from, to: ctx.to, recordsFrom });
+      if (!all || !Object.keys(all).length) return null;
+      const versions = services.find((s) => s.service === service)?.versions ?? [];
+      return Object.fromEntries(Object.entries(all).map(([name, data]) => [name, { ...data, store: name, versions }]));
+    } catch (err) {
+      logger.warn('[stores]', err.message);
+      return null;
     }
   }
 
@@ -332,9 +371,14 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     return { meta, dashboard: { source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { ...(spec.currency ? { currency: spec.currency } : {}), pages: spec.pages }, pages } };
   }
 
-  // The game's dashboard: the saved one, or the automatic one made from what it sends.
-  async function dashboardOf(projectId, service, ctx) {
-    const saved = await store.getDashboard(projectId, service);
+  // The board page `id` of a dashboard, or its first board; null if it has none (or no such page).
+  function boardPage(spec, id) {
+    return (id ? spec.pages.find((x) => x.id === id) : spec.pages.find((x) => x.panels)) || null;
+  }
+
+  // The game's dashboard: the saved one (read here unless given), or the automatic one made from what it sends.
+  async function dashboardOf(projectId, service, ctx, saved = undefined) {
+    if (saved === undefined) saved = await store.getDashboard(projectId, service);
     return { saved, spec: saved || autoDashboard(ctx) };
   }
 
@@ -362,8 +406,18 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     }
   }
 
-  function clearCache(projectId) {
-    for (const key of cache.keys()) if (key.startsWith(`${projectId}\n`)) cache.delete(key);
+  // `shares: false` keeps share links' answers, which may be SHARE_MAX_AGE_S old (new events don't clear them).
+  function clearCache(projectId, { shares = true } = {}) {
+    for (const key of cache.keys()) if (key.startsWith(`${projectId}\n`) && (shares || !key.startsWith(`${projectId}\nshare `))) cache.delete(key);
+  }
+
+  // 429 with Retry-After once a reader has used its rate (per keyId, per process); false while it hasn't.
+  function limited(res, reader) {
+    const wait = readLimiter.take(`${reader.projectId}\n${reader.keyId ?? ''}`, reader.rps ?? (reader.share ? DEFAULT_SHARE_RPS : 0));
+    if (!wait) return false;
+    res.setHeader('Retry-After', String(wait));
+    json(res, 429, { error: 'rate limit exceeded' });
+    return true;
   }
 
   return handle;
@@ -372,16 +426,19 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 // A share reader (`share: { service, page, from?, to? }` from the auth hook, a read-only link anyone may hold)
 // may GET the `board` query for its page and `services` (its service only), over at most SHARE_MAX_DAYS. A
 // pinned link (`from` and `to`) answers its own window whatever the request asks; any other link answers the
-// request's range, cut to SHARE_MAX_DAYS. Everything else is refused. The request's parameters become exactly
-// those, so no other filter or id reaches a query. (The store still cuts a range to the reader's retention.)
+// request's range, cut to SHARE_MAX_DAYS: `from` and `to`, or the last `days` (default 1) up to the last
+// whole minute, so a game polling the same URL gets the same answer from a cache for a minute. Everything
+// else is refused. The request's parameters become exactly those, so no other filter or id reaches a query.
+// (The store still cuts a range to the reader's retention.)
 const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services']);
 const pinned = (share) => Number.isFinite(share.from) && Number.isFinite(share.to);
 function shareOnly(req, url, share) {
   const q = url.searchParams;
   const other = (k) => q.get(k) != null && q.get(k) !== share[k];
   if (req.method !== 'GET' || !SHARE_QUERIES.has(url.pathname) || other('service') || other('page')) return 'a share link shows one board and nothing else';
-  const to = pinned(share) ? share.to : (num(q.get('to')) ?? Date.now());
-  const from = Math.max(pinned(share) ? share.from : (num(q.get('from')) ?? to - DAY), to - SHARE_MAX_DAYS * DAY);
+  const to = pinned(share) ? share.to : (num(q.get('to')) ?? Math.floor(Date.now() / MINUTE) * MINUTE);
+  const days = Math.min(num(q.get('days')) > 0 ? num(q.get('days')) : 1, SHARE_MAX_DAYS);
+  const from = Math.max(pinned(share) ? share.from : (num(q.get('from')) ?? to - days * DAY), to - SHARE_MAX_DAYS * DAY);
   url.search = new URLSearchParams({ service: share.service, page: share.page, from, to }).toString();
   return null;
 }
@@ -435,13 +492,14 @@ function setCors(res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-glitchless-api-key, x-glitchless-client');
 }
 
-function json(res, status, body) {
-  send(res, status, JSON.stringify(body), 'application/json');
+// API answers are never cached unless they say so (a share link's, SHARE_CACHE).
+function json(res, status, body, headers = undefined) {
+  send(res, status, JSON.stringify(body), 'application/json', headers);
 }
 
-function send(res, status, body, type = 'text/plain') {
+function send(res, status, body, type = 'text/plain', headers = { 'Cache-Control': 'no-store' }) {
   if (res.headersSent) return;
-  res.writeHead(status, { 'Content-Type': type });
+  res.writeHead(status, { 'Content-Type': type, ...headers });
   res.end(body);
 }
 

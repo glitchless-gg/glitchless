@@ -29,7 +29,7 @@ stage is too hard?", "Does it stutter on phones?". Leave out what nobody would a
 | how many players do it at all (conversion) | `track(name)` | `stat` with `per: "$players"` |
 | a sequence (tutorial → first win, paywall → purchase) | one `track` per step | `funnel` |
 | progress or difficulty through stages, puzzles, waves, stops | `levelStart` / `levelComplete` / `levelFail` | `levels` |
-| dying, and where | `death` (and `setPosition` for places) | `deaths`, the Heatmaps view |
+| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level), the Heatmaps view |
 | smoothness, and what makes it worse | automatic frame times, plus `setContext` gauges (enemies, particles) | `frame_time`, `stat: frame_p95` |
 | crashes and errors | automatic, plus `error()` for handled ones | `errors`, `stat: crash_free_pct` |
 | whether players come back (D1, D7, D30) | install mode: privacy `install` in the SDK, a stored random player ID (ask the user first: the privacy page must say so) | `retention`, the Players view |
@@ -90,6 +90,7 @@ one line on why it matters.
 | `live` | `events`: only these names or types, as they arrive |
 | `findings`, `frame_time`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports) |
 | `retention` | `limit`: how many of the latest first-seen days (default 14). Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on |
+| `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
 
 An event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. With `sum` and `by`
 an attribute, the event is a name only (`purchase`, not `purchase=done`).
@@ -146,7 +147,15 @@ and time), a `breakdown` of `hint` by `what` and a `funnel` of `tutorial=done,pu
 and Errors. No Performance unless it's slow, no Heatmaps, no deaths.
 
 A platformer or shooter: an Overview with `stat` frame_p95 and crash_free_pct, `findings`, `frame_time`, `levels`,
-`deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions.
+`deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions. A
+level whose deaths tell its story gets a `positions` panel (`"show": "both"` to see where players went too).
+
+**A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], …]` on the
+level's plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,
+and the game itself can poll that link to draw everyone's deaths without a backend of its own: one board, one
+positions panel per level, a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_…&days=30`
+about once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so
+every player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.
 
 Saving checks every page and answers with each panel as it looks over the last week; a panel without data says
 why ("No "buy" events in this window"), and `glitchless_dashboard` with `page` shows one board's numbers. Show the

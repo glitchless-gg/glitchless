@@ -1,8 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { causeColor } from './format.js';
 
-// World-space heatmap over the level thumbnail the SDK captured (glitchless.captureMap).
-export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotspots = [], path, cursor, events = [], zoom = 1, showDensity = true, showDeaths = true }) {
+// Binned deaths (a positions panel's, with `n` each) are one colour, sized by how many fell there.
+const BINNED_DEATH = '#ff6b57';
+
+// World-space heatmap over the level thumbnail the SDK captured (glitchless.captureMap). `maxHeight` keeps a
+// tall level to that height (narrower, centred) instead of the width it would need.
+export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotspots = [], path, cursor, events = [], zoom = 1, showDensity = true, showDeaths = true, maxHeight = null }) {
   const wrap = useRef(null);
   const canvas = useRef(null);
   const [img, setImg] = useState(null);
@@ -26,9 +30,13 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
     const c = canvas.current;
     if (!c || !width || !bounds) return;
     const dpr = window.devicePixelRatio || 1;
-    const W = Math.round(width * zoom);
+    let W = Math.round(width * zoom);
     const aspect = img ? img.width / img.height : (bounds.max[0] - bounds.min[0]) / Math.max(1e-6, bounds.max[1] - bounds.min[1]);
-    const H = Math.max(200, Math.round(W / aspect));
+    let H = Math.max(200, Math.round(W / aspect));
+    if (maxHeight && H > maxHeight) {
+      H = maxHeight;
+      W = Math.min(W, Math.max(120, Math.round(H * aspect)));
+    }
     c.width = W * dpr;
     c.height = H * dpr;
     c.style.width = `${W}px`;
@@ -94,12 +102,13 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
     }
 
     if (showDeaths) {
+      const most = deaths.reduce((m, d) => Math.max(m, d.n || 0), 0);
       for (const d of deaths) {
         const [x, y] = toPx(...pick(d));
         ctx.beginPath();
-        ctx.arc(x, y, d.rage_quit ? 5 : 3.2, 0, Math.PI * 2);
-        ctx.fillStyle = causeColor(d.cause);
-        ctx.globalAlpha = 0.85;
+        ctx.arc(x, y, d.n ? 2.5 + 7 * Math.sqrt(d.n / most) : d.rage_quit ? 5 : 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = d.n ? BINNED_DEATH : causeColor(d.cause);
+        ctx.globalAlpha = d.n ? 0.7 : 0.85;
         ctx.fill();
         ctx.globalAlpha = 1;
         if (d.rage_quit) {
@@ -154,16 +163,39 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
-  }, [img, width, bounds, axis, density, deaths, hotspots, path, cursor, events, zoom, showDensity, showDeaths]);
+  }, [img, width, bounds, axis, density, deaths, hotspots, path, cursor, events, zoom, showDensity, showDeaths, maxHeight]);
 
   if (!bounds) return <div className="empty">No position data for this level yet.</div>;
   return (
     <div ref={wrap} style={{ width: '100%', overflowX: zoom > 1 ? 'auto' : 'hidden' }}>
       <div className="heatwrap" style={{ width: zoom > 1 ? `${zoom * 100}%` : '100%' }}>
-        <canvas ref={canvas} />
+        <canvas ref={canvas} style={{ margin: '0 auto' }} />
       </div>
     </div>
   );
+}
+
+// A board's positions panel (server/src/board.js): deaths counted per bin, over the coarse grid of where
+// players went when the panel shows paths.
+export function PositionsMap({ p, maxHeight = 360 }) {
+  const deaths = useMemo(() => (p.deaths || []).map(([a, b, n]) => (p.axis === 'xy' ? { x: a, y: b, n } : { x: a, z: b, n })), [p.deaths, p.axis]);
+  const density = useMemo(() => (p.path?.cells.length ? pathGrid(p.path, p.bounds, p.axis) : null), [p.path, p.bounds, p.axis]);
+  return <LevelMap bounds={p.bounds} axis={p.axis} deaths={deaths} density={density} maxHeight={maxHeight} />;
+}
+
+// A path's cells ([a, b, n], bin wide) as the dense grid LevelMap draws: row 0 at the top of the picture
+// (the highest y in a side view, the lowest z top-down).
+function pathGrid(path, bounds, axis) {
+  const size = path.bin;
+  const cols = Math.max(1, Math.round((bounds.max[0] - bounds.min[0]) / size));
+  const rows = Math.max(1, Math.round((bounds.max[1] - bounds.min[1]) / size));
+  const cells = new Array(cols * rows).fill(0);
+  for (const [a, b, n] of path.cells) {
+    const c = Math.floor((a - bounds.min[0]) / size);
+    const r = Math.floor((axis === 'xy' ? bounds.max[1] - b : b - bounds.min[1]) / size);
+    if (c >= 0 && c < cols && r >= 0 && r < rows) cells[r * cols + c] += n;
+  }
+  return { cols, rows, cells, samples: path.samples };
 }
 
 function ramp(t) {

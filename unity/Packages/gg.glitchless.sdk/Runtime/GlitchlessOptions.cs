@@ -18,7 +18,8 @@ namespace GlitchlessSdk
     {
         /// <summary>The game's id in Glitchless, lowercase and stable, for example "my-game".</summary>
         public string Service = "unknown-game";
-        /// <summary>The game's version; empty uses Application.version. Bump it on every release.</summary>
+        /// <summary>The game's version; empty uses the Steam build ("steam-18231") when the game runs one from Steam
+        /// with Steamworks, else Application.version. Bump it on every release.</summary>
         public string Version = "";
         /// <summary>Empty: "dev" in the Editor and development builds, "prod" in release builds.</summary>
         public string Env = "";

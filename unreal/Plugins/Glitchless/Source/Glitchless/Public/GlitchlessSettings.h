@@ -55,7 +55,8 @@ public:
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless")
 	bool bEnabled = true;
 
-	/** Empty: Project Settings > Description > Project Version. Bump it on every release, so versions can be compared. */
+	/** Empty: the Steam build ("steam-18231") when the game runs one from Steam with Steamworks, else Project Settings >
+	 * Description > Project Version. Bump it on every release, so versions can be compared. */
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
 	FString Version;
 

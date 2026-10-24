@@ -21,12 +21,12 @@ const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250
 // ───────────────────────────── context ─────────────────────────────
 
 // `rollups` ({ lo, hi, minutes } from store.rollups()) stands in for the raw events of every minute in
-// [lo, hi); the rest of the range is folded from raw events. Rollups have no session type or ids, so
-// those filters always use the raw events.
+// [lo, hi); the rest of the range is folded from raw events. Rollups have no session type, ids or Steam
+// facts, so those filters always use the raw events.
 export function buildContext(rawEvents, q, rollups = null) {
   const ctx = sessionContext(q, indexSessions(rawEvents));
   ctx.events = rawEvents.filter((e) => ctx.sessions.has(e.session_id));
-  if (rollups && (!q.type || q.type === 'all') && !q.sessions) {
+  if (rollups && (!q.type || q.type === 'all') && !q.sessions && !q.where) {
     const { lo, hi } = rollups;
     ctx.cells = [...cellList(rollups.minutes, wantedCell(q)), ...cellList(rollup(ctx.events.filter((e) => e.ts < lo || e.ts >= hi)))];
   }
@@ -41,6 +41,7 @@ export function sessionContext(q, sessions) {
     if (q.version && s.version !== q.version) return false;
     if (q.type && q.type !== 'all' && s.session_type !== q.type) return false;
     if (q.sessions && !q.sessions.has(s.session_id)) return false;
+    if (q.where) for (const [k, v] of Object.entries(q.where)) if (steamValue(s, k) !== v) return false;
     return true;
   };
   for (const [id, s] of sessions) if (!keep(s)) sessions.delete(id);
@@ -60,6 +61,27 @@ export function sessionContext(q, sessions) {
   }
   const bucketMs = pickBucket(q.to - q.from);
   return { q, sessions, from: q.from, to: q.to, bucketMs, buckets: makeBuckets(q.from, q.to, bucketMs) };
+}
+
+// Steam facts a session has from its session_start (SPEC §4c, when the game uses Steamworks). Each is a filter (a
+// query parameter of that name, q.where: only sessions with that value) and a dimension a breakdown can be split
+// by and versions compared on ($steam_branch: beta against public).
+export const STEAM_DIMENSIONS = ['steam_branch', 'steam_build', 'steam_hardware', 'steam_controller', 'steam_language', 'proton', 'big_picture', 'family_shared', 'timed_trial'];
+
+// A session's value of a Steam fact, as a filter or a group compares it (builds and flags as text), or null.
+export function steamValue(s, dim) {
+  const v = s.device?.[dim];
+  return v == null ? null : String(v);
+}
+
+// Query parameters → q.where: { steam_branch: 'beta', … } for the Steam facts asked for, or null.
+export function steamWhere(params) {
+  const where = {};
+  for (const k of STEAM_DIMENSIONS) {
+    const v = params.get(k);
+    if (v != null && v !== '') where[k] = v.slice(0, 64);
+  }
+  return Object.keys(where).length ? where : null;
 }
 
 // A game that never completes a level (an endless runner, a flappy game) ends every run in a death or a
@@ -143,6 +165,9 @@ export function sessionSummary(s) {
     browser: s.device ? `${s.device.browser} ${s.device.browser_version || ''}`.trim() : null,
     os: s.device?.os ?? null,
     steam_deck: s.device?.steam_deck === true,
+    steam_build: s.device?.steam_build ?? null,
+    steam_branch: s.device?.steam_branch ?? null,
+    steam_hardware: s.device?.steam_hardware ?? null,
     gpu: s.device?.gpu ?? null,
     gpu_tier: s.device?.gpu_tier ?? null,
     levels: naturalSort([...s.levels]),
@@ -262,6 +287,8 @@ export function performance(ctx) {
   const byBrowser = new Map();
   const byGpu = new Map();
   const byPlatform = new Map();
+  const byBranch = new Map();
+  const byBuild = new Map();
   const bucketSketch = Array.from({ length: nb }, () => new Sketch());
   const bucketCalls = Array.from({ length: nb }, () => [0, 0]);
   const bucketGeo = Array.from({ length: nb }, () => [0, 0]);
@@ -299,7 +326,9 @@ export function performance(ctx) {
   // known from its session_start), in the order the sessions' first frame windows arrived.
   for (const s of sessionsByFirstWindow(ctx)) {
     const dev = s.device || {};
-    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)]]) {
+    // Steam branches and builds only for the sessions that read them from Steamworks.
+    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)], [byBranch, steamValue(s, 'steam_branch')], [byBuild, steamValue(s, 'steam_build')]]) {
+      if (key == null) continue;
       const g = group(map, key);
       mergeCell(g, s.cell);
       g.sessions.add(s.session_id);
@@ -376,6 +405,8 @@ export function performance(ctx) {
     by_browser: [...byBrowser.values()].map(summarize).sort((a, b) => b.frames - a.frames),
     by_gpu: [...byGpu.values()].map(summarize).sort((a, b) => b.sessions - a.sessions).slice(0, 10),
     by_platform: [...byPlatform.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
+    by_steam_branch: [...byBranch.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
+    by_steam_build: [...byBuild.values()].map(summarize).sort((a, b) => Number(a.key) - Number(b.key)),
     hitch_causes: { ...mergedFacts(ctx).hc },
     hitch_context: hitchContext(ctx),
     hitches: recentHitches(ctx).map((h) => ({
@@ -891,6 +922,16 @@ export function cellCount(c, f) {
   return n;
 }
 
+// How many events of one session match a filter, from its state (as cellCount counts a cell's).
+export function sessionEventCount(s, f) {
+  const v = s.ev?.[f.name];
+  if (!v) return 0;
+  if (f.value == null) return v.n;
+  let n = 0;
+  for (const [k, t] of Object.entries(v.a)) if (!f.key || k === f.key) n += t.v[f.value] || 0;
+  return n;
+}
+
 // Whether a session sent an event that matches a filter.
 export function sentEvent(s, f) {
   const v = s.ev?.[f.name];
@@ -900,8 +941,10 @@ export function sentEvent(s, f) {
 }
 
 // An event's counts split by a dimension every event has: 'version' or 'level' (from the rollup cells),
-// with the sessions that sent it per version.
+// with the sessions that sent it per version. A Steam fact (STEAM_DIMENSIONS) splits by the sessions that sent
+// it instead, from their states: counts and sessions, but no series (a session counts its events, not per minute).
 export function eventsBy(ctx, f, dim) {
+  if (STEAM_DIMENSIONS.includes(dim)) return steamEventsBy(ctx, f, dim);
   const nb = ctx.buckets.length;
   const out = new Map();
   for (const { m, c } of cellsOf(ctx)) {
@@ -916,6 +959,20 @@ export function eventsBy(ctx, f, dim) {
   }
   if (dim === 'version') for (const s of ctx.sessions.values()) if (sentEvent(s, f) && out.has(String(s.version))) out.get(String(s.version)).sessions++;
   if (dim === 'version' && ctx.daily) dailyEventSessions(ctx, f, out);
+  return [...out.values()].sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
+}
+
+function steamEventsBy(ctx, f, dim) {
+  const out = new Map();
+  for (const s of ctx.sessions.values()) {
+    const n = sessionEventCount(s, f);
+    if (!n) continue;
+    const value = steamValue(s, dim) ?? '(none)';
+    let x = out.get(value);
+    if (!x) out.set(value, (x = { value, count: 0, sessions: 0 }));
+    x.count += n;
+    x.sessions++;
+  }
   return [...out.values()].sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
 }
 
@@ -993,15 +1050,15 @@ export function eventFunnel(ctx, steps) {
 
 export function heatmap(ctx, level, maps) {
   const map = pickMap(maps, level, ctx.q.version);
-  // No captured map: side-scrollers report z≈0 everywhere, so fall back to a side (xy) view.
   const pos = positionsOf(ctx, level);
-  const axis = map?.axis || (pos.some((e) => e.pts?.some((p) => Math.abs(p[3]) > 0.01)) ? 'xz' : 'xy');
+  const levelDeaths = deathsOf(ctx, level);
+  const axis = levelAxis(map, pos, levelDeaths);
   const pick = (x, y, z) => (axis === 'xy' ? [x, y] : [x, z]);
   const deaths = [];
   const rageSessions = new Map();
   for (const s of ctx.sessions.values()) if (s.rage_quit && s.rage?.level === level) rageSessions.set(s.session_id, rageDeathTs(s.rage));
   // Deaths without coordinates (the Godot SDK's anonymous mode leaves them out) can't be placed.
-  for (const d of deathsOf(ctx, level)) {
+  for (const d of levelDeaths) {
     if (isNum(d.x)) deaths.push({ x: d.x, y: d.y, z: d.z, cause: d.cause, version: d.version, session_id: d.session_id, ts: d.ts, rage_quit: rageSessions.get(d.session_id) === d.ts });
   }
   const pts = [];
@@ -1041,6 +1098,97 @@ export function heatmap(ctx, level, maps) {
     density,
     stats: levelStats(ctx, level),
   };
+}
+
+// The plane a level is drawn on: the captured map's, else top-down (xz) once positions or deaths leave z=0.
+// Side-scrollers report z≈0 everywhere, so they get a side (xy) view.
+function levelAxis(map, pos, deaths) {
+  if (map?.axis) return map.axis;
+  const off = (z) => Math.abs(z) > 0.01;
+  return pos.some((e) => e.pts?.some((p) => off(p[3]))) || deaths.some((d) => off(d.z)) ? 'xz' : 'xy';
+}
+
+// Where players died on one level, and with `show` 'path' or 'both' where they went, as counts per bin and
+// nothing else (no sessions, versions, players or times), so a share link can show it and a game can draw
+// it (board.js positions panel). Bins are squares `bin` world units wide (default: about a hundredth of the
+// level) on a fixed grid, so a bin stays put as players come and go; a and b are its centre on the level's
+// plane (`axis`). Rows are the busiest bins first, at most MAX_BINS of them (`truncated` says if more were
+// left out). Paths use a coarser grid (about 64 bins across). Bounds are the captured map's, else the data's
+// rounded out to whole bins.
+const MAX_BINS = 2000;
+export function levelPositions(ctx, level, maps, { show = 'deaths', bin = null } = {}) {
+  const map = pickMap(maps, level, ctx.q.version);
+  const deaths = show === 'path' ? [] : deathsOf(ctx, level);
+  // Deaths without coordinates (the Godot SDK's anonymous mode leaves them out) can't be placed.
+  const placed = deaths.filter((d) => isNum(d.x));
+  const pos = show === 'deaths' ? [] : positionsOf(ctx, level);
+  const axis = levelAxis(map, pos, placed);
+  const pick = (x, y, z) => (axis === 'xy' ? [x, y] : [x, z]);
+  const points = placed.map((d) => pick(d.x, d.y, d.z));
+  const pts = [];
+  for (const e of pos) for (const p of e.pts || []) if (isNum(p[1])) pts.push(pick(p[1], p[2], p[3]));
+  if (show === 'deaths' && !points.length) return { empty: true, why: deaths.length ? `Deaths on ${level} have no positions: the game sends them without x and y.` : `No deaths on ${level} in this window.` };
+  if (show === 'path' && !pts.length) return { empty: true, why: `No positions from ${level} in this window: the game sends them with setPosition.` };
+  if (!points.length && !pts.length) return { empty: true, why: `No deaths or positions on ${level} in this window.` };
+
+  const all = points.concat(pts);
+  const extent = map?.bounds || { min: [minOf(all, 0), minOf(all, 1)], max: [maxOf(all, 0), maxOf(all, 1)] };
+  const span = Math.max(extent.max[0] - extent.min[0], extent.max[1] - extent.min[1]);
+  const size = bin || niceStep(span / 100);
+  const pathSize = Math.max(size, niceStep(span / 64));
+  const grids = show === 'deaths' ? [size] : show === 'path' ? [pathSize] : [size, pathSize];
+  const bounds = map?.bounds
+    ? { min: [...map.bounds.min], max: [...map.bounds.max] }
+    : {
+        min: [0, 1].map((k) => exact(Math.min(...grids.map((g) => Math.floor(extent.min[k] / g) * g)))),
+        max: [0, 1].map((k) => exact(Math.max(...grids.map((g) => Math.max(Math.ceil(extent.max[k] / g), Math.floor(extent.min[k] / g) + 1) * g)))),
+      };
+  const out = { level, axis, bounds };
+  if (show !== 'path') {
+    const d = binCounts(points, size);
+    Object.assign(out, { bin: size, deaths: d.rows, total: points.length, truncated: d.truncated });
+  } else out.bin = pathSize;
+  if (show !== 'deaths') {
+    const p = binCounts(pts, pathSize);
+    out.path = { bin: pathSize, cells: p.rows, samples: pts.length, truncated: p.truncated };
+  }
+  return out;
+}
+
+// [[a, b, n]]: how many points fell in each `size` square, the busiest first (ties in grid order).
+function binCounts(points, size) {
+  const bins = new Map();
+  for (const [a, b] of points) {
+    const i = Math.floor(a / size);
+    const j = Math.floor(b / size);
+    const key = `${i} ${j}`;
+    const bin = bins.get(key);
+    if (bin) bin[2]++;
+    else bins.set(key, [i, j, 1]);
+  }
+  const rows = [...bins.values()].sort((p, q) => q[2] - p[2] || p[0] - q[0] || p[1] - q[1]);
+  return { rows: rows.slice(0, MAX_BINS).map(([i, j, n]) => [exact((i + 0.5) * size), exact((j + 0.5) * size), n]), truncated: rows.length > MAX_BINS };
+}
+
+// 1, 2 or 5 times a power of ten, the nearest at or above v.
+function niceStep(v) {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  const m = v / p;
+  return exact((m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p);
+}
+
+// Without the float noise of bin arithmetic (0.35000000000000003).
+function exact(v) {
+  return +v.toPrecision(12);
+}
+
+function minOf(points, k) {
+  return points.reduce((m, p) => Math.min(m, p[k]), Infinity);
+}
+
+function maxOf(points, k) {
+  return points.reduce((m, p) => Math.max(m, p[k]), -Infinity);
 }
 
 // The heatmap's level row, and whether the game is one nobody wins (no_win: an endless or flappy game), so
@@ -1179,7 +1327,9 @@ export function sessionDetail(ctx, id, maps) {
 
 // ───────────────────────────── versions ─────────────────────────────
 
-export function versions(ctx, { stats = [], events = 8 } = {}) {
+// `by` (a Steam fact, STEAM_DIMENSIONS) compares Steam branches or builds the same way instead (steamGroups).
+export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
+  if (by) return steamGroups(ctx, { stats, events, by });
   const sessionsBy = new Map();
   for (const s of ctx.sessions.values()) {
     if (!sessionsBy.has(s.version)) sessionsBy.set(s.version, []);
@@ -1219,6 +1369,45 @@ export function versions(ctx, { stats = [], events = 8 } = {}) {
 
 // A board stat's metric as a version summary names it.
 const VERSION_METRIC = { errors: 'errors_per_session', deaths: 'deaths_per_session' };
+
+// Sessions grouped by a Steam fact (the beta branch they ran, the build), each group summarized as a version is:
+// frame times from the sessions' own frame windows, the game's events from what each session sent. Rows keep
+// `version` as the group's name, so a version comparison reads them unchanged. Sessions without the fact (no
+// Steamworks) are left out. Sums (revenue) are kept per minute and currency, not per session: null here.
+function steamGroups(ctx, { stats, events, by }) {
+  const groups = new Map();
+  for (const s of ctx.sessions.values()) {
+    const value = steamValue(s, by);
+    if (value == null) continue;
+    if (!groups.has(value)) groups.set(value, []);
+    groups.get(value).push(s);
+  }
+  const top = customEvents(ctx).events.slice(0, events).map((e) => e.name);
+  const list = [...groups].map(([value, sessions]) => {
+    const v = { version: value, by, ...summarize(sessions, sessions.map((s) => s.cell)) };
+    const n = v.sessions || 1;
+    const count = (spec) => {
+      const [f] = parseFunnel(spec);
+      return sessions.reduce((sum, s) => sum + sessionEventCount(s, f), 0);
+    };
+    v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
+    v.board = stats.map((p) => {
+      if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
+      if (p.sum) return null;
+      if (p.per === '$sessions' || p.per === '$players') {
+        const [f] = parseFunnel(p.event);
+        const sent = sessions.filter((s) => sentEvent(s, f));
+        const base = p.per === '$players' ? v.players : v.sessions;
+        return base ? round(((p.per === '$players' ? new Set(sent.map((s) => s.player_id)).size : sent.length) / base) * 100, 1) : null;
+      }
+      if (!p.per) return round(count(p.event) / n, 2);
+      const base = count(p.per);
+      return base ? round((count(p.event) / base) * 100, 1) : null;
+    });
+    return v;
+  });
+  return list.sort((a, b) => a.first_seen - b.first_seen);
+}
 
 // The metrics both a version comparison and a playtest run report for one group of sessions (or their
 // sessionStats()); frame time and renderer cost come from the rollup cells of those sessions' events.
@@ -1380,10 +1569,12 @@ function naturalSortBy(arr, key) {
   return arr.sort((a, b) => String(a[key]).localeCompare(String(b[key]), undefined, { numeric: true }));
 }
 
-// The platform a session ran on, for the performance breakdown: a Steam Deck (the SDKs' steam_deck tag) on its own,
-// whatever OS the build is for (a Windows build runs on a Deck under Proton), else the OS.
+// The platform a session ran on, for the performance breakdown: Valve's hardware on its own, whatever OS the build
+// is for (a Windows build runs on a Deck under Proton), else the OS. Steamworks names the hardware (steam_hardware)
+// when the game uses it; otherwise the SDKs' own steam_deck tag finds a Deck.
+const STEAM_PLATFORMS = { deck: 'Steam Deck', machine: 'Steam Machine', frame: 'Steam Frame' };
 export function platformOf(dev) {
-  return dev?.steam_deck === true ? 'Steam Deck' : dev?.os || 'unknown';
+  return STEAM_PLATFORMS[dev?.steam_hardware] || (dev?.steam_deck === true ? 'Steam Deck' : dev?.os || 'unknown');
 }
 
 function tierRank(t) {

@@ -112,6 +112,7 @@ namespace GlitchlessSdk
                     Delete = name => { PlayerPrefs.DeleteKey("glitchless." + name); PlayerPrefs.Save(); },
                 } : null,
                 Device = DeviceInfo.Collect,
+                Steam = SteamInfo.Read,
                 Engine = SampleEngine,
                 StartupMs = () => Time.realtimeSinceStartupAsDouble * 1000,
                 ScreenSize = DeviceInfo.ScreenSize,

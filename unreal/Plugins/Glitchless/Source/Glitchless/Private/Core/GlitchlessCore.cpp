@@ -1,5 +1,6 @@
 // Copyright (c) 2026 The Glitchless authors. MIT License: see LICENSE.
 #include "GlitchlessCore.h"
+#include "GlitchlessSteam.h"
 
 #include <algorithm>
 #include <chrono>
@@ -156,7 +157,9 @@ namespace Glitchless
 		Inited = true;
 		Options = InOptions;
 		Service = Options.Service.empty() ? "unknown-game" : Text::Lower(Options.Service);
-		Version = !Options.Version.empty() ? Options.Version : !AppVersion.empty() ? AppVersion : "0.0.0";
+		VersionGiven = !Options.Version.empty();
+		Version = VersionGiven ? Options.Version : !AppVersion.empty() ? AppVersion : "0.0.0";
+		ReadSteam(); // Steamworks may be initialised only later: session_start asks again
 		Env = !Options.Env.empty() ? Options.Env : IsDevelopmentBuild ? "dev" : "prod";
 		const std::optional<std::string> FlagIntake = FlagValue("glitchless-intake");
 		Intake = FlagIntake ? *FlagIntake : Options.Intake;
@@ -1516,10 +1519,29 @@ namespace Glitchless
 		E.Set("level", FValue());
 		E.Set("session_type", SessionType);
 		E.Set("privacy", PrivacyName(Options.Privacy));
-		E.Set("device", DeviceInfo.IsObject() ? DeviceInfo : FValue::Object());
+		FValue Dev = DeviceInfo.IsObject() ? DeviceInfo : FValue::Object();
+		Steam::AddTo(Dev, ReadSteam());
+		E.Set("device", Dev);
 		E.Set("page", FValue());
 		E.Set("nav_ms", FValue());
 		return E;
+	}
+
+	// The game's Steam facts, read until Steamworks answers: a game may initialise Steam after Glitchless. A game that
+	// gives no version reports its Steam build, so versions compare build by build. The first batch is made after
+	// session_start, so every batch of a session has the same version.
+	const FValue& FCore::ReadSteam()
+	{
+		if ((!SteamInfo.IsObject() || SteamInfo.Size() == 0) && SteamFacts)
+		{
+			SteamInfo = SteamFacts();
+		}
+		const FValue* Build = SteamInfo.IsObject() ? SteamInfo.Find("steam_build") : nullptr;
+		if (Build && !VersionGiven && Build->AsInt() > 0)
+		{
+			Version = "steam-" + std::to_string(Build->AsInt());
+		}
+		return SteamInfo;
 	}
 
 	// ───────────────────────────── sending ─────────────────────────────

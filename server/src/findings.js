@@ -6,6 +6,7 @@ import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, d
 import { dailySdks } from './daily.js';
 import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './facts.js';
 import { reportFindings } from './reports.js';
+import { storeFindings } from './reviews.js';
 import { WEB_ENGINES, WEB_ENGINE_FATAL_WORDS, WEB_ENGINE_QUALITY_TIPS, WEB_ENGINE_SLOW_START_TIPS, webEngineErrorSuggestion, webEnginePerfSuggestion } from './web-engine-advice.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -366,6 +367,9 @@ export function findings(ctx, maps = []) {
 
   // 8. Players' bug reports piling up on one level (ctx.reports, which app.js reads for the range).
   out.push(...reportFindings(ctx, totalSessions, gameEngine(ctx)));
+
+  // 9. Store reviews (Steam) about stutter, lag, fps, freezes or crashes rising after a build (ctx.stores, reviews.js).
+  out.push(...storeFindings(ctx, out));
 
   return out
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.impact - a.impact)

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="36 112 440 312" role="img" aria-label="Glitchless">
+  <defs>
+    <mask id="screen-dark" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="#fff"/>
+      <rect x="134" y="186" width="244" height="88" rx="28" fill="#000"/>
+    </mask>
+  </defs>
+  <g fill="#2EE6A6" mask="url(#screen-dark)">
+      <rect x="132" y="128" width="64" height="40" rx="16"/>
+      <rect x="316" y="128" width="64" height="40" rx="16"/>
+      <rect x="84" y="150" width="344" height="156" rx="72"/>
+      <rect x="80" y="214" width="124" height="190" rx="62" transform="rotate(14 142 214)"/>
+      <rect x="308" y="214" width="124" height="190" rx="62" transform="rotate(-14 370 214)"/>
+  </g>
+  <g fill="none" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M158 238 L176 208 L194 256 L212 214 L230 238" stroke="#FF6B57"/>
+    <path d="M230 238 H352" stroke="#2EE6A6"/>
+  </g>
+</svg>

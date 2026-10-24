@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#070b18" />
+    <title>Lagderboard: how much can your device take?</title>
+    <meta
+      name="description"
+      content="Pile on cubes, lights and explosions until your phone or computer drops under 30 fps. No sign-up. Scored by Glitchless frame-time measurement."
+    />
+    <!-- %LAGDERBOARD_URL% is the game's address (VITE_LAGDERBOARD_URL), filled in by vite.config.js -->
+    <link rel="canonical" href="%LAGDERBOARD_URL%" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Lagderboard" />
+    <meta property="og:title" content="Lagderboard: how much can your device take?" />
+    <meta
+      property="og:description"
+      content="Pile on cubes, lights and explosions until it drops under 30 fps. No sign-up. Scored by Glitchless."
+    />
+    <meta property="og:url" content="%LAGDERBOARD_URL%" />
+    <meta property="og:image" content="%LAGDERBOARD_URL%og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A glowing mound of cubes and the words: Lagderboard, how much can your device take?"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@Glitchless_gg" />
+    <meta name="twitter:image" content="%LAGDERBOARD_URL%og.jpg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b18'/%3E%3Cpath d='M32 10 52 21v22L32 54 12 43V21z' fill='%232EE6A6'/%3E%3Cpath d='M32 10 52 21 32 32 12 21z' fill='%23C9FBE9'/%3E%3Cpath d='M32 32v22L12 43V21z' fill='%2318A877'/%3E%3Cpath d='M38 30h8l-6 9h6l-12 13 4-10h-5z' fill='%23FF6B57'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #070b18;
+        --ink: #e9eeff;
+        --dim: rgba(233, 238, 255, 0.64);
+        --faint: rgba(233, 238, 255, 0.14);
+        --mint: #2ee6a6;
+        --mint-ink: #04261a;
+        --coral: #ff6b57;
+        --gold: #ffc83d;
+        --panel: rgba(9, 14, 32, 0.84);
+        --display: "Unbounded Variable", "Arial Black", system-ui, sans-serif;
+        --mono:
+          "JetBrains Mono Variable", ui-monospace, Menlo, Consolas, monospace;
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--mono);
+        -webkit-tap-highlight-color: transparent;
+        -webkit-user-select: none;
+        user-select: none;
+        overscroll-behavior: none;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        border: 0;
+        background: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+      }
+      a {
+        color: inherit;
+      }
+      #game,
+      #freeze {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100dvh;
+        display: block;
+        touch-action: none;
+        outline: none;
+      }
+      #freeze {
+        object-fit: cover;
+        filter: saturate(1.15) brightness(0.55) blur(2px);
+        transform: scale(1.03);
+      }
+      #vignette {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0;
+        background: radial-gradient(
+          ellipse at 50% 45%,
+          rgba(255, 107, 87, 0) 45%,
+          rgba(255, 107, 87, 0.5) 100%
+        );
+        transition: opacity 0.25s;
+      }
+      body.melting #vignette {
+        opacity: 1;
+        animation: throb 0.6s ease-in-out infinite;
+      }
+      @keyframes throb {
+        50% {
+          opacity: 0.55;
+        }
+      }
+
+      /* ── screens ───────────────────────────── */
+      .screen {
+        position: fixed;
+        inset: 0;
+        display: none;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: calc(var(--safe-top) + 20px) 16px
+          calc(var(--safe-bottom) + 20px);
+      }
+      .screen.on {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        place-items: center;
+      }
+      .wrap {
+        width: min(560px, 100%);
+        min-width: 0;
+        text-align: center;
+      }
+
+      .logo {
+        margin: 0;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: clamp(34px, 10.4vw, 84px);
+        line-height: 0.95;
+        letter-spacing: -0.02em;
+        text-shadow: 0 6px 30px rgba(7, 11, 24, 0.9);
+      }
+      .logo .lag {
+        color: var(--coral);
+        display: inline-block;
+        animation: lag 2.4s steps(1) infinite;
+      }
+      @keyframes lag {
+        0%,
+        86%,
+        100% {
+          transform: none;
+        }
+        88% {
+          transform: translate(3px, -2px) skewX(-8deg);
+        }
+        92% {
+          transform: translate(-2px, 1px);
+        }
+      }
+      .pitch {
+        margin: 18px 0 0;
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: clamp(19px, 5vw, 30px);
+        line-height: 1.2;
+        text-shadow: 0 2px 18px rgba(7, 11, 24, 0.95);
+      }
+      .how {
+        margin: 14px auto 0;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: rgba(7, 11, 24, 0.72);
+        max-width: 30em;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--dim);
+        text-shadow: 0 1px 10px rgba(7, 11, 24, 1);
+      }
+      .chip-device {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 20px;
+        padding: 8px 14px;
+        max-width: 100%;
+        border-radius: 999px;
+        background: var(--panel);
+        border: 1px solid var(--faint);
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chip-device::before {
+        content: "";
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--mint);
+        box-shadow: 0 0 10px var(--mint);
+      }
+      .start {
+        display: block;
+        width: min(320px, 100%);
+        margin: 22px auto 0;
+        padding: 18px 28px;
+        border-radius: 18px;
+        background: var(--mint);
+        color: var(--mint-ink);
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 22px;
+        letter-spacing: 0.02em;
+        box-shadow:
+          0 6px 0 #149a6c,
+          0 18px 40px rgba(46, 230, 166, 0.28);
+        transition: transform 0.08s;
+      }
+      .start:active {
+        transform: translateY(4px);
+        box-shadow:
+          0 2px 0 #149a6c,
+          0 10px 24px rgba(46, 230, 166, 0.28);
+      }
+      .links {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      .link {
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: var(--panel);
+        border: 1px solid var(--faint);
+        font-size: 14px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .link:hover {
+        border-color: rgba(46, 230, 166, 0.5);
+      }
+      .credit {
+        margin-top: 22px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .text-link {
+        margin-left: 6px;
+        padding: 0;
+        color: var(--dim);
+        font-size: 12px;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      #privacy {
+        background: rgba(5, 8, 18, 0.78);
+        place-items: start center;
+      }
+      #privacy .note {
+        font-size: 13px;
+      }
+      .credit b {
+        color: var(--mint);
+      }
+
+      /* ── HUD ───────────────────────────── */
+      #hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        display: none;
+      }
+      #hud.on {
+        display: block;
+      }
+      .hud-top {
+        position: absolute;
+        top: calc(var(--safe-top) + 14px);
+        left: 16px;
+        right: 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        text-shadow: 0 2px 14px rgba(7, 11, 24, 0.9);
+      }
+      /* a plain translucent panel, no backdrop blur: the HUD must not add GPU work to what is being measured */
+      .hud-panel {
+        width: fit-content;
+        min-width: min(360px, 100%);
+        max-width: 100%;
+        padding: 8px 16px 10px;
+        border-radius: 20px;
+        background: rgba(7, 11, 24, 0.62);
+      }
+      .count-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        color: var(--dim);
+      }
+      .count {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: clamp(46px, 14vw, 104px);
+        line-height: 1;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+        margin-top: 2px;
+      }
+      .meter {
+        width: 100%;
+        margin-top: 8px;
+      }
+      .meter-bar {
+        position: relative;
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(9, 14, 32, 0.8);
+        border: 1px solid var(--faint);
+        overflow: hidden;
+      }
+      .meter-bar i {
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        border-radius: 999px;
+        background: var(--mint);
+        transition:
+          width 0.2s,
+          background 0.2s;
+      }
+      .meter-bar b {
+        position: absolute;
+        top: -2px;
+        bottom: -2px;
+        width: 2px;
+        background: var(--coral);
+        /* the 30 fps line: 33.4 ms on a 0-50 ms scale */
+        left: 66.8%;
+      }
+      .meter-text {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+      }
+      .meter-text .warn {
+        color: var(--coral);
+      }
+      .stats-line {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .melt {
+        position: absolute;
+        left: 50%;
+        top: 52%;
+        width: 150px;
+        height: 150px;
+        transform: translate(-50%, -50%) scale(0.85);
+        display: grid;
+        place-items: center;
+        opacity: 0;
+        transition:
+          opacity 0.2s,
+          transform 0.2s;
+      }
+      body.melting .melt {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+      .melt svg {
+        position: absolute;
+        inset: 0;
+        transform: rotate(-90deg);
+      }
+      .melt circle {
+        fill: rgba(7, 11, 24, 0.55);
+        stroke: var(--coral);
+        stroke-width: 8;
+        stroke-linecap: round;
+      }
+      .melt .track {
+        stroke: rgba(255, 107, 87, 0.22);
+      }
+      .melt div {
+        position: relative;
+        text-align: center;
+      }
+      .melt b {
+        display: block;
+        font-family: var(--display);
+        font-size: 15px;
+        letter-spacing: 0.08em;
+        color: var(--coral);
+      }
+      .melt span {
+        display: block;
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .hud-bottom {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        bottom: calc(var(--safe-bottom) + 18px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      .hint {
+        font-size: 13px;
+        color: var(--dim);
+        text-shadow: 0 1px 10px rgba(7, 11, 24, 1);
+        transition: opacity 0.8s;
+      }
+      .hint.gone {
+        opacity: 0;
+      }
+      .more {
+        pointer-events: auto;
+        width: min(260px, 100%);
+        padding: 16px 22px;
+        border-radius: 999px;
+        background: var(--coral);
+        color: #2a0700;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 22px;
+        letter-spacing: 0.04em;
+        box-shadow:
+          0 6px 0 #b8402f,
+          0 16px 36px rgba(255, 107, 87, 0.35);
+        transition: transform 0.06s;
+      }
+      .more small {
+        font-size: 14px;
+        opacity: 0.7;
+        margin-left: 6px;
+      }
+      .more:active,
+      .more.pressed {
+        transform: translateY(4px) scale(0.98);
+        box-shadow:
+          0 2px 0 #b8402f,
+          0 8px 20px rgba(255, 107, 87, 0.35);
+      }
+
+      /* ── end card ───────────────────────────── */
+      .card {
+        position: relative;
+        padding: 24px 20px 20px;
+        border-radius: 24px;
+        background: linear-gradient(
+          160deg,
+          rgba(14, 22, 48, 0.92),
+          rgba(7, 11, 24, 0.92)
+        );
+        border: 1px solid var(--faint);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+        text-align: left;
+        overflow: hidden;
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 5px;
+        background: var(--coral);
+      }
+      .ribbon {
+        display: inline-block;
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        color: var(--coral);
+      }
+      .survived {
+        margin-top: 14px;
+        font-size: 15px;
+        color: var(--dim);
+      }
+      .score {
+        font-family: var(--display);
+        font-weight: 800;
+        font-size: clamp(44px, 14vw, 84px);
+        line-height: 1;
+        letter-spacing: -0.03em;
+        margin-top: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .score small {
+        display: block;
+        margin-top: 6px;
+        font-size: 0.36em;
+        letter-spacing: 0;
+        color: var(--mint);
+      }
+      .device {
+        margin-top: 14px;
+        font-size: 14px;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .measured {
+        margin: 6px 0 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--dim);
+      }
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 14px;
+      }
+      .chips span {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(46, 230, 166, 0.12);
+        color: #c9fbe9;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .rank {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px solid var(--faint);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .rank b {
+        color: var(--gold);
+      }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .btn {
+        display: block;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        touch-action: manipulation;
+        padding: 14px 12px;
+        border-radius: 14px;
+        background: var(--panel);
+        border: 1px solid var(--faint);
+        font-size: 14px;
+        font-weight: 700;
+        text-align: center;
+        text-decoration: none;
+      }
+      .btn.primary {
+        grid-column: 1 / -1;
+        background: var(--ink);
+        color: var(--bg);
+        border-color: transparent;
+        font-family: var(--display);
+        font-size: 17px;
+      }
+      #end .start {
+        margin-top: 14px;
+        width: 100%;
+      }
+
+      /* ── leaderboard sheet ───────────────────────────── */
+      #board {
+        background: rgba(5, 8, 18, 0.78);
+        place-items: start center;
+      }
+      .sheet {
+        width: min(560px, 100%);
+        margin-top: 4vh;
+        padding: 20px 18px;
+        border-radius: 22px;
+        background: #0b1124;
+        border: 1px solid var(--faint);
+        text-align: left;
+      }
+      .sheet header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+      .sheet h2 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 22px;
+      }
+      .sheet h2 span {
+        color: var(--coral);
+      }
+      .close {
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--faint);
+        font-size: 13px;
+      }
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+        margin-top: 16px;
+        padding: 4px;
+        border-radius: 14px;
+        background: rgba(233, 238, 255, 0.06);
+      }
+      .tabs button {
+        padding: 10px 6px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--dim);
+      }
+      .tabs button[aria-selected="true"] {
+        background: var(--ink);
+        color: var(--bg);
+      }
+      .rows {
+        list-style: none;
+        margin: 14px 0 0;
+        padding: 0;
+      }
+      .rows li {
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        gap: 10px;
+        align-items: baseline;
+        padding: 12px 4px;
+        border-bottom: 1px solid var(--faint);
+        font-size: 14px;
+      }
+      .rows li.me {
+        color: var(--mint);
+      }
+      .rows .n {
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .rows li:nth-child(1) .n {
+        color: var(--gold);
+      }
+      .rows .name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+      }
+      .rows .name small {
+        display: block;
+        margin-top: 2px;
+        font-weight: 500;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .rows .best {
+        font-family: var(--display);
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .empty {
+        padding: 28px 8px;
+        text-align: center;
+        color: var(--dim);
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .note {
+        margin: 14px 0 0;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--dim);
+      }
+      .sheet .links {
+        justify-content: flex-start;
+      }
+
+      #toast {
+        position: fixed;
+        left: 50%;
+        top: 46%;
+        transform: translate(-50%, -50%) scale(0.9);
+        padding: 8px 16px;
+        border-radius: 999px;
+        background: rgba(9, 14, 32, 0.9);
+        border: 1px solid var(--faint);
+        font-size: 14px;
+        font-weight: 700;
+        opacity: 0;
+        transition:
+          opacity 0.2s,
+          transform 0.2s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      #toast.on {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+
+      @media (min-width: 900px) {
+        .hud-top {
+          top: 22px;
+        }
+        .card {
+          padding: 30px 30px 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game" tabindex="0" aria-label="Lagderboard scene"></canvas>
+    <canvas id="freeze" hidden></canvas>
+    <div id="vignette"></div>
+
+    <section class="screen on" id="title">
+      <div class="wrap">
+        <h1 class="logo"><span class="lag">LAG</span>DERBOARD</h1>
+        <p class="pitch">How much can your device take?</p>
+        <p class="how">
+          Keep piling on cubes, lights and explosions. The run ends when your
+          frame rate stays under 30 fps for 3 seconds, and your score is what
+          your device held.
+        </p>
+        <div class="chip-device" id="t-device">Reading your device…</div>
+        <button class="start" id="start">Start</button>
+        <div class="links">
+          <button class="link" id="t-board">Leaderboard</button>
+          <a class="link" id="t-live" target="_blank" rel="noopener"
+            >Live stats ↗</a
+          >
+        </div>
+        <div class="credit">
+          Scored by <b>Glitchless</b> frame-time measurement, not a guess.
+          <button class="text-link" id="t-privacy">Privacy</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="hud">
+      <div class="hud-top">
+        <div class="hud-panel">
+          <div class="count-label">CUBES ON SCREEN</div>
+          <div class="count" id="h-count">0</div>
+          <div class="meter">
+            <div class="meter-bar"><i id="h-bar"></i><b></b></div>
+            <div class="meter-text">
+              <span id="h-p95">p95 – ms</span><span id="h-fps">– fps</span>
+            </div>
+          </div>
+          <div class="stats-line" id="h-stats">
+            0 lights · 0 explosions · 0:00
+          </div>
+        </div>
+      </div>
+      <div class="melt" aria-live="polite">
+        <svg viewBox="0 0 150 150">
+          <circle class="track" cx="75" cy="75" r="66" />
+          <circle
+            id="h-ring"
+            cx="75"
+            cy="75"
+            r="66"
+            stroke-dasharray="414.7"
+            stroke-dashoffset="414.7"
+          />
+        </svg>
+        <div><b>MELTING</b><span id="h-melt">under 30 fps</span></div>
+      </div>
+      <div class="hud-bottom">
+        <div class="hint" id="h-hint">Tap anywhere to blast more in</div>
+        <button class="more" id="more">
+          MORE<small id="h-tier">×1</small>
+        </button>
+      </div>
+    </div>
+
+    <section class="screen" id="end">
+      <div class="wrap">
+        <div class="card">
+          <div class="ribbon">MELTDOWN</div>
+          <div class="survived">
+            Your <span id="e-short">device</span> survived
+          </div>
+          <div class="score">
+            <span id="e-score">0</span><small>cubes</small>
+          </div>
+          <div class="device" id="e-device"></div>
+          <p class="measured" id="e-measured"></p>
+          <div class="chips" id="e-chips"></div>
+          <div class="rank" id="e-rank"></div>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="e-share">Share</button>
+          <a class="btn" id="e-x" target="_blank" rel="noopener">Post on X</a>
+          <button class="btn" id="e-save">Save image</button>
+        </div>
+        <button class="start" id="e-again">Try again</button>
+        <div class="links">
+          <button class="link" id="e-board">Leaderboard</button>
+          <a class="link" id="e-live" target="_blank" rel="noopener"
+            >Live stats ↗</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="board">
+      <div class="sheet" role="dialog" aria-labelledby="b-title">
+        <header>
+          <h2 id="b-title"><span>LAG</span>DERBOARD</h2>
+          <button class="close" id="b-close">Close</button>
+        </header>
+        <div class="tabs" role="tablist">
+          <button role="tab" data-class="phone">Phones</button>
+          <button role="tab" data-class="tablet">Tablets</button>
+          <button role="tab" data-class="desktop">Desktops</button>
+        </div>
+        <ol class="rows" id="b-list"></ol>
+        <p class="note" id="b-note"></p>
+        <div class="links">
+          <a class="link" id="b-live" target="_blank" rel="noopener"
+            >Live stats on Glitchless ↗</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="privacy">
+      <div class="sheet" role="dialog" aria-labelledby="p-title">
+        <header>
+          <h2 id="p-title">Privacy</h2>
+          <button class="close" id="p-close">Close</button>
+        </header>
+        <p class="note">
+          Lagderboard measures how your device runs it, and that measurement is
+          the game. While you play it sends Glitchless frame times, hitches,
+          errors, your browser, operating system and screen size, and each run's
+          score with your device's name (its graphics chip, or for an iPhone its
+          screen size).
+        </p>
+        <p class="note">
+          There's no account, no player ID kept on your device, no ads and no
+          tracking across sites. The leaderboard shows your device's name and
+          score, never who you are.
+        </p>
+        <div class="links">
+          <a
+            class="link"
+            href="https://www.glitchless.gg/privacy.html"
+            target="_blank"
+            rel="noopener"
+            >Glitchless privacy policy ↗</a
+          >
+        </div>
+      </div>
+    </section>
+
+    <div id="toast"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

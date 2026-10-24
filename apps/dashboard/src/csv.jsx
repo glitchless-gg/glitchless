@@ -3,6 +3,7 @@
 // shows). The columns are the ones on screen, after a header row: times in ISO 8601 (UTC), durations in
 // seconds, frame times in ms, money in its currency's units. A file is named <game>-<panel>-<from>-<to>.csv.
 import { useFilters } from './filters.js';
+import { STORE_TYPES, storeCsv } from './stores.jsx';
 
 // Rows (arrays of cells) as CSV text.
 export function toCsv(rows) {
@@ -72,6 +73,7 @@ const sumHeader = (label, currency) => (currency ? `${label} (${currency})` : la
 // liveCsv).
 export function panelCsv(p) {
   if (p.empty) return null;
+  if (STORE_TYPES.has(p.type)) return storeCsv(p);
   switch (p.type) {
     case 'stat': {
       const head = ['Stat', p.currency ? `Value (${p.currency})` : p.unit ? `Value (${p.unit})` : 'Value'];
@@ -124,7 +126,7 @@ export function panelCsv(p) {
     case 'versions': {
       const cols = p.columns.filter((c) => !c.hidden);
       return [
-        ['Version', 'First seen', 'Sessions', ...cols.map((c) => columnHeader(c))],
+        [{ steam_branch: 'Steam branch', steam_build: 'Steam build' }[p.by] || 'Version', 'First seen', 'Sessions', ...cols.map((c) => columnHeader(c))],
         ...p.rows.map((v) => [v.version, iso(v.first_seen), v.sessions, ...p.columns.flatMap((c, i) => (c.hidden ? [] : [v.values[i]]))]),
       ];
     }
@@ -132,6 +134,11 @@ export function panelCsv(p) {
       return reportsCsv(p.reports);
     case 'retention':
       return retentionCsv(p);
+    case 'positions': {
+      // One row per bin: its centre on the level's plane and how many fell in it.
+      const b = p.axis === 'xy' ? 'y' : 'z';
+      return [['Layer', 'x', b, 'Count'], ...(p.deaths || []).map(([x, y, n]) => ['death', x, y, n]), ...(p.path?.cells || []).map(([x, y, n]) => ['path', x, y, n])];
+    }
   }
   return null;
 }

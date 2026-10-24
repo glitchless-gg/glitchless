@@ -1,7 +1,8 @@
 // Alerts: tells a game's developers when it gets worse (a new error, more crashes or slower frames after a
 // release, a new high finding) in Discord, Slack or email, with a line they can paste into their coding agent.
-// The rules, the check and the messages are here; where settings and state live and how a message is sent is
-// the host's (Glitchless Cloud keeps them per game; a self-hosted server uses GLITCHLESS_ALERT_WEBHOOK).
+// The rules, the check, the messages and their Discord and Slack formats are here; where settings and state live
+// and how a message is sent, email included, is the host's (Glitchless Cloud keeps them per game; a self-hosted
+// server uses GLITCHLESS_ALERT_WEBHOOK).
 //
 // A check reads the last day of one service, as glitchless_triage does by default, so the finding an alert
 // names is in the agent's triage. Each rule gives signals with a stable key, made from the finding id
@@ -194,7 +195,9 @@ export function dashboardRoute(page, params = {}) {
 const SEVERITY_OF = { new_error: (s) => (s.issue.fatal ? 'high' : 'medium'), crash_free: () => 'high', frame_p95: (s) => (s.rise >= 0.3 ? 'high' : 'medium'), finding: (s) => s.f.severity };
 
 // What one alert says, in any channel: { rule, severity, title (one line), facts (lines of evidence), finding,
-// paste (the line for a coding agent), link, game, at }. link(page, params) → the dashboard URL, or null.
+// paste (the line for a coding agent), link, game, at, figure }. link(page, params) → the dashboard URL, or null.
+// figure is for a channel that draws one (Glitchless Cloud's email): { kind, headline, value, label, series (the
+// error's counts over the last day, oldest first), stats: [{ label, value, hot }] }.
 export function alertMessage(s, { link = () => null } = {}) {
   const game = clean(s.service, 80);
   const base = { key: s.key, rule: s.rule, severity: SEVERITY_OF[s.rule](s), finding: s.finding, game, at: s.at, paste: `Use glitchless_triage on ${game}, then look at finding ${clean(s.finding, 200)}` };
@@ -210,6 +213,18 @@ export function alertMessage(s, { link = () => null } = {}) {
       ],
       paste: `${base.paste} (glitchless_get_error with fingerprint ${clean(i.fingerprint, 80)} has its stack).`,
       link: link('errors', { fingerprint: i.fingerprint }),
+      figure: {
+        kind: i.fatal ? 'New crash' : 'New error',
+        headline: clean(i.message, 140),
+        value: Number(i.count).toLocaleString('en-US'),
+        label: `${i.count === 1 ? 'time' : 'times'} in the last day, in ${count(i.sessions, 'session')}`,
+        series: i.series ?? null,
+        stats: [
+          ...(i.first_version ? [{ label: 'First seen in', value: clean(i.first_version, 40) }] : []),
+          ...(i.levels?.length ? [{ label: i.levels.length > 1 ? `Levels (${i.levels.length})` : 'Level', value: clean(i.levels[0], 40) }] : []),
+          { label: 'Sessions hit', value: `${i.sessions_pct}%`, hot: true },
+        ],
+      },
     };
   }
   if (s.rule === 'crash_free') {
@@ -220,6 +235,13 @@ export function alertMessage(s, { link = () => null } = {}) {
       facts: [`${clean(cur.version, 40)}: ${cur.crash_free_pct}% crash-free over ${count(cur.sessions, 'session')} in the last day.`, `${clean(prev.version, 40)}: ${prev.crash_free_pct}% crash-free over ${count(prev.sessions, 'session')}.`, `Down ${s.drop} points (z = ${s.z}).`],
       paste: `${base.paste}.`,
       link: link('versions'),
+      figure: {
+        kind: 'More crashes',
+        headline: `${clean(cur.version, 40)} crashes more than ${clean(prev.version, 40)}`,
+        value: `${cur.crash_free_pct}%`,
+        label: `crash-free sessions in ${clean(cur.version, 40)}, over the last day`,
+        stats: [{ label: `In ${clean(prev.version, 40)}`, value: `${prev.crash_free_pct}%` }, { label: 'Change', value: `−${s.drop} points`, hot: true }, { label: 'Sessions', value: Number(cur.sessions).toLocaleString('en-US') }],
+      },
     };
   }
   if (s.rule === 'frame_p95') {
@@ -230,6 +252,13 @@ export function alertMessage(s, { link = () => null } = {}) {
       facts: [`${clean(cur.version, 40)}: p95 ${cur.frame_p95}ms, p50 ${cur.frame_p50}ms over ${count(cur.sessions, 'session')} in the last day.`, `${clean(prev.version, 40)}: p95 ${prev.frame_p95}ms, p50 ${prev.frame_p50}ms over ${count(prev.sessions, 'session')}.`, `${Math.round(s.rise * 100)}% slower at p95.`],
       paste: `${base.paste}.`,
       link: link('versions'),
+      figure: {
+        kind: 'Slower frames',
+        headline: `${clean(cur.version, 40)} runs slower than ${clean(prev.version, 40)}`,
+        value: `${cur.frame_p95} ms`,
+        label: `p95 frame time in ${clean(cur.version, 40)}, over the last day`,
+        stats: [{ label: `In ${clean(prev.version, 40)}`, value: `${prev.frame_p95} ms` }, { label: 'Slower at p95', value: `${Math.round(s.rise * 100)}%`, hot: true }, { label: 'p50', value: `${cur.frame_p50} ms` }],
+      },
     };
   }
   const f = s.f;
@@ -239,6 +268,7 @@ export function alertMessage(s, { link = () => null } = {}) {
     facts: [clean(f.summary, 400), ...(f.impact_pct != null ? [`Affects ${f.impact_pct}% of sessions in the last day.`] : [])],
     paste: `${base.paste}.`,
     link: f.link?.fingerprint ? link('errors', { fingerprint: f.link.fingerprint }) : link(f.link?.page || 'overview', f.link?.level ? { level: f.link.level } : {}),
+    figure: { kind: `New ${f.severity} finding`, headline: clean(f.title, 160), ...(f.impact_pct != null ? { value: `${f.impact_pct}%`, label: 'of sessions affected in the last day' } : {}), stats: [] },
   };
 }
 
@@ -256,6 +286,7 @@ export function testMessage({ service, at, link = () => null }) {
     facts: ['A real alert says what changed in one line, then its numbers, a link to the page and the finding to fix.', 'Nothing is wrong with your game.'],
     paste: `Use glitchless_triage on ${game}.`,
     link: link('overview'),
+    figure: { kind: 'Test alert', headline: 'Alerts reach this channel', stats: [] },
   };
 }
 
@@ -285,24 +316,6 @@ export function slackPayload(m) {
       { type: 'context', elements: [{ type: 'mrkdwn', text: cut([m.link && `<${m.link}|Open in Glitchless>`, m.finding && `finding \`${slackText(code(m.finding))}\``, m.severity].filter(Boolean).join(' · '), 3000) }] },
     ],
   };
-}
-
-// Email: plain text and simple HTML. `footer` says why the reader gets it and where to change it.
-export function emailMessage(m, { footer = '' } = {}) {
-  const subject = cut(`[Glitchless] ${m.title}`, 200);
-  const text = [m.title, '', ...m.facts, '', ...(m.link ? [`Dashboard: ${m.link}`] : []), ...(m.finding ? [`Finding: ${m.finding}`] : []), '', 'Paste this into your coding agent:', `  ${m.paste}`, ...(footer ? ['', '--', footer] : [])].join('\n');
-  const h = escapeHtml;
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f7f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d2330">
-<div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #e3e6eb;border-radius:8px;padding:24px">
-<p style="margin:0 0 4px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#6b7a90">Glitchless · ${h(m.game)} · ${h(m.severity)}</p>
-<h1 style="margin:0 0 16px;font-size:18px;line-height:1.35">${h(m.title)}</h1>
-${m.facts.map((f) => `<p style="margin:0 0 8px;font-size:14px;line-height:1.5">${h(f)}</p>`).join('\n')}
-${m.link ? `<p style="margin:16px 0"><a href="${h(m.link)}" style="display:inline-block;background:#1d2330;color:#fff;text-decoration:none;padding:9px 14px;border-radius:6px;font-size:14px">Open in Glitchless</a>${m.finding ? ` <span style="font-size:13px;color:#6b7a90;margin-left:8px">finding <code>${h(m.finding)}</code></span>` : ''}</p>` : ''}
-<p style="margin:16px 0 6px;font-size:13px;color:#6b7a90">Paste this into your coding agent:</p>
-<pre style="margin:0;padding:12px;background:#f1f3f6;border-radius:6px;font-size:13px;white-space:pre-wrap;word-break:break-word">${h(m.paste)}</pre>
-${footer ? `<p style="margin:20px 0 0;font-size:12px;color:#6b7a90">${h(footer)}</p>` : ''}
-</div></body></html>`;
-  return { subject, text, html };
 }
 
 // ── a self-hosted server: GLITCHLESS_ALERT_WEBHOOK (server/src/local.js) ──
@@ -368,7 +381,6 @@ function cut(s, max) {
 const code = (s) => String(s ?? '').replace(/`/g, "'");
 const discordText = (s) => String(s).replace(/[\\*_~`|>#[\]()<:-]/g, '\\$&').replace(/@/g, '@\u200b');
 const slackText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const escapeHtml = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const count = (n, word) => `${Number(n).toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 const clock = (ms) => new Date(ms).toISOString().slice(11, 16);
 const round1 = (v) => Math.round(v * 10) / 10;

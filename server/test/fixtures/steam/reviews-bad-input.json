@@ -1,0 +1,5 @@
+{
+ "status": 400,
+ "contentType": "text/html; charset=UTF-8",
+ "body": "<html><head><title>Bad Request</title></head><body><h1>Bad Request</h1>Invalid input_json parameter</body></html>"
+}

@@ -33,7 +33,7 @@ The addon uses no `class_name`, so it adds no global names and works in a projec
 
 ```gdscript
 func _ready() -> void:
-	Glitchless.init("starlift", "", "prod", "https://glitchless.example.com")  # "" = application/config/version
+	Glitchless.init("starlift", "", "prod", "https://glitchless.example.com")  # "" = the Steam build, else application/config/version
 
 Glitchless.level_start("voyage_3")
 Glitchless.level_complete("voyage_3", score)          # duration measured since level_start
@@ -81,6 +81,14 @@ Frame times, errors and events are collected from the first frame. They wait in 
 ### Retention needs install mode
 
 In anonymous mode (the default) nothing is kept between launches, so the dashboard can't tell a returning player from a new one. `{"privacy": "install"}` keeps a random `p_…` player ID in `user://glitchless/player_id` (the one full mode uses) and sends it with every batch; nothing else changes. The Players page and `retention` board panels then show D1, D7 and D30. `Glitchless.reset_install_id()` forgets it (for a "reset my ID" setting): this session keeps its ID, the next launch makes a new one. On a Steam Deck, `session_start` carries `steam_deck: true` and, on SteamOS, `os: "SteamOS"` (Linux builds and Windows builds under Proton).
+
+### Steam
+
+If the game already uses [GodotSteam](https://godotsteam.com), every session also says which Steam build and beta branch it ran, whether on a Steam Deck (with GodotSteam 4.21, also a Steam Machine or Steam Frame, and Proton), in Big Picture mode, with which kind of controller, in which Steam language, and whether through Family Sharing or a timed trial. Nothing to set up and no dependency: the addon reads the `Steam` singleton only when the game has one (`Engine.has_singleton("Steam")`), and only once GodotSteam says Steam is initialised (`steamInitEx()`, initialising from the Project Settings, or `steamInit()` with your app ID), since its calls print engine errors before that. The facts are read when the first batch goes, so a game that initialises Steam after Glitchless still sends them. The controller is known once the game has called `inputInit()`. No Steam ID or name is ever read ([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).
+
+**Versions are Steam builds.** Pass `""` as the version and a Steam build reports `steam-<build>` (`steam-18231`), so every upload to Steam is a version the Versions page and `glitchless_compare_versions` can compare. Outside Steam it falls back to `application/config/version`. A version you pass always wins.
+
+**Branches.** Filter any dashboard query with `steam_branch=beta`, split a breakdown panel by `$steam_branch`, or compare branches with a versions panel `by: "$steam_branch"` or `glitchless_compare_versions` with `by: "steam_branch"`.
 
 ### Off in debug builds
 

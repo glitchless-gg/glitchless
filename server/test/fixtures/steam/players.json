@@ -1,0 +1,5 @@
+{
+ "status": 200,
+ "contentType": "application/json; charset=UTF-8",
+ "body": "{\"response\":{\"player_count\":3278,\"result\":1}}"
+}

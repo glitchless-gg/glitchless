@@ -297,6 +297,58 @@ TEST(AnonymousDeviceInfoIsCoarse)
 	EXPECT(Start.Find("page")->IsNull());
 }
 
+// Steam facts (GlitchlessSteam.h) go in session_start's device, and the Steam build is the version a game gives none.
+TEST(SessionStartCarriesSteamFactsAndTheBuildIsTheVersion)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	int Reads = 0;
+	Core->SteamFacts = [&Reads]() {
+		FValue F = FValue::Object();
+		if (++Reads < 2)
+		{
+			return F; // Steamworks initialised after Glitchless.Init
+		}
+		F.Set("steam_build", 18231);
+		F.Set("steam_branch", "beta");
+		F.Set("steam_hardware", "deck");
+		return F;
+	};
+	Core->Init(FHarness::Options());
+	Core->Flush();
+	const FValue Device = *OfType(H.Transport->Events(), "session_start").at(0).Find("device");
+	EXPECT_EQ(Device.Find("steam_build")->AsInt(), 18231);
+	EXPECT_EQ(Device.Find("steam_branch")->AsString(), "beta");
+	EXPECT(Device.Find("steam_deck")->AsBool());
+	EXPECT_EQ(Device.Find("gpu_tier")->AsString(), "low");
+	EXPECT_EQ(H.Envelope().Find("version")->AsString(), "steam-18231");
+	EXPECT_EQ(Reads, 2); // read until it answers, then kept
+	Core->Flush();
+	EXPECT_EQ(Reads, 2);
+}
+
+TEST(TheGamesVersionWinsOverTheSteamBuild)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->SteamFacts = []() {
+		FValue F = FValue::Object();
+		F.Set("steam_build", 18231);
+		return F;
+	};
+	FOptions O = FHarness::Options();
+	O.Version = "2.0.0";
+	Core->Init(O);
+	Core->Flush();
+	EXPECT_EQ(H.Envelope().Find("version")->AsString(), "2.0.0");
+	FHarness Plain;
+	auto NoSteam = Plain.NewCore();
+	NoSteam->Init(FHarness::Options());
+	NoSteam->Flush();
+	EXPECT_EQ(Plain.Envelope().Find("version")->AsString(), "1.2.3"); // no Steamworks: the project's version
+	EXPECT(!OfType(Plain.Transport->Events(), "session_start").at(0).Find("device")->Has("steam_branch"));
+}
+
 TEST(MapsAreLevelsExceptMenusAndLobbies)
 {
 	FHarness H;

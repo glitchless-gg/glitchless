@@ -25,7 +25,8 @@
 //   series      an event's count over time, optionally split `by` an attribute (top `limit` values); with
 //               `sum`, the attribute's sum over time
 //   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
-//               (`by` can also be $version or $level, which every event has: purchases by version)
+//               (`by` can also be $version or $level, which every event has: purchases by version, or a
+//               Steam fact of the session that sent it, such as $steam_branch, counted by count only)
 //   funnel      sessions that went through `steps` in order ("paywall,buy=tapped,buy=done")
 //   levels      starts, completions, fails and deaths per level; `label` is what the game calls a level
 //   frame_time  frame-time p50 and p95 over time against the frame budget
@@ -35,18 +36,26 @@
 //   findings    the ranked findings (`limit`)
 //   sessions    recent sessions, optionally only those that `sent` an event (`limit`)
 //   reports     the latest bug reports players sent, with their notes (`limit`)
+//   store_reviews, store_players, store_sales   a store's reviews by build, players online next to the sessions
+//               measured, units, returns and wishlists (reviews.js), for a game connected to a store (`store`)
 //   retention   D1, D7 and D30 by the day players were first seen (the latest `limit` days); needs player IDs
-//   versions    this page's stat panels, version by version
+//   versions    this page's stat panels, version by version; `by` a Steam fact ($steam_branch, $steam_build)
+//               compares Steam branches or builds instead: the beta against public
 //   live        events as they arrive, optionally only `events` (names or types)
+//   positions   where players died on one `level`, and with `show` 'path' or 'both' where they went, as
+//               counts per `bin` world units (analytics.js levelPositions); counts only, so a game can read
+//               it through a share link and draw its own dead (`show` defaults to 'deaths')
 //
 // Events are written as funnel steps are (analytics.js parseFunnel): "name", "name=value" or "name:key=value".
 
-import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, retention, cellsOf, round } from './analytics.js';
+import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, retention, cellsOf, levelPositions, round } from './analytics.js';
 import { findings } from './findings.js';
+import { STEAM_DIMENSIONS } from './analytics.js';
 import { reportSummary } from './reports.js';
 import { sumsBy, senders } from './sums.js';
+import { STORE_PANELS, storePanel, storePages, storePanelFields } from './reviews.js';
 
-export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention'];
+export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention', 'positions'];
 export const SIZES = { s: 3, m: 6, l: 12 };
 // Built-in numbers a stat panel can show, from the overview's KPIs.
 export const STATS = {
@@ -65,6 +74,8 @@ export const STATS = {
 };
 // Stats of this moment rather than the range: no version has a value of them.
 const LIVE_STATS = new Set(['players_now']);
+// Store panels (reviews.js), for a game connected to a store.
+PANEL_TYPES.push(...Object.keys(STORE_PANELS));
 // The built-in views a page can be, with their default title and icon.
 export const VIEWS = {
   events: { title: 'Events', icon: 'events' },
@@ -82,8 +93,13 @@ const MAX_PANELS = 24;
 const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
 const DIMENSIONS = ['version', 'level'];
+// What a Steam fact (analytics.js STEAM_DIMENSIONS) is called in a panel's title.
+const STEAM_LABELS = { steam_branch: 'Steam branch', steam_build: 'Steam build', steam_hardware: 'Steam hardware', steam_controller: 'controller', steam_language: 'Steam language', proton: 'Proton', big_picture: 'Big Picture', family_shared: 'Family Sharing', timed_trial: 'timed trial' };
+const STEAM_BY = STEAM_DIMENSIONS.map((d) => `$${d}`);
 // What a stat's `per` can be besides an event: every player or session in the window.
 const PER = { $players: 'player', $sessions: 'session' };
+// What a positions panel draws: where players died, where they went, or both.
+const SHOW = ['deaths', 'path', 'both'];
 
 export class BoardError extends Error {
   constructor(message) {
@@ -138,6 +154,7 @@ export function autoDashboard(ctx) {
   return {
     pages: [
       { id: 'overview', title: 'Overview', icon: 'overview', ...autoBoard(ctx) },
+      ...storePages(ctx, { frames: k.frame_p95 != null }),
       ...(own.length ? [view('events')] : []),
       ...(k.frame_p95 != null ? [view('performance')] : []),
       view('errors'),
@@ -180,10 +197,13 @@ function validatePanel(p, at) {
     if (parseFunnel(v).length !== 1) throw new BoardError(`${at}.${k} is one event: "name", "name=value" or "name:key=value"`);
     return v;
   };
-  const by = (required) => {
+  // A Steam fact ($steam_branch…) splits a breakdown by the sessions that sent the event (`steam`), not a series.
+  const by = (required, { steam = false } = {}) => {
     if (p.by == null && !required) return;
     const v = need('by');
-    if (v.startsWith('$') && !DIMENSIONS.includes(v.slice(1))) throw new BoardError(`${at}.by is an attribute name, or $version or $level`);
+    if (STEAM_BY.includes(v)) {
+      if (!steam) throw new BoardError(`${at}.by: a ${p.type} can't be split by ${v} (sessions count their events, not per minute); use a breakdown, a versions panel with by ${v}, or filter the board (?${v.slice(1)}=…)`);
+    } else if (v.startsWith('$') && !DIMENSIONS.includes(v.slice(1))) throw new BoardError(`${at}.by is an attribute name, or $version or $level${steam ? `, or a Steam fact of the session (${STEAM_BY.join(', ')})` : ''}`);
     out.by = v;
   };
   const limit = (max) => {
@@ -200,6 +220,7 @@ function validatePanel(p, at) {
   // Sums are kept per name and one attribute value, so a sum split by an attribute takes the event by name.
   const sumSplit = () => {
     if (out.sum && out.by && !out.by.startsWith('$') && parseFunnel(out.event)[0].value != null) throw new BoardError(`${at}: with sum and by an attribute, event is a name only ("purchase", not "purchase=done")`);
+    if (out.sum && STEAM_BY.includes(out.by)) throw new BoardError(`${at}: a sum can't be split by ${out.by} (sums are kept per minute, not per session); count instead, or filter the board (?${out.by.slice(1)}=…)`);
   };
   switch (p.type) {
     case 'stat':
@@ -228,9 +249,15 @@ function validatePanel(p, at) {
     case 'breakdown':
       out.event = event('event');
       sum();
-      by(true);
+      by(true, { steam: true });
       sumSplit();
       limit(20);
+      break;
+    case 'versions':
+      if (p.by != null) {
+        if (!STEAM_BY.includes(p.by)) throw new BoardError(`${at}.by compares sessions by a Steam fact: ${STEAM_BY.join(', ')}`);
+        out.by = p.by;
+      }
       break;
     case 'funnel': {
       const steps = parseFunnel(need('steps'));
@@ -256,8 +283,26 @@ function validatePanel(p, at) {
     case 'live':
       if (p.events != null) out.events = names(p.events, `${at}.events`);
       break;
+    case 'positions':
+      out.level = need('level');
+      if (p.show != null) {
+        if (!SHOW.includes(p.show)) throw new BoardError(`${at}.show must be one of ${SHOW.join(', ')}`);
+        out.show = p.show;
+      }
+      if (p.bin != null) {
+        if (typeof p.bin !== 'number' || !Number.isFinite(p.bin) || p.bin <= 0) throw new BoardError(`${at}.bin is a bin's width in world units, a number above 0`);
+        out.bin = p.bin;
+      }
+      break;
   }
+  if (STORE_PANELS[p.type]) Object.assign(out, storePanelFields(p, at, BoardError));
   return out;
+}
+
+// The levels a board's positions panels draw paths for: a store without raw events reads those levels'
+// position samples apart (q.positions, app.js).
+export function pathLevels(page) {
+  return [...new Set((page?.panels || []).filter((p) => p.type === 'positions' && (p.show === 'path' || p.show === 'both')).map((p) => p.level))];
 }
 
 // A board for a game that has none: the numbers every game has, then the game's own events, then the
@@ -288,26 +333,28 @@ export function autoBoard(ctx) {
 
 // Each panel with its data. A panel whose data isn't there yet (an event the game hasn't sent in this
 // window) gets `empty: true` and a line saying why, never zeros that look like a measurement. `maps` are
-// the game's level maps (for findings), `currency` the dashboard's. `shared`: for a share link's reader
-// (app.js; its share, or true), see forShare.
+// the game's level maps (for findings, and the plane and bounds of positions), `currency` the dashboard's.
+// `shared`: for a share link's reader (app.js; its share, or true), see forShare.
 export function evaluateBoard(ctx, board, { maps = [], shared = false, currency = null } = {}) {
   return board.panels.map((p, id) => {
-    const data = shared ? forShare(p, ctx, board, maps, currency, shared) : panelData(ctx, p, board, maps, currency);
+    const data = shared ? (STORE_PANELS[p.type] ? sharedStorePanel(ctx, p, shared) : forShare(p, ctx, board, maps, currency, shared)) : panelData(ctx, p, board, maps, currency);
     return { id, ...p, size: p.size || defaultSize(p), title: p.title || defaultTitle(p), ...data };
   });
 }
 
 // A panel as a share link shows it to anyone who has the link: sessions without session or player ids or
-// devices, errors and findings without stacks, code locations or breadcrumbs, and no live events. Fields
-// are kept by name and panels by type, so whatever is added later stays out until it is listed here.
-// Sums (revenue) are a game's business: hidden unless the link was made to show them (`shared.sums`).
-// Conversion stays: it is a share, not an amount.
+// devices, errors and findings without stacks, code locations or breadcrumbs, positions as counts per bin,
+// and no live events. Fields are kept by name and panels by type, so whatever is added later stays out
+// until it is listed here. Sums (revenue) are a game's business: hidden unless the link was made to show
+// them (`shared.sums`). Conversion stays: it is a share, not an amount.
 const SHARED_AS_IS = new Set(['stat', 'series', 'breakdown', 'funnel', 'levels', 'frame_time', 'deaths', 'events', 'versions', 'retention']);
 const SHARED_SESSION = ['version', 'env', 'session_type', 'start', 'duration_s', 'levels', 'completed', 'deaths', 'errors', 'hitches', 'p50', 'p95', 'crashed', 'rage_quit', 'ended', 'ttff_ms', 'events'];
 const SHARED_ISSUE = ['fingerprint', 'message', 'kind', 'count', 'sessions', 'last_seen', 'levels'];
 const SHARED_FINDING = ['id', 'severity', 'category', 'title', 'summary', 'suggestion', 'impact', 'impact_pct'];
+const SHARED_POSITIONS = ['level', 'axis', 'bounds', 'bin', 'deaths', 'total', 'truncated'];
+const SHARED_PATH = ['bin', 'cells', 'samples', 'truncated'];
 function forShare(p, ctx, board, maps, currency, shared) {
-  const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings';
+  const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings' || p.type === 'positions';
   if (!SHARED_AS_IS.has(p.type) && !redacted) return { empty: true, why: `${p.type === 'live' ? 'Live events are' : 'This panel is'} not shown on a shared board.` };
   const sums = shared?.sums === true;
   if (p.sum && !sums) return { empty: true, why: 'Sums such as revenue are not shown on this shared board.' };
@@ -319,6 +366,7 @@ function forShare(p, ctx, board, maps, currency, shared) {
   if (data.empty || !redacted) return data;
   if (p.type === 'sessions') return { sessions: data.sessions.map((s) => ({ ...pick(s, SHARED_SESSION), rage: s.rage ? { level: s.rage.level } : null })) };
   if (p.type === 'errors') return { issues: data.issues.map((i) => pick(i, SHARED_ISSUE)) };
+  if (p.type === 'positions') return { ...pick(data, SHARED_POSITIONS), ...(data.path ? { path: pick(data.path, SHARED_PATH) } : {}) };
   // An error's summary names its breadcrumbs and its suggested fix its code location, and a bug report's
   // quotes what players typed: say how often instead.
   return {
@@ -342,7 +390,14 @@ function pick(o, keys) {
   return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 }
 
+// A store panel on a share link: reviews and players as counts (never what players wrote); units, returns and
+// wishlists only on a link made to show sums.
+function sharedStorePanel(ctx, p, shared) {
+  return STORE_PANELS[p.type].shared === true || shared?.sums === true ? storePanel(ctx, p) : { empty: true, why: 'Units, returns and wishlists are not shown on this shared board.' };
+}
+
 function panelData(ctx, p, board, maps, currency) {
+  if (STORE_PANELS[p.type]) return storePanel(ctx, p);
   switch (p.type) {
     case 'stat': {
       // Counted by the server as batches arrive (app.js), not from the range.
@@ -381,6 +436,7 @@ function panelData(ctx, p, board, maps, currency) {
     case 'breakdown': {
       const [f] = parseFunnel(p.event);
       if (p.sum) return sumBreakdown(ctx, p, f, currency);
+      if (STEAM_BY.includes(p.by) && ctx.daily) return overDays(p.by);
       if (p.by.startsWith('$')) {
         const rows = eventsBy(ctx, f, p.by.slice(1)).map(({ series, ...r }) => r);
         if (!rows.length) return missing(f.name);
@@ -433,11 +489,14 @@ function panelData(ctx, p, board, maps, currency) {
     }
     case 'versions': {
       // This page's stat panels, version by version: what a release changed, in this page's terms.
+      // With `by`, Steam branches or builds side by side instead (analytics.js steamGroups).
       const stats = board.panels.filter((x) => x.type === 'stat' && !LIVE_STATS.has(x.metric)).map((x) => withCurrency(x, currency));
-      const list = versions(ctx, { stats, events: 0 });
-      if (!list.length) return { empty: true, why: 'No versions in this window.' };
+      const by = p.by ? p.by.slice(1) : null;
+      if (by && ctx.daily) return overDays(p.by);
+      const list = versions(ctx, { stats, events: 0, by });
+      if (!list.length) return { empty: true, why: by ? `No session sent its ${STEAM_LABELS[by]} in this window: the game reads it from Steamworks when it runs from Steam.` : 'No versions in this window.' };
       if (!stats.length) return { empty: true, why: 'This page has no stat panels to compare.' };
-      return { columns: versionColumns(stats, ctx), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, values: v.board })) };
+      return { ...(by ? { by } : {}), columns: versionColumns(stats, ctx), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, values: v.board })) };
     }
     case 'live':
       return { live: true };
@@ -445,6 +504,8 @@ function panelData(ctx, p, board, maps, currency) {
       const list = (ctx.reports || []).slice(0, p.limit || 5).map((r) => reportSummary(r, ctx));
       return list.length ? { reports: list, total: ctx.reports.length } : { empty: true, why: 'No bug reports in this window.' };
     }
+    case 'positions':
+      return levelPositions(ctx, p.level, maps, { show: p.show || 'deaths', bin: p.bin ?? null });
     case 'retention': {
       const r = retention(ctx);
       // Not zeros: an anonymous game can't see anyone come back, which is not the same as nobody coming back.
@@ -558,12 +619,14 @@ export function versionColumns(stats, ctx = null) {
 const PER_SESSION = new Set(['errors', 'deaths']);
 
 function defaultSize(p) {
+  if (STORE_PANELS[p.type]) return STORE_PANELS[p.type].size;
   if (p.type === 'stat') return 's';
   if (['levels', 'events', 'sessions', 'versions', 'live'].includes(p.type)) return 'l';
   return 'm';
 }
 
 function defaultTitle(p) {
+  if (STORE_PANELS[p.type]) return STORE_PANELS[p.type].title(p);
   const by = (k) => (k?.startsWith('$') ? k.slice(1) : k);
   switch (p.type) {
     case 'stat':
@@ -574,7 +637,7 @@ function defaultTitle(p) {
     case 'series':
       return `${p.event}${p.sum ? ` ${p.sum}` : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'breakdown':
-      return `${p.event}${p.sum ? ` ${p.sum}` : ''} by ${by(p.by)}`;
+      return `${p.event}${p.sum ? ` ${p.sum}` : ''} by ${STEAM_BY.includes(p.by) ? STEAM_LABELS[p.by.slice(1)] : by(p.by)}`;
     case 'funnel':
       return p.steps
         .split(',')
@@ -599,11 +662,18 @@ function defaultTitle(p) {
     case 'sessions':
       return p.sent ? `Sessions that sent ${p.sent}` : 'Recent sessions';
     case 'versions':
-      return 'By version';
+      return p.by ? `By ${STEAM_LABELS[p.by.slice(1)]}` : 'By version';
     case 'live':
       return 'Live';
+    case 'positions':
+      return `${p.show === 'path' ? 'Where players went' : p.show === 'both' ? 'Where players went and died' : 'Where players died'} on ${p.level}`;
   }
   return p.type;
+}
+
+// Steam facts are read from sessions, which a range of more than 31 days answers from day rollups without.
+function overDays(by) {
+  return { empty: true, why: `Split by ${by} over 31 days or less: longer ranges are answered by day, without each session's Steam facts.` };
 }
 
 function missing(name) {

@@ -4,6 +4,7 @@
 
 - `Privacy.Install`: anonymous mode plus the random `p_…` player ID saved on the device (`persistentDataPath/glitchless/player_id`, the one `Privacy.Full` uses; PlayerPrefs in WebGL builds, which now keep it in Full mode too) and sent as `player_id`, so the dashboard can count retention (D1, D7, D30). Device fields and positions are sent as in anonymous mode, and unsent batches keep their IDs. `Glitchless.ResetInstallId()` forgets the ID from the next launch, and Install ID on the Bootstrap turns the mode on. `session_start` says `privacy: "install"`. `Privacy.Full` keeps its value (1); `Install` is 2. The same as the Unreal plugin's install mode.
 - `steam_deck` in the device fields (`true` on a Steam Deck: `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS; under Proton through Wine's `Z:` drive), with `gpu_tier` `low` and `os` `SteamOS` on a Deck running it, as the Unreal plugin sends them.
+- Steam facts in the device fields when the game uses Steamworks.NET or Facepunch.Steamworks (found by reflection, read only once Steam is initialised): `steam_build`, `steam_branch` (`public` on the default branch), `steam_hardware` (`deck`, `machine`, `frame`, `none`), `proton`, `big_picture`, `steam_controller` (the first Steam Input controller's type), `family_shared`, `timed_trial`, `steam_language`. Never a Steam ID. With `Version` empty, a Steam build reports `steam-<build>` as its version. See PRIVACY.md.
 
 ## 0.2.0
 

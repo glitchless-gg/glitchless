@@ -139,7 +139,7 @@ function newGroup(env, version, caps) {
     tex: { n: 0, g: q(), f: q(), l: q() }, // texture growth per level load, first, last
     ga: new Map(), // context gauge → { n: sessions that followed it, c: sessions it only climbed in, f, l: their first and last }
     nodes: { n: 0, og: q(), of: q(), ol: q(), ng: q(), nf: q(), nl: q() }, // orphan and live node growth, first, last
-    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map() }, // GPU tier, browser, GPU, platform → { n, cell }
+    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map(), sb: new Map(), sv: new Map() }, // GPU tier, browser, GPU, platform, Steam branch and build → { n, cell }
     fwl: new Map(), // level (or '(menu)') → sessions that sent frame windows there
     lv: new Map(), // level → funnel row
     dc: {}, // death causes
@@ -227,7 +227,10 @@ function addSession(g, s, day, caps, newPlayers = null) {
       [g.dev.b, dev.browser || 'unknown'],
       [g.dev.g, dev.gpu || 'unknown'],
       [g.dev.p, platformOf(dev)],
+      [g.dev.sb, dev.steam_branch == null ? null : String(dev.steam_branch)],
+      [g.dev.sv, dev.steam_build == null ? null : String(dev.steam_build)],
     ]) {
+      if (key == null) continue;
       let x = map.get(key);
       if (!x) map.set(key, (x = { n: 0, cell: newCell() }));
       x.n++;
@@ -518,7 +521,7 @@ function groupFromJSON(o) {
     tex: o.tex ? qs(o.tex) : { n: 0, g: q(), f: q(), l: q() },
     ga: new Map((o.ga || []).map(([k, n, c, f, l]) => [k, { n, c, f: q(f), l: q(l) }])),
     nodes: qs(o.nodes),
-    dev: { p: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
+    dev: { p: new Map(), sb: new Map(), sv: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
     lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl) }])),
     recent: [],
@@ -615,7 +618,7 @@ function mergeGroup(into, g) {
     y.f.merge(x.f);
     y.l.merge(x.l);
   }
-  for (const k of ['t', 'b', 'g', 'p']) {
+  for (const k of ['t', 'b', 'g', 'p', 'sb', 'sv']) {
     for (const [key, x] of g.dev[k]) {
       const y = into.dev[k].get(key);
       if (!y) into.dev[k].set(key, { n: x.n, cell: mergeCell(newCell(), x.cell) });
@@ -751,6 +754,8 @@ export function dailyPerformance(ctx) {
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
   p.by_platform = list(g.dev.p).sort((a, b) => b.sessions - a.sessions);
+  p.by_steam_branch = list(g.dev.sb).sort((a, b) => b.sessions - a.sessions);
+  p.by_steam_build = list(g.dev.sv).sort((a, b) => Number(a.key) - Number(b.key));
   approximate(ctx, 'gpus', g.cut.has('gpus'));
   for (const l of p.by_level) l.sessions = g.fwl.get(l.key) || 0;
   for (const v of p.by_version) v.sessions = ctx.daily.byVersion.get(v.key)?.fw || 0;

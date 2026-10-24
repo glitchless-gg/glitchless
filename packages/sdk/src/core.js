@@ -5,6 +5,7 @@ import { DatadogBridge } from './datadog.js';
 import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 import { BugReportForm, snapshot, sendReport } from './bugreport.js';
+import { readSteam, withSteam, steamVersion } from './steam.js';
 
 export const SDK_VERSION = '0.3.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
@@ -37,6 +38,7 @@ const DEFAULTS = {
   dashboardUrl: null,
   sessionType: 'user', // 'synthetic' for bots / autoplay, so they can be filtered out of player metrics
   bugReports: null, // { hotkey: 'F8' } (or true): players open a form in the game to send a bug report (see reportBug)
+  steam: null, // an Electron game's steamworks.js client (what steamworks.init() returned): Steam facts per session (steam.js)
   debug: false,
 };
 
@@ -56,6 +58,9 @@ export class Glitchless {
 
   constructor(options) {
     this.opts = { ...DEFAULTS, ...options };
+    // Steam facts, read once from the game's own steamworks.js client. Without a version, the Steam build is it.
+    this.steam = readSteam(this.opts.steam);
+    if (!options.version && steamVersion(this.steam)) this.opts.version = steamVersion(this.steam);
     this.opts.intake = this.opts.intake ? String(this.opts.intake).replace(/\/$/, '') : null;
     this.sessionId = 's_' + randomId(16); // per page load, kept in memory only
     this.sdk = SDK; // engine adapters name themselves here (glitchless-phaser/…), so fix advice fits the engine
@@ -635,7 +640,7 @@ export class Glitchless {
       session_type: this.opts.sessionType,
       privacy: this.privacy,
       engine: this.engine,
-      device: this.privacy === 'full' ? this.device() : anonymizeDevice(this.device()),
+      device: withSteam(this.privacy === 'full' ? this.device() : anonymizeDevice(this.device()), this.steam),
       page: { url: location.origin + location.pathname, referrer: originOf(document.referrer) },
       nav_ms: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
     };

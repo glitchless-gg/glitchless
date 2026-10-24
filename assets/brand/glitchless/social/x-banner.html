@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glitchless X banner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@800&family=JetBrains+Mono:wght@700&display=swap">
+<style>
+/* X profile banner, 1500 x 500. A phone shows only the middle ~1250 px at about a quarter of this size, with the
+   status bar over the top corners, the back and search buttons over the middle of each edge (y 200–315) and the
+   profile picture over the bottom left. So there are only two things, both big: the headline (y 120–205, under the
+   status bar and above the buttons) and the chart (x 400–1100, its tall bars clear of the buttons). Labels are
+   30 px, about 9 pt on a phone; nothing smaller. */
+:root { --mint: #2EE6A6; --navy: #14213D; --coral: #FF6B57; --white: #FFFFFF; --slate: #52648F; --rule: #2A3A60 }
+* { box-sizing: border-box; margin: 0 }
+html, body { width: 1500px; height: 500px; overflow: hidden; background: var(--navy) }
+h1 { position: absolute; left: 0; right: 0; top: 112px; text-align: center; font: 800 78px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
+h1 span { color: var(--mint) }
+.chart { position: absolute; left: 400px; width: 700px; top: 238px; height: 210px; display: grid; grid-template-columns: 1fr 1fr }
+.side { display: flex; align-items: flex-end; gap: 9px; padding: 0 22px }
+.side i { flex: 1; background: var(--slate); border-radius: 4px 4px 0 0 }
+.side i.hot { background: var(--coral) }
+.after i { background: var(--mint) }
+.base { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--rule) }
+.fix { position: absolute; left: 50%; top: 44px; bottom: -14px; border-left: 3px dashed var(--white) }
+.label { position: absolute; font: 700 30px/1 "JetBrains Mono", monospace; white-space: nowrap }
+.label.spike { color: var(--coral) }
+.label.fixed { color: var(--mint) }
+.label.agent { color: var(--white); left: 50%; top: 0; transform: translateX(-50%) }
+</style>
+</head>
+<body>
+<h1>Vibe debugging <span>for games.</span></h1>
+<div class="chart" id="chart">
+  <div class="side before" id="before"></div>
+  <div class="side after" id="after"></div>
+  <div class="base"></div>
+  <div class="fix"></div>
+  <span class="label agent">agent fix</span>
+  <span class="label spike" id="spike">51 ms</span>
+  <span class="label fixed" id="fixed">16 ms</span>
+</div>
+<script>
+// Frame times as bars, 210 px tall at most: before the fix uneven with one stutter, after it short and even.
+const before = [34, 40, 31, 100, 37, 46, 42, 35, 48];
+const after = [17, 18, 16, 17, 18, 17, 16, 18, 17];
+const bars = (id, values, hot) => values.forEach((v, i) => { const b = document.createElement('i'); b.style.height = `${v * 0.78}%`; if (i === hot) b.className = 'hot'; document.getElementById(id).append(b); });
+bars('before', before, 3);
+bars('after', after, -1);
+// Each label sits just above the bar it names.
+const chart = document.getElementById('chart').getBoundingClientRect();
+const place = (label, bar) => { const r = bar.getBoundingClientRect(); const l = document.getElementById(label); l.style.left = `${r.left - chart.left + r.width / 2}px`; l.style.top = `${r.top - chart.top - 12}px`; l.style.transform = 'translate(-50%, -100%)'; };
+place('spike', document.querySelector('#before i.hot'));
+place('fixed', document.querySelectorAll('#after i')[4]);
+</script>
+</body>
+</html>

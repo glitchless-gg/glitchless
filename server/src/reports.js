@@ -63,8 +63,8 @@ export function reportsOf(list, ctx) {
     if (q.env && r.env !== q.env) return false;
     if (q.version && r.version !== q.version) return false;
     if (q.sessions && !q.sessions.has(r.session_id)) return false;
-    // The context's sessions are already those of the type (a daily context has none to check against).
-    if (q.type && q.type !== 'all' && !ctx.daily && !ctx.sessions.has(r.session_id)) return false;
+    // The context's sessions are already those of the type and Steam facts (a daily context has none to check against).
+    if (((q.type && q.type !== 'all') || q.where) && !ctx.daily && !ctx.sessions.has(r.session_id)) return false;
     return true;
   });
 }

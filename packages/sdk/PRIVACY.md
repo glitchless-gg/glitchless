@@ -1,6 +1,6 @@
 # What Glitchless for the web sends
 
-This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js`, `src/device.js`, `src/bugreport.js` and the engine adapters (`src/three.js`, `src/phaser.js`, `src/babylon.js`, `src/playcanvas.js`); keep it in step with them. The Godot, Unity and Unreal SDKs have their own lists (`godot/addons/glitchless/PRIVACY.md`, `unity/Packages/gg.glitchless.sdk/PRIVACY.md`, `unreal/Plugins/Glitchless/PRIVACY.md`), and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
+This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js`, `src/device.js`, `src/steam.js`, `src/bugreport.js` and the engine adapters (`src/three.js`, `src/phaser.js`, `src/babylon.js`, `src/playcanvas.js`); keep it in step with them. The Godot, Unity and Unreal SDKs have their own lists (`godot/addons/glitchless/PRIVACY.md`, `unity/Packages/gg.glitchless.sdk/PRIVACY.md`, `unreal/Plugins/Glitchless/PRIVACY.md`), and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
 
 Nothing here is legal advice.
 
@@ -48,6 +48,31 @@ Every batch has an envelope: `service`, `env`, `version` (the game's), `session_
 | `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the game's canvas, not of the rest of the page), `device` (the same fields as `session_start`, at the same mode), `recent` (the last 20 game events and hitches, as above), `frames` (fps and p95 of the last frame windows); with positions on: `x`, `y`, `z` | the player sends one from the form, or the game calls `glitchless.reportBug()`. Off unless the game turns it on |
 
 **Game words.** Event names, attributes, level names, causes and gauges are whatever the game passes. Use the game's own words, never anything typed by or particular to the player.
+
+## Steam facts
+
+When an Electron game passes its steamworks.js client as `steam` (what `steamworks.init()` returned), `session_start`'s `device` also carries these, in every mode (`src/steam.js`). Nothing is read from Steam otherwise: the SDK never loads or looks for steamworks.js itself. steamworks.js has no calls for Family Sharing, timed trials, Proton or Steam hardware beyond a Deck, so those are left out.
+
+| field | example | what it says |
+| --- | --- | --- |
+| `steam_build` | `18231` | the Steam build the game runs; left out when it isn't a build downloaded from Steam |
+| `steam_branch` | `beta`, `public` | the beta branch it runs, or `public` on the default one |
+| `steam_hardware` | `deck`, `machine`, `frame`, `none` | whether it runs on Valve's hardware (Steam Deck, Steam Machine, Steam Frame), and which. `deck` also makes `steam_deck` true |
+| `proton` | `true` | running under Proton |
+| `big_picture` | `false` | Steam is in Big Picture mode |
+| `steam_controller` | `ps5`, `xbox_one`, `steam_deck` | the kind of the first controller Steam Input sees, once the game has started Steam Input |
+| `family_shared` | `false` | the player has the game through Family Sharing |
+| `timed_trial` | `false` | the game is played as a timed trial (not how long) |
+| `steam_language` | `english` | the language the player picked for the game in Steam |
+
+**Never read or sent, in any mode:** the player's Steam ID, the owner's Steam ID (`GetAppOwner`), the player's Steam name, friends, or anything else from their Steam account. Valve's rules on passing Steam IDs to third parties are unclear, so Glitchless leaves them out entirely. The facts above are about the build and the hardware, and many players share each one.
+
+**Version.** When the game passes no version, batches carry `steam-<build>` (`steam-18231`) on a Steam build, so each build is a version on the dashboard.
+
+For the game's privacy page, a paragraph to adapt:
+
+> **Steam**
+> On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
 
 ## Bug reports: the player's own words
 

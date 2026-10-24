@@ -1,0 +1,5 @@
+{
+ "status": 200,
+ "contentType": "text/javascript; charset=utf-8",
+ "body": "{\"feed\":{\"author\":{\"name\":{\"label\":\"iTunes Store\"},\"uri\":{\"label\":\"http://www.apple.com/itunes/\"}},\"updated\":{\"label\":\"2026-10-24T00:26:08-07:00\"},\"rights\":{\"label\":\"Copyright 2008 Apple Inc.\"},\"title\":{\"label\":\"iTunes Store: Customer Reviews\"},\"icon\":{\"label\":\"http://itunes.apple.com/favicon.ico\"},\"link\":[{\"attributes\":{\"rel\":\"alternate\",\"type\":\"text/html\",\"href\":\"https://music.apple.com/WebObjects/MZStore.woa/wa/viewGrouping?cc=us&id=1\"}},{\"attributes\":{\"rel\":\"self\",\"href\":\"https://itunes.apple.com/us/rss/customerreviews/page=1/id=6821519067/sortby=mostrecent/json\"}},{\"attributes\":{\"rel\":\"first\",\"href\":\"\"}},{\"attributes\":{\"rel\":\"last\",\"href\":\"\"}},{\"attributes\":{\"rel\":\"previous\",\"href\":\"\"}},{\"attributes\":{\"rel\":\"next\",\"href\":\"\"}}],\"id\":{\"label\":\"https://itunes.apple.com/us/rss/customerreviews/page=1/id=6821519067/sortby=mostrecent/json\"}}}"
+}

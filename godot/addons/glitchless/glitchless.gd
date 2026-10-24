@@ -37,6 +37,7 @@ const SDK := "glitchless-godot/" + SDK_VERSION
 const Sketch := preload("sketch.gd")
 const ErrorLogger := preload("logger.gd")
 const Device := preload("device.gd")
+const SteamInfo := preload("steam.gd")
 const BugReport := preload("bug_report.gd")
 
 const HITCH_MS := 50.0  # one frame over 50 ms is a stutter a player sees
@@ -103,6 +104,8 @@ var _opts := DEFAULTS.duplicate()
 var _inited := false
 var _service := "unknown-game"
 var _version := "0.0.0"
+var _version_given := false
+var _steam := {}  # the game's GodotSteam facts (steam.gd), read once Steam answers
 var _env := "dev"
 var _intake := ""
 var _privacy := "anonymous"
@@ -246,16 +249,19 @@ func _exit_tree() -> void:
 
 ## Says who the game is and where to send. Until this is called nothing is sent,
 ## but frame times, errors and events are kept, so a game may call it late.
-## version defaults to application/config/version. options: see DEFAULTS.
+## version defaults to the Steam build ("steam-18231") when the game runs one
+## from Steam with GodotSteam, else application/config/version. options: see DEFAULTS.
 func init(service: String, version: String = "", env: String = "prod", intake: String = "", options: Dictionary = {}) -> void:
 	if _inited:
 		return
 	_inited = true
 	_opts.merge(options, true)
 	_service = service.to_lower() if service != "" else "unknown-game"
+	_version_given = version != ""
 	_version = version if version != "" else str(ProjectSettings.get_setting("application/config/version", ""))
 	if _version == "":
 		_version = "0.0.0"
+	_steam_facts()  # GodotSteam may be initialised only later: session_start asks again
 	_env = env if env != "" else "prod"
 	var flag_intake := _flag_value("--glitchless-intake")
 	_intake = (flag_intake if flag_intake != "" else intake).trim_suffix("/")
@@ -1099,16 +1105,30 @@ func _recent_names(count: int) -> Array[String]:
 
 
 func _session_start_event() -> Dictionary:
+	var device := Device.info(_full)
+	SteamInfo.add_to(device, _steam_facts())
 	return {
 		"type": "session_start",
 		"ts": _started_at,
 		"level": null,
 		"session_type": _session_type,
 		"privacy": _privacy,
-		"device": Device.info(_full),
+		"device": device,
 		"page": null,
 		"nav_ms": null,
 	}
+
+
+## The game's Steam facts (steam.gd), read until GodotSteam answers: a game may
+## initialise Steam after Glitchless. A game that gives no version reports its
+## Steam build, so versions compare build by build. The first batch is made
+## after session_start, so every batch of a session has the same version.
+func _steam_facts() -> Dictionary:
+	if _steam.is_empty():
+		_steam = SteamInfo.read()
+	if not _version_given and _steam.has("steam_build"):
+		_version = "steam-%d" % _steam.steam_build
+	return _steam
 
 
 # ───────────────────────────── bug reports ─────────────────────────────

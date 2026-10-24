@@ -4,6 +4,7 @@
 #include "Glitchless.h"
 #include "GlitchlessBugReport.h"
 #include "GlitchlessDevice.h"
+#include "GlitchlessSteamworks.h"
 #include "GlitchlessInput.h"
 #include "GlitchlessOutputDevice.h"
 #include "GlitchlessSettings.h"
@@ -281,6 +282,7 @@ FGlitchlessRuntime::FGlitchlessRuntime()
 	C.Files.Delete = [](const std::string& Path) { IFileManager::Get().Delete(*GlitchlessText::Tchar(Path), false, false, true); };
 	C.Files.MakeDir = [](const std::string& Dir) { IFileManager::Get().MakeDirectory(*GlitchlessText::Tchar(Dir), true); };
 	C.Device = [](bool bDetailed) { return GlitchlessDevice::Collect(bDetailed); };
+	C.SteamFacts = []() { return GlitchlessSteamworks::Read(); };
 	C.Engine = [this]() { return SampleEngine(); };
 	C.StartupMs = []() { return (FPlatformTime::Seconds() - GStartTime) * 1000.0; };
 	C.Args = CommandLineArgs();

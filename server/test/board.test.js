@@ -67,8 +67,81 @@ test('a board is checked before it is saved, and says what to fix', () => {
     [{ panels: [{ type: 'funnel', steps: 'open' }] }, /at least two/],
     [{ panels: [{ type: 'series', event: 'a,b' }] }, /one event/],
     [{ panels: [{ type: 'levels', size: 'xl' }] }, /size/],
+    [{ panels: [{ type: 'positions' }] }, /needs level/],
+    [{ panels: [{ type: 'positions', level: 'cave', show: 'ghosts' }] }, /show must be one of deaths, path, both/],
+    [{ panels: [{ type: 'positions', level: 'cave', bin: 0 }] }, /bin/],
+    [{ panels: [{ type: 'positions', level: 'cave', bin: '5' }] }, /bin/],
   ];
   for (const [input, message] of bad) assert.throws(() => validateBoard(input), (err) => err instanceof BoardError && message.test(err.message), JSON.stringify(input));
+});
+
+// A side-scroller (z = 0) where players die in two pits and walk along y = 1, and a top-down game.
+function deadGame({ level = 'cave', deaths = [], walk = [], service = 'dead-reckoning' } = {}) {
+  return deaths.map(([x, y, z], i) => {
+    const base = { service, env: 'prod', version: '0.1.0', session_id: `secret_${i}`, player_id: `player_${i}` };
+    const ts = START + i * 1000;
+    return [
+      { ...base, type: 'session_start', ts },
+      { ...base, type: 'level_start', ts: ts + 1, level },
+      ...(walk.length ? [{ ...base, type: 'pos', ts: ts + 2, level, pts: walk.map((p, k) => [ts + 2 + k, ...p]) }] : []),
+      { ...base, type: 'death', ts: ts + 3, level, x, y, z, cause: 'pit' },
+    ];
+  }).flat();
+}
+
+test('a positions panel: deaths counted per bin on the level plane, the busiest first, and paths on a coarser grid', () => {
+  const deaths = [...Array(7).fill([12.2, 0.5, 0]), ...Array(3).fill([40.9, 0.5, 0]), [12.9, 0.4, 0]];
+  const walk = Array.from({ length: 50 }, (_, k) => [k, 1, 0]);
+  const ctx = ctxOf(deadGame({ deaths, walk }), 'dead-reckoning');
+  const board = validateBoard({ panels: [{ type: 'positions', level: 'cave', bin: 1 }, { type: 'positions', level: 'cave', show: 'both' }, { type: 'positions', level: 'cave', show: 'path', bin: 10 }] });
+  const [dead, both, path] = evaluateBoard(ctx, board);
+  assert.equal(dead.title, 'Where players died on cave');
+  assert.equal(dead.axis, 'xy', 'a side-scroller sends z = 0');
+  assert.deepEqual(dead.deaths, [[12.5, 0.5, 8], [40.5, 0.5, 3]], 'bin centres on a fixed grid, the busiest first');
+  assert.equal(dead.total, 11);
+  assert.equal(dead.truncated, false);
+  assert.deepEqual(dead.bounds, { min: [12, 0], max: [41, 1] }, 'rounded out to whole bins');
+  assert.equal(dead.path, undefined, 'deaths only, by default');
+  // Default bins: about a hundredth of the level (1, 2 or 5 times a power of ten); paths about 64 across.
+  assert.equal(both.bin, 0.5);
+  assert.equal(both.path.bin, 1);
+  assert.equal(both.path.samples, 11 * 50);
+  assert.equal(both.path.cells.length, 50);
+  assert.ok(both.path.cells.every(([, b, n]) => b === 1.5 && n === 11));
+  assert.equal(path.deaths, undefined, 'show path leaves deaths out');
+  assert.equal(path.bin, 10);
+  assert.deepEqual(path.path.cells.map((c) => c[2]), [110, 110, 110, 110, 110]);
+
+  // A top-down game: its deaths leave z = 0, so the plane is xz, whatever y (height) says.
+  const top = ctxOf(deadGame({ deaths: [[3, 9, 7.5], [3.2, 2, 7.9]] }), 'dead-reckoning');
+  const [flat] = evaluateBoard(top, { panels: [{ type: 'positions', level: 'cave', bin: 1 }] });
+  assert.equal(flat.axis, 'xz');
+  assert.deepEqual(flat.deaths, [[3.5, 7.5, 2]]);
+
+  // A captured map gives the plane and the bounds.
+  const map = { level: 'cave', axis: 'xz', bounds: { min: [-100, -100], max: [100, 100] }, image: 'data:image/png;base64,AA', ts: START };
+  const [mapped] = evaluateBoard(ctx, { panels: [{ type: 'positions', level: 'cave', bin: 1 }] }, { maps: [map] });
+  assert.equal(mapped.axis, 'xz');
+  assert.deepEqual(mapped.bounds, map.bounds);
+  assert.equal(JSON.stringify(mapped).includes('base64'), false, 'not the map picture: a game polls this');
+
+  // At most 2,000 bins, the busiest.
+  const many = ctxOf(deadGame({ deaths: Array.from({ length: 2100 }, (_, i) => [i, 0, 0]).concat([[5, 0, 0]]) }), 'dead-reckoning');
+  const [capped] = evaluateBoard(many, { panels: [{ type: 'positions', level: 'cave', bin: 1 }] });
+  assert.equal(capped.deaths.length, 2000);
+  assert.equal(capped.truncated, true);
+  assert.deepEqual(capped.deaths[0], [5.5, 0.5, 2]);
+  assert.equal(capped.total, 2101);
+});
+
+test('a positions panel with nothing to place says why', () => {
+  const ctx = ctxOf(deadGame({ deaths: [[1, 1, 0]] }).map((e) => (e.type === 'death' ? { ...e, x: undefined, y: undefined, z: undefined } : e)), 'dead-reckoning');
+  const [noCoords, noLevel, noPath, nothing] = evaluateBoard(ctx, { panels: [{ type: 'positions', level: 'cave' }, { type: 'positions', level: 'moon' }, { type: 'positions', level: 'cave', show: 'path' }, { type: 'positions', level: 'moon', show: 'both' }] });
+  assert.deepEqual([noCoords.empty, noCoords.why], [true, 'Deaths on cave have no positions: the game sends them without x and y.']);
+  assert.deepEqual([noLevel.empty, noLevel.why], [true, 'No deaths on moon in this window.']);
+  assert.match(noPath.why, /No positions from cave/);
+  assert.match(nothing.why, /No deaths or positions on moon/);
+  assert.equal(noCoords.deaths, undefined);
 });
 
 test('a dashboard is pages, each a board or a built-in view, and says what to fix', () => {
@@ -276,6 +349,48 @@ for (const [kind, make] of Object.entries(STORES)) {
       const auto = await call('GET', `/v1/query/dashboard?${range}`, KEYS.reader);
       assert.equal(auto.body.dashboard.source, 'auto');
       assert.equal(auto.body.dashboard.pages[0].id, 'overview');
+    } finally {
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+      await closeStore?.();
+    }
+  });
+
+  // A store that keeps summaries reads paths apart (q.positions): every position sample still counts.
+  test(`${kind} store: a positions panel places every death and, for the levels it draws paths of, every position`, async () => {
+    const { store, close: closeStore, settle } = await make({ legacyProject: null });
+    const server = http.createServer(createApp({ store, auth, logger: { warn() {}, error() {} } }));
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const call = async (method, p, key, body) => {
+      const res = await fetch(base + p, { method, headers: { 'x-glitchless-api-key': key }, ...(body ? { body: JSON.stringify(body) } : {}) });
+      return { status: res.status, body: await res.json() };
+    };
+    try {
+      const sessions = gameSessions({ start: START, spanMs: 3_600_000, sessions: 10 });
+      for (const events of sessions) {
+        const { service, env, version, session_id, player_id } = events[0];
+        await fetch(`${base}/v1/intake?token=t`, { method: 'POST', body: JSON.stringify({ service, env, version, session_id, player_id, events: events.map(({ service: _, env: __, version: ___, session_id: ____, player_id: _____, ...e }) => e) }) });
+      }
+      await settle?.();
+      const service = sessions[0][0].service;
+      const panels = [{ type: 'positions', level: 'level-1', show: 'both' }, { type: 'positions', level: 'level-2' }];
+      assert.equal((await call('PUT', `/v1/dashboard?service=${service}`, KEYS.writer, { pages: [{ id: 'dead', title: 'The dead', panels }] })).status, 200);
+      const { body } = await call('GET', `/v1/query/board?service=${service}&from=${START - 3_600_000}&to=${Date.now() + 1}`, KEYS.reader);
+      const inRange = (e) => e.ts >= body.meta.from && e.ts <= body.meta.to;
+      const all = sessions.flat().filter(inRange);
+      const [one, two] = body.board.panels;
+      for (const [p, level] of [[one, 'level-1'], [two, 'level-2']]) {
+        const placed = all.filter((e) => e.type === 'death' && e.level === level).length;
+        assert.ok(placed > 0, `the test data has deaths on ${level}`);
+        assert.equal(p.total, placed, `${kind}: deaths on ${level}`);
+        assert.equal(p.deaths.reduce((n, d) => n + d[2], 0), placed);
+        assert.equal(p.axis, 'xz');
+      }
+      const samples = all.filter((e) => e.type === 'pos' && e.level === 'level-1').reduce((n, e) => n + e.pts.length, 0);
+      assert.ok(samples > 0);
+      assert.equal(one.path.samples, samples, `${kind}: every position on level-1`);
+      assert.equal(two.path, undefined);
     } finally {
       server.closeAllConnections();
       await new Promise((r) => server.close(r));

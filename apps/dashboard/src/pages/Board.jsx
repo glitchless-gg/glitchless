@@ -11,10 +11,12 @@ import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../co
 import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor } from '../format.js';
 import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
+import { StorePanelBody, STORE_TYPES } from '../stores.jsx';
 import { SessionsTable } from './Sessions.jsx';
 import { LiveFeed, useLiveEvents, line as liveLine } from './Live.jsx';
 import { ReportList } from './Reports.jsx';
 import { RetentionTable, RetentionOff } from './Players.jsx';
+import { PositionsMap } from '../heatmap.jsx';
 
 const SPAN = { s: 3, m: 6, l: 12 };
 
@@ -87,7 +89,7 @@ function BoardEditor({ board, onSaved }) {
     setBusy(false);
   };
   return (
-    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live, reports, retention">
+    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live, reports, retention, positions">
       <textarea className="board-editor" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
       {error && <div className="err">{error}</div>}
       <div className="row" style={{ marginTop: 8 }}>
@@ -99,6 +101,11 @@ function BoardEditor({ board, onSaved }) {
   );
 }
 
+// What a versions panel compares: versions, or Steam branches or builds (its `by`, SPEC §4c).
+function byLabel(by) {
+  return { steam_branch: 'Steam branch', steam_build: 'Steam build' }[by] || 'Version';
+}
+
 function Panel({ p }) {
   const f = useFilters();
   const span = SPAN[p.size] || 6;
@@ -106,7 +113,7 @@ function Panel({ p }) {
   const csv = !p.empty && p.type !== 'live' && <CsvButton name={p.title} rows={() => panelCsv(p)} />;
   if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? p.why : statSub(p)} title={p.note} actions={csv} />;
   if (p.type === 'live' && !p.empty) return <LivePanel p={p} span={span} />;
-  const more = { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events', reports: 'reports', retention: 'players' }[p.type];
+  const more = p.type === 'positions' ? `heatmaps?level=${encodeURIComponent(p.level)}` : { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events', reports: 'reports', retention: 'players' }[p.type];
   return (
     <Widget
       span={span}
@@ -187,6 +194,7 @@ function LeftOut({ mismatch }) {
 
 function PanelBody({ p }) {
   const f = useFilters();
+  if (STORE_TYPES.has(p.type)) return <StorePanelBody p={p} />;
   switch (p.type) {
     case 'series':
       return (
@@ -265,7 +273,7 @@ function PanelBody({ p }) {
           <table className="dt">
             <thead>
               <tr>
-                <th>Version</th>
+                <th>{byLabel(p.by)}</th>
                 <th>First seen</th>
                 <th className="num">Sessions</th>
                 {cols.map((c) => (
@@ -298,6 +306,29 @@ function PanelBody({ p }) {
     }
     case 'reports':
       return <ReportList reports={p.reports} compact />;
+    case 'positions':
+      return (
+        <>
+          <PositionsMap p={p} />
+          <div className="legend" style={{ marginTop: 8 }}>
+            {p.deaths && (
+              <span title={p.truncated ? `The ${fmtNum(p.deaths.length)} places with the most deaths` : undefined}>
+                <i style={{ background: '#ff6b57', height: 8, width: 8, borderRadius: 4 }} />
+                {fmtNum(p.total)} deaths{p.truncated ? `, the ${fmtNum(p.deaths.length)} busiest places` : ''}
+              </span>
+            )}
+            {p.path && (
+              <span>
+                <i style={{ background: 'linear-gradient(90deg,#5b2ca6,#e0437a,#ffc440)', width: 30 }} />
+                where players went ({fmtNum(p.path.samples)} positions)
+              </span>
+            )}
+            <span className="muted">
+              {p.axis === 'xy' ? 'side view' : 'top-down'} · {p.bin} {p.bin === 1 ? 'unit' : 'units'} a bin{p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}
+            </span>
+          </div>
+        </>
+      );
     case 'retention':
       return <RetentionTable r={p} compact />;
     case 'events':

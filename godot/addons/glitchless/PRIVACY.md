@@ -1,6 +1,6 @@
 # What Glitchless for Godot sends
 
-This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd` and `bug_report.gd` and checked against what reached a local server in `npm run test:godot`. Keep it in step with those files.
+This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd`, `steam.gd` and `bug_report.gd` and checked against what reached a local server in `npm run test:godot`. Keep it in step with those files.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -71,6 +71,26 @@ The screen size is sent so that an iPhone Duo's open and closed states can be to
 
 **Game words.** `track(event, what)`, level names, death causes and gauges are whatever the game passes. The rule from the games' `Metrics.count` carries over: the game's own words, never anything typed by or particular to the player.
 
+## Steam facts
+
+When the game already uses GodotSteam (the `Steam` singleton), `session_start`'s `device` also carries these, in every mode (`steam.gd`). The SDK reads only once GodotSteam says Steam is initialised (`steamInitEx()`, initialising from the Project Settings, or `steamInit()` with an app ID), and reads nothing without it. A GodotSteam without a call leaves that field out (Steam hardware beyond a Deck, and Proton, need GodotSteam 4.21).
+
+| field | example | what it says |
+| --- | --- | --- |
+| `steam_build` | `18231` | the Steam build the game runs; left out when it isn't a build downloaded from Steam |
+| `steam_branch` | `beta`, `public` | the beta branch it runs, or `public` on the default one |
+| `steam_hardware` | `deck`, `machine`, `frame`, `none` | whether it runs on Valve's hardware (Steam Deck, Steam Machine, Steam Frame), and which. `deck` also makes `steam_deck` true |
+| `proton` | `true` | running under Proton |
+| `big_picture` | `false` | Steam is in Big Picture mode |
+| `steam_controller` | `ps5`, `xbox_one`, `steam_deck` | the kind of the first controller Steam Input sees, once the game has started Steam Input |
+| `family_shared` | `false` | the player has the game through Family Sharing |
+| `timed_trial` | `false` | the game is played as a timed trial (not how long) |
+| `steam_language` | `english` | the language the player picked for the game in Steam |
+
+**Never read or sent, in any mode:** the player's Steam ID, the owner's Steam ID (`GetAppOwner`), the player's Steam name, friends, or anything else from their Steam account. Valve's rules on passing Steam IDs to third parties are unclear, so Glitchless leaves them out entirely. The facts above are about the build and the hardware, and many players share each one.
+
+**Version.** When the game passes no version, batches carry `steam-<build>` (`steam-18231`) on a Steam build, so each build is a version on the dashboard.
+
 ## Bug reports: the player's own words
 
 Bug reports are off until the game turns them on (`"bug_reports"` in the options of `Glitchless.init`, or its own button calling `Glitchless.report_bug()`). A report is the one place the SDK sends text the player typed, and Glitchless sends the note as it is: it can't tell a bug description from a name, an email address, a phone number or anything else a player chooses to write. If your game turns reports on:
@@ -118,6 +138,11 @@ Install mode needs one more sentence:
 
 Full mode would need more than this: a random player ID saved on the device, the device model, and positions in the game world.
 
+If the game ships on Steam and uses Steamworks, add:
+
+> **Steam**
+> On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
+
 If the game turns bug reports on, add:
 
 > **Bug reports**
@@ -161,7 +186,7 @@ For each type, Apple asks four things:
 Read it again when any of these change:
 
 - the events or fields in `glitchless.gd`, or what the bug report form sends (`bug_report.gd`)
-- the device fields in `device.gd`
+- the device fields in `device.gd`, or the Steam facts in `steam.gd`
 - what the server stores (`server/src/ingest.js`, `server/src/stores/`)
 - whether the server forwards to Datadog
 

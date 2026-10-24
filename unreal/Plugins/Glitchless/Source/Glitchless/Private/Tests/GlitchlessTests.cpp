@@ -8,10 +8,12 @@
 #include "GlitchlessBugReport.h"
 #include "GlitchlessDevice.h"
 #include "GlitchlessSettings.h"
+#include "GlitchlessSteamworks.h"
 #include "GlitchlessStrings.h"
 #include "Core/GlitchlessCore.h"
 
 #include "Misc/AutomationTest.h"
+#include "Modules/ModuleManager.h"
 #include "Misc/Base64.h"
 #include "Misc/Compression.h"
 
@@ -162,6 +164,27 @@ bool FGlitchlessDeviceTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("browser"), GlitchlessText::Tchar(Coarse.Find("browser")->AsString()), FString(TEXT("Unreal")));
 	const Glitchless::FValue Detailed = GlitchlessDevice::Collect(true);
 	TestTrue(TEXT("detailed has the core count"), Detailed.Has("cores") && Detailed.Find("cores")->AsInt() > 0);
+	return true;
+}
+
+// Steam facts come only from a Steam module the game loaded (SteamShared, OnlineSubsystemSteam); the test game has
+// none, so nothing is read and nothing is loaded. With SteamShared alone the library is loaded but nobody called
+// SteamAPI_Init, so the interfaces are null and nothing is read either. unreal/test/core.mjs tests the facts with fakes.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGlitchlessSteamTest, "Glitchless.Steam.NothingWithoutSteamworks", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+bool FGlitchlessSteamTest::RunTest(const FString& Parameters)
+{
+	const bool bShared = FModuleManager::Get().IsModuleLoaded(TEXT("SteamShared"));
+	const bool bSubsystem = FModuleManager::Get().IsModuleLoaded(TEXT("OnlineSubsystemSteam"));
+	const Glitchless::FValue Facts = GlitchlessSteamworks::Read();
+	TestTrue(TEXT("an object"), Facts.IsObject());
+	if (!bSubsystem)
+	{
+		TestEqual(TEXT("Steamworks not initialised, no facts"), static_cast<int32>(Facts.Size()), 0);
+	}
+	if (!bShared && !bSubsystem)
+	{
+		TestFalse(TEXT("and no Steam module loaded by reading"), FModuleManager::Get().IsModuleLoaded(TEXT("SteamShared")));
+	}
 	return true;
 }
 

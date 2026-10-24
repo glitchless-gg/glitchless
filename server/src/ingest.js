@@ -83,9 +83,34 @@ export function normalize({ envelope, events }, now = Date.now()) {
     if (e.type === 'map' && (typeof e.image !== 'string' || e.image.length > 120_000)) continue;
     // A report keeps the player's note even when its screenshot is too big or not an image.
     if (e.type === 'bug_report' && e.screenshot != null && (typeof e.screenshot !== 'string' || !e.screenshot.startsWith('data:image/') || e.screenshot.length > 200_000)) delete e.screenshot;
+    if (e.type === 'session_start' && e.device && typeof e.device === 'object') e.device = steamDevice(e.device);
     out.push({ ...e, ...envelope, level: e.level ?? null, received: now });
   }
   return out;
+}
+
+// The Steam facts an engine SDK reads from Steamworks at session start (SPEC §4c), kept only in the shapes they are
+// sent in, so filters and breakdowns see one spelling. Steam hardware refines the SDKs' own Steam Deck tag.
+const STEAM_HARDWARE = new Set(['deck', 'machine', 'frame', 'none']);
+const STEAM_FLAGS = ['proton', 'big_picture', 'family_shared', 'timed_trial'];
+const STEAM_WORDS = { steam_branch: 64, steam_controller: 32, steam_language: 32 };
+
+export function steamDevice(device) {
+  const d = { ...device };
+  if ('steam_build' in d) {
+    const build = typeof d.steam_build === 'string' && /^\d{1,10}$/.test(d.steam_build) ? Number(d.steam_build) : d.steam_build;
+    if (Number.isSafeInteger(build) && build > 0) d.steam_build = build;
+    else delete d.steam_build;
+  }
+  if ('steam_hardware' in d && !STEAM_HARDWARE.has(d.steam_hardware)) delete d.steam_hardware;
+  for (const k of STEAM_FLAGS) if (k in d && typeof d[k] !== 'boolean') delete d[k];
+  for (const [k, max] of Object.entries(STEAM_WORDS)) {
+    if (!(k in d)) continue;
+    if (typeof d[k] === 'string' && d[k].trim()) d[k] = d[k].trim().slice(0, max);
+    else delete d[k];
+  }
+  if (d.steam_hardware === 'deck') d.steam_deck = true;
+  return d;
 }
 
 function sanitize(value, depth = 0) {

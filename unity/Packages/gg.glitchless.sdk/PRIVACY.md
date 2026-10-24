@@ -1,6 +1,6 @@
 # What Glitchless for Unity sends
 
-This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
+This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/SteamInfo.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -70,6 +70,26 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 **Game words.** `Track()` names and attributes, level names, scene names (sent as level names), death causes and gauges are whatever the game passes. Use the game's own words, never anything typed by or particular to the player.
 
+## Steam facts
+
+When the game already uses Steamworks.NET or Facepunch.Steamworks, `session_start`'s `device` also carries these, in every mode (`Runtime/SteamInfo.cs`). The SDK finds the wrapper by reflection, reads only once the game has initialised Steam itself (`SteamAPI.Init`, or `SteamClient.Init`), and reads nothing without one. A wrapper without a call leaves that field out (Facepunch has no Proton call, and only SDK 1.65 wrappers name the Steam hardware beyond a Deck).
+
+| field | example | what it says |
+| --- | --- | --- |
+| `steam_build` | `18231` | the Steam build the game runs; left out when it isn't a build downloaded from Steam |
+| `steam_branch` | `beta`, `public` | the beta branch it runs, or `public` on the default one |
+| `steam_hardware` | `deck`, `machine`, `frame`, `none` | whether it runs on Valve's hardware (Steam Deck, Steam Machine, Steam Frame), and which. `deck` also makes `steam_deck` true |
+| `proton` | `true` | running under Proton |
+| `big_picture` | `false` | Steam is in Big Picture mode |
+| `steam_controller` | `ps5`, `xbox_one`, `steam_deck` | the kind of the first controller Steam Input sees, once the game has started Steam Input |
+| `family_shared` | `false` | the player has the game through Family Sharing |
+| `timed_trial` | `false` | the game is played as a timed trial (not how long) |
+| `steam_language` | `english` | the language the player picked for the game in Steam |
+
+**Never read or sent, in any mode:** the player's Steam ID, the owner's Steam ID (`GetAppOwner`), the player's Steam name, friends, or anything else from their Steam account. Valve's rules on passing Steam IDs to third parties are unclear, so Glitchless leaves them out entirely. The facts above are about the build and the hardware, and many players share each one.
+
+**Version.** When the game passes no version, batches carry `steam-<build>` (`steam-18231`) on a Steam build, so each build is a version on the dashboard.
+
 ## Bug reports: the player's own words
 
 Bug reports are off until the game turns them on (`BugReports` in `GlitchlessOptions`, or its own button calling `Glitchless.ReportBug()`). A report is the one place the SDK sends text the player typed, and Glitchless sends the note as it is: it can't tell a bug description from a name, an email address, a phone number or anything else a player chooses to write. If your game turns reports on:
@@ -110,6 +130,11 @@ With `Positions = true`, add that reports include where in the game world deaths
 
 Full mode needs more than this: a random player ID saved on the device, the device model, and positions in the game world.
 
+If the game ships on Steam and uses Steamworks, add:
+
+> **Steam**
+> On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
+
 If the game turns bug reports on, add:
 
 > **Bug reports**
@@ -143,4 +168,4 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 
 ## When this file must change
 
-Read it again when any of these change: the events or fields in `GlitchlessCore.cs`, what the bug report form sends (`BugReports.cs`), the device fields in `DeviceInfo.cs`, the counters in `GlitchlessRunner.cs`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.
+Read it again when any of these change: the events or fields in `GlitchlessCore.cs`, what the bug report form sends (`BugReports.cs`), the device fields in `DeviceInfo.cs`, the Steam facts in `SteamInfo.cs`, the counters in `GlitchlessRunner.cs`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.

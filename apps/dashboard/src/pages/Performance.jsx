@@ -18,7 +18,9 @@ export function Performance({ route }) {
   const budget = k.frame_budget_ms || 16.67;
   const s = data.series;
   const versionSeries = Object.entries(s.p95_by_version || {}).map(([v, values], i) => ({ label: `p95 · ${v}`, values, color: PALETTE[i % PALETTE.length] }));
-  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, version: data.by_version };
+  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, version: data.by_version, steam_branch: data.by_steam_branch, steam_build: data.by_steam_build };
+  // Steam branches and builds only for a game whose sessions read them from Steamworks (SPEC §4c).
+  const segments = [{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, { value: 'version', label: 'Version' }, ...(data.by_steam_branch?.length ? [{ value: 'steam_branch', label: 'Steam branch' }] : []), ...(data.by_steam_build?.length ? [{ value: 'steam_build', label: 'Steam build' }] : [])];
   const gauges = data.hitch_context?.gauges || [];
   const preceding = data.hitch_context?.preceding_events || [];
 
@@ -172,7 +174,7 @@ export function Performance({ route }) {
       </Widget>
 
       <GroupTitle>Devices</GroupTitle>
-      <Widget span={6} title="p95 frame time by segment" actions={<Segmented value={dim} onChange={setDim} options={[{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, { value: 'version', label: 'Version' }]} />}>
+      <Widget span={6} title="p95 frame time by segment" actions={<Segmented value={dim} onChange={setDim} options={segments} />}>
         <BarList
           rows={(dims[dim] || []).map((g) => ({ label: `${g.key} (${g.sessions})`, value: g.p95, display: fmtMs(g.p95), color: frameStatus(g.p95, budget) === 'ok' ? '#1fae84' : frameStatus(g.p95, budget) === 'warn' ? '#f2a93b' : '#ff6b57', title: `${g.sessions} sessions` }))}
         />

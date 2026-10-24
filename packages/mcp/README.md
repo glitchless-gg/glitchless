@@ -70,6 +70,8 @@ above go in its environment.
 | `glitchless_compare_versions` | Two or more versions side by side, in the game's own stats first, to confirm a fix with real players |
 | `glitchless_session` | One play session in detail, with its whole event timeline |
 | `glitchless_bug_reports` | Bug reports players sent from inside the game: their notes, levels, positions and sessions, and one report's screenshot when asked |
+| `glitchless_store_reviews` | For a game connected to a store (Glitchless Cloud: Steam, Google Play, the App Store): what players wrote there, by store, build or version, sentiment, topic (stutter, lag, fps, freeze, crash), device and, on Steam, Steam Deck, each build with the frame-time p95 and crash-free sessions measured on it |
+| `glitchless_store_vitals` | What Google Play (slow rendering, crash and ANR rates, the slowest devices and GPUs) or the App Store (hang rate, launch time, animation hitches, hang signatures) measured of each version, next to what Glitchless measured, and where the two disagree |
 | `glitchless_playtest` | Autoplay bots play the game and compare with a saved baseline ([glitchless-playtest](https://www.npmjs.com/package/glitchless-playtest); needs Playwright in the game project) |
 | `glitchless_deck_send` | Build the game, send it to the paired Steam Deck, add it to the Deck's library and optionally start it ([glitchless-deck](https://www.npmjs.com/package/glitchless-deck); pair once with `npx glitchless-deck pair`) |
 | `glitchless_deck_measure` | Measure a Unity, Godot or Unreal build on the Steam Deck and compare it with a saved run |

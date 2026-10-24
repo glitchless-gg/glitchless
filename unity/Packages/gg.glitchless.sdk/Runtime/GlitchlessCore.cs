@@ -89,6 +89,7 @@ namespace GlitchlessSdk
         public string SaveDir; // where the outbox and the player ID live; null writes nothing to disk
         public IdStorage Ids; // keeps the player ID elsewhere (PlayerPrefs on the web); null: files in SaveDir
         public Func<bool, Dictionary<string, object>> Device = full => new Dictionary<string, object>();
+        public Func<Dictionary<string, object>> Steam = () => null; // the game's Steamworks facts (SteamInfo.Read), null until it answers
         public Func<Dictionary<string, object>> Engine; // mesh, texture, object counts and memory, where Unity has them
         public Func<double> StartupMs; // time since the app started, for time to first frame
         public Func<string[]> Args = () => Environment.GetCommandLineArgs();
@@ -117,7 +118,8 @@ namespace GlitchlessSdk
         public readonly Dictionary<string, double> Ctx = new Dictionary<string, double>();
 
         string service = "unknown-game", version = "0.0.0", env = "dev", intake = "", sessionType = "user";
-        bool full, storesId, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
+        Dictionary<string, object> steamFacts; // read once Steamworks answers
+        bool full, storesId, versionGiven, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
         long startedAt;
         double levelStartedAt;
         readonly List<(string name, double t)> recent = new List<(string, double)>();
@@ -208,7 +210,9 @@ namespace GlitchlessSdk
             Inited = true;
             Options = options ?? new GlitchlessOptions();
             service = string.IsNullOrEmpty(Options.Service) ? "unknown-game" : Options.Service.ToLowerInvariant();
-            version = !string.IsNullOrEmpty(Options.Version) ? Options.Version : !string.IsNullOrEmpty(AppVersion) ? AppVersion : "0.0.0";
+            versionGiven = !string.IsNullOrEmpty(Options.Version);
+            version = versionGiven ? Options.Version : !string.IsNullOrEmpty(AppVersion) ? AppVersion : "0.0.0";
+            SteamFacts(); // Steamworks may answer only later: session_start asks again
             env = !string.IsNullOrEmpty(Options.Env) ? Options.Env : IsDebugBuild ? "dev" : "prod";
             var flagIntake = FlagValue("--glitchless-intake");
             intake = (flagIntake ?? Options.Intake ?? "").TrimEnd('/');
@@ -898,17 +902,42 @@ namespace GlitchlessSdk
             return out_;
         }
 
-        Dictionary<string, object> SessionStartEvent() => new Dictionary<string, object>
+        Dictionary<string, object> SessionStartEvent()
         {
-            ["type"] = "session_start",
-            ["ts"] = startedAt,
-            ["level"] = null,
-            ["session_type"] = sessionType,
-            ["privacy"] = PrivacyName,
-            ["device"] = Device(full),
-            ["page"] = null,
-            ["nav_ms"] = null,
-        };
+            var device = Device(full);
+            SteamInfo.AddTo(device, SteamFacts());
+            return new Dictionary<string, object>
+            {
+                ["type"] = "session_start",
+                ["ts"] = startedAt,
+                ["level"] = null,
+                ["session_type"] = sessionType,
+                ["privacy"] = PrivacyName,
+                ["device"] = device,
+                ["page"] = null,
+                ["nav_ms"] = null,
+            };
+        }
+
+        /// <summary>The game's Steam facts (SteamInfo), read until Steamworks answers: a game may initialise Steam after
+        /// Glitchless. A game that gives no version reports its Steam build ("steam-18231"), so versions compare build by
+        /// build. The first batch is made after session_start, so every batch of a session has the same version.</summary>
+        Dictionary<string, object> SteamFacts()
+        {
+            if (steamFacts == null)
+            {
+                try
+                {
+                    steamFacts = Steam?.Invoke();
+                }
+                catch (Exception)
+                {
+                    steamFacts = null;
+                }
+            }
+            if (steamFacts != null && !versionGiven && steamFacts.TryGetValue("steam_build", out var build) && build is long b && b > 0) version = "steam-" + b;
+            return steamFacts;
+        }
 
         // ───────────────────────────── bug reports ─────────────────────────────
 

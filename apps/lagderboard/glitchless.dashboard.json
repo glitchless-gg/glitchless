@@ -1,0 +1,30 @@
+{
+  "pages": [
+    {
+      "id": "runs",
+      "title": "Runs",
+      "icon": "bolt",
+      "panels": [
+        { "type": "stat", "event": "run_end", "title": "Runs", "size": "s" },
+        { "type": "stat", "metric": "sessions", "title": "Visits", "size": "s" },
+        { "type": "stat", "event": "run_start", "per": "$sessions", "title": "Visits that started a run", "size": "s" },
+        { "type": "stat", "event": "share", "per": "run_end", "title": "Runs shared", "size": "s" },
+        { "type": "series", "event": "run_end", "by": "device_class", "title": "Runs over time, by device class", "size": "l" },
+        { "type": "breakdown", "event": "run_end", "by": "score_band", "limit": 8, "title": "Cubes survived", "note": "The score: cubes on screen the last time Glitchless measured 30 fps or better", "size": "m" },
+        { "type": "breakdown", "event": "run_end", "by": "device", "limit": 20, "title": "Devices that played", "size": "m" },
+        { "type": "breakdown", "event": "run_end", "by": "gpu_tier", "title": "GPU tier", "size": "s" },
+        { "type": "breakdown", "event": "run_end", "by": "browser", "title": "Browser", "size": "s" },
+        { "type": "breakdown", "event": "share", "by": "method", "title": "How runs were shared", "size": "s" },
+        { "type": "funnel", "steps": "run_start,run_end,share", "title": "Start, meltdown, share", "size": "m" },
+        { "type": "stat", "event": "run_end", "sum": "score", "title": "Cubes survived, all runs added up", "note": "A sum: a share link shows it only when made with sums on", "size": "m" },
+        { "type": "frame_time", "title": "Frame time, all runs", "size": "l" }
+      ]
+    },
+    { "id": "performance", "title": "Performance", "view": "performance" },
+    { "id": "errors", "title": "Errors", "view": "errors" },
+    { "id": "events", "title": "Events", "view": "events" },
+    { "id": "live", "title": "Runs, live", "view": "live", "options": { "events": ["run_end", "share"] } },
+    { "id": "sessions", "title": "Sessions", "view": "sessions" },
+    { "id": "versions", "title": "Versions", "view": "versions" }
+  ]
+}

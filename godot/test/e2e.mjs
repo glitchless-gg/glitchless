@@ -19,7 +19,8 @@
 //   9. install   install mode: the random player ID kept in user://, sent as player_id, with the device and
 //                positions as anonymous mode sends them; reset_install_id() and anonymous mode remove it
 // It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys) and test/device_test.gd
-// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files).
+// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files) and test/steam_test.gd (Steam facts
+// from a fake GodotSteam).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -124,6 +125,9 @@ try {
   const deviceUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/device_test.gd'], { encoding: 'utf8', timeout: 120_000 });
   for (const m of deviceUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `device unit: ${m[2]}`] : ['FAIL', `device unit: ${m[2]}`]);
   check('device unit tests ran', () => assert.match(deviceUnit.stdout, /device tests: 0 failed/, deviceUnit.stdout + deviceUnit.stderr));
+  const steamUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/steam_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of steamUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `steam unit: ${m[2]}`] : ['FAIL', `steam unit: ${m[2]}`]);
+  check('steam unit tests ran', () => assert.match(steamUnit.stdout, /steam tests: 0 failed/, steamUnit.stdout + steamUnit.stderr));
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });

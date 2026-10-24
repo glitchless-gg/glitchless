@@ -25,7 +25,7 @@ import { Glitchless, instrumentThree } from 'glitchless';
 
 const glitchless = Glitchless.init({
   service: 'my-game',            // required
-  version: '1.0.0',              // required: powers version comparison
+  version: '1.0.0',              // powers version comparison; on Steam with `steam`, defaults to 'steam-<build>'
   env: 'dev',
   intake: 'http://localhost:7777',  // omit for overlay/WebMCP-only mode (nothing leaves the browser)
   clientToken: 'gl_pub_dev',
@@ -39,6 +39,7 @@ const glitchless = Glitchless.init({
   sampleRate: 1,                 // share of sessions to record
   bugReports: null,              // { hotkey: 'F8', onOpen, onClose } (or true): players send bug reports from a form
   datadog: null,                 // { applicationId, clientToken, site, replay: true } → Datadog RUM
+  steam: null,                   // an Electron game's steamworks.js client: Steam build, branch and hardware per session
 });
 instrumentThree(glitchless, { renderer, scene, camera, THREE });
 ```
@@ -201,6 +202,26 @@ windows' fps and p95, and the device. It is sent on its own request straight awa
 Reports show in the dashboard's Bug Reports page with a link to each session's replay, as a finding once three
 come from one level, and to agents through the `glitchless_bug_reports` MCP tool. The note is whatever the player
 types: read [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) before you ship it.
+
+### Steam (Electron and steamworks.js)
+
+A game that ships on Steam with Electron and [steamworks.js](https://github.com/ceifa/steamworks.js) can pass its
+client, and every session then says which Steam build and beta branch it ran, whether on a Steam Deck, in Big Picture
+mode, with which kind of controller and in which Steam language:
+
+```js
+const steamworks = require('steamworks.js');
+const client = steamworks.init(480); // your app ID
+const glitchless = Glitchless.init({ service: 'my-game', intake, clientToken, steam: client });
+```
+
+The dashboard can then filter any page by `steam_branch=beta`, break events down by `$steam_branch`, and compare two
+branches the way it compares versions (`glitchless_compare_versions` with `by: "steam_branch"`). Without a `version`,
+the SDK reports `steam-<build>` (`steam-18231`) on a Steam build, so every upload to Steam is a version you can
+compare; pass your own `version` and it wins. The SDK only reads the client you pass, once, at init: steamworks.js
+ends the process if it is called before its `init()`, so Glitchless never loads or looks for it. steamworks.js has no
+calls for Family Sharing, timed trials or Proton, so those aren't sent. No Steam ID or name is ever read
+([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).
 
 ## WebMCP
 

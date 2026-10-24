@@ -10,9 +10,9 @@ tool(
     name: z.string().optional().describe('Only this event, e.g. "paywall"'),
     funnel: z.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"'),
   },
-  async ({ service, hours, version, name, funnel }) => {
+  async ({ service, hours, version, steam_branch, name, funnel }) => {
     const svc = await resolveService(service);
-    const d = await query('events', { service: svc, version, name, funnel, ...range(hours) });
+    const d = await query('events', { service: svc, version, steam_branch, name, funnel, ...range(hours) });
     const brief = d.events
       .slice(0, 15)
       .map((e) => `${e.name}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ''}`).join(', ')}` : ''}`)
@@ -26,12 +26,21 @@ tool(
 
 tool(
   'glitchless_compare_versions',
-  'Compare game versions side by side, in the game\'s own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version.',
-  { service: common.service, hours: common.hours, a: z.string().optional().describe('Baseline version (default: second newest)'), b: z.string().optional().describe('New version (default: newest)') },
-  async ({ service, hours, a, b }) => {
+  'Compare game versions side by side, in the game\'s own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version. For a game on Steam, by "steam_branch" compares Steam branches instead (a beta against "public"), and by "steam_build" Steam builds: a and b are then branch names or build ids.',
+  {
+    service: common.service,
+    hours: common.hours,
+    a: z.string().optional().describe('Baseline version, branch or build (default: second newest)'),
+    b: z.string().optional().describe('New version, branch or build (default: newest)'),
+    by: z.enum(['version', 'steam_branch', 'steam_build']).optional().describe('What to compare (default version). steam_branch and steam_build need a game that uses Steamworks'),
+  },
+  async ({ service, hours, a, b, by }) => {
     const svc = await resolveService(service);
-    const { versions, has = {}, board = [] } = await query('versions', { service: svc, ...range(hours || 72) });
-    if (versions.length < 2 && !(a && b)) return reply(`Only one version of ${svc} has reported in this window`, versions);
+    const steam = by && by !== 'version' ? by : null;
+    const { versions, has = {}, board = [] } = await query('versions', { service: svc, ...(steam ? { by: steam } : {}), ...range(hours || 72) });
+    const what = steam === 'steam_branch' ? 'Steam branch' : steam === 'steam_build' ? 'Steam build' : 'version';
+    if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
+    if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);
     const va = versions.find((v) => v.version === a) || versions.at(-2);
     const vb = versions.find((v) => v.version === b) || versions.at(-1);
     const pair = (x, y) => ({ [va.version]: x ?? null, [vb.version]: y ?? null, change: x != null && y != null ? Math.round((y - x) * 100) / 100 : null });
@@ -42,6 +51,7 @@ tool(
     const events = Object.fromEntries(Object.keys(vb.events || va.events || {}).map((n) => [n, pair(va.events?.[n], vb.events?.[n])]));
     const levels = [...new Set([...Object.keys(va.level_p95 || {}), ...Object.keys(vb.level_p95 || {})])];
     const level_p95 = Object.fromEntries(levels.map((l) => [l, { [va.version]: va.level_p95?.[l] ?? null, [vb.version]: vb.level_p95?.[l] ?? null }]));
-    return reply(`${svc}: ${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { board: own, events_per_session: events, delta, level_p95, all_versions: versions.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString() })) });
+    // Branches and builds are compared from the sessions' own frame windows, which carry no level: no level_p95.
+    return reply(`${svc}: ${steam ? `${what} ` : ''}${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { board: own, events_per_session: events, delta, ...(steam ? {} : { level_p95 }), [steam ? `all_${steam === 'steam_branch' ? 'branches' : 'builds'}` : 'all_versions']: versions.map((v) => ({ [steam || 'version']: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString() })) });
   },
 );

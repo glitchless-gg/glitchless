@@ -34,7 +34,8 @@ namespace Glitchless
 	{
 		/** The game's id in Glitchless, lowercase and stable, for example "my-game". */
 		std::string Service = "unknown-game";
-		/** The game's version; empty uses the project's version. Bump it on every release. */
+		/** The game's version; empty uses the Steam build ("steam-18231") when the game runs one from Steam with
+		 * Steamworks, else the project's version. Bump it on every release. */
 		std::string Version;
 		/** Empty: "dev" in the editor and development builds, "prod" in shipping builds. */
 		std::string Env;
@@ -157,6 +158,8 @@ namespace Glitchless
 		std::string SaveDir;
 		FFileSystem Files;
 		std::function<FValue(bool Detailed)> Device;
+		/** The game's Steam facts (GlitchlessSteam.h), an empty object until Steamworks answers. */
+		std::function<FValue()> SteamFacts;
 		/** UObject and actor counts and memory, sampled every 30 frames. */
 		std::function<FValue()> Engine;
 		/** Time since the app started, for time to first frame. */
@@ -343,6 +346,7 @@ namespace Glitchless
 		std::vector<std::string> RecentWithin(double Ms) const;
 		std::vector<std::string> RecentNames(int Count) const;
 		FValue SessionStartEvent();
+		const FValue& ReadSteam();
 		void Batch();
 		void AddBatches(const std::vector<FValue>& Events);
 		FBatch NewBatch(std::vector<std::string> Events);
@@ -375,6 +379,7 @@ namespace Glitchless
 		FGauges Ctx;
 
 		std::string Service = "unknown-game", Version = "0.0.0", Env = "dev", Intake, SessionType = "user";
+		bool VersionGiven = false;
 		bool Detailed = false, StoresId = false, PositionsOn = false, RageInputOn = false, DebugOn = false, ManualLevels = false, MapLevels = true;
 		int64_t StartedAt = 0;
 		double LevelStartedAt = 0;
@@ -413,6 +418,7 @@ namespace Glitchless
 		double NextFlushAt = 0, NextPosAt = 0;
 		FValue EngineCounts = FValue::Object();
 		FValue DeviceInfo;
+		FValue SteamInfo; // read once Steamworks answers
 		int LevelMapHandle = 0;
 		std::vector<int> Screen, Window;
 		std::shared_ptr<bool> Alive; // the transport's callbacks check it, in case the core is gone
