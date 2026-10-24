@@ -57,7 +57,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.2.0";
+        public const string SdkVersion = "0.3.0";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees

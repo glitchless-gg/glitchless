@@ -207,7 +207,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.2.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.3.0'));
   });
   check('engine gauges ride in ctx: level_3 carries the orphan nodes level_2 leaked', () => {
     const peak = (level) => Math.max(...raw.filter((e) => e.type === 'frame_window' && e.level === level).map((w) => w.ctx?.orphan_nodes ?? 0));
@@ -321,7 +321,7 @@ try {
     assert.ok(opened, 'no report from code');
     assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
     assert.ok(opened.screenshot.length <= 200_000);
-    assert.equal(opened.sdk, 'glitchless-godot/0.2.0');
+    assert.equal(opened.sdk, 'glitchless-godot/0.3.0');
     assert.equal(opened.level, 'level_1');
     assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
     assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');
