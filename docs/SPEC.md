@@ -861,7 +861,7 @@ sums (kept per minute and currency) aren't split by one either.
 
 ## 5c. Unreal SDK
 
-`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.1.0"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
+`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.2.0"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
 
 | | |
 | --- | --- |

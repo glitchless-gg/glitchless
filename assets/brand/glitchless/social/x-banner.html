@@ -7,17 +7,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@800&family=JetBrains+Mono:wght@700&display=swap">
 <style>
-/* X profile banner, 1500 x 500. A phone shows only the middle ~1250 px at about a quarter of this size, with the
-   status bar over the top corners, the back and search buttons over the middle of each edge (y 200–315) and the
-   profile picture over the bottom left. So there are only two things, both big: the headline (y 120–205, under the
-   status bar and above the buttons) and the chart (x 400–1100, its tall bars clear of the buttons). Labels are
-   30 px, about 9 pt on a phone; nothing smaller. */
+/* X profile banner, 1500 x 500. Measured on an iPhone: it shows the middle ~1250 px, the Dynamic Island covers
+   x 550–950 down to y 155, the back button sits at x 170–280 and the search and more buttons at x 1080–1330 (all at
+   y 205–315), and the profile picture covers x 160–470 below y 455. So the headline starts at y 165 and is narrow
+   enough (x 430–1070) to pass between the buttons, and the chart (x 420–1100, y 258–452) keeps its tall bars and
+   labels between them and stops above the profile picture. Labels are 30 px, about 9 pt on a phone. */
 :root { --mint: #2EE6A6; --navy: #14213D; --coral: #FF6B57; --white: #FFFFFF; --slate: #52648F; --rule: #2A3A60 }
 * { box-sizing: border-box; margin: 0 }
 html, body { width: 1500px; height: 500px; overflow: hidden; background: var(--navy) }
-h1 { position: absolute; left: 0; right: 0; top: 112px; text-align: center; font: 800 78px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
+h1 { position: absolute; left: 0; right: 0; top: 165px; text-align: center; font: 800 54px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
 h1 span { color: var(--mint) }
-.chart { position: absolute; left: 400px; width: 700px; top: 238px; height: 210px; display: grid; grid-template-columns: 1fr 1fr }
+.chart { position: absolute; left: 420px; width: 680px; top: 258px; height: 194px; display: grid; grid-template-columns: 1fr 1fr }
 .side { display: flex; align-items: flex-end; gap: 9px; padding: 0 22px }
 .side i { flex: 1; background: var(--slate); border-radius: 4px 4px 0 0 }
 .side i.hot { background: var(--coral) }
