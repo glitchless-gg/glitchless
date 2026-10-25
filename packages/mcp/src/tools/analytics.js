@@ -43,8 +43,13 @@ tool(
     const what = steam === 'steam_branch' ? 'Steam branch' : steam === 'steam_build' ? 'Steam build' : 'version';
     if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
     if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);
-    const va = versions.find((v) => v.version === a) || versions.at(-2);
-    const vb = versions.find((v) => v.version === b) || versions.at(-1);
+    // A version asked for by name is that one or none: never quietly another.
+    const va = a ? versions.find((v) => v.version === a) : versions.at(-2);
+    const vb = b ? versions.find((v) => v.version === b) : versions.at(-1);
+    if (!va || !vb) {
+      const missing = [!va && (a ?? 'an older one'), !vb && (b ?? 'a newer one')].filter(Boolean).join(' and ');
+      return reply(`No sessions of ${svc} from ${what} ${missing} in this window (${hours || 72}h); the ${what}s that reported in it: ${versions.map((v) => v.version).join(', ') || 'none'}. Try a longer window with hours`, versions);
+    }
     const pair = (x, y) => ({ [va.version]: x ?? null, [vb.version]: y ?? null, change: x != null && y != null ? Math.round((y - x) * 100) / 100 : null });
     // Only the measures this game reports: no frame times for a game that sends none.
     const keys = [...(has.frames ? ['frame_p50', 'frame_p95', 'frame_p99', 'hitches_per_min'] : []), 'crash_free_pct', 'error_free_pct', 'errors_per_session', ...(has.levels ? ['level_completion_pct'] : []), ...(has.deaths || has.fails ? ['rage_quit_pct'] : []), ...(has.deaths ? ['deaths_per_session'] : []), ...(has.geometry ? ['geometries_growth_per_level_load'] : [])];

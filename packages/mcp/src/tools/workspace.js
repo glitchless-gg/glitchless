@@ -80,7 +80,7 @@ act(
 
 act(
   'glitchless_list_share_links',
-  "A game's share links: which page each shows, when it expires, and whether it's revoked.",
+  "A game's share links: which page each shows, when it expires, when it was last opened (lastUsedAt, to about ten minutes), and whether it's revoked.",
   {},
   async ({ game }) => {
     const pid = await projectFor(game);

@@ -26,7 +26,7 @@ It prints a link and a code; you approve the code in the Glitchless dashboard, a
 workspace: `glitchless_list_games` lists them, `glitchless_create_game` makes one and returns its client token, and
 every tool takes `game` (a name or id). The key acts as you, with your role in the workspace, and never deletes data
 or touches billing or people. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
-key, and Settings → Agent access in the dashboard lists and revokes keys. An agent can also sign in from inside a
+key, and Settings → Keys & access in the dashboard lists and revokes keys. An agent can also sign in from inside a
 chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
 approve.
 

@@ -35,6 +35,12 @@ await createServer().connect(a);
 const client = new Client({ name: 'test', version: '0' });
 await client.connect(b);
 
+test('comparing versions that sent nothing in the window says so instead of failing', async () => {
+  const r = await client.callTool({ name: 'glitchless_compare_versions', arguments: { a: '1.0.0', b: '1.1.0', hours: 168 } });
+  assert.ok(!r.isError, r.content?.[0]?.text);
+  assert.match(r.content[0].text, /^No sessions of starlift from version 1\.0\.0 and 1\.1\.0 in this window \(168h\); the versions that reported in it: none\./);
+});
+
 test('every read tool passes env and session_type on to the API', async (t) => {
   t.after(() => api.close());
   const reads = { glitchless_triage: 'findings', glitchless_overview: 'overview', glitchless_performance: 'performance', glitchless_get_error: 'errors', glitchless_player_funnel: 'players', glitchless_events: 'events', glitchless_compare_versions: 'versions', glitchless_dashboard: 'dashboard' };

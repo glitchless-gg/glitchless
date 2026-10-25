@@ -66,7 +66,7 @@ export async function cli(argv) {
   };
   if (command === 'logout') {
     fs.rmSync(CREDENTIALS_FILE, { force: true });
-    console.log('Signed out: the saved workspace key is deleted. Revoke it in Settings → Agent access if it may have leaked.');
+    console.log('Signed out: the saved workspace key is deleted. Revoke it in Settings → Keys & access if it may have leaked.');
     return 0;
   }
   if (command === 'whoami') {

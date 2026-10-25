@@ -30,7 +30,7 @@ Then run `/mcp` in Claude Code and choose Glitchless to sign in.
 **ChatGPT**: Plugins → + → Add custom MCP server, paste the URL, and choose OAuth.
 
 **Any other client**: give it the URL. If it supports MCP's OAuth sign-in, it finds Glitchless's sign-in by itself.
-If it can only send a fixed header, make a workspace key in Settings → Agent access and send it as
+If it can only send a fixed header, make a workspace key in Settings → Keys & access and send it as
 `Authorization: Bearer gl_ws_…`.
 
 ## Signing in
@@ -51,8 +51,8 @@ that app, or a web address other than its own) aren't accepted. An app that only
 (`localhost`, as Claude Code and VS Code do) keeps whatever name it gives: nothing it gets can leave that computer.
 
 It acts as you, with your role in the workspace (a Viewer's connection can only read, and a Viewer can have 5 at once),
-and it never deletes data or changes billing or people. The connection shows in Settings → Agent access under the app's
-name; revoke it there to disconnect, which takes effect within 5 seconds everywhere. A connection the app stops using
+and it never deletes data or changes billing or people. The connection shows under the app's name in Agents & MCP and
+in Settings → Keys & access, with when it was last used; Disconnect there takes effect within 5 seconds everywhere. A connection the app stops using
 expires with its last refresh token, after 30 days. Connecting the same app again replaces its old connection.
 
 ## Tools

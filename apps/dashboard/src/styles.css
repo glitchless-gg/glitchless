@@ -232,6 +232,16 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .spark { display: block; }
 .delta.up { color: var(--alert); } .delta.down { color: var(--ok); } .delta.good-up { color: var(--ok); } .delta.bad-down { color: var(--alert); }
 .agentrow { display: grid; grid-template-columns: 80px 120px 1fr; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--track); font-size: 12.5px; }
+.agentrow > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .agentrow { grid-template-columns: 64px minmax(0, 1fr); } .agentrow > span:last-child { grid-column: 1 / -1; } }
+/* An agent's tools, behind a disclosure: grouped by the job they do. */
+.tool-guide { margin-top: 8px; }
+.tool-guide summary { cursor: pointer; color: var(--link); font-size: 12.5px; font-weight: 600; width: max-content; max-width: 100%; }
+.tool-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px 22px; margin-top: 10px; }
+.tool-groups h4 { margin: 0 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+.tool-groups dl { margin: 0; display: grid; gap: 5px; }
+.tool-groups dt { font-size: 11.5px; color: var(--text); overflow-wrap: anywhere; }
+.tool-groups dd { margin: 0; font-size: 12.5px; color: var(--text-2); }
 .loading-bar { height: 2px; background: linear-gradient(90deg, transparent, var(--brand-500), transparent); background-size: 200% 100%; animation: load 1s linear infinite; }
 @keyframes load { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 

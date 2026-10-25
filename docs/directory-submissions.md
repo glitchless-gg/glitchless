@@ -40,7 +40,7 @@ These are the owner's to do, in this order.
    app such as Claude or ChatGPT, or a coding agent, it reads your games' data through the Glitchless MCP server: the
    findings, frame times, errors, sessions (with their device, level, positions and event timeline), bug reports and
    their screenshots, store reviews and revenue you ask about. The app's provider receives what it reads, under that
-   provider's terms. Revoke a connection in Settings → Agent access." Also list the sign-in records OAuth adds (the
+   provider's terms. Revoke a connection in Settings → Keys & access." Also list the sign-in records OAuth adds (the
    app's name and redirect address, and token hashes kept up to 30 days).
 4. **ChatGPT's domain check.** When the plugin portal shows its verification token, deploy with
    `--openai-challenge <token>` (the cloud deploy script keeps it for later deploys) so it's served as plain text at
@@ -95,7 +95,7 @@ Use this for Claude (2,000 characters at most) and ChatGPT (4,000).
 > create a game and make a read-only share link to a board.
 >
 > You sign in with your Glitchless account and choose the workspace and what the assistant may do. It acts as you,
-> never deletes data and never touches billing or people, and you can disconnect it any time in Settings → Agent
+> never deletes data and never touches billing or people, and you can disconnect it any time in Settings → Keys &
 > access. You need a Glitchless account (free) with at least one game sending data.
 
 ### Example prompts
@@ -265,7 +265,7 @@ Paste into both portals' test instructions (the credentials go in the private fi
 3. Ask: "What's wrong with Zoomies this week?" The answer lists ranked findings with evidence.
 4. Ask: "Show me Zoomies' dashboard", then "Where do players die most on level 2?"
 5. To try a write: "Make a share link to Zoomies' Overview board", then "Revoke that share link".
-6. To disconnect: in Glitchless, Settings → Agent access → Revoke on the app's row.
+6. To disconnect: in Glitchless, Agents & MCP (or Settings → Keys & access) → Disconnect on the app's row.
 
 ## Sources
 

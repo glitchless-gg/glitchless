@@ -5,30 +5,84 @@ import { useShell } from '../shell.js';
 import { Widget, CodeBlock, Status, Findings, GroupTitle } from '../components.jsx';
 import { fmtNum, fmtTime, timeAgo } from '../format.js';
 
-const MCP_TOOLS = [
-  ['glitchless_list_games', 'games, versions and environments reporting telemetry'],
-  ['glitchless_triage', 'Findings ranked by severity, with evidence + suggested fix'],
-  ['glitchless_performance', 'frame-time percentiles by level / GPU tier / version, hitch causes'],
-  ['glitchless_get_error', 'one error issue: stack, breadcrumbs, affected sessions'],
-  ['glitchless_player_funnel', 'level completion, deaths, rage quits'],
-  ['glitchless_death_hotspots', 'where players die on a level (clustered)'],
-  ['glitchless_events', "the game's own events: counts, breakdowns, funnels"],
-  ['glitchless_dashboard', "the game's pages, and a board's panels with their numbers"],
-  ['glitchless_set_dashboard', "save the game's pages: boards in its own words, built-in views"],
-  ['glitchless_compare_versions', "before/after a fix, in the game's own stats first"],
-  ['glitchless_session', 'one session timeline (replay data)'],
+// The Glitchless MCP server's tools by the job they do, for a "see every tool" list. `hosted`: Glitchless Cloud only
+// (stores, revenue, workspaces and share links).
+const MCP_GROUPS = [
+  ['Find what players hit', [
+    ['glitchless_triage', 'ranked findings with their evidence and a suggested fix: start here'],
+    ['glitchless_overview', 'sessions, players, crash-free sessions, frame time against the budget'],
+    ['glitchless_get_error', 'one error: its stack and what the player did just before'],
+    ['glitchless_performance', 'frame time by level, GPU tier and version, and what causes hitches'],
+    ['glitchless_bug_reports', 'what players reported from inside the game, with screenshots'],
+  ]],
+  ['Players and the game\'s own moments', [
+    ['glitchless_events', 'whatever the game sends with track(): counts, breakdowns, funnels'],
+    ['glitchless_player_funnel', 'per level: starts, completions, deaths, rage quits'],
+    ['glitchless_death_hotspots', 'where players die on a level'],
+    ['glitchless_session', 'one play session, event by event'],
+    ['glitchless_compare_versions', 'versions side by side, to confirm a fix with real players'],
+  ]],
+  ['Stores and revenue', [
+    ['glitchless_store_reviews', 'what players wrote on Steam, Google Play or the App Store, by build'],
+    ['glitchless_store_vitals', 'what the store measured of each version, next to Glitchless'],
+    ['glitchless_revenue', 'real revenue from RevenueCat or Stripe, per player and per version'],
+  ], { hosted: true }],
+  ['Dashboards, games and sharing', [
+    ['glitchless_dashboard', 'the game\'s pages, and one board\'s panels with their numbers'],
+    ['glitchless_set_dashboard', 'design and save the game\'s own dashboard'],
+    ['glitchless_list_games', 'the games reporting, with their versions'],
+    ['glitchless_create_game', 'a new game and its client token', { hosted: true }],
+    ['glitchless_share_board', 'a read-only link to a board, and listing and revoking them', { hosted: true }],
+  ]],
+  ['Testing', [
+    ['glitchless_playtest', 'bots play the game and compare with a saved baseline'],
+    ['glitchless_deck_send', 'build the game and send it to a paired Steam Deck'],
+    ['glitchless_deck_measure', 'measure a build on the Steam Deck'],
+  ]],
 ];
 
 const WEBMCP_TOOLS = [
-  ['glitchless_live_performance', 'fps, p95, draw calls, geometries, context gauges — right now'],
-  ['glitchless_measure', 'measure the next N seconds (A/B before & after a change)'],
-  ['glitchless_inspect_scene', 'scene graph summary: instancing candidates, heavy meshes'],
-  ['glitchless_errors', 'errors in this session with stacks'],
-  ['glitchless_game_events', 'recent deaths, pickups, level events'],
+  ['glitchless_live_performance', 'fps, frame time, draw calls and the game\'s gauges, right now'],
+  ['glitchless_measure', 'measure the next few seconds, before and after a change'],
+  ['glitchless_inspect_scene', 'the scene graph: heavy meshes, what could be instanced'],
+  ['glitchless_errors', 'errors in this session, with stacks'],
+  ['glitchless_game_events', 'recent deaths, pickups and level events'],
   ['glitchless_screenshot', 'see the game canvas'],
-  ['glitchless_annotate', "drop a note into the session's telemetry timeline"],
-  ['+ game tools', 'whatever the game registers via glitchless.registerTool(), e.g. load_level'],
+  ['glitchless_annotate', 'drop a note into the session\'s timeline'],
+  ['+ game tools', 'whatever the game registers with glitchless.registerTool(), such as load_level'],
 ];
+
+// The MCP server's tools, grouped, for self-hosted (hosted false) or Glitchless Cloud; with `live`, the running
+// game's WebMCP tools too.
+export function toolGroups({ hosted = false, live = false } = {}) {
+  const groups = MCP_GROUPS.filter(([, , o]) => hosted || !o?.hosted).map(([title, tools]) => [title, tools.filter(([, , o]) => hosted || !o?.hosted)]);
+  return live ? [...groups, ['In the running game (WebMCP)', WEBMCP_TOOLS]] : groups;
+}
+
+// Tools behind a disclosure: what helps someone connect comes first, the full list only when asked for.
+export function ToolGuide({ groups, label }) {
+  const count = groups.reduce((n, [, tools]) => n + tools.length, 0);
+  return (
+    <details className="tool-guide">
+      <summary>{label ?? `See all ${count} tools`}</summary>
+      <div className="tool-groups">
+        {groups.map(([title, tools]) => (
+          <div key={title}>
+            <h4>{title}</h4>
+            <dl>
+              {tools.map(([n, d]) => (
+                <div key={n}>
+                  <dt className="mono">{n}</dt>
+                  <dd>{d}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
 
 const EXPORTER = {
   datadog: {
@@ -107,7 +161,6 @@ function ExporterStatus({ x }) {
 
 export function Agents() {
   const f = useFilters();
-  const activity = useQuery('activity', {}, { refreshMs: 3000 });
   const triage = useQuery('findings', f.params, { enabled: !!f.service });
   const [h, setH] = useState(null);
   useEffect(() => {
@@ -139,36 +192,14 @@ export function Agents() {
         <div className="muted" style={{ margin: '8px 0 4px', fontSize: 12 }}>
           Any other MCP client: the command is <code>npx -y glitchless-mcp</code>, with <code>GLITCHLESS_URL</code> (and <code>GLITCHLESS_API_KEY</code> if the server needs one) in its environment.
         </div>
-        <table className="dt" style={{ marginTop: 6 }}>
-          <tbody>
-            {MCP_TOOLS.map(([n, d]) => (
-              <tr key={n}>
-                <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                  {n}
-                </td>
-                <td className="muted">{d}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ToolGuide groups={toolGroups()} />
       </Widget>
       <Widget span={6} title="② WebMCP — the live game is a tool server" sub="every game with Glitchless exposes these while it runs">
         <CodeBlock code={`claude mcp add webmcp -- npx -y @jason.today/webmcp@latest --mcp\n\n# then in Claude Code: "give me a WebMCP token"\n# and paste it into the WebMCP widget on the game page`} />
         <div className="muted" style={{ margin: '8px 0 4px', fontSize: 12 }}>
           Also registered through the W3C <code>document.modelContext</code> API when the browser supports it (Chrome origin trial).
         </div>
-        <table className="dt" style={{ marginTop: 6 }}>
-          <tbody>
-            {WEBMCP_TOOLS.map(([n, d]) => (
-              <tr key={n}>
-                <td className="mono" style={{ whiteSpace: 'nowrap' }}>
-                  {n}
-                </td>
-                <td className="muted">{d}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ToolGuide groups={[['While the game runs', WEBMCP_TOOLS]]} />
       </Widget>
 
       <Widget span={6} title="③ Claude Code plugin" sub="skills + MCP in one install">
@@ -195,29 +226,38 @@ export function Agents() {
       </Widget>
 
       <GroupTitle>Agent activity</GroupTitle>
-      <Widget span={6} title="Recent agent queries" sub="MCP tool calls hitting this Glitchless API">
-        {(activity.data?.activity || []).length ? (
-          <div>
-            {activity.data.activity.slice(0, 25).map((a, i) => (
-              <div className="agentrow" key={i}>
-                <span className="muted mono">{fmtTime(a.ts)}</span>
-                <span>
-                  <Status kind="brand">{a.client}</Status>
-                </span>
-                <span className="mono" style={{ fontSize: 12 }}>
-                  {a.query}
-                  <span className="muted"> {Object.entries(a.params).filter(([k]) => !['from', 'to', 'api_key'].includes(k)).map(([k, v]) => `${k}=${v}`).join(' ')}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="muted">No agent queries yet. Connect the MCP server and ask: “what's wrong with my game?”</div>
-        )}
-      </Widget>
+      <AgentActivity span={6} />
       <Widget span={6} title="What an agent sees: glitchless_triage">
         <Findings findings={triage.data?.findings} compact />
       </Widget>
     </div>
+  );
+}
+
+// The latest MCP tool calls to this game: proof an agent is connected, and what it asked.
+export function AgentActivity({ span = 6, sub = 'MCP tool calls hitting this Glitchless API', empty = 'No agent queries yet. Connect the MCP server and ask: “what\'s wrong with my game?”' }) {
+  const activity = useQuery('activity', {}, { refreshMs: 3000 });
+  const rows = activity.data?.activity || [];
+  return (
+    <Widget span={span} title="Recent agent queries" sub={sub}>
+      {rows.length ? (
+        <div>
+          {rows.slice(0, 25).map((a, i) => (
+            <div className="agentrow" key={i}>
+              <span className="muted mono">{fmtTime(a.ts)}</span>
+              <span>
+                <Status kind="brand">{a.client}</Status>
+              </span>
+              <span className="mono" style={{ fontSize: 12 }}>
+                {a.query}
+                <span className="muted"> {Object.entries(a.params).filter(([k]) => !['from', 'to', 'api_key'].includes(k)).map(([k, v]) => `${k}=${v}`).join(' ')}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="muted">{empty}</div>
+      )}
+    </Widget>
   );
 }

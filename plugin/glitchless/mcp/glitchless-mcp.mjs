@@ -37303,7 +37303,7 @@ async function cli(argv) {
   };
   if (command === "logout") {
     fs2.rmSync(CREDENTIALS_FILE, { force: true });
-    console.log("Signed out: the saved workspace key is deleted. Revoke it in Settings \u2192 Agent access if it may have leaked.");
+    console.log("Signed out: the saved workspace key is deleted. Revoke it in Settings \u2192 Keys & access if it may have leaked.");
     return 0;
   }
   if (command === "whoami") {
@@ -37484,8 +37484,12 @@ ${brief || "None in this window. A game sends them with track(name, attrs)."}`, 
         const what = steam === "steam_branch" ? "Steam branch" : steam === "steam_build" ? "Steam build" : "version";
         if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
         if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);
-        const va = versions.find((v) => v.version === a) || versions.at(-2);
-        const vb = versions.find((v) => v.version === b) || versions.at(-1);
+        const va = a ? versions.find((v) => v.version === a) : versions.at(-2);
+        const vb = b ? versions.find((v) => v.version === b) : versions.at(-1);
+        if (!va || !vb) {
+          const missing = [!va && (a ?? "an older one"), !vb && (b ?? "a newer one")].filter(Boolean).join(" and ");
+          return reply(`No sessions of ${svc} from ${what} ${missing} in this window (${hours || 72}h); the ${what}s that reported in it: ${versions.map((v) => v.version).join(", ") || "none"}. Try a longer window with hours`, versions);
+        }
         const pair2 = (x, y) => ({ [va.version]: x ?? null, [vb.version]: y ?? null, change: x != null && y != null ? Math.round((y - x) * 100) / 100 : null });
         const keys = [...has.frames ? ["frame_p50", "frame_p95", "frame_p99", "hitches_per_min"] : [], "crash_free_pct", "error_free_pct", "errors_per_session", ...has.levels ? ["level_completion_pct"] : [], ...has.deaths || has.fails ? ["rage_quit_pct"] : [], ...has.deaths ? ["deaths_per_session"] : [], ...has.geometry ? ["geometries_growth_per_level_load"] : []];
         const delta = Object.fromEntries(keys.map((k) => [k, pair2(va[k], vb[k])]));
@@ -37902,7 +37906,7 @@ ${out.url}`, out.share);
     );
     act(
       "glitchless_list_share_links",
-      "A game's share links: which page each shows, when it expires, and whether it's revoked.",
+      "A game's share links: which page each shows, when it expires, when it was last opened (lastUsedAt, to about ten minutes), and whether it's revoked.",
       {},
       async ({ game }) => {
         const pid = await projectFor(game);

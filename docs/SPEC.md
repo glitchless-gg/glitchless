@@ -429,7 +429,7 @@ board, or call the control API:
 | route | does |
 | --- | --- |
 | `POST /api/projects/{p}/shares` | `{service, page, pageTitle?, name?, days?, from?, to?, sums?}` → `{share, token, url}`. `days` is 1, 7, 30, 90 or 365; without it the link lasts until it's revoked. `from` and `to` pin the window it shows (below). `sums: true` shows the board's sums such as revenue, which a link leaves out otherwise. At most 25 live links a game |
-| `GET /api/projects/{p}/shares` | the game's links: `{id, name, service, page, pageTitle, hint, status, from, to, sums, createdAt, createdBy, expiresAt, revokedAt}`, `status` being Active, Expired or Revoked, `from` and `to` (ISO times) the pinned window or null, and `sums` whether it shows sums |
+| `GET /api/projects/{p}/shares` | the game's links: `{id, name, service, page, pageTitle, hint, status, from, to, sums, createdAt, createdBy, expiresAt, revokedAt, lastUsedAt}`, `status` being Active, Expired or Revoked, `from` and `to` (ISO times) the pinned window or null, `sums` whether it shows sums, and `lastUsedAt` when it was last opened (below) or null |
 | `DELETE /api/projects/{p}/shares/{id}` | revokes it: at once on the server that revoked it, within 15 s on the others |
 
 The link is `https://app.glitchless.gg/s/gl_share_…` (32 base64url characters after the prefix). Like a
@@ -889,8 +889,23 @@ the person who approved it, with their current role, and within its scopes:
 | `sourcemaps` | Upload a web game's source maps |
 
 A workspace key never deletes data and never touches billing or people. It stops working when it's revoked
-(Settings → Agent access) or when its person leaves the workspace, and loses `dashboard`, `manage` and `sourcemaps`
-if their role drops to Viewer.
+(Settings → Keys & access, or Agents & MCP) or when its person leaves the workspace, and loses `dashboard`, `manage`
+and `sourcemaps` if their role drops to Viewer.
+
+**Keys & access.** Settings → Keys & access lists everything that can reach a game in one place: the workspace's
+keys (agents that signed in, apps connected over OAuth, keys made for CI), the game's ingest keys (`gl_pub_…`) and
+secret keys (`gl_sk_…`, scopes `read` plus any of `dashboard`, `sourcemaps`, `delete`), and its share links (§3c),
+each with who made it, when it was last used and when it ends, and Revoke. It makes the key for a job in one step:
+connecting a coding agent (`glitchless-mcp login`, or a workspace key for CI), the game's ingest key, a source map
+key (`read` + `sourcemaps`). The lists come from the control API, unchanged but for two fields:
+
+| Route | Each key |
+| --- | --- |
+| `GET /api/workspaces/{ws}/agent-keys` | `{id, name, scopes, status, hint, via, client, createdAt, createdByName, revokedAt, expiresAt, lastUsedAt}`: `via` is `connect` (an agent's sign-in), `oauth` (an app connected by URL, `client.host`) or `settings`; `expiresAt` is null but for an app's key, which moves on while the app keeps refreshing its tokens. Owners, Admins and Developers get every key, anyone else their own |
+| `GET /api/projects/{p}/keys` | `{id, kind, name, scopes, status, hint, token?, createdAt, createdBy, revokedAt, lastUsedAt}`; `token` only for an ingest key, which isn't secret |
+
+`lastUsedAt` (ISO, or null for never) is when a key last read, sent data or signed in, or a link was last opened.
+Each server stamps a key at most once every ten minutes, so it's right to about ten minutes.
 
 **Signing an agent in** is a device flow, like `gh auth login`:
 
@@ -899,7 +914,7 @@ if their role drops to Viewer.
 2. It shows the person `verification_url` (`…/#/connect?code=XXXX-XXXX`). Signed in there, they check the code,
    pick the workspace and the scopes, and approve or decline. Anyone in the workspace can approve: a Viewer's
    approval gives `read` only, and the other scopes take an Owner, Admin or Developer, as does making a key in
-   Settings → Agent access. There, Owners, Admins and Developers see and revoke every key, and a Viewer the ones
+   Settings → Keys & access. There, Owners, Admins and Developers see and revoke every key, and a Viewer the ones
    they approved.
 3. The agent polls `POST /v1/agent/connect/poll` with `{ device_code }` every `interval` seconds: `pending`,
    `slow_down`, `denied`, `expired`, or `approved` with `{ token, workspace, scopes }`, which comes back once.
