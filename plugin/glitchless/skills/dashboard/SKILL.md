@@ -90,6 +90,7 @@ one line on why it matters.
 | `live` | `events`: only these names or types, as they arrive |
 | `findings`, `frame_time`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports) |
 | `retention` | `limit`: how many of the latest first-seen days (default 14). Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on |
+| `store_revenue` | `measure` (required): `revenue`, `per_player`, `installs`, `active_users`, `mrr`, `actives`, `trials`, `by_day`, `players_by_day` or `by_version`. Real revenue, installs and active users from RevenueCat, for a game connected to it in Glitchless Cloud |
 | `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
 
 An event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. With `sum` and `by`
@@ -100,7 +101,10 @@ two decimals. A game has one currency, the dashboard's `currency` (`glitchless_s
 `currency: "USD"`, sent again with every save) or else the one most purchases are sent in; purchases in another
 currency are listed on the panel as left out, never added in. If one shows up, fix the game (convert before
 sending, or send the store's price in one currency) rather than the board. Revenue is hidden on a shared board
-unless the link is made to show it.
+unless the link is made to show it. A game connected to RevenueCat (Glitchless Cloud: Settings → Integrations) gets a Revenue page of
+`store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs
+and active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game's
+own `purchase` sums are for revenue by item, level or player.
 
 Every panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a
 developer can take any number to a spreadsheet: no export panel is needed.

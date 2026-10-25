@@ -13,6 +13,7 @@ import { createSourcemaps, MAX_UPLOAD_BYTES } from './sourcemaps.js';
 import { eventSums } from './sums.js';
 import { Presence, PLAYERS_NOW_MS } from './presence.js';
 import { storeReviews, storeVitals } from './reviews.js';
+import { revenueQuery } from './revenue.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
@@ -27,10 +28,11 @@ const ROLLUP_QUERIES = new Set(['overview', 'performance', 'versions', 'findings
 const REPORT_QUERIES = new Set(['reports', 'overview', 'findings', 'dashboard', 'board', 'session']);
 // Queries that show error issues: a web build with source maps gets their original frames (sourcemaps.js).
 const SOURCEMAP_QUERIES = new Set(['errors', 'overview', 'findings', 'board', 'playtest']);
-// Queries that show retention: they read who is new from the store's first-seen index (ctx.cohorts).
-const RETENTION_QUERIES = new Set(['players', 'board']);
-// Queries that join a game's store reviews and vitals (reviews.js) when the host has them: their panels, finding, queries.
-const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals']);
+// Queries that show retention or new players: they read who is new from the store's first-seen index (ctx.cohorts).
+const RETENTION_QUERIES = new Set(['players', 'board', 'store_revenue']);
+// Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
+// their panels, finding, queries.
+const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
 // meta.note for an answer from a game in anonymous mode (playersAreSessions).
 const PLAYERS_ARE_SESSIONS = 'no session sent a player ID (anonymous mode), so every players count here is a count of sessions';
 const MIME = {
@@ -385,6 +387,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       case 'store_vitals':
         // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store_vitals.
         return { meta, ...storeVitals(ctx, params) };
+      case 'store_revenue':
+        // Real revenue from a revenue source (RevenueCat) by day and version, next to the sessions and players measured
+        // and the game's own purchase events (revenue.js revenueQuery), in the dashboard's currency: glitchless_revenue.
+        return { meta, ...revenueQuery(ctx, params, { currency: (await store.getDashboard(projectId, service))?.currency ?? null }) };
       default:
         return undefined;
     }

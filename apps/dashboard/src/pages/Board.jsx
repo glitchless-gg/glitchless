@@ -11,7 +11,7 @@ import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../co
 import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor } from '../format.js';
 import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
-import { StorePanelBody, STORE_TYPES } from '../stores.jsx';
+import { StorePanelBody, STORE_TYPES, REVENUE_STATS, revenueStat } from '../stores.jsx';
 import { SessionsTable } from './Sessions.jsx';
 import { LiveFeed, useLiveEvents, line as liveLine } from './Live.jsx';
 import { ReportList } from './Reports.jsx';
@@ -112,6 +112,10 @@ function Panel({ p }) {
   // Every panel with something on it downloads it as CSV (csv.jsx); a live panel its feed.
   const csv = !p.empty && p.type !== 'live' && <CsvButton name={p.title} rows={() => panelCsv(p)} />;
   if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? p.why : statSub(p)} title={p.note} actions={csv} />;
+  if (p.type === 'store_revenue' && REVENUE_STATS.has(p.measure)) {
+    const s = p.empty ? null : revenueStat(p);
+    return <QueryValue span={span} label={p.title} value={s?.value ?? null} sub={p.empty ? p.why : s.sub} title={[p.note, ...(p.notes ?? [])].filter(Boolean).join(' ') || undefined} actions={csv} />;
+  }
   if (p.type === 'live' && !p.empty) return <LivePanel p={p} span={span} />;
   const more = p.type === 'positions' ? `heatmaps?level=${encodeURIComponent(p.level)}` : { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events', reports: 'reports', retention: 'players' }[p.type];
   return (

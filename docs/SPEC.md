@@ -233,6 +233,7 @@ players' numbers leave out. Each Steam fact (§4c: `steam_branch`,
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
 | `store_reviews` | One store's reviews of the game (Steam, Google Play, the App Store), filtered, with counts by build, topic and device (§3f); `{connected: false}` without a store |
 | `store_vitals` | One store's own measures of the game (Google Play's Android vitals, the App Store's hang, launch and animation metrics) by version, next to Glitchless's, with where they disagree (§3f) |
+| `store_revenue` | A game's real revenue from RevenueCat (production purchases only) by UTC day and, where RevenueCat splits it, by version, with installs (new customers), active users, MRR, active subscriptions and trials, next to the sessions, players, new players and purchase events Glitchless measured (§3h); `{connected: false, why}` for a game without it |
 
 ### 3b. Dashboards and boards
 
@@ -250,7 +251,7 @@ performance, errors, players, heatmaps, sessions, versions, live, reports), whic
 ```
 
 `id` (default: from the view or the title) is the page's address, `#/<id>`; `icon` is one of board, overview,
-events, perf, errors, players, heatmap, sessions, versions, live, flag, bolt, play, clock, bug. At most 20 pages and 24
+events, perf, errors, players, heatmap, sessions, versions, live, flag, bolt, play, clock, bug, money. At most 20 pages and 24
 panels a board. A built-in view a dashboard leaves out still opens from links (`#/errors/<fingerprint>`,
 `#/sessions/<id>`, `#/reports/<id>`). The live view takes `options.events`: names or types to show. The reports view
 (Bug Reports) lists what players sent, newest first, with each screenshot, its session's replay (opened at the
@@ -275,6 +276,7 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
 | `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, §3f): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
+| `store_revenue` | `measure`, `store` | for a game connected to RevenueCat (§3h): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, or revenue by version next to what Glitchless measured |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `retention` | `limit` (days, 1 to 90; default 14) | D1, D7 and D30 by first-seen day (§4), the latest days; a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
 | `versions` | `by` | the board's own stat panels, version by version; with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
@@ -745,8 +747,8 @@ permission (Owner, Admin).
 
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play` and `app_store` |
-| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
+| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store` and `revenuecat` (§3h) |
+| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
 | `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
 | `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour, within 20 seconds; the hourly sync does the rest) |
 | `GET`, `PUT`, `DELETE /api/projects/{p}/steam`, `POST …/steam/sync` | Steam's, as before the other stores: `{steam, status, data}` |
@@ -804,6 +806,116 @@ Every other `/v1/` route (queries, `/v1/dashboard`, source maps) takes the same 
 `x-glitchless-project` (or `?project=`). `/v1/agent/` reads no cookies and sends no CORS headers: it's for programs,
 not web pages. In the browser, the dashboard registers the same abilities as WebMCP tools
 (`document.modelContext`), acting as the signed-in person.
+
+### 3h. Revenue: RevenueCat (Glitchless Cloud)
+
+A game that sells in-app purchases through RevenueCat connects it in Settings → Integrations, next to its stores, and
+its **real revenue**, its **installs** and its **active users** sit next to what Glitchless measures. The game's own purchase events (`track('purchase',
+{amount, currency})`, §3b) are what the game sends: they miss purchases on builds without the SDK or that the game
+doesn't track, and on Android a licence tester's purchase looks like any other on the device. RevenueCat counts what
+the stores charged, and its charts count production transactions only: sandbox purchases (TestFlight, StoreKit
+testing, Google Play licence testers) are never in them (RevenueCat's docs, Charts; its dashboard shows sandbox
+purchases only behind the Overview's sandbox toggle, which the API doesn't use). Its charts are in UTC days. So
+RevenueCat's revenue is the number for money, and the game's purchase events are the ones to read by item, level or
+player; the gap between them is the purchases that never reach Glitchless. The core is store-neutral like §3f
+([`server/src/revenue.js`](../server/src/revenue.js): storage, panels, the Revenue page, the query; a source's data
+comes through the same `stores.read` as the stores', under its name); the adapter that calls RevenueCat is Glitchless
+Cloud's. Read only: nothing is written to RevenueCat, and its
+webhooks (RevenueCat's Pro plan) are not used.
+
+**Connecting.** The RevenueCat project ID (`proj…`; the 8 characters after `/projects/` in the dashboard's address are
+taken too), a currency (one of the 14 RevenueCat converts to: USD, EUR, GBP, AUD, CAD, JPY, BRL, KRW, CNY, MXN, SEK,
+PLN, NZD, CHF; default USD) and a **v2 secret key** (`sk_…`; Project settings → API keys) that has only Charts &
+Metrics → Overview: Read and Charts: Read (`charts_metrics:overview:read`, `charts_metrics:charts:read`). The key is
+checked with one read on save (`GET /v2/projects/{id}/metrics/overview`: a wrong key, a key of another project or one
+without the overview permission is refused, saying what to fix; a public SDK key, `appl_…` or `goog_…`, is refused
+before it is sent) and sealed like a store's credentials; the dashboard gets its last four characters. A new project or
+currency forgets the kept revenue, and the next sync backfills it in the new one.
+
+**The sync** (hourly with the stores, the `glitchless-stores` Lambda; API v2, `Authorization: Bearer sk_…`):
+
+| from | call | when |
+| --- | --- | --- |
+| the overview | `GET /projects/{p}/metrics/overview?currency=` (MRR, active subscriptions and trials now; revenue, new customers and active customers over the last 28 days) | every sync |
+| each chart's resolutions and segments | `GET /projects/{p}/charts/{revenue,mrr,actives,trials,customers_new,customers_active}/options?realtime=true` | once a day |
+| revenue and transactions, MRR, active subscriptions, active trials, new customers, active customers, by UTC day | `GET /projects/{p}/charts/{chart}?realtime=true&resolution=<the daily resolution's ID>&start_date=&end_date=&currency=` | every sync: the first back the plan's retention (14, 90 or 400 days; active customers 28, the days RevenueCat says are accurate), then from 3 days before the last day read (late renewals; Charts v3 takes refunds off on the day they are processed) |
+| revenue by app version | the revenue chart with `segment=<its app version segment>&limit_num_segments=20` | every sync, when the revenue chart's options list an app version segment |
+
+Charts & Metrics allow 25 requests a minute per RevenueCat project: a sync asks one call at a time, 7 or 8 of them
+(13 or 14 once a day, with the options), and a 429 ends it: the rest wait for the next sync, from where it was. The
+stores' daily budget (1,500 calls a game) applies too. A chart's points are `{cohort, measure, value, incomplete,
+segment}` (`cohort`: the period's start in Unix seconds; `measure` and `segment` index the chart's `measures` and
+`segments`, whose first is the total; older charts' arrays `[cohort, value…]` are read too). Each chart's measure is
+picked by its name (Revenue and Transactions; MRR; active subscriptions, not trials; Active Trials), else its first.
+The resolution and segments come from the options, never guessed; a chart new to a connection gets its options on the
+next sync, and a chart RevenueCat doesn't have for the project (400 or 404 on its options, such as Active Customers
+without Charts v3) is reported once a day and skipped. Today's point is `incomplete` (still filling in).
+MRR, subscriptions and trials are RevenueCat's snapshot of each day (subscriptions and trials at its end).
+
+**Installs and active users.** RevenueCat's **new customers** are the nearest thing it has to installs: a customer
+counts on the day RevenueCat first saw them, which for most is the first time the app starts its SDK (a purchase made
+outside the app can come first). A reinstall without signing in is a new customer again, an install that never opens
+the app isn't one, and customers have no sandbox side, so testers and developers count. The board calls them
+**Installs**. Its **active customers** are the customers whose SDK it heard from that day, each once: daily active
+users. RevenueCat says that chart is only accurate for the last 28 days, so only those are read. Next to them,
+Glitchless shows its own **new players** (first seen that UTC day, from the store's first-seen index; they need player
+IDs, install or full mode, and without them the panels say so) and **players** a day (who played that day; sessions in
+anonymous mode). Installs and active users are the whole game's, whatever the version filter.
+
+**By version.** RevenueCat documents no app version dimension for its charts (October 2026: country, store, product,
+offering, product duration, renewal cycle, attribution and others), so Glitchless takes one only when the revenue
+chart's options list a segment named app version (never the first seen or install version, which says nothing about
+the version a purchase was made on). Without one, revenue is by day only, the `by_version` panel says so and what to
+use instead (a breakdown of `purchase` by `$version` with `sum: "amount"`), and a query filtered to a `version` answers
+`{empty, why}` rather than the whole game's revenue over one version's players.
+
+**Money.** Amounts are in the connection's currency, as RevenueCat converted them. The game's own purchase events are
+put next to them only in that currency; when the game's currency (the dashboard's, else its purchases', §3b) is
+another, RevenueCat's amounts are shown in theirs, never converted or added to the game's, and a note says to set the
+connection's currency. Revenue panels are sums: a share link shows them only when made with sums.
+
+| panel `type` | fields | shows |
+| --- | --- | --- |
+| `store_revenue` | `measure`: `revenue` | the window's revenue (its UTC days, today so far included), transactions, and the game's own purchase events in the same currency with the share of it they cover |
+| | `per_player` | that revenue over the players Glitchless measured in the window (sessions in anonymous mode) |
+| | `installs` | RevenueCat's new customers in the window, next to the new players Glitchless saw (and their share of the installs) |
+| | `active_users` | RevenueCat's active customers a day (the average of the window's days, leaving out today), next to Glitchless's players a day |
+| | `mrr`, `actives`, `trials` | MRR, active subscriptions, active trials on the window's last day, and the change since its first (before any day: the overview's figure now; for installs and active users, its last 28 days) |
+| | `by_day` | revenue per day (bars), with the game's own purchase events per day when comparable; transactions, MRR, subscriptions and trials per day in its CSV |
+| | `players_by_day` | installs and active users per day, with Glitchless's new players and players per day |
+| | `by_version` | a row per version purchases were made on (newest first, RevenueCat's "Other" last): revenue, share, transactions, and Glitchless's players, sessions, revenue per player, purchase events, crash-free % and frame p95 of the same version |
+
+`store` is `revenuecat` (the default). A game connected to RevenueCat gets a **Revenue page** (`revenue`, icon `money`)
+on the automatic dashboard after the store pages: revenue, revenue per player, installs, active users a day, revenue per
+day, MRR, active subscriptions, installs and active users per day, active trials, the players measured (`stat
+players`) and revenue by version, in rows of 12 columns. Glitchless Cloud adds it to the
+game's saved dashboards on the first connection (`withStorePage`, after the first page, unless a page has a
+`store_revenue` panel; taken off, it isn't added again). With `?version=` (which filters the sessions, §3), revenue is
+that version's and revenue per player that version's over its players; MRR, subscriptions and trials stay the whole
+game's.
+
+**Query** `store_revenue` (`store`, default the first connected source; the usual `version`, `env`, `type`) →
+`{connected, store, store_name, sources, app_id, synced_at, currency, version?, overview: {at, currency, metrics}, from_day,
+to_day, totals: {revenue, transactions, installs, active_users_per_day, days, incomplete}, latest: {mrr, actives, trials:
+{value, day, change, since}}, new_players, new_players_pct, players_per_day, players, sessions, players_are_sessions,
+per_player, glitchless: {purchases, events, currency, sandbox, comparable, coverage_pct} | null, days: [{day, revenue,
+transactions, installs, active_users, mrr, actives, trials, incomplete?, sessions, players, new_players, purchases}],
+versions: [row] | null, versions_why?, notes}`, or `{empty, why}`. A day's `sessions` are those that started that UTC
+day (null over 31 days), its `players` those who played that day, its `new_players` those first seen that day (null
+without player IDs). `notes` are plain lines: a currency that isn't the game's, purchase events covering under 80% or
+over 110% of RevenueCat's revenue (and why that happens), sandbox purchases left out, how RevenueCat's installs differ
+from Glitchless's new players, no player IDs. The MCP tool `glitchless_revenue` reads it.
+
+**Stored** under `STORE#<project>#revenuecat` (§3f's layout): `REV#<month>` (by day: `revenue`, `transactions`,
+`mrr`, `actives`, `trials`, `new_customers`, `active_customers`, `currency`, `incomplete`; a day sent again replaces the measures it has), `REVV#<month>`
+(`<day>|<version>`: `revenue`, `transactions`, `currency`; a day sent again replaces all of its versions),
+`SNAP#overview`, `SNAP#charts` (the version segment found, the segments the revenue chart has, the currency) and `META`;
+each month item expires 400 days after its month. The sync's own state is `REVENUECAT#<project>` `STATE` (the options
+and the last day each chart was read).
+
+**Routes** are the stores' (§3f): `PUT /api/projects/{p}/stores/revenuecat` takes `{rcProjectId, currency?, secretKey?,
+service?}` (a key left out stays, `null` removes it); `GET …/stores` gives its `connection` (`rcProjectId`, `currency`,
+`keys.secret` hint), `status` and `data` (`overview`: RevenueCat's numbers now).
 
 ## 4. Derived concepts
 

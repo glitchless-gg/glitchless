@@ -27,7 +27,10 @@
 //                players: [[ts, n]] | null, sales: [{ day, units, returns }] | null,
 //                wishlists: [{ day, adds, deletes, purchases, gifts }] | null } }
 //   Mark: { source, build_id?, version?, from, title?, url?, approx? }
+// A revenue source (RevenueCat) comes in the same way, under its name, with revenue instead of reviews: it is stored
+// and read here with the stores' data, and its panel, page and query are revenue.js's.
 import { versions, pct, round } from './analytics.js';
+import { REVENUE_SOURCES, REVENUE_PANEL, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue } from './revenue.js';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -70,7 +73,7 @@ const DAY_BYTES = 300_000;
 const READ_REVIEWS = 3000;
 const LOOKBACK = 30 * DAY;
 const RECORD_DAYS = 62;
-const SNAPSHOTS = ['devices', 'hangs'];
+const SNAPSHOTS = ['devices', 'hangs', 'overview', 'charts'];
 
 // ───────────────────────────── topics ─────────────────────────────
 
@@ -112,7 +115,9 @@ const inSegment = (r) => r.steam?.deck === true;
 //   STORE#<projectId>#<store>  WISH#<YYYY-MM>     { days: { <YYYY-MM-DD>: { adds, deletes, purchases, gifts } } }
 //   STORE#<projectId>#<store>  VIT#<YYYY-MM>      { rows: { <key>: Vital } }   vitals by day (a day sent again replaces)
 //   STORE#<projectId>#<store>  VITV               { rows: { <key>: Vital } }   vitals by version, the latest of each
-//   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs
+//   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs;
+//                                                 a revenue source's overview and charts (revenue.js)
+//   STORE#<projectId>#<store>  REV#… REVV#…       a revenue source's revenue by day and by version (revenue.js)
 //   STORE#<projectId>#<store>  RELEASES | NOTES   { items: [Mark] }
 //   STORE#<projectId>#<store>  META               { summary, synced_at, reviews }
 //   STORE#<projectId>#<store>  X#<name>           what the store adapter keeps for itself (Steam: its builds)
@@ -216,7 +221,8 @@ export function createStoreData(kv) {
 
   return {
     // What one sync brought: any of { reviews, players: [ts, n] (or a list of them), releases, notes, summary, sales,
-    // wishlists, vitals, snapshots: { devices?, hangs? }, extras: { <name>: object } }. → reviews added
+    // wishlists, vitals, snapshots: { devices?, hangs?, overview?, charts? }, extras: { <name>: object }, and a revenue
+    // source's revenue and revenue_versions (revenue.js) }. → reviews added
     async write(projectId, store, batch) {
       const key = pk(projectId, store);
       const added = batch.reviews?.length ? await addReviews(key, batch.reviews) : 0;
@@ -241,6 +247,7 @@ export function createStoreData(kv) {
       for (const [name, value] of Object.entries(batch.extras ?? {})) await kv.put({ pk: key, sk: `X#${name}`, ...value });
       if (batch.sales?.length) await addDays(key, 'SALES', batch.sales, ({ units, returns }) => ({ units, returns }));
       if (batch.wishlists?.length) await addDays(key, 'WISH', batch.wishlists, ({ adds, deletes, purchases, gifts }) => ({ adds, deletes, purchases, gifts }));
+      if (batch.revenue?.length || batch.revenue_versions?.length) await writeRevenue(kv, key, batch, (month) => expires(monthEnd(month)));
       const meta = (await kv.get(key, 'META')) ?? {};
       await kv.put({ pk: key, sk: 'META', summary: batch.summary ?? meta.summary ?? null, synced_at: batch.syncedAt ?? Date.now(), reviews: (meta.reviews ?? 0) + added });
       return added;
@@ -319,12 +326,14 @@ export function createStoreData(kv) {
         players: STORES[store]?.players ? players.sort((a, b) => a[0] - b[0]) : null,
         sales: sales.length ? sales.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
         wishlists: wishlists.length ? wishlists.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
+        ...(REVENUE_SOURCES[store] ? await readRevenue(kv, key, months) : {}),
       };
     },
 
+    // What Settings shows of the data kept (a revenue source: its overview now, instead of reviews).
     async stats(projectId, store) {
-      const meta = await kv.get(pk(projectId, store), 'META');
-      return meta ? { reviews: meta.reviews ?? 0, syncedAt: meta.synced_at ?? null, summary: meta.summary ?? null } : null;
+      const [meta, overview] = await Promise.all([kv.get(pk(projectId, store), 'META'), REVENUE_SOURCES[store] ? kv.get(pk(projectId, store), 'SNAP#overview') : null]);
+      return meta ? { reviews: meta.reviews ?? 0, syncedAt: meta.synced_at ?? null, summary: meta.summary ?? null, ...(overview ? { overview: { at: overview.at, currency: overview.currency, metrics: overview.metrics } } : {}) } : null;
     },
 
     // Everything synced for a game from one store (a disconnected or changed app).
@@ -546,11 +555,11 @@ function releaseRows(ctx, st, rels, from, to) {
   return rows.reverse();
 }
 
-// The store a panel or query names, else the game's first connected one.
+// The store a panel or query names, else the game's first connected one (a store of STORES, not a revenue source).
 function pickStore(ctx, store) {
   const all = ctx.stores ?? {};
-  if (store) return all[store] ?? null;
-  return Object.values(all)[0] ?? null;
+  if (store) return STORES[store] ? (all[store] ?? null) : null;
+  return Object.values(all).find((x) => STORES[x.store]) ?? null;
 }
 
 // ── board panels (board.js) ──
@@ -562,19 +571,25 @@ export const STORE_PANELS = {
   store_vitals: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} vitals next to Glitchless`, size: 'l', shared: true },
   store_players: { title: (p) => `On ${p.store ? storeName(p.store) : 'the store'} now vs measured`, size: 'm', shared: true },
   store_sales: { title: () => 'Units, returns and wishlists', size: 'm', shared: 'sums' },
+  // A revenue source's revenue, MRR, subscriptions and trials (revenue.js; `measure`): money, so like sales.
+  store_revenue: REVENUE_PANEL,
 };
 
-// A store panel's own field: `store`, one of STORES (default: the game's first connected store). → fields or throws.
+// A store panel's own field: `store`, one of STORES (default: the game's first connected store); store_revenue's are
+// revenue.js's. → fields or throws.
 export function storePanelFields(p, at, BoardError) {
+  if (p.type === 'store_revenue') return revenuePanelFields(p, at, BoardError);
   if (p.store == null) return {};
   if (!STORES[p.store]) throw new BoardError(`${at}.store must be one of ${Object.keys(STORES).join(', ')}`);
   return { store: p.store };
 }
 
 // A page per connected store on the automatic dashboard: its reviews by build, its vitals next to Glitchless's, its
-// players online, frame times (to read next to the reviews), its units, returns and wishlists.
+// players online, frame times (to read next to the reviews), its units, returns and wishlists; then a Revenue page for
+// a revenue source (revenue.js).
 export function storePages(ctx, { frames = false } = {}) {
-  return Object.entries(ctx.stores ?? {}).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) }));
+  const all = Object.entries(ctx.stores ?? {});
+  return [...all.filter(([store]) => STORES[store]).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) })), ...all.filter(([store]) => REVENUE_SOURCES[store]).map(([store], i) => revenuePage(store, { id: i ? `revenue-${store}` : 'revenue' }))];
 }
 
 function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales = false } = {}) {
@@ -593,19 +608,24 @@ function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales
 }
 
 // A saved dashboard with the page the automatic one gets for a store just connected, after its first page, so
-// connecting a store shows it whoever designed the dashboard. → the new dashboard, or null when there is no saved one
-// (the automatic dashboard has the page already) or a page shows that store (a store panel naming it, or naming none).
+// connecting a store shows it whoever designed the dashboard (a revenue source: its Revenue page). → the new dashboard,
+// or null when there is no saved one (the automatic dashboard has the page already) or a page shows that store (a
+// store panel naming it, or naming none; for a revenue source, a store_revenue panel).
 export function withStorePage(dashboard, store, { sales = false } = {}) {
   if (!dashboard?.pages) return null;
   const pages = dashboard.pages;
-  if (pages.some((p) => (p.panels ?? []).some((x) => STORE_PANELS[x.type] && (x.store ?? store) === store))) return null;
+  const revenue = Boolean(REVENUE_SOURCES[store]);
+  if (pages.some((p) => (p.panels ?? []).some((x) => STORE_PANELS[x.type] && (x.type === 'store_revenue') === revenue && (x.store ?? store) === store))) return null;
   const ids = new Set(pages.map((p) => p.id));
-  let id = store.replace(/_/g, '-');
-  for (let n = 2; ids.has(id); n++) id = `${store.replace(/_/g, '-')}-${n}`;
-  return { ...dashboard, pages: [...pages.slice(0, 1), storePage(store, { id, sales }), ...pages.slice(1)] };
+  const base = revenue ? 'revenue' : store.replace(/_/g, '-');
+  let id = base;
+  for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+  return { ...dashboard, pages: [...pages.slice(0, 1), revenue ? revenuePage(store, { id }) : storePage(store, { id, sales }), ...pages.slice(1)] };
 }
 
-export function storePanel(ctx, p) {
+// `currency`: the dashboard's (the game's one currency, sums.js), for revenue.
+export function storePanel(ctx, p, { currency = null } = {}) {
+  if (p.type === 'store_revenue') return revenuePanel(ctx, p, { currency });
   const st = pickStore(ctx, p.store);
   if (!st) return { empty: true, why: p.store && ctx.stores ? `This game has no ${storeName(p.store)} connection (Glitchless Cloud: Settings → Integrations).` : NOT_CONNECTED };
   const named = { store: st.store, store_name: storeName(st.store) };
@@ -855,7 +875,9 @@ export function storeVitals(ctx, params = new URLSearchParams()) {
 // of them. With the build's frame-time p95 and crash-free sessions (and the version before's), the store's segment
 // (Steam Deck) and the devices reviewers show. `others`: the findings so far, for the performance findings to start with.
 export function storeFindings(ctx, others = []) {
-  return Object.values(ctx.stores ?? {}).flatMap((st) => storeFinding(ctx, st, others));
+  return Object.values(ctx.stores ?? {})
+    .filter((st) => STORES[st.store])
+    .flatMap((st) => storeFinding(ctx, st, others));
 }
 
 function storeFinding(ctx, st, others) {

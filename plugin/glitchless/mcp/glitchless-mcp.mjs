@@ -37857,9 +37857,9 @@ var init_context = __esm({
     DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || "";
     isWorkspace = () => API_KEY.startsWith("gl_ws_");
     server = new McpServer(
-      { name: "glitchless", version: "0.6.1" },
+      { name: "glitchless", version: "0.7.0" },
       {
-        instructions: `Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker. On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.`
+        instructions: `Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker. On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version. For a game connected to RevenueCat, glitchless_revenue reads its real revenue (production purchases only) by day and by version, installs and active users, next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.`
       }
     );
     games = null;
@@ -38182,16 +38182,18 @@ var init_dashboard = __esm({
       store_reviews: "reviews over time and by build, with what was measured on each",
       store_vitals: "the store's own vitals by version (Google Play: slow rendering, crashes, ANRs; the App Store: hangs, launch, hitches) next to what Glitchless measured, with where they disagree",
       store_players: "players online next to the sessions measured: telemetry coverage",
-      store_sales: "units, returns and wishlists by day; on Steam needs the Financial API key"
+      store_sales: "units, returns and wishlists by day; on Steam needs the Financial API key",
+      store_revenue: "real revenue from RevenueCat (store revenuecat; give measure): revenue in the window, revenue per player measured, installs (RevenueCat's new customers) next to Glitchless's new players, active users a day, MRR, active subscriptions, active trials, revenue per day next to the game's own purchase events, installs and active users per day, or revenue by version next to what Glitchless measured"
     };
     withStores = (panel) => panel.extend({
       type: external_exports.enum([...panel.shape.type.options, ...Object.keys(STORE_PANELS)]).describe(`${panel.shape.type.description} For a game connected to a store (Steam; give store): ${Object.entries(STORE_PANELS).map(([t, d]) => `${t} (${d})`).join(", ")}`),
-      store: external_exports.enum(["steam", "app_store", "google_play"]).optional().describe("store_reviews, store_players, store_sales: the store (default: the game's first connected one)")
+      store: external_exports.enum(["steam", "app_store", "google_play", "revenuecat"]).optional().describe("store_reviews, store_players, store_sales, store_vitals: the store (default: the game's first connected one); store_revenue: revenuecat"),
+      measure: external_exports.enum(["revenue", "per_player", "installs", "active_users", "mrr", "actives", "trials", "by_day", "players_by_day", "by_version"]).optional().describe("store_revenue (required): revenue (in the window), per_player (over the players Glitchless measured), installs (new customers, next to Glitchless's new players), active_users (a day), mrr, actives (active subscriptions), trials (active trials), by_day (revenue), players_by_day (installs and active users), by_version")
     }).describe("One panel");
     pageSchema = external_exports.object({
       id: external_exports.string().optional().describe('Short id used in the page address, e.g. "money" (default: from the title)'),
       title: external_exports.string().optional().describe("The name in the sidebar, in the words the game uses (a view keeps its built-in name without one)"),
-      icon: external_exports.enum(["board", "overview", "events", "perf", "errors", "players", "heatmap", "sessions", "versions", "live", "flag", "bolt", "play", "clock", "bug"]).optional(),
+      icon: external_exports.enum(["board", "overview", "events", "perf", "errors", "players", "heatmap", "sessions", "versions", "live", "flag", "bolt", "play", "clock", "bug", "money"]).optional(),
       panels: external_exports.array(withStores(panelSchema)).optional().describe("A board: its panels, in order"),
       view: external_exports.enum(["events", "performance", "errors", "players", "heatmaps", "sessions", "versions", "live", "reports"]).optional().describe("A built-in view instead of panels (reports: the bug reports players sent, with their screenshots)"),
       options: external_exports.object({ events: external_exports.array(external_exports.string()).optional() }).optional().describe("live view: events, only these event names or types")
@@ -40951,6 +40953,49 @@ ${notes.join("\n")}` : ""}${devices}${hangs}`, { columns: r.columns, rows: r.row
   }
 });
 
+// src/tools/revenue.js
+var revenue_exports = {};
+var init_revenue = __esm({
+  "src/tools/revenue.js"() {
+    init_zod();
+    init_context();
+    tool(
+      "glitchless_revenue",
+      "The game's real revenue, installs and active users as RevenueCat counts them, for a game connected to RevenueCat in Glitchless Cloud (Settings \u2192 Integrations). RevenueCat counts production purchases only, never sandbox, TestFlight or licence-tester ones. It gives, for the window, revenue and transactions by UTC day, MRR, active subscriptions and trials, and revenue per player Glitchless measured. It also gives installs (RevenueCat's new customers: the first time its SDK starts on a device) next to the new players Glitchless saw, and active users a day next to Glitchless's players a day. Where RevenueCat splits revenue by the app version purchases were made on, it gives revenue by version too. Each day sits next to its sessions and players, and each version next to its players, crash-free sessions and frame-time p95. It also says what the game's own purchase events (track('purchase', { amount, currency })) add up to and how much of RevenueCat's revenue that is: the gap is purchases that never reach Glitchless. Use it for money questions, e.g. whether 1.4.2 earns more per player than 1.4.1. Use glitchless_events for purchases by item, level or player.",
+      {
+        service: common.service,
+        hours: external_exports.number().min(24).max(9600).optional().describe("Look-back window in hours (default 720, 30 days), read as whole UTC days"),
+        version: external_exports.string().optional().describe("Only this version: its revenue (where RevenueCat splits revenue by version) over its players. MRR, subscriptions and trials stay the whole game's"),
+        env: common.env,
+        session_type: common.session_type
+      },
+      async ({ service, hours, version: version2, env, session_type }) => {
+        const svc = await resolveService(service);
+        const r = await query("store_revenue", { service: svc, ...filters({ version: version2, env, session_type }), ...range(hours || 720) });
+        if (r.connected === false) return reply(`${svc}: ${r.why}`, {});
+        if (r.empty) return reply(`${r.store_name} revenue of ${svc}: ${r.why}`, { overview: r.overview?.metrics ?? null });
+        const money = (v) => v == null ? "\u2013" : r.currency ? new Intl.NumberFormat("en-US", { style: "currency", currency: r.currency }).format(v) : String(v);
+        const n = (v) => v == null ? "\u2013" : v.toLocaleString("en-US");
+        const t = r.totals;
+        const stock = (x, label, isMoney = false) => x ? `${isMoney ? money(x.value) : n(x.value)} ${label}${x.change != null ? ` (${x.change >= 0 ? "+" : "\u2212"}${isMoney ? money(Math.abs(x.change)) : n(Math.abs(x.change))} since ${x.since})` : ""}` : null;
+        const g = r.glitchless;
+        const lines = [
+          `${r.store_name} revenue of ${svc} (project ${r.app_id}), ${r.from_day} to ${r.to_day} (UTC days)${r.version ? `, version ${r.version}` : ""}: ${money(t.revenue)}${t.transactions != null ? ` from ${n(t.transactions)} transactions` : ""}${t.incomplete ? " (today so far included)" : ""}.`,
+          r.per_player != null ? `Revenue per player: ${money(r.per_player)} over ${n(r.players)} ${r.players_are_sessions ? "sessions (no player IDs)" : "players"} Glitchless measured (${n(r.sessions)} sessions).` : `Glitchless measured no players in this window.`,
+          `Installs (${r.store_name}'s new customers): ${n(t.installs)}${r.new_players != null ? `; Glitchless saw ${n(r.new_players)} new players (${r.new_players_pct ?? "\u2013"}%)` : "; Glitchless counts new players only with player IDs"}. Active users: ${t.active_users_per_day != null ? `${n(t.active_users_per_day)} a day` : "\u2013"}${r.players_per_day != null ? `; Glitchless measured ${n(r.players_per_day)} players a day` : ""}.`,
+          `Now: ${[stock(r.latest.mrr, "MRR", true), stock(r.latest.actives, "active subscriptions"), stock(r.latest.trials, "active trials")].filter(Boolean).join(", ") || "no MRR, subscriptions or trials yet"}.`,
+          g ? `The game's own purchase events: ${g.comparable ? money(g.purchases) : `${g.purchases} ${g.currency ?? ""}`.trim()} from ${n(g.events)} events${g.coverage_pct != null ? ` (${g.coverage_pct}% of ${r.store_name}'s)` : ""}${g.sandbox ? `; ${n(g.sandbox)} sandbox purchases left out` : ""}.` : "The game sends no purchase events with an amount.",
+          r.versions?.length ? `By version:
+${r.versions.map((v) => `- ${v.version}: ${money(v.revenue)} (${v.share_pct}%), ${n(v.transactions)} transactions; ${v.players != null ? `${n(v.players)} players, ${money(v.per_player)} per player, crash-free ${v.crash_free_pct ?? "\u2013"}%, frame p95 ${v.frame_p95 ?? "\u2013"}ms` : "no sessions of it in the window"}${v.purchases != null ? `; purchase events ${money(v.purchases)}` : ""}`).join("\n")}` : `By version: ${r.versions_why ?? "none in this window"}`,
+          ...r.notes?.length ? [`Notes:
+${r.notes.map((x) => `- ${x}`).join("\n")}`] : []
+        ];
+        return reply(lines.join("\n"), { days: r.days, versions: r.versions, overview: r.overview?.metrics ?? null });
+      }
+    );
+  }
+});
+
 // src/tools/workspace.js
 var workspace_exports = {};
 var act, signingIn;
@@ -41177,5 +41222,6 @@ await Promise.resolve().then(() => (init_playtest(), playtest_exports));
 await Promise.resolve().then(() => (init_reports(), reports_exports));
 await Promise.resolve().then(() => (init_deck2(), deck_exports));
 await Promise.resolve().then(() => (init_store_reviews(), store_reviews_exports));
+await Promise.resolve().then(() => (init_revenue(), revenue_exports));
 await Promise.resolve().then(() => (init_workspace(), workspace_exports));
 await server2.connect(new StdioServerTransport());

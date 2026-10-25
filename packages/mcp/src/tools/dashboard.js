@@ -47,12 +47,14 @@ const STORE_PANELS = {
   store_vitals: "the store's own vitals by version (Google Play: slow rendering, crashes, ANRs; the App Store: hangs, launch, hitches) next to what Glitchless measured, with where they disagree",
   store_players: 'players online next to the sessions measured: telemetry coverage',
   store_sales: 'units, returns and wishlists by day; on Steam needs the Financial API key',
+  store_revenue: "real revenue from RevenueCat (store revenuecat; give measure): revenue in the window, revenue per player measured, installs (RevenueCat's new customers) next to Glitchless's new players, active users a day, MRR, active subscriptions, active trials, revenue per day next to the game's own purchase events, installs and active users per day, or revenue by version next to what Glitchless measured",
 };
 const withStores = (panel) =>
   panel
     .extend({
       type: z.enum([...panel.shape.type.options, ...Object.keys(STORE_PANELS)]).describe(`${panel.shape.type.description} For a game connected to a store (Steam; give store): ${Object.entries(STORE_PANELS).map(([t, d]) => `${t} (${d})`).join(', ')}`),
-      store: z.enum(['steam', 'app_store', 'google_play']).optional().describe("store_reviews, store_players, store_sales: the store (default: the game's first connected one)"),
+      store: z.enum(['steam', 'app_store', 'google_play', 'revenuecat']).optional().describe("store_reviews, store_players, store_sales, store_vitals: the store (default: the game's first connected one); store_revenue: revenuecat"),
+      measure: z.enum(['revenue', 'per_player', 'installs', 'active_users', 'mrr', 'actives', 'trials', 'by_day', 'players_by_day', 'by_version']).optional().describe('store_revenue (required): revenue (in the window), per_player (over the players Glitchless measured), installs (new customers, next to Glitchless\'s new players), active_users (a day), mrr, actives (active subscriptions), trials (active trials), by_day (revenue), players_by_day (installs and active users), by_version'),
     })
     .describe('One panel');
 
@@ -60,7 +62,7 @@ const pageSchema = z
   .object({
     id: z.string().optional().describe('Short id used in the page address, e.g. "money" (default: from the title)'),
     title: z.string().optional().describe('The name in the sidebar, in the words the game uses (a view keeps its built-in name without one)'),
-    icon: z.enum(['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock', 'bug']).optional(),
+    icon: z.enum(['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock', 'bug', 'money']).optional(),
     panels: z.array(withStores(panelSchema)).optional().describe('A board: its panels, in order'),
     view: z.enum(['events', 'performance', 'errors', 'players', 'heatmaps', 'sessions', 'versions', 'live', 'reports']).optional().describe('A built-in view instead of panels (reports: the bug reports players sent, with their screenshots)'),
     options: z.object({ events: z.array(z.string()).optional() }).optional().describe('live view: events, only these event names or types'),

@@ -38,6 +38,10 @@
 //   reports     the latest bug reports players sent, with their notes (`limit`)
 //   store_reviews, store_players, store_sales   a store's reviews by build, players online next to the sessions
 //               measured, units, returns and wishlists (reviews.js), for a game connected to a store (`store`)
+//   store_revenue  a revenue source's (RevenueCat's) revenue in the window, revenue per player measured, installs or
+//               active users next to the players measured, MRR, active subscriptions or trials, revenue or installs
+//               and active users per day, or revenue by version next to Glitchless's (`measure`, revenue.js); money
+//               in the source's currency, never converted
 //   retention   D1, D7 and D30 by the day players were first seen (the latest `limit` days); needs player IDs
 //   versions    this page's stat panels, version by version; `by` a Steam fact ($steam_branch, $steam_build)
 //               compares Steam branches or builds instead: the beta against public
@@ -88,7 +92,7 @@ export const VIEWS = {
   live: { title: 'Live Tail', icon: 'live' },
   reports: { title: 'Bug Reports', icon: 'bug' },
 };
-export const ICONS = ['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock', 'bug'];
+export const ICONS = ['board', 'overview', 'events', 'perf', 'errors', 'players', 'heatmap', 'sessions', 'versions', 'live', 'flag', 'bolt', 'play', 'clock', 'bug', 'money'];
 const MAX_PANELS = 24;
 const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
@@ -337,7 +341,7 @@ export function autoBoard(ctx) {
 // `shared`: for a share link's reader (app.js; its share, or true), see forShare.
 export function evaluateBoard(ctx, board, { maps = [], shared = false, currency = null } = {}) {
   return board.panels.map((p, id) => {
-    const data = shared ? (STORE_PANELS[p.type] ? sharedStorePanel(ctx, p, shared) : forShare(p, ctx, board, maps, currency, shared)) : panelData(ctx, p, board, maps, currency);
+    const data = shared ? (STORE_PANELS[p.type] ? sharedStorePanel(ctx, p, shared, currency) : forShare(p, ctx, board, maps, currency, shared)) : panelData(ctx, p, board, maps, currency);
     return { id, ...p, size: p.size || defaultSize(p), title: p.title || defaultTitle(p), ...data };
   });
 }
@@ -390,14 +394,15 @@ function pick(o, keys) {
   return Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 }
 
-// A store panel on a share link: reviews and players as counts (never what players wrote); units, returns and
-// wishlists only on a link made to show sums.
-function sharedStorePanel(ctx, p, shared) {
-  return STORE_PANELS[p.type].shared === true || shared?.sums === true ? storePanel(ctx, p) : { empty: true, why: 'Units, returns and wishlists are not shown on this shared board.' };
+// A store panel on a share link: reviews and players as counts (never what players wrote); units, returns,
+// wishlists and revenue only on a link made to show sums.
+function sharedStorePanel(ctx, p, shared, currency) {
+  if (STORE_PANELS[p.type].shared === true || shared?.sums === true) return storePanel(ctx, p, { currency });
+  return { empty: true, why: p.type === 'store_revenue' ? 'Revenue is not shown on this shared board.' : 'Units, returns and wishlists are not shown on this shared board.' };
 }
 
 function panelData(ctx, p, board, maps, currency) {
-  if (STORE_PANELS[p.type]) return storePanel(ctx, p);
+  if (STORE_PANELS[p.type]) return storePanel(ctx, p, { currency });
   switch (p.type) {
     case 'stat': {
       // Counted by the server as batches arrive (app.js), not from the range.
@@ -625,7 +630,7 @@ export function versionColumns(stats, ctx = null) {
 const PER_SESSION = new Set(['errors', 'deaths']);
 
 function defaultSize(p) {
-  if (STORE_PANELS[p.type]) return STORE_PANELS[p.type].size;
+  if (STORE_PANELS[p.type]) return typeof STORE_PANELS[p.type].size === 'function' ? STORE_PANELS[p.type].size(p) : STORE_PANELS[p.type].size;
   if (p.type === 'stat') return 's';
   if (['levels', 'events', 'sessions', 'versions', 'live'].includes(p.type)) return 'l';
   return 'm';

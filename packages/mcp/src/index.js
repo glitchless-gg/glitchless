@@ -28,6 +28,7 @@ await import('./tools/playtest.js');
 await import('./tools/reports.js');
 await import('./tools/deck.js');
 await import('./tools/store-reviews.js');
+await import('./tools/revenue.js');
 await import('./tools/workspace.js');
 
 await server.connect(new StdioServerTransport());
