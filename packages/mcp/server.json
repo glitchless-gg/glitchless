@@ -2,33 +2,32 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.glitchless-gg/glitchless",
   "title": "Glitchless",
-  "description": "Game observability for coding agents: stutter, crashes, where players quit, and playtest bots.",
+  "description": "Game observability for coding agents: stutters, crashes, custom metrics, dashboards, playtest bots",
   "websiteUrl": "https://www.glitchless.gg",
   "repository": {
     "url": "https://github.com/glitchless-gg/glitchless",
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "glitchless-mcp",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "GLITCHLESS_URL",
-          "description": "Your Glitchless server",
+          "description": "Your Glitchless server. Leave it unset after `npx glitchless-mcp login` (Glitchless Cloud); set it for a self-hosted server, such as http://localhost:7777",
           "format": "string",
-          "isRequired": false,
-          "default": "http://localhost:7777"
+          "isRequired": false
         },
         {
           "name": "GLITCHLESS_API_KEY",
-          "description": "A secret key (gl_sk_...), if the server needs one; with the dashboard scope it can also save the game's dashboard",
+          "description": "A workspace key (gl_ws_..., every game) or a game key (gl_sk_..., one game). Not needed after `npx glitchless-mcp login`",
           "format": "string",
           "isRequired": false,
           "isSecret": true
