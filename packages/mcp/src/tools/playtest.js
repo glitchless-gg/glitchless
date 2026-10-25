@@ -2,9 +2,9 @@
 // in the project, so it is registered without the read-only hint.
 import { z } from 'zod';
 import { playtest } from 'glitchless-playtest';
-import { server, BASE, API_KEY, DEFAULT_SERVICE, fail } from '../context.js';
+import { define, base, apiKey, defaultService, fail } from '../context.js';
 
-server.registerTool(
+define(
   'glitchless_playtest',
   {
     description:
@@ -18,11 +18,11 @@ server.registerTool(
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
-  async ({ save_as, compare_to, quick, game_url, max_seconds } = {}, extra) => {
-    const token = extra?._meta?.progressToken;
+  async ({ save_as, compare_to, quick, game_url, max_seconds } = {}, ctx) => {
+    const token = ctx?.mcpReq._meta?.progressToken;
     let step = 0;
     const log = (message) => {
-      if (token != null) extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: ++step, message } }).catch(() => {});
+      if (token != null) ctx.mcpReq.notify({ method: 'notifications/progress', params: { progressToken: token, progress: ++step, message } }).catch(() => {});
     };
     try {
       const r = await playtest({
@@ -30,7 +30,7 @@ server.registerTool(
         compareTo: compare_to,
         quick,
         maxSeconds: max_seconds,
-        config: { server: BASE, api_key: API_KEY || undefined, service: DEFAULT_SERVICE || undefined, game: game_url },
+        config: { server: base(), api_key: apiKey() || undefined, service: defaultService() || undefined, game: game_url },
         log,
       });
       const files = Object.entries(r.files || {}).map(([k, f]) => `${k}: ${f}`).join('\n');
@@ -39,4 +39,6 @@ server.registerTool(
       return fail(err);
     }
   },
+  // It plays the game in Chrome on this computer, so it is not served over HTTP.
+  { local: true },
 );

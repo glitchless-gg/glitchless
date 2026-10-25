@@ -401,7 +401,7 @@ function releasesOf(ctx, st) {
   if (!marks.length && STORES[st.store]?.versioned) marks = versionsNamed(st);
   if (!marks.length && fact) marks = buildsSeen(ctx, fact);
   if (!marks.length) marks = usable(st.notes);
-  if (!marks.length) marks = vers.filter((v) => v.sessions >= 3).map((v) => ({ source: 'version', version: v.version, from: v.first_seen }));
+  if (!marks.length) marks = versionMarks(vers.filter((v) => v.sessions >= 3));
   marks = [...marks].sort((a, b) => a.from - b.from);
   return marks.map((m, i) => {
     const to = marks[i + 1]?.from ?? Infinity;
@@ -411,6 +411,17 @@ function releasesOf(ctx, st) {
     return { key: (m.source === 'store_version' ? version : buildId) ?? version ?? `notes-${m.from}`, label, version, build_id: buildId, from: m.from, to, source: m.source, title: m.title || null, ...(m.approx ? { approx: true } : {}), ...(m.url ? { url: m.url } : {}) };
   });
 }
+
+// The versions Glitchless saw, in release order (analytics.js versions()), each from its first sighting: a version the
+// store has no sighting of starts no later than the one after it, so a release always ends where the next begins.
+function versionMarks(vers) {
+  const marks = vers.map((v) => ({ source: 'version', version: v.version, from: seenAt(v) }));
+  for (let i = marks.length - 2; i >= 0; i--) marks[i].from = Math.min(marks[i].from, marks[i + 1].from);
+  return marks;
+}
+
+// When Glitchless first saw a version: the store's first sighting, else its first session in the range.
+const seenAt = (v) => v.first_seen_ever ?? v.first_seen;
 
 // The versions a store's reviews and vitals name, each from its first review (or day of vitals).
 function versionsNamed(st) {
@@ -456,7 +467,7 @@ function versionIn(title, known) {
 
 // The version most sessions ran that Glitchless first saw while this release was live.
 function dominantVersion(vers, from, to) {
-  const live = vers.filter((v) => v.first_seen >= from - 6 * HOUR && v.first_seen < to);
+  const live = vers.filter((v) => seenAt(v) >= from - 6 * HOUR && seenAt(v) < to);
   return live.sort((a, b) => b.sessions - a.sessions)[0]?.version ?? null;
 }
 
@@ -467,7 +478,7 @@ function versionsOf(ctx) {
 // The version most sessions ran that Glitchless first saw before a release went live: what players had before it,
 // when the store names no release before (a first sync knows only the build on each branch now).
 function versionBefore(ctx, ts) {
-  return versionsOf(ctx).filter((v) => v.first_seen < ts - 6 * HOUR).sort((a, b) => b.sessions - a.sessions)[0]?.version ?? null;
+  return versionsOf(ctx).filter((v) => seenAt(v) < ts - 6 * HOUR).sort((a, b) => b.sessions - a.sessions)[0]?.version ?? null;
 }
 
 // The release a review belongs to: the one it names (a store that says which version was reviewed), else the one
@@ -576,7 +587,7 @@ export const STORE_PANELS = {
   store_reviews: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} reviews by build`, size: 'l', shared: true },
   store_vitals: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} vitals next to Glitchless`, size: 'l', shared: true },
   store_players: { title: (p) => `On ${p.store ? storeName(p.store) : 'the store'} now vs measured`, size: 'm', shared: true },
-  store_sales: { title: () => 'Units, returns and wishlists', size: 'm', shared: 'sums' },
+  store_sales: { title: () => 'Units, returns and wishlists', size: 'm', shared: 'sums', hidden: () => 'Units, returns and wishlists are not shown on this shared board.' },
   // Stars: the window's written reviews' average, and the store's own rating (the App Store's, Steam's summary).
   store_score: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} rating`, size: 's', shared: true },
   // A revenue source's revenue, MRR, subscriptions and trials (revenue.js; `measure`): money, so like sales.

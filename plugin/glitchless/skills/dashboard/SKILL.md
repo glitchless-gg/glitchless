@@ -76,7 +76,12 @@ Start from what is there: `glitchless_dashboard` returns the current pages (`spe
 someone saves one). Then call `glitchless_set_dashboard` with every page. On a board: a row of stats, then the
 game's own events and funnels, then levels, then frame time and errors. Title each panel with the question it
 answers. Each panel takes `size`: `s` (a quarter row, for stats), `m` (half) or `l` (full width); and a `note`,
-one line on why it matters.
+one line on why it matters. People see the note behind the info icon next to the title, so put what they must see
+in the title. Panels keep their order and pack under each other, so a short panel can sit next to a tall one.
+Give the game its own colour with `accent` ("#rrggbb", such as the main colour of its logo or key art) in
+`glitchless_set_dashboard`, alone or with the pages: it colours the links, the selected page, stats, the main chart
+series and the map on its boards and share links. The logo and a banner (key art) are uploaded by people in the
+dashboard (Edit pages → Look); `glitchless_dashboard` says whether the game has them.
 
 | type | fields |
 | --- | --- |

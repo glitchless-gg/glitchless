@@ -2,7 +2,10 @@
 // agent designs the dashboard over MCP (glitchless_set_dashboard); people can edit it here. A game without a
 // saved dashboard gets one made from the data it sends. With `readOnly` in the filters (a shared board) it
 // has no editor and no links into the rest of the dashboard.
-import { useState } from 'react';
+// Each panel shows its title, its number or chart, and at most one short line; what the numbers mean, caveats and the
+// agent's note sit behind the info icon next to the title (panelLine, panelInfo). BoardGrid packs the panels so a short
+// one doesn't stretch to the tallest beside it.
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useShell } from '../shell.js';
 import { useQuery } from '../api.js';
@@ -11,12 +14,13 @@ import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../co
 import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor } from '../format.js';
 import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
-import { StorePanelBody, STORE_TYPES, REVENUE_STATS, revenueStat } from '../stores.jsx';
+import { StorePanelBody, STORE_TYPES, REVENUE_STATS, revenueStat, storeLine, storeInfo } from '../stores.jsx';
 import { SessionsTable } from './Sessions.jsx';
 import { LiveFeed, useLiveEvents, line as liveLine } from './Live.jsx';
 import { ReportList } from './Reports.jsx';
 import { RetentionTable, RetentionOff } from './Players.jsx';
 import { PositionsMap } from '../heatmap.jsx';
+import { useBrand, BoardHero, BrandLogo } from '../brand.jsx';
 
 const SPAN = { s: 3, m: 6, l: 12 };
 
@@ -25,24 +29,31 @@ export function Board({ page }) {
   const { boardActions: Extra } = useShell();
   const { data, error, reload } = useQuery('board', { ...f.params, page: page?.id }, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
   const [editing, setEditing] = useState(false);
+  const brand = useBrand(f.service);
   if (!f.service) return <NoGame />;
   if (!data) return error ? <div className="empty">{error.message}</div> : <div className="loading-bar" />;
   const board = data.board;
   if (!board) return <div className="empty">{data.error}</div>;
   if (f.readOnly)
     return (
-      <div className="grid">
-        <div className="board-head s12">
-          <h2>{board.title}</h2>
-        </div>
-        {board.panels.map((p) => (
-          <Panel key={p.id} p={p} />
-        ))}
+      <div className="board">
+        {brand?.banner ? (
+          <BoardHero brand={brand} game={f.service} title={board.title} />
+        ) : (
+          <div className="board-head">
+            <h2>
+              <BrandLogo brand={brand} className="board-logo" />
+              {board.title}
+            </h2>
+          </div>
+        )}
+        <BoardGrid panels={board.panels} />
       </div>
     );
   return (
-    <div className="grid">
-      <div className="board-head s12">
+    <div className="board">
+      <BoardHero brand={brand} game={f.service} title={board.title} />
+      <div className="board-head">
         <span className="muted">
           {board.source === 'saved'
             ? `Saved${board.updated_by ? ` by ${board.updated_by === 'dashboard' ? 'you' : board.updated_by}` : ''} ${timeAgo(board.updated_at)}`
@@ -54,14 +65,131 @@ export function Board({ page }) {
             {editing ? 'Close editor' : 'Edit panels'}
           </button>
           <a className="btn" href="#/pages">
-            Pages
+            Pages and look
           </a>
         </div>
       </div>
       {editing && <BoardEditor board={board} onSaved={() => (setEditing(false), reload())} />}
-      {board.panels.map((p) => (
-        <Panel key={p.id} p={p} />
-      ))}
+      <BoardGrid panels={board.panels} />
+    </div>
+  );
+}
+
+const GAP = 12;
+// How many of the 12 columns a panel takes at the board's width: a quarter, half or all of it (`s`, `m`, `l`); on a
+// narrower board stats go two to a row and the rest full width; on a phone everything is full width. The .board-grid
+// rules in styles.css say the same for the first layout, before the panels are measured.
+function spanAt(size, width) {
+  const span = SPAN[size] || 6;
+  if (width < 520) return 12;
+  if (width < 840) return span === 3 ? 6 : 12;
+  return span;
+}
+
+// Where each panel goes, given its columns and height: in the agent's order, each at the highest place it fits that
+// isn't above the panel before it, and never to its left at about the same height, so the board still reads in order
+// while the next panels fill in under a short one. Panels side by side whose heights are close become the same height,
+// so a row of stats stays even.
+function pack(items, cols = 12) {
+  const SNAP = 24;
+  const top = new Array(cols).fill(0);
+  const out = [];
+  let band = [];
+  let cy = 0;
+  let cx = 0;
+  const fit = (w) => {
+    const all = [];
+    for (let x = 0; x + w <= cols; x++) {
+      const y = Math.max(cy, ...top.slice(x, x + w));
+      if (x < cx && y - cy <= SNAP) continue;
+      all.push({ x, y });
+    }
+    // Nowhere to the right and nothing far enough down: a new row under everything.
+    if (!all.length) return { x: 0, y: Math.max(...top) };
+    const low = Math.min(...all.map((c) => c.y));
+    return all.find((c) => c.y - low <= SNAP);
+  };
+  // Tallest first, each panel of a row grows to the lowest bottom beside it that is close to its own: two short panels
+  // next to a tall one match each other, not the tall one.
+  const even = () => {
+    const done = [];
+    for (const i of [...band].sort((a, b) => out[b].y + out[b].h - (out[a].y + out[a].h))) {
+      const o = out[i];
+      const own = o.y + o.h;
+      const bottom = Math.max(own, ...done.filter((b) => b - own <= Math.max(36, (b - o.y) * 0.2)));
+      if (bottom > own) {
+        o.h = bottom - o.y;
+        o.even = true;
+      }
+      done.push(bottom);
+      for (let x = o.x; x < o.x + o.w; x++) top[x] = o.y + o.h + GAP;
+    }
+    band = [];
+  };
+  items.forEach(({ w, h }, i) => {
+    w = Math.min(w, cols);
+    let at = fit(w);
+    const last = out[band.at(-1)];
+    if (band.length && !(at.y === last.y && at.x === last.x + last.w)) {
+      even();
+      at = fit(w);
+    }
+    out[i] = { x: at.x, y: at.y, w, h };
+    for (let x = at.x; x < at.x + w; x++) top[x] = at.y + h + GAP;
+    band.push(i);
+    cy = at.y;
+    cx = at.x + w;
+  });
+  if (band.length) even();
+  return { cells: out, height: Math.max(0, ...out.map((o) => o.y + o.h)) };
+}
+
+const col = (n, gaps) => `calc((100% - ${11 * GAP}px) / 12 * ${n} + ${gaps * GAP}px)`;
+
+// The board's panels: a 12-column grid until they are measured, then each placed by pack() at its own height, and
+// placed again whenever the board's width or a panel's height changes (a chart drawn, the map loaded, new data).
+function BoardGrid({ panels }) {
+  const box = useRef(null);
+  const [layout, setLayout] = useState(null);
+  const ids = panels.map((p) => `${p.id}:${p.size}`).join(' ');
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      const width = el.clientWidth;
+      const cells = [...el.children];
+      if (!width || cells.length !== panels.length) return;
+      // A panel's own height: without the height it was given to match its neighbours.
+      const given = cells.map((c) => c.style.minHeight);
+      cells.forEach((c) => (c.style.minHeight = ''));
+      const heights = cells.map((c) => Math.ceil(c.getBoundingClientRect().height));
+      cells.forEach((c, i) => (c.style.minHeight = given[i]));
+      const next = pack(panels.map((p, i) => ({ w: spanAt(p.size, width), h: heights[i] })));
+      setLayout((old) => (old && JSON.stringify(old) === JSON.stringify(next) ? old : next));
+    };
+    const soon = () => (frame ||= requestAnimationFrame(measure));
+    measure();
+    const seen = new ResizeObserver(soon);
+    seen.observe(el);
+    for (const c of el.children) seen.observe(c);
+    return () => {
+      seen.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cells = layout?.cells.length === panels.length ? layout.cells : null;
+  return (
+    <div ref={box} className={`board-grid${cells ? ' packed' : ''}`} style={cells ? { height: layout.height } : undefined}>
+      {panels.map((p, i) => {
+        const c = cells?.[i];
+        return (
+          <div key={p.id} className={`cell size-${SPAN[p.size] ? p.size : 'm'}`} style={c ? { left: col(c.x, c.x), width: col(c.w, c.w - 1), top: c.y, minHeight: c.even ? c.h : undefined } : undefined}>
+            <Panel p={p} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -111,10 +239,13 @@ function Panel({ p }) {
   const span = SPAN[p.size] || 6;
   // Every panel with something on it downloads it as CSV (csv.jsx); a live panel its feed.
   const csv = !p.empty && p.type !== 'live' && <CsvButton name={p.title} rows={() => panelCsv(p)} />;
-  if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? p.why : statSub(p)} title={p.note} actions={csv} />;
+  const [why, whyMore] = p.empty ? splitWhy(p.why) : [null, null];
+  const info = [...panelInfo(p), whyMore];
+  const warn = !!(p.mismatch?.length || p.sandbox);
+  if (p.type === 'stat') return <QueryValue span={span} label={p.title} value={p.empty ? null : statValue(p)} sub={p.empty ? why : statSub(p)} info={info} warn={warn} actions={csv} />;
   if (p.type === 'store_revenue' && REVENUE_STATS.has(p.measure)) {
     const s = p.empty ? null : revenueStat(p);
-    return <QueryValue span={span} label={p.title} value={s?.value ?? null} sub={p.empty ? p.why : s.sub} title={[p.note, ...(p.notes ?? [])].filter(Boolean).join(' ') || undefined} actions={csv} />;
+    return <QueryValue span={span} label={p.title} value={s?.value ?? null} sub={p.empty ? why : s.sub} info={[...(s?.info ?? info)]} actions={csv} />;
   }
   if (p.type === 'live' && !p.empty) return <LivePanel p={p} span={span} />;
   const more = p.type === 'positions' ? `heatmaps?level=${encodeURIComponent(p.level)}` : { findings: 'findings', sessions: 'sessions', versions: 'versions', live: 'live', errors: 'errors', events: 'events', reports: 'reports', retention: 'players' }[p.type];
@@ -122,7 +253,9 @@ function Panel({ p }) {
     <Widget
       span={span}
       title={p.title}
-      sub={p.note}
+      sub={p.empty ? null : panelLine(p)}
+      info={info}
+      warn={warn}
       flush={['sessions', 'versions', 'reports', 'retention'].includes(p.type) && !p.empty}
       actions={
         (csv || (more && !f.readOnly)) && (
@@ -133,22 +266,59 @@ function Panel({ p }) {
         )
       }
     >
-      {p.anonymous ? <RetentionOff /> : p.empty ? <div className="why">{p.why}</div> : <PanelBody p={p} />}
+      {p.anonymous ? <RetentionOff /> : p.empty ? <div className="why">{why}</div> : <PanelBody p={p} />}
     </Widget>
   );
 }
 
-// Under a stat: what it is out of (conversion, per player), and money left out (another currency, sandbox purchases).
+// An empty panel says why in its first sentence; the rest of a long reason goes behind the info icon.
+function splitWhy(why) {
+  const text = String(why ?? '');
+  const at = text.search(/\. [A-Z]/);
+  return at > 0 && text.length > 110 ? [text.slice(0, at + 1), text.slice(at + 2)] : [text, null];
+}
+
+const plural = (n, one, many = `${one}s`) => `${fmtNum(n)} ${n === 1 ? one : many}`;
+
+// A panel's one short line under its title: how much is on it, in plain words. Most charts and tables need none.
+function panelLine(p) {
+  if (STORE_TYPES.has(p.type)) return storeLine(p);
+  const more = p.more > 0 ? ` · ${p.more} more` : '';
+  if (p.type === 'breakdown') {
+    if (p.sum) return `${fmtSum(p.total, p.currency)} from ${plural(p.count, 'event')}${more}`;
+    if (p.counts === 'sessions') return `${plural(p.total, 'session')}${p.players != null ? ` from ${plural(p.players, 'player')}` : ''}${more}`;
+    return `${p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${plural(p.sessions, 'session')}`}${more}`;
+  }
+  if (p.type === 'frame_time') return p.kpis.avg_fps != null ? `${fmtNum(p.kpis.avg_fps)} fps on average` : null;
+  return null;
+}
+
+// Everything else about a panel, for its info icon: the agent's note, what the numbers are and how they were counted,
+// and what was left out. Agents read all of it from the board query; the CSV has the numbers.
+function panelInfo(p) {
+  const out = [p.note];
+  if (STORE_TYPES.has(p.type)) return [...out, ...storeInfo(p)];
+  if (p.empty) return out;
+  if (p.type === 'breakdown') {
+    if (p.counts === 'sessions' && p.players == null) out.push('The game sends no player IDs, so these are sessions: players are not counted.');
+    if (p.avg != null) out.push(`On average ${fmtNum(p.avg, 1)} per session.`);
+    if (p.more > 0) out.push(`${plural(p.more, 'more value')} ${p.more === 1 ? "isn't" : "aren't"} shown.`);
+  }
+  if (p.type === 'series') {
+    if (p.counts === 'sessions') out.push(`Sessions playing at the time, by their ${p.split}.`);
+    if (p.spread > 0) out.push(`${fmtNum(p.spread)} of these events came from sessions that sent more than 16: Glitchless keeps when the first 16 were sent, and spreads the rest over the minutes those sessions played.`);
+  }
+  if (p.type === 'frame_time') out.push(`Half the frames took under ${fmtNum(p.kpis.p50, 1)} ms (p50) and 95% under ${fmtNum(p.kpis.p95, 1)} ms (p95). The green line is the frame budget, ${fmtNum(p.budget_ms, 1)} ms.`);
+  if (p.type === 'positions') out.push(`${p.axis === 'xy' ? 'Side view' : 'Seen from above'}, ${p.bin} ${p.bin === 1 ? 'unit' : 'units'} a bin${p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}.${p.truncated ? ` Deaths: the ${fmtNum(p.deaths.length)} places with the most.` : ''}`);
+  return [...out, ...leftOut(p)];
+}
+
+// Under a stat: what it is out of (conversion, per player).
 function statSub(p) {
   const of = { $players: 'players', $sessions: 'sessions' }[p.per];
-  const main = p.sum && p.base != null ? `${fmtSum(p.total, p.currency)} over ${fmtNum(p.base)} ${of}` : p.base != null ? `${fmtNum(p.count)} of ${fmtNum(p.base)}${of ? ` ${of}` : ''}` : p.note;
-  if (!p.mismatch?.length && !p.sandbox) return main;
-  return (
-    <>
-      {main}
-      <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
-    </>
-  );
+  if (p.sum && p.base != null) return `${fmtSum(p.total, p.currency)} over ${fmtNum(p.base)} ${of}`;
+  if (p.base != null) return `${fmtNum(p.count)} of ${fmtNum(p.base)}${of ? ` ${of}` : ''}`;
+  return null;
 }
 
 function statValue(p) {
@@ -170,7 +340,7 @@ function LivePanel({ p, span }) {
     <Widget
       span={span}
       title={p.title}
-      sub={p.note}
+      info={p.note}
       flush
       actions={
         <>
@@ -184,17 +354,12 @@ function LivePanel({ p, span }) {
   );
 }
 
-// Money left out of a panel's sums: amounts sent in another currency than the game's, and sandbox purchases
-// (TestFlight and other test installs, which nobody paid for).
-function LeftOut({ mismatch, sandbox }) {
-  const parts = [...(mismatch || []).map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`), ...(sandbox ? [`${fmtNum(sandbox)} sandbox ${sandbox === 1 ? 'purchase' : 'purchases'}`] : [])];
-  if (!parts.length) return null;
-  const why = [mismatch?.length && 'One currency per game: amounts in another currency are not added in.', sandbox && 'Purchases from TestFlight and other test installs are free sandbox purchases, not revenue.'].filter(Boolean).join(' ');
-  return (
-    <div className="warn-t" style={{ marginTop: 6 }} title={why}>
-      Left out: {parts.join(', ')}
-    </div>
-  );
+// Money left out of a panel's sums, for its info icon (which turns amber): amounts sent in another currency than the
+// game's, and sandbox purchases (TestFlight and other test installs, which nobody paid for).
+function leftOut({ mismatch, sandbox }) {
+  const parts = [...(mismatch || []).map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`), ...(sandbox ? [plural(sandbox, 'sandbox purchase')] : [])];
+  if (!parts.length) return [];
+  return [`Left out: ${parts.join(', ')}.`, mismatch?.length && 'One currency per game: amounts in another currency are not added in.', sandbox && 'Purchases from TestFlight and other test installs are free sandbox purchases, not revenue.'];
 }
 
 function PanelBody({ p }) {
@@ -205,46 +370,15 @@ function PanelBody({ p }) {
       return (
         <>
           <TimeSeries ts={p.ts} height={160} bars={p.series.length === 1} format={p.currency ? (v) => fmtMoney(v, p.currency, true) : undefined} series={p.series.map((s, i) => ({ ...s, color: colorFor(s.label, i) }))} />
-          <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
-          {p.counts === 'sessions' && <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>Sessions playing at the time, by their {p.split}.</div>}
-          {p.spread > 0 && (
-            <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-              {fmtNum(p.spread)} of these events came from sessions that sent more than 16: Glitchless keeps when the first 16 were sent, and spreads the rest over the minutes those sessions played.
-            </div>
-          )}
         </>
       );
     case 'breakdown':
-      if (p.sum)
-        return (
-          <>
-            <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: `${fmtSum(r.sum, p.currency)} · ${fmtNum(r.count)}` }))} />
-            <div className="muted s12" style={{ marginTop: 6 }}>
-              {fmtSum(p.total, p.currency)} from {fmtNum(p.count)} events{p.more > 0 ? ` · ${p.more} more values` : ''}
-            </div>
-            <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
-          </>
-        );
+      // Each bar says its number; its sessions and players are in its tooltip (and the CSV).
+      if (p.sum) return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: fmtSum(r.sum, p.currency), title: `${r.value}: ${fmtSum(r.sum, p.currency)} from ${plural(r.count, 'event')}` }))} />;
       // By $platform, $browser or $device_tier without an event: the sessions in each, and their players when the game
       // sends player IDs.
-      if (p.counts === 'sessions')
-        return (
-          <>
-            <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sessions, color: colorFor(r.value, i), display: `${fmtNum(r.sessions)} sessions${r.players != null ? ` · ${fmtNum(r.players)} players` : ''}` }))} />
-            <div className="muted s12" style={{ marginTop: 6 }}>
-              {fmtNum(p.total)} sessions{p.players != null ? ` from ${fmtNum(p.players)} players` : ' (the game sends no player IDs, so players are not counted)'}{p.more > 0 ? ` · ${p.more} more` : ''}
-            </div>
-          </>
-        );
-      return (
-        <>
-          <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: r.sessions == null ? fmtNum(r.count) : `${fmtNum(r.count)} · ${fmtNum(r.sessions)} sessions${r.players != null ? ` · ${fmtNum(r.players)} players` : ''}` }))} />
-          <div className="muted s12" style={{ marginTop: 6 }}>
-            {p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${fmtNum(p.sessions)} sessions`}{p.more > 0 ? ` · ${p.more} more values` : ''}
-            {p.avg != null ? ` · average ${fmtNum(p.avg, 1)}` : ''}
-          </div>
-        </>
-      );
+      if (p.counts === 'sessions') return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sessions, color: colorFor(r.value, i), display: r.players != null ? `${fmtNum(r.sessions)} · ${plural(r.players, 'player')}` : plural(r.sessions, 'session') }))} />;
+      return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: fmtNum(r.count), title: r.sessions == null ? undefined : `${r.value}: ${fmtNum(r.count)} in ${plural(r.sessions, 'session')}${r.players != null ? ` from ${plural(r.players, 'player')}` : ''}` }))} />;
     case 'funnel':
       return <FunnelTable steps={p.steps} />;
     case 'levels':
@@ -253,31 +387,30 @@ function PanelBody({ p }) {
       return (
         <>
           <TimeSeries ts={p.ts} height={160} unit="ms" series={[{ label: 'p50', values: p.p50, color: '#3d8cf5' }, { label: 'p95', values: p.p95, color: '#ff6b57' }]} thresholds={[{ value: p.budget_ms, color: '#1fae84', label: 'budget' }]} />
-          <div className="muted" style={{ marginTop: 6 }}>
-            p50 {fmtNum(p.kpis.p50, 1)} ms · p95 {fmtNum(p.kpis.p95, 1)} ms{p.kpis.avg_fps != null ? ` · ${fmtNum(p.kpis.avg_fps)} fps` : ''}
-          </div>
         </>
       );
     case 'errors':
       return (
-        <table className="dt">
-          <tbody>
-            {p.issues.map((i) => (
-              <tr key={i.fingerprint} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`errors/${i.fingerprint}`)}>
-                <td>
-                  {i.message}
-                  {i.location && (
-                    <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>
-                      {i.location}
-                    </div>
-                  )}
-                </td>
-                <td className="num">{fmtNum(i.count)}</td>
-                <td className="num muted">{fmtNum(i.sessions)} sessions</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="tablewrap">
+          <table className="dt">
+            <tbody>
+              {p.issues.map((i) => (
+                <tr key={i.fingerprint} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`errors/${i.fingerprint}`)}>
+                  <td>
+                    {i.message}
+                    {i.location && (
+                      <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>
+                        {i.location}
+                      </div>
+                    )}
+                  </td>
+                  <td className="num">{fmtNum(i.count)}</td>
+                  <td className="num muted">{fmtNum(i.sessions)} sessions</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     case 'deaths': {
       const causes = [...new Set(p.rows.flatMap((r) => Object.keys(r.causes)))];
@@ -312,7 +445,7 @@ function PanelBody({ p }) {
                   <td>
                     <span className="tag">{v.version}</span>
                   </td>
-                  <td className="muted">{fmtTime(v.first_seen, true)}</td>
+                  <td className="muted">{fmtTime(v.first_seen_ever ?? v.first_seen, true)}</td>
                   <td className="num">{fmtNum(v.sessions)}</td>
                   {cols.map((c) => (
                     <td className="num" key={c.title}>
@@ -345,9 +478,6 @@ function PanelBody({ p }) {
                 where players went ({fmtNum(p.path.samples)} positions)
               </span>
             )}
-            <span className="muted">
-              {p.axis === 'xy' ? 'side view' : 'top-down'} · {p.bin} {p.bin === 1 ? 'unit' : 'units'} a bin{p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}
-            </span>
           </div>
         </>
       );
@@ -355,38 +485,40 @@ function PanelBody({ p }) {
       return <RetentionTable r={p} compact />;
     case 'events':
       return (
-        <table className="dt">
-          <thead>
-            <tr>
-              <th>Event</th>
-              <th className="num">Count</th>
-              <th className="num">Sessions</th>
-              <th className="num">Per session</th>
-              <th>Attributes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.events.map((e) => (
-              <tr key={e.name} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`events?name=${encodeURIComponent(e.name)}`)}>
-                <td>
-                  <b>{e.name}</b>
-                </td>
-                <td className="num">{fmtNum(e.count)}</td>
-                <td className="num">
-                  {fmtNum(e.sessions)} <span className="muted">· {fmtPct(e.sessions_pct, 0)}</span>
-                </td>
-                <td className="num">{fmtNum(e.per_session, 1)}</td>
-                <td>
-                  {e.attrs.map((a) => (
-                    <span className="tag" key={a}>
-                      {a}
-                    </span>
-                  ))}
-                </td>
+        <div className="tablewrap">
+          <table className="dt">
+            <thead>
+              <tr>
+                <th>Event</th>
+                <th className="num">Count</th>
+                <th className="num">Sessions</th>
+                <th className="num">Per session</th>
+                <th>Attributes</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {p.events.map((e) => (
+                <tr key={e.name} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`events?name=${encodeURIComponent(e.name)}`)}>
+                  <td>
+                    <b>{e.name}</b>
+                  </td>
+                  <td className="num">{fmtNum(e.count)}</td>
+                  <td className="num">
+                    {fmtNum(e.sessions)} <span className="muted">· {fmtPct(e.sessions_pct, 0)}</span>
+                  </td>
+                  <td className="num">{fmtNum(e.per_session, 1)}</td>
+                  <td>
+                    {e.attrs.map((a) => (
+                      <span className="tag" key={a}>
+                        {a}
+                      </span>
+                    ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
   }
   return null;
@@ -394,37 +526,39 @@ function PanelBody({ p }) {
 
 export function FunnelTable({ steps }) {
   return (
-    <table className="dt">
-      <thead>
-        <tr>
-          <th>Step</th>
-          <th style={{ width: '40%' }}>Reached</th>
-          <th className="num">From the step before</th>
-          <th className="num">Time from the step before</th>
-        </tr>
-      </thead>
-      <tbody>
-        {steps.map((s, i) => (
-          <tr key={s.step + i}>
-            <td>
-              <b>{s.step}</b>
-            </td>
-            <td>
-              <div className="barrow" style={{ gridTemplateColumns: '1fr 92px' }}>
-                <div className="bt">
-                  <div className="bf" style={{ width: `${s.pct_of_first || 0}%`, background: '#14213d' }} />
-                </div>
-                <div className="bv">
-                  {fmtNum(s.sessions)} · {fmtPct(s.pct_of_first, 0)}
-                </div>
-              </div>
-            </td>
-            <td className="num">{i ? fmtPct(s.pct_of_previous, 0) : ''}</td>
-            <td className="num">{i ? fmtDuration(s.median_s_from_previous) : ''}</td>
+    <div className="tablewrap">
+      <table className="dt wrap-th">
+        <thead>
+          <tr>
+            <th>Step</th>
+            <th style={{ width: '40%' }}>Reached</th>
+            <th className="num">From the step before</th>
+            <th className="num">Time from the step before</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {steps.map((s, i) => (
+            <tr key={s.step + i}>
+              <td>
+                <b>{s.step}</b>
+              </td>
+              <td>
+                <div className="barrow" style={{ gridTemplateColumns: '1fr 92px' }}>
+                  <div className="bt">
+                    <div className="bf" style={{ width: `${s.pct_of_first || 0}%`, background: 'var(--ink)' }} />
+                  </div>
+                  <div className="bv">
+                    {fmtNum(s.sessions)} · {fmtPct(s.pct_of_first, 0)}
+                  </div>
+                </div>
+              </td>
+              <td className="num">{i ? fmtPct(s.pct_of_previous, 0) : ''}</td>
+              <td className="num">{i ? fmtDuration(s.median_s_from_previous) : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -456,7 +590,7 @@ function LevelsTable({ rows, has, label }) {
                 <td>
                   <div className="barrow" style={{ gridTemplateColumns: '1fr 48px' }}>
                     <div className="bt">
-                      <div className="bf" style={{ width: `${l.completion_pct || 0}%`, background: l.completion_pct < 50 ? '#ff6b57' : '#14213d' }} />
+                      <div className="bf" style={{ width: `${l.completion_pct || 0}%`, background: l.completion_pct < 50 ? '#ff6b57' : 'var(--ink)' }} />
                     </div>
                     <div className="bv">{fmtPct(l.completion_pct, 0)}</div>
                   </div>

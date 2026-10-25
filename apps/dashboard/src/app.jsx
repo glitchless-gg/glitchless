@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Icon } from './components.jsx';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Icon, Floating } from './components.jsx';
 import { useQuery, onMeta } from './api.js';
 import { Filters } from './filters.js';
 import { Performance } from './pages/Performance.jsx';
@@ -17,6 +17,8 @@ import { Setup } from './pages/Setup.jsx';
 import { Pages } from './pages/Pages.jsx';
 import { VIEWS, EMPTY_PAGES } from './dashboard.js';
 import { Shell, DEFAULT_SHELL } from './shell.js';
+import { THEMES, applyTheme, useThemePref, useTheme } from './theme.js';
+import { useBrand, brandStyle, BrandLogo } from './brand.jsx';
 
 const RANGES = [
   { key: '15m', label: 'Past 15 Minutes', ms: 15 * 60e3 },
@@ -80,6 +82,10 @@ export function App({ shell: custom = {} }) {
   const [version, setVersion] = useState('');
   const [type, setType] = useState('all');
   const [live, setLive] = useState(() => load('glitchless.live', '1') === '1');
+  // The side navigation folds to a rail of icons, remembered in this browser; on a phone there's no side navigation.
+  const [folded, setFolded] = useState(() => load('glitchless.nav', 'open') === 'folded');
+  const [navTip, setNavTip] = useState(null); // a folded rail's name for the icon pointed at or focused
+  const navRest = useRef(null);
   const [tick, setTick] = useState(0);
   const services = useQuery('services', {}, { refreshMs: 15000 });
   const list = services.data?.services || [];
@@ -111,9 +117,10 @@ export function App({ shell: custom = {} }) {
     try {
       localStorage.setItem('glitchless.range', rangeKey);
       localStorage.setItem('glitchless.live', live ? '1' : '0');
+      localStorage.setItem('glitchless.nav', folded ? 'folded' : 'open');
       if (service) localStorage.setItem('glitchless.service', service);
     } catch {}
-  }, [rangeKey, live, service]);
+  }, [rangeKey, live, service, folded]);
   // Relative time ranges slide forward while Live is on.
   useEffect(() => {
     if (!live) return;
@@ -175,22 +182,44 @@ export function App({ shell: custom = {} }) {
   const active = view?.page?.id ?? (items.some((n) => n.path === route.page) ? route.page : first?.path);
   const Page = view?.page?.view === 'sessions' && route.arg ? SessionDetail : view?.Page;
   const loading = (services.loading && !services.data) || (service && !dashboard && dash.loading);
+  // On the folded rail each icon names itself beside it: once the mouse rests on it, and at once on keyboard focus.
+  const named = (label) =>
+    folded
+      ? {
+          'aria-label': label,
+          onPointerEnter: (e) => {
+            const el = e.currentTarget;
+            if (e.pointerType === 'mouse') navRest.current = setTimeout(() => setNavTip({ el, label }), 350);
+          },
+          onPointerLeave: () => (clearTimeout(navRest.current), setNavTip(null)),
+          onFocus: (e) => e.currentTarget.matches(':focus-visible') && setNavTip({ el: e.currentTarget, label }),
+          onBlur: () => setNavTip(null),
+        }
+      : {};
+  const fold = folded ? 'Expand the sidebar' : 'Collapse the sidebar';
+  // The game's own accent and logo (brand.jsx), on every page of its dashboard.
+  const theme = useTheme();
+  const brand = useBrand(service);
+  const branded = brandStyle(brand, theme);
 
   return (
     <Shell.Provider value={shell}>
       <Filters.Provider value={filters}>
-        <div className={`app ${shell.className}`.trim()}>
-          <nav className="sidenav">
+        <div className={`app ${shell.className} ${folded ? 'nav-collapsed' : ''} ${branded.className}`.replace(/\s+/g, ' ').trim()} style={branded.style}>
+          <nav className="sidenav" aria-label="Pages">
             <div className="brand">
               <img src={shell.brand.logo} alt={shell.brand.name} />
               <div>
                 <div className="name">{shell.brand.name}</div>
                 <div className="tagline">{shell.brand.tagline}</div>
               </div>
+              <button type="button" className="nav-toggle" aria-expanded={!folded} title={folded ? undefined : fold} {...named(fold)} aria-label={fold} onClick={() => (setFolded(!folded), setNavTip(null))}>
+                <Icon name={folded ? 'expand' : 'collapse'} size={18} />
+              </button>
             </div>
-            {shell.sidebarTop}
+            {!folded && shell.sidebarTop}
             {/* Self-hosted, this picks the game. Hosted, a game is picked above and almost always has one service. */}
-            {(!shell.sidebarTop || list.length > 1) && (
+            {!folded && (!shell.sidebarTop || list.length > 1) && (
             <div className="svc-pick">
               {shell.servicesLabel && <div className="svc-label">{shell.servicesLabel}</div>}
               <select value={service} onChange={(e) => setService(e.target.value)} title="Game service">
@@ -209,17 +238,26 @@ export function App({ shell: custom = {} }) {
                   {n.section}
                 </div>
               ) : (
-                <a key={n.path} className={`navitem ${active === n.path ? 'active' : ''} ${n.quiet ? 'quiet' : ''}`.trim()} href={`#/${n.path}`}>
+                <a key={n.path} className={`navitem ${active === n.path ? 'active' : ''} ${n.quiet ? 'quiet' : ''}`.trim()} href={`#/${n.path}`} aria-current={active === n.path ? 'page' : undefined} {...named(n.label)}>
                   <Icon name={n.icon} />
-                  {n.label}
+                  <span className="nl">{n.label}</span>
                 </a>
               ),
             )}
-            {shell.footer ?? null}
+            <div className="nav-end">
+              <ThemePick folded={folded} named={named} onPick={() => setNavTip(null)} />
+              {!folded && (shell.footer ?? null)}
+            </div>
           </nav>
+          {folded && navTip && (
+            <Floating anchor={navTip.el} place="right" className="navtip">
+              {navTip.label}
+            </Floating>
+          )}
           <main>
             <header className="topbar">
               <div className="crumbs">
+                <BrandLogo brand={brand} />
                 <span className="root">{service || shell.brand.name} /</span>
                 <h1>{Page === SessionDetail ? 'Session Replay' : view?.title}</h1>
               </div>
@@ -289,5 +327,32 @@ export function App({ shell: custom = {} }) {
         </div>
       </Filters.Provider>
     </Shell.Provider>
+  );
+}
+
+const THEME_NAMES = { system: 'System', light: 'Light', dark: 'Dark' };
+
+// Light, dark, or whatever the system says, kept in this browser (theme.js). Folded, one icon that steps through them.
+function ThemePick({ folded, named, onPick }) {
+  const pref = useThemePref();
+  const pick = (t) => (applyTheme(t, { remember: true }), onPick());
+  if (folded) {
+    const next = THEMES[(THEMES.indexOf(pref) + 1) % THEMES.length];
+    const label = `Theme: ${THEME_NAMES[pref]}. Switch to ${THEME_NAMES[next]}`;
+    return (
+      <button type="button" className="nav-toggle theme-step" {...named(label)} onClick={() => pick(next)}>
+        <Icon name={pref} size={16} />
+      </button>
+    );
+  }
+  return (
+    <div className="theme-pick" role="group" aria-label="Theme">
+      {THEMES.map((t) => (
+        <button key={t} type="button" aria-pressed={pref === t} className={pref === t ? 'on' : undefined} onClick={() => pick(t)}>
+          <Icon name={t} size={13} />
+          {THEME_NAMES[t]}
+        </button>
+      ))}
+    </div>
   );
 }

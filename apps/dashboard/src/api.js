@@ -65,6 +65,11 @@ export async function apiSend(method, path, body = null) {
   return data;
 }
 
+// A request with the dashboard's own headers, answered as it comes: a game's brand, its images, an upload.
+export function apiFetch(path, init = {}) {
+  return fetch(`${API_BASE}${path}`, { ...init, headers: { 'x-glitchless-client': 'dashboard', ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...context.headers, ...init.headers } });
+}
+
 export async function health() {
   const res = await fetch(`${API_BASE}/v1/health`);
   return res.json();

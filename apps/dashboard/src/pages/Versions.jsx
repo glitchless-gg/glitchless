@@ -1,6 +1,8 @@
 // Versions: did a release make the game better, in the terms this game cares about? First the stats on
 // its boards, then its own events per session, then the built-in measures it has data for (frame time only
-// for games that send frames, level completion only for games with levels).
+// for games that send frames, level completion only for games with levels). The query lists versions in
+// release order, so the last two are the newest and the one before it; "First seen" is when the version
+// first showed up at all (first_seen_ever), else its first session in the range.
 import { useEffect, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
@@ -78,7 +80,7 @@ export function Versions() {
             name="versions"
             rows={() => [
               ['Version', 'First seen', 'Sessions', ...board.slice(0, 4).map(columnHeader), ...(has.frames ? ['p95 frame (ms)'] : []), 'Error-free %', ...(has.levels ? ['Level completion %'] : []), ...(has.rage ? ['Rage quits %'] : [])],
-              ...list.map((v) => [v.version, new Date(v.first_seen).toISOString(), v.sessions, ...board.slice(0, 4).map((s, i) => v.board?.[i]), ...(has.frames ? [v.frame_p95] : []), v.error_free_pct, ...(has.levels ? [v.level_completion_pct] : []), ...(has.rage ? [v.rage_quit_pct] : [])]),
+              ...list.map((v) => [v.version, new Date(v.first_seen_ever ?? v.first_seen).toISOString(), v.sessions, ...board.slice(0, 4).map((s, i) => v.board?.[i]), ...(has.frames ? [v.frame_p95] : []), v.error_free_pct, ...(has.levels ? [v.level_completion_pct] : []), ...(has.rage ? [v.rage_quit_pct] : [])]),
             ]}
           />
         }
@@ -109,7 +111,7 @@ export function Versions() {
                       {v.version}
                     </span>
                   </td>
-                  <td className="muted">{fmtTime(v.first_seen, true)}</td>
+                  <td className="muted">{fmtTime(v.first_seen_ever ?? v.first_seen, true)}</td>
                   <td className="num">{fmtNum(v.sessions)}</td>
                   {board.slice(0, 4).map((s, i) => (
                     <td className="num" key={s.title}>

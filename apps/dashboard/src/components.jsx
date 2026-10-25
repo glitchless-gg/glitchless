@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
 import { fmtNum, colorFor, PALETTE } from './format.js';
 import { useShell } from './shell.js';
+import { useTheme, color as css } from './theme.js';
 
 // ───────────────────────────── icons ─────────────────────────────
 
@@ -33,6 +35,12 @@ const ICONS = {
   bug: 'M8 2l1.9 1.9M14.1 3.9L16 2M9 7.1v-1a3 3 0 116 0v1M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 014-4h4a4 4 0 014 4v3c0 3.3-2.7 6-6 6M12 20v-9M6.5 9C4.6 8.8 3 7.1 3 5M6 13H2M3 21c0-2.1 1.7-3.9 3.8-4M21 5c0 2.1-1.6 3.8-3.5 4M22 13h-4M17.2 17c2.1.1 3.8 1.9 3.8 4',
   image: 'M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zM8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM21 15l-5-5L5 21',
   integrations: 'M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7l1.7-1.7',
+  info: 'M12 22a10 10 0 100-20 10 10 0 000 20zM12 16v-4.5M12 8h.01',
+  collapse: 'M4 4h16v16H4zM9.5 4v16M16 9.5L13.5 12l2.5 2.5',
+  system: 'M3 4h18v12H3zM8 20h8M12 16v4',
+  light: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
+  dark: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z',
+  expand: 'M4 4h16v16H4zM9.5 4v16M13.5 9.5L16 12l-2.5 2.5',
   settings: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z',
 };
 
@@ -46,14 +54,23 @@ export function Icon({ name, size = 16, ...rest }) {
 
 // ───────────────────────────── layout primitives ─────────────────────────────
 
-export function Widget({ title, sub, actions, children, span = 6, flush, className = '', style }) {
+// A panel. `sub` is its one short line under the title; `info` (text, or a list of paragraphs) is everything else
+// about it, behind the info icon next to the title; `warn` colours that icon when the info says something was left out.
+export function Widget({ title, sub, info, warn, actions, children, span = 6, flush, className = '', style }) {
   return (
     <section className={`widget s${span} ${flush ? 'flush' : ''} ${className}`} style={style}>
       {(title || actions) && (
         <div className="wh">
-          {title && <div className="wt">{title}</div>}
-          {sub && <div className="ws">{sub}</div>}
+          {title && (
+            <div className="wt">
+              {title}
+              <InfoTip label={title} warn={warn}>
+                {info}
+              </InfoTip>
+            </div>
+          )}
           {actions && <div className="wa">{actions}</div>}
+          {sub && <div className="ws">{sub}</div>}
         </div>
       )}
       <div className="wb">{children}</div>
@@ -61,12 +78,17 @@ export function Widget({ title, sub, actions, children, span = 6, flush, classNa
   );
 }
 
-export function QueryValue({ label, value, unit, status = 'neutral', sub, span = 2, title, actions }) {
+export function QueryValue({ label, value, unit, status = 'neutral', sub, span = 2, info, warn, actions }) {
   return (
-    <section className={`widget s${span}`} title={title}>
+    <section className={`widget s${span}`}>
       <div className={`qv ${status}`}>
         <div className="label">
-          {label}
+          <span>
+            {label}
+            <InfoTip label={label} warn={warn}>
+              {info}
+            </InfoTip>
+          </span>
           {actions && <span className="qa">{actions}</span>}
         </div>
         <div className="value">
@@ -76,6 +98,116 @@ export function QueryValue({ label, value, unit, status = 'neutral', sub, span =
         {sub && <div className="sub">{sub}</div>}
       </div>
     </section>
+  );
+}
+
+// A box floated next to an element, over everything and kept inside the window, so a board's edges and scrolling
+// never clip it: below the element (above it when there's no room below), or to its right.
+export function Floating({ anchor, place = 'below', id, role = 'tooltip', className = '', children, onPointerEnter, onPointerLeave }) {
+  const box = useRef(null);
+  const [at, setAt] = useState(null);
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    const update = () => {
+      const a = anchor.getBoundingClientRect();
+      const el = box.current;
+      if (!el) return;
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const vw = document.documentElement.clientWidth;
+      const vh = window.innerHeight;
+      const m = 8;
+      let left = place === 'right' ? a.right + 10 : a.left - 12;
+      let top = place === 'right' ? a.top + a.height / 2 - h / 2 : a.bottom + 6;
+      if (place !== 'right' && top + h > vh - m && a.top - 6 - h >= m) top = a.top - 6 - h;
+      left = Math.max(m, Math.min(left, vw - w - m));
+      top = Math.max(m, Math.min(top, vh - h - m));
+      setAt({ left, top });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchor, place]);
+  return createPortal(
+    <div ref={box} id={id} role={role} className={`floating ${className}`.trim()} style={at ?? { left: 0, top: 0, visibility: 'hidden' }} onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+// The info icon next to a panel's title: what its numbers mean, caveats, the agent's note. It opens while the mouse
+// rests on it (after a moment, so sweeping across a board doesn't flash them), at once on keyboard focus, and on a tap
+// or click (which keeps it open until the next tap elsewhere, another click or Escape). The mouse can move onto what
+// it opened. Nothing to say, no icon.
+export function InfoTip({ label, warn, children }) {
+  const paras = (Array.isArray(children) ? children.flat() : [children]).filter((x) => x != null && x !== false && x !== '');
+  const btn = useRef(null);
+  const leave = useRef(null);
+  const rest = useRef(null);
+  const id = useId();
+  const [hover, setHover] = useState(false);
+  const [focus, setFocus] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const open = hover || focus || pinned;
+  useEffect(() => {
+    if (!open) return;
+    const close = () => (setHover(false), setFocus(false), setPinned(false));
+    const key = (e) => e.key === 'Escape' && close();
+    const down = (e) => !btn.current?.contains(e.target) && !document.getElementById(id)?.contains(e.target) && close();
+    document.addEventListener('keydown', key);
+    document.addEventListener('pointerdown', down);
+    return () => {
+      document.removeEventListener('keydown', key);
+      document.removeEventListener('pointerdown', down);
+    };
+  }, [open, id]);
+  useEffect(() => () => (clearTimeout(leave.current), clearTimeout(rest.current)), []);
+  if (!paras.length) return null;
+  // Only a mouse hovers: a finger's tap is a click.
+  const enter = (e) => {
+    if (e.pointerType !== 'mouse') return;
+    clearTimeout(leave.current);
+    if (!hover) rest.current = setTimeout(() => setHover(true), 250);
+  };
+  const exit = (e) => {
+    if (e.pointerType !== 'mouse') return;
+    clearTimeout(rest.current);
+    leave.current = setTimeout(() => setHover(false), 150);
+  };
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        className={`info${warn ? ' warn' : ''}${open ? ' open' : ''}`}
+        aria-label={`About ${typeof label === 'string' ? label : 'this panel'}`}
+        aria-expanded={open}
+        aria-describedby={open ? id : undefined}
+        onPointerEnter={enter}
+        onPointerLeave={exit}
+        onFocus={(e) => e.currentTarget.matches(':focus-visible') && setFocus(true)}
+        onBlur={() => setFocus(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (pinned) setHover(false);
+          setPinned(!pinned);
+        }}
+      >
+        <Icon name="info" size={13} />
+      </button>
+      {open && (
+        <Floating anchor={btn.current} id={id} className="tip" onPointerEnter={enter} onPointerLeave={exit}>
+          {paras.map((x, i) => (
+            <p key={i}>{x}</p>
+          ))}
+        </Floating>
+      )}
+    </>
   );
 }
 
@@ -140,10 +272,14 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
   const wrap = useRef(null);
   const plot = useRef(null);
   const width = useWidth(wrap);
+  const theme = useTheme();
   const hasData = ts?.length && series.some((s) => s.values?.some((v) => v != null));
 
   useEffect(() => {
     if (!wrap.current || !width || !hasData) return;
+    // The canvas gets real colours: tokens read from the chart's own element (light or dark, a board's accent).
+    const ink = (c) => css(c, wrap.current);
+    const axis = { stroke: ink('var(--chart-axis)'), grid: { stroke: ink('var(--chart-grid)'), width: 1 }, font: '11px Noto Sans, sans-serif' };
     const data = [ts.map((t) => t / 1000), ...series.map((s) => s.values)];
     const fmt = (v) => (v == null ? '' : format ? format(v) : `${fmtNum(v, v < 10 ? 1 : 0)}${unit}`);
     const opts = {
@@ -154,16 +290,16 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
       legend: { show: false },
       scales: { x: { time: true }, y: { range: (u, min, max) => [yMin ?? Math.min(0, min), Math.max(max * 1.12, ...thresholds.map((t) => t.value * 1.15), 1)] } },
       axes: [
-        { stroke: '#7a7890', grid: { stroke: '#f0eff5', width: 1 }, ticks: { stroke: '#e2e1ea', width: 1 }, font: '11px Noto Sans, sans-serif' },
-        { stroke: '#7a7890', grid: { stroke: '#f0eff5', width: 1 }, ticks: { show: false }, font: '11px Noto Sans, sans-serif', size: 52, values: (u, vals) => vals.map(fmt) },
+        { ...axis, ticks: { stroke: ink('var(--chart-tick)'), width: 1 } },
+        { ...axis, ticks: { show: false }, size: 52, values: (u, vals) => vals.map(fmt) },
       ],
       series: [
         {},
         ...series.map((s, i) => ({
           label: s.label,
-          stroke: s.color || PALETTE[i % PALETTE.length],
+          stroke: ink(s.color || PALETTE[i % PALETTE.length]),
           width: s.width ?? 1.6,
-          fill: s.fill ? s.fill : undefined,
+          fill: s.fill ? ink(s.fill) : undefined,
           dash: s.dash,
           spanGaps: true,
           points: { show: false },
@@ -180,7 +316,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
             ctx.textBaseline = 'alphabetic';
             for (const t of thresholds) {
               const y = u.valToPos(t.value, 'y', true);
-              ctx.strokeStyle = t.color || '#ff6b57';
+              ctx.strokeStyle = ink(t.color || '#ff6b57');
               ctx.setLineDash([5, 4]);
               ctx.lineWidth = 1.2 * devicePixelRatio;
               ctx.beginPath();
@@ -189,7 +325,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
               ctx.stroke();
               if (t.label) {
                 ctx.setLineDash([]);
-                ctx.fillStyle = t.color || '#ff6b57';
+                ctx.fillStyle = ink(t.color || '#ff6b57');
                 ctx.font = `${10 * devicePixelRatio}px Noto Sans, sans-serif`;
                 ctx.fillText(t.label, u.bbox.left + 6 * devicePixelRatio, y - 4 * devicePixelRatio);
               }
@@ -197,7 +333,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
             for (const m of markers) {
               const x = u.valToPos(m.ts / 1000, 'x', true);
               if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) continue;
-              ctx.strokeStyle = m.color || '#14213d';
+              ctx.strokeStyle = ink(m.color || 'var(--ink)');
               ctx.setLineDash([2, 3]);
               ctx.lineWidth = 1.5 * devicePixelRatio;
               ctx.beginPath();
@@ -205,12 +341,12 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
               ctx.lineTo(x, u.bbox.top + u.bbox.height);
               ctx.stroke();
               ctx.setLineDash([]);
-              ctx.fillStyle = m.color || '#14213d';
+              ctx.fillStyle = ink(m.color || 'var(--ink)');
               ctx.font = `600 ${10 * devicePixelRatio}px Noto Sans, sans-serif`;
               const label = m.label || '';
               const tw = ctx.measureText(label).width;
               ctx.fillRect(x, u.bbox.top, tw + 8 * devicePixelRatio, 14 * devicePixelRatio);
-              ctx.fillStyle = '#fff';
+              ctx.fillStyle = ink('var(--panel)');
               ctx.fillText(label, x + 4 * devicePixelRatio, u.bbox.top + 10.5 * devicePixelRatio);
             }
             ctx.restore();
@@ -232,7 +368,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
       plot.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height, JSON.stringify(ts), JSON.stringify(series.map((s) => s.values)), JSON.stringify(thresholds), JSON.stringify(markers)]);
+  }, [theme, width, height, JSON.stringify(ts), JSON.stringify(series.map((s) => s.values)), JSON.stringify(thresholds), JSON.stringify(markers)]);
 
   return (
     <div>
@@ -253,7 +389,7 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
   );
 }
 
-export function BarList({ rows, max, format = (v) => fmtNum(v), color = '#14213d', onClick }) {
+export function BarList({ rows, max, format = (v) => fmtNum(v), color = 'var(--ink)', onClick }) {
   const m = max ?? Math.max(1, ...rows.map((r) => (r.segments ? r.segments.reduce((a, s) => a + s.value, 0) : r.value || 0)));
   return (
     <div className="bars">
@@ -285,7 +421,7 @@ export function Histogram({ edges, counts, budget, height = 170, unitLabel = 'ms
         {counts.map((c, i) => {
           const h = (c / max) * (height / 4 - 2);
           const lo = edges[i];
-          const color = lo < budget * 1.15 ? '#14213d' : lo < 33.3 ? '#f2a93b' : '#ff6b57';
+          const color = lo < budget * 1.15 ? 'var(--ink)' : lo < 33.3 ? '#f2a93b' : '#ff6b57';
           return (
             <rect key={i} x={i * w + 0.3} y={height / 4 - h} width={w - 0.6} height={h} fill={color} rx="0.4">
               <title>{`${edges[i]}–${edges[i + 1]}${unitLabel}: ${((c / total) * 100).toFixed(2)}% of frames`}</title>
@@ -313,7 +449,7 @@ export function Sparkline({ values, width = 90, height = 22, color = '#ff6b57' }
   const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(height - 1 - (v / max) * (height - 3)).toFixed(1)}`).join(' ');
   return (
     <svg className="spark" width={width} height={height}>
-      <polyline points={`0,${height} ${pts} ${width},${height}`} fill={color + '22'} stroke="none" />
+      <polyline points={`0,${height} ${pts} ${width},${height}`} fill={color} fillOpacity={0.13} stroke="none" />
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.4" />
     </svg>
   );

@@ -1,12 +1,15 @@
-// What every Glitchless MCP tool shares: the server, the Glitchless API it reads and writes, and the
-// helpers that shape a tool's reply. Each area's tools live in tools/<area>.js and register on import.
+// What every Glitchless MCP tool shares: the connection to the Glitchless API it reads and writes, the helpers that
+// shape a tool's reply, and the list of tools. Each area's tools live in tools/<area>.js and define themselves on
+// import; createServer() builds a server from them, once for stdio (index.js) or once per HTTP request (http.js).
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+
+export const VERSION = '0.8.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
@@ -18,42 +21,48 @@ export function readCredentials() {
   }
 }
 
-// GLITCHLESS_API_KEY wins; without it, a saved sign-in. A game key (gl_sk_…) reaches one game; a workspace key
-// (gl_ws_…) every game in its workspace, and then every tool takes `game`.
+// A connection: the Glitchless API an agent reaches and the key it reaches it with. A game key (gl_sk_…) reaches one
+// game; a workspace key (gl_ws_…) every game in its workspace, and then every tool takes `game`. `game` is the one
+// the agent last named; `fetch` is how requests go out (Glitchless Cloud answers its own MCP requests in-process).
+export function connection({ base, apiKey = '', service = '', game = '', fetch = globalThis.fetch, client = '' }) {
+  return { base: String(base).replace(/\/$/, ''), apiKey, service, game, fetch, client, games: null };
+}
+
+// On stdio, the one connection: GLITCHLESS_API_KEY wins; without it, a saved sign-in. Over HTTP each request runs
+// with the connection its bearer token gives (createServer's `connection`).
 const saved = process.env.GLITCHLESS_API_KEY ? null : readCredentials();
-export let BASE = (process.env.GLITCHLESS_URL || saved?.url || 'http://localhost:7777').replace(/\/$/, '');
-export let API_KEY = process.env.GLITCHLESS_API_KEY || saved?.token || '';
-export const DEFAULT_SERVICE = process.env.GLITCHLESS_SERVICE || '';
-export const isWorkspace = () => API_KEY.startsWith('gl_ws_');
+const local = connection({
+  base: process.env.GLITCHLESS_URL || saved?.url || 'http://localhost:7777',
+  apiKey: process.env.GLITCHLESS_API_KEY || saved?.token || '',
+  service: process.env.GLITCHLESS_SERVICE || '',
+  game: process.env.GLITCHLESS_GAME || '',
+});
+const connections = new AsyncLocalStorage();
+const conn = () => connections.getStore() ?? local;
+
+export const base = () => conn().base;
+export const apiKey = () => conn().apiKey;
+export const defaultService = () => conn().service;
+export const isWorkspace = () => conn().apiKey.startsWith('gl_ws_');
 
 // After a sign-in from inside the agent (glitchless_sign_in): the running server switches to the new key.
 export function useCredentials({ url, token }) {
-  BASE = String(url).replace(/\/$/, '');
-  API_KEY = token;
-  games = null;
+  Object.assign(local, { base: String(url).replace(/\/$/, ''), apiKey: token, games: null });
 }
 
-export const server = new McpServer(
-  { name: 'glitchless', version: '0.8.0' },
-  {
-    instructions:
-      'Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker. On Glitchless Cloud, glitchless_sign_in connects you to the person\'s whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session. When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot. For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events. For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version. For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game\'s own purchase events add up to. Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard. Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players. If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.',
-  },
-);
-
 // The games a workspace key reaches, cached briefly; the game each call names (by name or id), else the one the
-// session last used (or GLITCHLESS_GAME), else the only game.
-let games = null;
-let currentGame = process.env.GLITCHLESS_GAME || '';
+// connection last used (or GLITCHLESS_GAME), else the only game.
 export async function workspaceGames(fresh = false) {
-  if (!fresh && games && Date.now() - games.at < 30_000) return games.list;
+  const c = conn();
+  if (!fresh && c.games && Date.now() - c.games.at < 30_000) return c.games.list;
   const { games: list } = await agent('GET', '/games');
-  games = { at: Date.now(), list };
+  c.games = { at: Date.now(), list };
   return list;
 }
 
 export async function projectFor(game) {
-  const want = game || currentGame;
+  const c = conn();
+  const want = game || c.game;
   let list = await workspaceGames();
   const find = () => list.find((g) => g.id === want) ?? list.find((g) => g.name.toLowerCase() === String(want).toLowerCase());
   let hit = want ? find() : list.length === 1 ? list[0] : null;
@@ -62,21 +71,21 @@ export async function projectFor(game) {
     hit = find();
   }
   if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(', ') || 'none yet'}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(', ') || 'none yet; glitchless_create_game makes one'}.`);
-  currentGame = hit.id;
+  c.game = hit.id;
   return hit.id;
 }
 
 async function headers(extra = {}) {
-  const client = server.server.getClientVersion?.()?.name || 'mcp';
-  return { 'x-glitchless-client': client, ...(API_KEY ? { 'x-glitchless-api-key': API_KEY } : {}), ...(isWorkspace() ? { 'x-glitchless-project': await projectFor(calls.getStore()?.game) } : {}), ...extra };
+  const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || 'mcp';
+  return { 'x-glitchless-client': client, ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...(isWorkspace() ? { 'x-glitchless-project': await projectFor(calls.getStore()?.game) } : {}), ...extra };
 }
 
 // A workspace key's own routes (/v1/agent/…, Glitchless Cloud).
 export async function agent(method, p, body) {
   if (!isWorkspace()) throw new Error('This needs a workspace: sign in with glitchless_sign_in (or run `npx -y glitchless-mcp login`) on Glitchless Cloud.');
-  const res = await fetch(`${BASE}/v1/agent${p}`, {
+  const res = await conn().fetch(`${base()}/v1/agent${p}`, {
     method,
-    headers: { 'x-glitchless-api-key': API_KEY, ...(body ? { 'content-type': 'application/json' } : {}) },
+    headers: { 'x-glitchless-api-key': apiKey(), ...(body ? { 'content-type': 'application/json' } : {}) },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await res.json().catch(() => ({}));
@@ -87,7 +96,7 @@ export async function agent(method, p, body) {
 export async function query(name, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') qs.set(k, String(v));
-  const res = await fetch(`${BASE}/v1/query/${name}?${qs}`, { headers: await headers() });
+  const res = await conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() });
   if (!res.ok) throw new Error(`Glitchless API ${name} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   const call = calls.getStore();
@@ -95,7 +104,8 @@ export async function query(name, params = {}) {
   return data;
 }
 
-// The tool call being answered: the meta of its last query, for windowNote().
+// The tool call being answered: the game it names, the server answering it, and the meta of its last query, for
+// windowNote().
 const calls = new AsyncLocalStorage();
 
 // How the window was answered, when an agent should know: by day past 31 days, what is estimated, what a
@@ -112,7 +122,7 @@ function windowNote() {
 }
 
 export async function write(method, p, body) {
-  const res = await fetch(`${BASE}${p}`, {
+  const res = await conn().fetch(`${base()}${p}`, {
     method,
     headers: await headers({ 'content-type': 'application/json' }),
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -125,7 +135,7 @@ export async function write(method, p, body) {
 
 export async function resolveService(service) {
   if (service) return service;
-  if (DEFAULT_SERVICE) return DEFAULT_SERVICE;
+  if (defaultService()) return defaultService();
   const { services } = await query('services');
   if (!services?.length) throw new Error('No games are reporting to Glitchless yet. Add the SDK and play a level first.');
   return services.sort((a, b) => b.last_seen - a.last_seen)[0].service;
@@ -151,7 +161,7 @@ export const common = {
     .min(0.25)
     .max(9600)
     .optional()
-    .describe("Look-back window in hours (default 24). Up to the plan's retention on Glitchless Cloud: 336 (14 days) on Free, 2160 (90 days) on Indie, 9600 (400 days) on Studio. Past 744 (31 days) answers are by day."),
+    .describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day."),
   version: z.string().optional().describe('Only include sessions from this game version'),
   steam_branch: z.string().optional().describe('Only include sessions that ran this Steam branch ("public", or a beta\'s name); games that use Steamworks send it'),
   env: z.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
@@ -166,23 +176,79 @@ export function filters({ version, steam_branch, env, session_type } = {}) {
   return { version, steam_branch, env, type: session_type };
 }
 
+// ── the tools ─────────────────────────────────────────────────────
+// Every tool as its file defined it: { name, config, handler, scope, local }. Over HTTP a tool shows only to a
+// connection whose scopes include its `scope` (read, dashboard or manage, as a workspace key's), and `local` tools
+// (signing in, playtests, the Steam Deck) are left out: they act on the computer the server runs on.
+const tools = [];
+
+// The annotations a read gets: it changes nothing and reads only the person's own Glitchless data.
+const READS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+export function define(name, config, handler, { scope = 'read', local = false } = {}) {
+  tools.push({ name, config: { ...config, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...config.annotations } }, handler, scope, local });
+}
+
+// A read-only tool.
+export function tool(name, description, schema, handler) {
+  define(name, { description, inputSchema: schema, annotations: READS }, handler);
+}
+
+// The tools a server built with these options shows: { name, title, description, annotations, scope, local }.
+export function toolList({ remote = false, scopes = null } = {}) {
+  return tools.filter((t) => !(remote && t.local) && (!scopes || scopes.includes(t.scope))).map((t) => ({ name: t.name, title: titleOf(t), description: t.config.description, annotations: t.config.annotations, scope: t.scope, local: t.local }));
+}
+
+// "glitchless_store_reviews" → "Store reviews", unless the tool names its own title.
+const titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}`;
+
 // Every tool takes `game` (by name or id): with a workspace key it picks the game, with a game key it's ignored.
 const gameField = z.string().optional().describe('The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.');
-const register = server.registerTool.bind(server);
-server.registerTool = (name, config, handler) =>
-  register(name, { ...config, inputSchema: { ...(config.inputSchema || {}), game: gameField } }, (args, extra) => calls.run({ game: args?.game }, () => handler(args || {}, extra)));
 
-// A read-only tool: errors come back as a tool error, not a thrown exception.
-export function tool(name, description, schema, handler) {
-  server.registerTool(name, { description, inputSchema: schema, annotations: { readOnlyHint: true } }, async (args) =>
-    calls.run({ game: args.game }, async () => {
-      try {
-        return await handler(args || {});
-      } catch (err) {
-        return fail(err);
-      }
-    }),
+// A server with the tools. remote: the HTTP server's set (no local tools, and instructions to match); scopes: show
+// only the tools these scopes allow; connection: what every call runs with (default: this process's own).
+export function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
+  const server = new McpServer(
+    { name: 'glitchless', title: 'Glitchless', version: VERSION, websiteUrl: 'https://www.glitchless.gg', icons: [{ src: 'https://app.glitchless.gg/brand/glitchless-icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }] },
+    { instructions: instructions(remote) },
   );
+  for (const t of tools) {
+    if ((remote && t.local) || (scopes && !scopes.includes(t.scope))) continue;
+    const { inputSchema = {}, ...config } = t.config;
+    server.registerTool(t.name, { ...config, title: titleOf(t), inputSchema: z.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
+      const run = () =>
+        calls.run({ game: args.game, server }, async () => {
+          try {
+            return await t.handler(args, ctx);
+          } catch (err) {
+            return fail(err);
+          }
+        });
+      return c ? connections.run(c, run) : run();
+    });
+  }
+  return server;
+}
+
+function instructions(remote) {
+  return [
+    'Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.',
+    remote
+      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board."
+      : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
+    'Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.',
+    'When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.',
+    'For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events.',
+    'For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version.',
+    "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to.",
+    "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
+    ...(remote
+      ? ['After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.']
+      : [
+          'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.',
+          'If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.',
+        ]),
+  ].join(' ');
 }
 
 export function slimIssue(i) {

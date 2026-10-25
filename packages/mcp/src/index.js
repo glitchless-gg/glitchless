@@ -10,25 +10,29 @@
 //
 //   npx -y glitchless-mcp login      (also: whoami, logout)
 //
-// The shared server and helpers are in context.js; each area's tools are in tools/<area>.js, and a new
-// area is one more file imported here.
-
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+// Or serve it over Streamable HTTP, for clients that connect to a URL (http.js):
+//
+//   npx -y glitchless-mcp serve [--port 3001] [--host 127.0.0.1]
+//
+// The connection and the list of tools are in context.js; each area's tools are in tools/<area>.js, and a new area
+// is one more file imported in hosted-tools.js (or here, for a tool that acts on this computer).
 
 if (['login', 'logout', 'whoami'].includes(process.argv[2])) {
   const { cli } = await import('./login.js');
   process.exit(await cli(process.argv.slice(2)));
 }
 
-const { server } = await import('./context.js');
-await import('./tools/core.js');
-await import('./tools/analytics.js');
-await import('./tools/dashboard.js');
-await import('./tools/playtest.js');
-await import('./tools/reports.js');
-await import('./tools/deck.js');
-await import('./tools/store-reviews.js');
-await import('./tools/revenue.js');
-await import('./tools/workspace.js');
-
-await server.connect(new StdioServerTransport());
+if (process.argv[2] === 'serve') {
+  const { serve } = await import('./http.js');
+  await serve(process.argv.slice(3)).catch((err) => {
+    console.error(err.message);
+    process.exit(1);
+  });
+} else {
+  const { serveStdio } = await import('@modelcontextprotocol/server/stdio');
+  const { createServer } = await import('./context.js');
+  await import('./hosted-tools.js');
+  await import('./tools/playtest.js');
+  await import('./tools/deck.js');
+  serveStdio(() => createServer());
+}

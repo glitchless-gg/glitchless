@@ -23,15 +23,15 @@ await new Promise((r) => api.listen(0, '127.0.0.1', r));
 process.env.GLITCHLESS_URL = `http://127.0.0.1:${api.address().port}`;
 process.env.GLITCHLESS_SERVICE = 'starlift';
 
-const { server } = await import('../src/context.js');
+const { createServer } = await import('../src/context.js');
 await import('../src/tools/core.js');
 await import('../src/tools/analytics.js');
 await import('../src/tools/dashboard.js');
-const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
-const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+const { Client } = await import('@modelcontextprotocol/client');
+const { InMemoryTransport } = await import('@modelcontextprotocol/server');
 
 const [a, b] = InMemoryTransport.createLinkedPair();
-await server.connect(a);
+await createServer().connect(a);
 const client = new Client({ name: 'test', version: '0' });
 await client.connect(b);
 

@@ -415,7 +415,7 @@ function pick(o, keys) {
 // wishlists and revenue only on a link made to show sums.
 function sharedStorePanel(ctx, p, shared, currency) {
   if (STORE_PANELS[p.type].shared === true || shared?.sums === true) return storePanel(ctx, p, { currency });
-  return { empty: true, why: p.type === 'store_revenue' ? 'Revenue is not shown on this shared board.' : 'Units, returns and wishlists are not shown on this shared board.' };
+  return { empty: true, why: STORE_PANELS[p.type].hidden?.(p) ?? 'Not shown on this shared board.' };
 }
 
 function panelData(ctx, p, board, maps, currency) {
@@ -520,7 +520,7 @@ function panelData(ctx, p, board, maps, currency) {
       const list = versions(ctx, { stats, events: 0, by });
       if (!list.length) return { empty: true, why: by ? `No session sent its ${STEAM_LABELS[by]} in this window: the game reads it from Steamworks when it runs from Steam.` : 'No versions in this window.' };
       if (!stats.length) return { empty: true, why: 'This page has no stat panels to compare.' };
-      return { ...(by ? { by } : {}), columns: versionColumns(stats, ctx), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, values: v.board })) };
+      return { ...(by ? { by } : {}), columns: versionColumns(stats, ctx), rows: list.map((v) => ({ version: v.version, sessions: v.sessions, first_seen: v.first_seen, first_seen_ever: v.first_seen_ever ?? null, values: v.board })) };
     }
     case 'live':
       return { live: true };

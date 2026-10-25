@@ -6,6 +6,7 @@ import { VIEWS, saveDashboard, resetDashboard } from '../dashboard.js';
 import { Widget, Icon } from '../components.jsx';
 import { timeAgo } from '../format.js';
 import { NoGame } from './Overview.jsx';
+import { BrandSettings } from '../brand.jsx';
 
 export function Pages() {
   const f = useFilters();
@@ -156,6 +157,7 @@ export function Pages() {
           <textarea className="board-editor" spellCheck={false} value={json} onChange={(e) => (setJson(e.target.value), setNote(null))} />
         </Widget>
       )}
+      <BrandSettings service={f.service} />
     </div>
   );
 }

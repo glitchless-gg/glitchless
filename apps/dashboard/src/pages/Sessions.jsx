@@ -146,7 +146,7 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
               {has.levels && (
                 <td>
                   {s.levels.map((l) => (
-                    <span key={l} className="tag" style={s.completed.includes(l) ? { background: '#efe7fb', color: '#5420a0' } : undefined}>
+                    <span key={l} className="tag" style={s.completed.includes(l) ? { background: 'var(--done-bg)', color: 'var(--done)' } : undefined}>
                       {l}
                     </span>
                   ))}
@@ -266,7 +266,7 @@ export function SessionDetail({ route }) {
   const frames = data.frames || [];
   const currentIdx = timeline.reduce((acc, e, i) => (e.ts <= (t ?? 0) ? i : acc), -1);
   const markers = [
-    ...(t ? [{ ts: t, label: '▶', color: '#14213d' }] : []),
+    ...(t ? [{ ts: t, label: '▶', color: 'var(--ink)' }] : []),
     ...data.timeline.filter((e) => e.type === 'error').slice(0, 5).map((e) => ({ ts: e.ts, label: 'error', color: '#ff6b57' })),
     ...(s.annotations || []).map((a) => ({ ts: a.ts, label: 'agent', color: '#3d8cf5' })),
     ...data.timeline.filter((e) => e.type === 'bug_report').map((e) => ({ ts: e.ts, label: 'report', color: '#8a5cf6' })),
@@ -339,7 +339,7 @@ export function SessionDetail({ route }) {
         {state ? (
           <>
             <LevelMap map={map ? { image: map.image } : null} bounds={map?.bounds || autoBounds(positions.filter((p) => p[1] === state.level))} axis={map?.axis || 'xy'} path={state.path} cursor={state.cursor} deaths={deathsHere.map((d) => ({ ...d }))} />
-            <input type="range" min={t0} max={t1} value={t ?? t0} onChange={(e) => setT(Number(e.target.value))} style={{ width: '100%', marginTop: 10, accentColor: '#14213d' }} />
+            <input type="range" min={t0} max={t1} value={t ?? t0} onChange={(e) => setT(Number(e.target.value))} style={{ width: '100%', marginTop: 10, accentColor: 'var(--ink)' }} />
             <div className="muted mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
               <span>{fmtTime(t0)}</span>
               <span>
@@ -404,7 +404,7 @@ export function SessionDetail({ route }) {
           height={180}
           unit="ms"
           series={[
-            { label: 'p95 frame (ms)', values: frames.map((fr) => fr.p95), color: '#14213d', width: 2 },
+            { label: 'p95 frame (ms)', values: frames.map((fr) => fr.p95), color: 'var(--ink)', width: 2 },
             { label: 'worst frame (ms)', values: frames.map((fr) => fr.max), color: '#ff6b57', dash: [3, 3] },
           ]}
           thresholds={[{ value: 16.7, color: '#1fae84', label: 'budget' }]}

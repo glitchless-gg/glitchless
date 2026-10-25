@@ -1436,6 +1436,7 @@ export function sessionDetail(ctx, id, maps) {
 
 // ───────────────────────────── versions ─────────────────────────────
 
+// Oldest first, in release order (releaseOrder), so the last two are the newest version and the one before it.
 // `by` (a Steam fact, STEAM_DIMENSIONS) compares Steam branches or builds the same way instead (steamGroups).
 export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
   if (by) return steamGroups(ctx, { stats, events, by });
@@ -1452,7 +1453,8 @@ export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
     if (!framesBy.has(c.version)) framesBy.set(c.version, []);
     framesBy.get(c.version).push(c);
   }
-  const list = [...sessionsBy].map(([version, sessions]) => ({ version, ...summarize(sessions, framesBy.get(version) || []) }));
+  const seen = ctx.versionsFirstSeen;
+  const list = [...sessionsBy].map(([version, sessions]) => ({ version, ...summarize(sessions, framesBy.get(version) || []), first_seen_ever: seen?.get(version) ?? null }));
   // The game's own numbers per version: the board's stats (`stats`, board panels of type stat) and the
   // per-session rate of its most sent events. Counts are per session, so versions with more players compare.
   const top = customEvents(ctx).events.slice(0, events).map((e) => e.name);
@@ -1473,7 +1475,53 @@ export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
       return base ? round((count(p.event) / base) * 100, 1) : null;
     });
   }
-  return list.sort((a, b) => a.first_seen - b.first_seen);
+  return releaseOrder(ctx, list);
+}
+
+// Versions (rows with `version` and `first_seen`, the first session start in the range) oldest first, the same
+// whatever the range: by the store's first sighting of each (ctx.versionsFirstSeen, version → the time of its earliest
+// event, over everything the store keeps). A range that starts after a release, while players of the version
+// before it still play, often sees the new version first, and must still put it last. A version the index doesn't
+// have came before it began, so it goes first. Without a sighting, versions that all read as version numbers
+// (1.2, 1.10.0, 2.0.0-beta.3) go in that order, and any others in the order the range first saw them.
+export function releaseOrder(ctx, list) {
+  const seen = ctx.versionsFirstSeen;
+  const at = (v) => seen?.get(v.version);
+  const numbered = list.filter((v) => at(v) == null).every((v) => versionParts(v.version));
+  const fallback = (a, b) => (numbered ? compareVersionNumbers(a.version, b.version) : 0) || a.first_seen - b.first_seen;
+  return list.sort((a, b) => {
+    const [x, y] = [at(a), at(b)];
+    if (x != null && y != null) return x - y || a.first_seen - b.first_seen;
+    if (x != null || y != null) return x != null ? 1 : -1;
+    return fallback(a, b);
+  });
+}
+
+// "1.2.3", "v1.2", "2.0.0-beta.3+build.7" → { nums, pre }, else null (a commit hash, a name).
+function versionParts(v) {
+  const m = /^v?(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(String(v));
+  return m ? { nums: m[1].split('.').map(Number), pre: m[2]?.split('.') ?? null } : null;
+}
+
+// Semantic version precedence: numbers part by part (1.2 = 1.2.0), then a pre-release before its release, its
+// parts numbers before words.
+function compareVersionNumbers(a, b) {
+  const [x, y] = [versionParts(a), versionParts(b)];
+  for (let i = 0; i < Math.max(x.nums.length, y.nums.length); i++) {
+    const d = (x.nums[i] ?? 0) - (y.nums[i] ?? 0);
+    if (d) return d;
+  }
+  if (!x.pre || !y.pre) return (x.pre ? -1 : 0) + (y.pre ? 1 : 0);
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    const [p, q] = [x.pre[i], y.pre[i]];
+    if (p === q) continue;
+    if (p === undefined || q === undefined) return p === undefined ? -1 : 1;
+    const [np, nq] = [/^\d+$/.test(p), /^\d+$/.test(q)];
+    if (np && nq) return Number(p) - Number(q);
+    if (np !== nq) return np ? -1 : 1;
+    return p < q ? -1 : 1;
+  }
+  return 0;
 }
 
 // A board stat's metric as a version summary names it.
@@ -1515,7 +1563,8 @@ function steamGroups(ctx, { stats, events, by }) {
     });
     return v;
   });
-  return list.sort((a, b) => a.first_seen - b.first_seen);
+  // Steam build IDs only grow, so builds go in build order; branches in the order the range first saw them.
+  return list.sort((a, b) => (by === 'steam_build' ? Number(a.version) - Number(b.version) : 0) || a.first_seen - b.first_seen);
 }
 
 // The metrics both a version comparison and a playtest run report for one group of sessions (or their

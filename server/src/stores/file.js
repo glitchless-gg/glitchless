@@ -15,9 +15,16 @@
 //   deleteReport(projectId, service, id)        deletes one and its screenshot
 //   getDashboard(projectId, service)            the game's saved dashboard (board.js), or null
 //   putDashboard(projectId, service, dashboard) saves it; null goes back to the automatic dashboard
+//   getBrand(projectId, service)                the game's branding (brand.js): accent, banner position, and what each
+//                                               image is; or null. putBrand(projectId, service, brand) saves it (null:
+//                                               none). Optional: a store without them has no branding (501)
+//   getBrandImage(projectId, service, kind)     the logo's or banner's bytes, or null; putBrandImage(…, kind, bytes)
+//                                               saves them in an item (here a file) of their own, null deletes them
 //   putSourcemap, getSourcemap, sourcemaps, deleteSourcemaps   a web build's source maps (sourcemaps.js)
 //   cohorts(projectId, service, from, to)       players first seen on each UTC day starting in [from, to]: day → Set of
 //                                               ids (retention, analytics.js), over everything the store holds
+//   versionsFirstSeen(projectId, service)       version → the time of its earliest event, over everything the store
+//                                               has: the order versions are compared in (analytics.js releaseOrder)
 //   services(projectId)
 //   clear(projectId, service)
 //   claimBatch(projectId, service, id)          true the first time a batch ID comes (SPEC §2 batch_id), false for
@@ -32,7 +39,9 @@
 //
 // Bug reports are kept apart from the events: their records in reports.jsonl, each screenshot as an image file in
 // reports/ (<id>.jpg), read only when one report is opened. Source maps are files too:
-// sourcemaps/<project>/<service>/<version>/<file>.map, each part one path segment (sourcemaps.js keySeg).
+// sourcemaps/<project>/<service>/<version>/<file>.map, each part one path segment (sourcemaps.js keySeg). A game's
+// branding is in brands.json, like dashboards in dashboards.json, and each of its images a file in
+// brand/<project>/<service>.<kind>.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,6 +82,8 @@ export class FileStore {
         try {
           const e = JSON.parse(line);
           const p = this.ownerOf(e);
+          // Lines older than the cutoff stay on disk, and still say when their version was first seen.
+          if (p) noteVersion(p, e);
           if (p && e.ts >= cutoff) p.events.push(e);
         } catch {
           // skip torn writes
@@ -92,6 +103,12 @@ export class FileStore {
     }
     this.loadReports(cutoff);
     this.loadBatches();
+    const brandsFile = path.join(this.dir, 'brands.json');
+    if (fs.existsSync(brandsFile)) {
+      for (const [projectId, brands] of Object.entries(JSON.parse(fs.readFileSync(brandsFile, 'utf8')))) {
+        if (isProjectId(projectId)) for (const [service, brand] of Object.entries(brands)) this.project(projectId).brands.set(service, brand);
+      }
+    }
     const dashboardsFile = path.join(this.dir, 'dashboards.json');
     if (fs.existsSync(dashboardsFile)) {
       for (const [projectId, dashboards] of Object.entries(JSON.parse(fs.readFileSync(dashboardsFile, 'utf8')))) {
@@ -178,6 +195,7 @@ export class FileStore {
       added++;
       rollup([e], minutesOf(p, e.service));
       noteFirstSeen(p, e);
+      noteVersion(p, e);
       const day = new Date(e.ts).toISOString().slice(0, 10);
       if (!byDay.has(day)) byDay.set(day, []);
       byDay.get(day).push(JSON.stringify(e));
@@ -229,6 +247,10 @@ export class FileStore {
       if (day >= from && day <= to) (out.get(day) || out.set(day, new Set()).get(day)).add(id);
     }
     return out;
+  }
+
+  async versionsFirstSeen(projectId, service) {
+    return new Map(this.project(projectId).versions.get(service) || []);
   }
 
   // A report's record goes to reports.jsonl and its screenshot to reports/<id>.<ext>. One sent again is skipped.
@@ -327,6 +349,35 @@ export class FileStore {
     await fs.promises.writeFile(path.join(this.dir, 'dashboards.json'), JSON.stringify(all));
   }
 
+  async getBrand(projectId, service) {
+    return this.project(projectId).brands.get(service) ?? null;
+  }
+
+  async putBrand(projectId, service, brand) {
+    const p = this.project(projectId);
+    if (brand) p.brands.set(service, brand);
+    else p.brands.delete(service);
+    const all = Object.fromEntries([...this.projects].filter(([, q]) => q.brands.size).map(([id, q]) => [id, Object.fromEntries(q.brands)]));
+    await fs.promises.writeFile(path.join(this.dir, 'brands.json'), JSON.stringify(all));
+  }
+
+  brandFile(projectId, service, kind) {
+    this.project(projectId);
+    return path.join(this.dir, 'brand', projectId, `${keySeg(service)}.${kind}`);
+  }
+
+  async getBrandImage(projectId, service, kind) {
+    return fs.promises.readFile(this.brandFile(projectId, service, kind)).catch(() => null);
+  }
+
+  async putBrandImage(projectId, service, kind, bytes) {
+    const file = this.brandFile(projectId, service, kind);
+    if (!bytes) return fs.promises.rm(file, { force: true });
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(`${file}.tmp`, bytes);
+    await fs.promises.rename(`${file}.tmp`, file);
+  }
+
   async services(projectId) {
     const by = new Map();
     for (const e of this.project(projectId).events) {
@@ -345,6 +396,7 @@ export class FileStore {
     p.events = p.events.filter((e) => e.service !== service);
     p.rollups.delete(service);
     p.firstSeen.delete(service);
+    p.versions.delete(service);
     for (const [k, m] of p.maps) if (m.service === service) p.maps.delete(k);
     for (const [id, r] of p.reports) {
       if (r.service !== service) continue;
@@ -376,8 +428,9 @@ export class FileStore {
   project(projectId) {
     if (!isProjectId(projectId)) throw new Error(`invalid projectId: ${projectId}`);
     let p = this.projects.get(projectId);
-    // firstSeen: service → Map(player id → the first time this store saw them), for cohorts().
-    if (!p) this.projects.set(projectId, (p = { events: [], maps: new Map(), reports: new Map(), rollups: new Map(), dashboards: new Map(), firstSeen: new Map() }));
+    // firstSeen: service → Map(player id → the first time this store saw them), for cohorts(); versions: service →
+    // Map(version → the time of its earliest event), for versionsFirstSeen().
+    if (!p) this.projects.set(projectId, (p = { events: [], maps: new Map(), reports: new Map(), rollups: new Map(), dashboards: new Map(), brands: new Map(), firstSeen: new Map(), versions: new Map() }));
     return p;
   }
 
@@ -401,6 +454,13 @@ function noteFirstSeen(p, e) {
   if (!seen) p.firstSeen.set(e.service, (seen = new Map()));
   const was = seen.get(e.player_id);
   if (was === undefined || e.ts < was) seen.set(e.player_id, e.ts);
+}
+
+function noteVersion(p, e) {
+  if (e.version == null) return;
+  let seen = p.versions.get(e.service);
+  if (!seen) p.versions.set(e.service, (seen = new Map()));
+  if (!(seen.get(e.version) <= e.ts)) seen.set(e.version, e.ts);
 }
 
 function utcDay(ts) {

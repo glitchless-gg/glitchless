@@ -14,6 +14,7 @@ import { eventSums } from './sums.js';
 import { Presence, PLAYERS_NOW_MS } from './presence.js';
 import { storeReviews, storeVitals } from './reviews.js';
 import { revenueQuery } from './revenue.js';
+import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
@@ -30,6 +31,9 @@ const REPORT_QUERIES = new Set(['reports', 'overview', 'findings', 'dashboard', 
 const SOURCEMAP_QUERIES = new Set(['errors', 'overview', 'findings', 'board', 'playtest']);
 // Queries that show retention or new players: they read who is new from the store's first-seen index (ctx.cohorts).
 const RETENTION_QUERIES = new Set(['players', 'board', 'store_revenue']);
+// Queries that compare versions or pick the newest: they put versions in release order from the store's first
+// sighting of each (ctx.versionsFirstSeen, analytics.js releaseOrder), whatever the range.
+const VERSION_QUERIES = new Set(['overview', 'versions', 'findings', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
 // Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
 // their panels, finding, queries.
 const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
@@ -160,6 +164,60 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return json(res, 405, { error: 'GET, PUT or DELETE' });
       }
 
+      // A game's branding (brand.js): read with the read scope (a share link reads its own game's), changed with the
+      // dashboard scope. /v1/brand is the accent and banner position (JSON); /v1/brand/logo and /v1/brand/banner are
+      // the images (the body is the image), served with their own type and cached for good at their hashed address.
+      if (p === '/v1/brand' || p === '/v1/brand/logo' || p === '/v1/brand/banner') {
+        const service = url.searchParams.get('service');
+        if (!service) return json(res, 400, { error: 'service is required' });
+        if (!store.getBrand) return json(res, 501, { error: 'this server keeps no branding' });
+        const kind = p === '/v1/brand' ? null : p.slice('/v1/brand/'.length);
+        const { projectId } = reader;
+        if (req.method === 'GET') {
+          if (!allow('read')) return;
+          // A share link's answers are kept for SHARE_MAX_AGE_S, as its board's are, so a crowd opening it costs one read.
+          const key = reader.share && `${projectId}\nshare brand\n${p}?${url.searchParams}`;
+          let a = key && cache.get(key);
+          if (!a || Date.now() - a.at >= SHARE_MAX_AGE_S * 1000) {
+            if (reader.share && limited(res, reader)) return;
+            a = { at: Date.now(), ...(await brandAnswer(projectId, service, kind, url.searchParams.get('v'))) };
+            if (key) cache.set(key, a);
+            if (cache.size > 200) cache.delete(cache.keys().next().value);
+          }
+          return send(res, a.status, a.body, a.type, a.headers);
+        }
+        if (req.method !== 'PUT' && req.method !== 'DELETE') return json(res, 405, { error: 'GET, PUT or DELETE' });
+        if (!allow('dashboard')) return;
+        const brand = await store.getBrand(projectId, service);
+        try {
+          let next = { ...brand };
+          if (kind && req.method === 'PUT') {
+            const bytes = await readBody(req, BRAND_IMAGES[kind].maxBytes);
+            next[kind] = checkImage(kind, bytes);
+            await store.putBrandImage(projectId, service, kind, bytes);
+          } else if (kind) next[kind] = null;
+          else if (req.method === 'PUT') {
+            let input;
+            try {
+              input = JSON.parse(await readBody(req));
+            } catch {
+              return json(res, 400, { error: 'invalid JSON' });
+            }
+            if ('accent' in input) next.accent = checkAccent(input.accent);
+            if ('banner_focus' in input) next.banner_focus = checkFocus(input.banner_focus);
+          } else next = null; // DELETE /v1/brand: back to no branding
+          next = hasBrand(next) ? { ...next, updated_at: Date.now(), updated_by: String(req.headers['x-glitchless-client'] || 'api').slice(0, 40) } : null;
+          await store.putBrand(projectId, service, next);
+          // An image the brand no longer names goes once the brand stops naming it.
+          for (const k of Object.keys(BRAND_IMAGES)) if (brand?.[k] && !next?.[k]) await store.putBrandImage(projectId, service, k, null);
+          clearCache(projectId);
+          return json(res, 200, { service, brand: brandBody(service, next) });
+        } catch (err) {
+          if (err instanceof BrandError || err instanceof IntakeError) return json(res, err.status, { error: err.message });
+          throw err;
+        }
+      }
+
       if (p.startsWith('/v1/query/') && req.method === 'GET') {
         if (!allow('read')) return;
         const { projectId } = reader;
@@ -278,6 +336,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     // Steam facts the sessions must have (steam_branch=beta…, SPEC §4c), and the one versions are grouped by instead.
     q.where = steamWhere(params);
     q.by = name === 'versions' && STEAM_DIMENSIONS.includes(params.get('by')) ? params.get('by') : null;
+    let versionsSeen;
     const contextFor = async (q) => {
       let ctx;
       if (store.context) {
@@ -293,6 +352,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
       // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
       if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
+      if (VERSION_QUERIES.has(name) && store.versionsFirstSeen) ctx.versionsFirstSeen = await (versionsSeen ??= store.versionsFirstSeen(projectId, service));
       return ctx;
     };
     const ctx = await contextFor(q);
@@ -451,6 +511,22 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
   }
 
   // `shares: false` keeps share links' answers, which may be SHARE_MAX_AGE_S old (new events don't clear them).
+  // GET /v1/brand (the brand as JSON) or one of its images: served with its own type, never sniffed or run, and kept for
+  // good at the address that names its hash.
+  async function brandAnswer(projectId, service, kind, v) {
+    const brand = await store.getBrand(projectId, service);
+    const answer = (status, body) => ({ status, body: JSON.stringify(body), type: 'application/json', headers: { 'Cache-Control': 'no-store' } });
+    if (!kind) return answer(200, { service, brand: brandBody(service, brand) });
+    const bytes = brand?.[kind] ? await store.getBrandImage(projectId, service, kind) : null;
+    if (!bytes) return answer(404, { error: `this game has no ${kind}` });
+    return {
+      status: 200,
+      body: Buffer.from(bytes),
+      type: brand[kind].type,
+      headers: { 'Cache-Control': v === brand[kind].hash ? 'private, max-age=31536000, immutable' : 'no-cache', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Content-Disposition': 'inline' },
+    };
+  }
+
   function clearCache(projectId, { shares = true } = {}) {
     for (const key of cache.keys()) if (key.startsWith(`${projectId}\n`) && (shares || !key.startsWith(`${projectId}\nshare `))) cache.delete(key);
   }
@@ -474,12 +550,17 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 // whole minute, so a game polling the same URL gets the same answer from a cache for a minute. Everything
 // else is refused. The request's parameters become exactly those, so no other filter or id reaches a query.
 // (The store still cuts a range to the reader's retention.)
-const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services']);
+const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services', '/v1/brand', '/v1/brand/logo', '/v1/brand/banner']);
 const pinned = (share) => Number.isFinite(share.from) && Number.isFinite(share.to);
 function shareOnly(req, url, share) {
   const q = url.searchParams;
   const other = (k) => q.get(k) != null && q.get(k) !== share[k];
   if (req.method !== 'GET' || !SHARE_QUERIES.has(url.pathname) || other('service') || other('page')) return 'a share link shows one board and nothing else';
+  // Its game's branding: the brand, or one image at its hashed address.
+  if (url.pathname.startsWith('/v1/brand')) {
+    url.search = new URLSearchParams({ service: share.service, ...(q.get('v') ? { v: q.get('v') } : {}) }).toString();
+    return null;
+  }
   const to = pinned(share) ? share.to : (num(q.get('to')) ?? Math.floor(Date.now() / MINUTE) * MINUTE);
   const days = Math.min(num(q.get('days')) > 0 ? num(q.get('days')) : 1, SHARE_MAX_DAYS);
   const from = Math.max(pinned(share) ? share.from : (num(q.get('from')) ?? to - days * DAY), to - SHARE_MAX_DAYS * DAY);

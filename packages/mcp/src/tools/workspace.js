@@ -1,18 +1,12 @@
-// A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, or `glitchless-mcp login`):
-// sign in, create a game, and make or revoke share links. Listing games, reading any of them and saving their
-// dashboards are the other tools, with `game`.
+// A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
+// OAuth over HTTP): sign in, create a game, and make or revoke share links. Listing games, reading any of them and
+// saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
-import { server, BASE, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, fail, useCredentials, readCredentials } from '../context.js';
+import { define, base, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
 import { startSignIn, CLOUD_URL } from '../login.js';
 
-const act = (name, description, inputSchema, handler, annotations = {}) =>
-  server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint: false, ...annotations } }, async (args) => {
-    try {
-      return await handler(args);
-    } catch (err) {
-      return fail(err);
-    }
-  });
+// A tool that needs the manage scope. opts: { title, annotations, scope, local }.
+const act = (name, description, inputSchema, handler, { title, annotations, ...opts } = {}) => define(name, { title, description, inputSchema, annotations }, handler, { scope: 'manage', ...opts });
 
 let signingIn = null;
 
@@ -23,7 +17,7 @@ act(
   async ({ url }) => {
     if (isWorkspace()) {
       const c = readCredentials();
-      return reply(`Already signed in to ${c?.workspace?.name ?? 'a workspace'} on ${BASE}.`, { games: (await workspaceGames(true)).map((g) => g.name) });
+      return reply(`Already signed in to ${c?.workspace?.name ?? 'a workspace'} on ${base()}.`, { games: (await workspaceGames(true)).map((g) => g.name) });
     }
     if (signingIn?.done) {
       const c = signingIn.done;
@@ -37,7 +31,7 @@ act(
       throw err;
     }
     if (signingIn) return reply(`Still waiting for approval. Ask the person to open ${signingIn.verification_url} and approve the code ${signingIn.user_code}.`, {});
-    const started = await startSignIn({ url: url || (BASE.includes('localhost') ? CLOUD_URL : BASE) });
+    const started = await startSignIn({ url: url || (base().includes('localhost') ? CLOUD_URL : base()) });
     signingIn = { verification_url: started.verification_url, user_code: started.user_code };
     started.wait().then(
       (c) => {
@@ -48,7 +42,8 @@ act(
     );
     return reply(`Ask the person to open this link and approve the code ${started.user_code}:\n${started.verification_url}\nThe code works for 10 minutes. This server switches to the workspace as soon as it's approved.`, {});
   },
-  { openWorldHint: true },
+  // Over HTTP the person signs in with OAuth before any tool runs, so this one is for stdio only.
+  { title: 'Sign in', annotations: { openWorldHint: true }, scope: 'read', local: true },
 );
 
 act(
@@ -79,6 +74,8 @@ act(
     const out = await agent('POST', `/games/${pid}/shares`, { service: svc, page, name, days, sums: sums === true });
     return reply(`Share link to ${svc}'s "${page}" page (shown once):\n${out.url}`, out.share);
   },
+  // Anyone with the link sees the board, signed out: it publishes beyond the workspace.
+  { annotations: { openWorldHint: true } },
 );
 
 act(
@@ -89,7 +86,7 @@ act(
     const pid = await projectFor(game);
     return reply('Share links:', (await agent('GET', `/games/${pid}/shares`)).shares);
   },
-  { readOnlyHint: true },
+  { annotations: { readOnlyHint: true, idempotentHint: true } },
 );
 
 act(
@@ -101,5 +98,5 @@ act(
     await agent('DELETE', `/games/${pid}/shares/${encodeURIComponent(id)}`);
     return reply(`Revoked ${id}.`, {});
   },
-  { destructiveHint: true },
+  { annotations: { destructiveHint: true, idempotentHint: true } },
 );

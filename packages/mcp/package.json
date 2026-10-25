@@ -64,12 +64,13 @@
     "bundle": "esbuild src/index.js --bundle --platform=node --format=esm --target=node20 --external:playwright --outfile=../../plugin/glitchless/mcp/glitchless-mcp.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\""
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/server": "^2.4.0",
     "zod": "^4.6.7",
     "glitchless-playtest": "^0.2.0",
     "glitchless-deck": "^0.1.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
     "esbuild": "^0.28.2"
   }
 }

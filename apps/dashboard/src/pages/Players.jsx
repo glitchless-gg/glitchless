@@ -154,7 +154,7 @@ export function Players({ route }) {
                   <td>
                     <div className="barrow" style={{ gridTemplateColumns: '1fr 56px' }}>
                       <div className="bt">
-                        <div className="bf" style={{ width: `${l.completion_pct || 0}%`, background: l.completion_pct < 50 ? '#ff6b57' : l.completion_pct < 75 ? '#f2a93b' : '#14213d' }} />
+                        <div className="bf" style={{ width: `${l.completion_pct || 0}%`, background: l.completion_pct < 50 ? '#ff6b57' : l.completion_pct < 75 ? '#f2a93b' : 'var(--ink)' }} />
                       </div>
                       <div className="bv">{fmtPct(l.completion_pct, 0)}</div>
                     </div>

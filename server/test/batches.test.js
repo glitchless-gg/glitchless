@@ -13,15 +13,18 @@ import { parsePayload } from '../src/ingest.js';
 import { STORES } from './helpers/stores.js';
 
 const now = Date.now();
+// The session played a few minutes ago: a store that answers whole minutes up to its compactor's watermark (the lake)
+// has all of it, whatever second of the minute this file loads at.
+const t0 = now - 3 * 60_000;
 
 function body(sessionId, batchId, events) {
   return JSON.stringify({ service: 'zoomies', env: 'prod', version: '1.0.0', session_id: sessionId, player_id: null, sdk: 'test', ...(batchId ? { batch_id: batchId } : {}), events });
 }
 
 const first = (sid) => [
-  { type: 'session_start', ts: now - 60_000, level: null, session_type: 'user', device: { browser: 'Godot', os: 'iOS' } },
-  { type: 'custom', ts: now - 59_000, level: null, name: 'open', attrs: { what: 'free' } },
-  { type: 'hitch', ts: now - 58_000, level: null, duration_ms: 1610, causes: ['shader_compile', 'frozen'] },
+  { type: 'session_start', ts: t0, level: null, session_type: 'user', device: { browser: 'Godot', os: 'iOS' } },
+  { type: 'custom', ts: t0 + 1000, level: null, name: 'open', attrs: { what: 'free' } },
+  { type: 'hitch', ts: t0 + 2000, level: null, duration_ms: 1610, causes: ['shader_compile', 'frozen'] },
 ];
 
 async function serve(store) {
@@ -55,7 +58,7 @@ for (const [kind, make] of Object.entries(STORES)) {
       // The same batch saved by a game that closed and replayed under a new session ID (anonymous mode) is a repeat too.
       assert.deepEqual((await app.send(body('s_replayed000000', 'b_3mvfmbg6ddrslf25', first()))).body, { accepted: 0, duplicate: true });
       // The next batch of the session, and a batch of another game with the same ID, are new.
-      assert.equal((await app.send(body('s_3mvfmbg6ddrslf25', 'b_nextbatch000001', [{ type: 'session_end', ts: now - 50_000, level: null, reason: 'background', duration_s: 10 }]))).body.accepted, 1);
+      assert.equal((await app.send(body('s_3mvfmbg6ddrslf25', 'b_nextbatch000001', [{ type: 'session_end', ts: t0 + 10_000, level: null, reason: 'background', duration_s: 10 }]))).body.accepted, 1);
       assert.equal((await app.send(JSON.stringify({ ...JSON.parse(b), service: 'other-game' }))).body.accepted, 3);
       // An older SDK sends no batch ID: every copy is kept, as before.
       const old = body('s_old0000000000', null, first());

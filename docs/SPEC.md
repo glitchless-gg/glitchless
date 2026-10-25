@@ -226,7 +226,7 @@ players' numbers leave out. Each Steam fact (§4c: `steam_branch`,
 | `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports) |
 | `reports` | Players' bug reports, newest first (at most 500): `{reports:[{id, ts, session_id, level, version, env, note, position: {x, y, z} \| null, device (one line), has_screenshot}]}`. Filters: `env`, `version`, `type`, `sessions`, the Steam facts |
 | `report` | One bug report: `id=` → `{report:{…as listed, sdk, recent, frames, screenshot}}` (`screenshot=0` leaves the picture out), from any time the store still keeps; `{error}` if there is none |
-| `versions` | `{versions:[{version, sessions, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact |
+| `versions` | `{versions:[{version, sessions, first_seen, first_seen_ever, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. Versions come oldest first in release order (§4), so the last two are the newest and the one before it whatever the range; `first_seen` is a version's first session start in the range, `first_seen_ever` when the store first saw it (null when it can't say). `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact; builds come in build order, branches in the order the range first saw them |
 | `findings` | Ranked findings with evidence — what the MCP server hands to coding agents |
 | `events` | The game's own metrics (`custom` events): `{ts, sessions, events:[{name, count, sessions, players, per_session, series, attrs:[{key, values:[{value, count, sessions}], avg}], sums:[{attr, currency, sum, events}]}]}`. `sums` adds up each numeric attribute, per currency (null for events sent without one, §3b), the most sent first. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]` |
 | `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{currency?, pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
@@ -265,6 +265,26 @@ findings, its own events, then levels, frame time, errors and deaths only if it 
 sends custom events, Performance if it sends frame times, Errors, Bug Reports if players sent bug reports, Players,
 Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are compared on the stat panels of every board.
 
+**Branding** ([`server/src/brand.js`](../server/src/brand.js)). A game can have an accent colour, a logo and a banner
+(its key art) on its boards and their share links, kept apart from the dashboard spec. `GET /v1/brand?service=` (read
+scope; a share link reads its own game's) answers `{service, brand}`: null, or `{accent, logo, banner, updated_at,
+updated_by}`, where `logo` and `banner` are null or `{url, type, width, height, bytes, hash}` and the banner also has
+`focus` (`top`, `center` or `bottom`: the part kept in view when it is cropped to a strip). `url` names the image's
+hash, so a new image gets a new address. `PUT /v1/brand?service=` with `{accent?, banner_focus?}` (`accent` is
+`"#rrggbb"` or null), `PUT /v1/brand/logo?service=` and `PUT /v1/brand/banner?service=` with the image itself as the
+body, and `DELETE` on each (on `/v1/brand`: all of it) need the `dashboard` scope (on Glitchless Cloud: Owners,
+Admins and Developers). An image is checked by its content, never its name or declared type: PNG, JPEG or WebP only,
+never SVG or HTML (415); a logo is at most 100 KB and 1024 × 1024 pixels, a banner 300 KB and 4096 × 2048 (413, 400).
+The dashboard fits a logo inside 256 px and crops a banner to 1600 × 400 around its focus, in the browser, as WebP.
+`GET /v1/brand/logo` and `/v1/brand/banner` answer the image with its own type, `X-Content-Type-Options: nosniff`,
+`Content-Security-Policy: default-src 'none'; sandbox` and, at its current hash, `Cache-Control: private,
+max-age=31536000, immutable` (`no-cache` at another). The dashboard shows the banner behind the board's title with a
+dark scrim, so the title reads on any picture in either theme (a short strip on a phone), the logo by the game's name,
+and the accent on links, the selected page, stats, the map's installs and the main chart series (not when it is close
+to one of the other series' colours), darkened or lightened in each theme to 3:1 on a panel (4.5:1 for links). Agents
+set the accent with `glitchless_set_dashboard`'s `accent` and see the brand in `glitchless_dashboard`; people upload
+the images in Edit pages → Look.
+
 | panel `type` | fields | shows |
 | --- | --- | --- |
 | `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now) or `event`, optional `per`, optional `sum` | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
@@ -280,13 +300,26 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 | `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h) or Stripe (§3i): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`); Stripe's refunds, new paying customers, revenue by product (§3i; no installs, MRR, subscriptions, trials or stores) |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `retention` | `limit` (days, 1 to 90; default 14) | D1, D7 and D30 by first-seen day (§4), the latest days; a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
-| `versions` | `by` | the board's own stat panels, version by version; with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
+| `versions` | `by` | the board's own stat panels, version by version in release order (§4; rows `{version, sessions, first_seen, first_seen_ever, values}`); with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
 | `live` | `events` | events as they arrive, optionally only these names or types |
 | `positions` | `level`, `show` (`deaths`, `path` or `both`; default `deaths`), `bin` | where players died on one level, and where they went, as counts per bin (below) |
 
 Every panel takes `title`, `note` and `size` (`s`, `m` or `l`). An event is written like a funnel step: `name`,
 `name=value` (any attribute) or `name:key=value`. A panel with no data in the window says why instead of showing
-zeros.
+zeros (the first sentence of a long reason; the rest behind the info icon).
+
+The dashboard (`apps/dashboard/src/pages/Board.jsx`) shows each panel's title, its number or chart and at most one
+short line (what it adds up to: "323 sessions", "93 transactions on RevenueCat"). The `note`, what the numbers are and
+how they were counted, the store's or revenue source's `notes` and anything left out of a sum sit behind an info icon
+next to the title, which opens on hover, on keyboard focus and on a tap. The board query and the CSV carry all of it.
+A panel's CSV button shows while the panel is pointed at or has focus (always, on a touch screen). `s` is a quarter
+of the row, `m` half and `l` all of it; on a board narrower than 840 px stats go two to a row and the rest full width,
+and under 520 px (a phone) every panel is full width. Panels keep their order and are packed: each goes at the highest
+place it fits that isn't above the panel before it (nor to its left at about the same height), so a short panel
+doesn't stretch to the tallest beside it and the next ones fill in under it; panels side by side whose heights are
+within about 36 px are made the same height. Share links lay boards out the same way. The dashboard is light or dark: the viewer
+picks System, Light or Dark at the foot of the side navigation (kept in the browser, `glitchless.theme`), and a share
+link always follows the viewer's system.
 
 **By platform, browser and device tier** (`sessionsBy` and `SESSION_SPLITS` in `server/src/analytics.js`). `by` on a
 breakdown or a series can split the sessions themselves, each by its `session_start.device`, in plain words:
@@ -404,8 +437,8 @@ secret key it is shown once: the control table keeps its SHA-256 and the last fo
 
 **Previews.** Posted on X, Slack or Discord, a link shows its own card. `/s/<token>` answers crawlers with the board's
 title (the game and the page), a line of its stats for the last 7 days (a pinned link's own dates) and
-`/s/<token>/card.png`: a 1200 x 630 image of the game, the page, its first four stats and its first chart (a series
-panel, else frame time), with Glitchy, drawn as SVG and turned into a PNG with resvg (WebAssembly). Both read the
+`/s/<token>/card.png`: a 1200 x 630 image of the game, the page, its first four numbers (stats, a store's revenue
+or counts, a store's rating out of 5) and its first chart (a series panel, else frame time), with Glitchy, drawn as SVG and turned into a PNG with resvg (WebAssembly). Both read the
 board exactly as the link does, so they show nothing the link doesn't; a revoked or expired link gets the site's
 card and no numbers. People are sent on to the board at `/#/share/<token>`, which links made before `/s/` still
 open.
@@ -428,7 +461,8 @@ who opens one sees what everyone sees. A share reader may only:
 
 - `GET /v1/query/board`, for its page, and
 - `GET /v1/query/services`, which lists its service only, with `max_range_days` at most 30 and `window`: a
-  pinned link's `{from, to}`, or null.
+  pinned link's `{from, to}`, or null, and
+- `GET /v1/brand` and its images (§3b), for its service; their answers are kept for a minute, as its board's are.
 
 Everything else is 403: other pages, services and queries, `/v1/live`, `/v1/dashboard` and `/v1/data`. The
 request's parameters are replaced by `service`, `page`, `from` and `to` (a pinned link's own, whatever the request
@@ -555,7 +589,7 @@ least a minute of frames, and 3 hitches at least; **crashed** is §4's crash.
 | --- | --- | --- | --- |
 | `crashes` | at least 5 players who started a session in the last 6 hours crashed, that share is at least 3× the usual share for the same hours (from 20+ players in them), and a Poisson test puts it past chance (p ≤ 0.01) | 3+ players and 2× the usual share | `crashes` |
 | `new_error` | an error first occurred after alerts went on and within the last day, and has reached 10 players, or 5% of the day's sessions and 3 sessions at least | it occurs in the last day | `error-<fingerprint>` |
-| `release` | of the two newest versions with 5+ sessions in the day (as the version finding picks them), each has 20+ players, and the newer one's share of players who stuttered (or crashed) is higher by a one-sided two-proportion z ≥ 2.33 (p < 0.01), 1.5× and 5 points (2 points for crashes) | still higher, by z ≥ 1 and 1.2× | `release-<prev>-<cur>` |
+| `release` | of the two newest versions with 5+ sessions in the day, in release order (§4), as the version finding picks them, each has 20+ players, and the newer one's share of players who stuttered (or crashed) is higher by a one-sided two-proportion z ≥ 2.33 (p < 0.01), 1.5× and 5 points (2 points for crashes) | still higher, by z ≥ 1 and 1.2× | `release-<prev>-<cur>` |
 | `quiet` | the last 3 hours had under a tenth of the usual sessions for those hours, which average 10+ an hour (from 3+ days of the profile) | until the last hour has half its usual (then a "back" note, once, if the alert was sent, and the key clears) | `quiet` |
 | `store` | Google Play's 28-day user-perceived crash rate is over 1.09%, or its user-perceived ANR rate over 0.47%: the bad-behaviour thresholds past which Play may show a game to fewer people ([Android vitals](https://developer.android.com/topic/performance/vitals)). Glitchless Cloud only, from the Google Play integration's freshest day (§3f), at most 7 days old | 90% of the threshold | `play-crash`, `play-anr` |
 | `plan` | the workspace's play sessions this period reach 80%, then 100%, of what its plan includes (or of its cap, when that is lower). Glitchless Cloud only, once per workspace | once per share and period | `K#<period>#80`, `#100` |
@@ -863,7 +897,10 @@ if their role drops to Viewer.
 1. The agent calls `POST /v1/agent/connect` with `{ client }` (what it calls itself) and gets `{ device_code,
    user_code, verification_url, expires_in, interval }`. The code lasts 10 minutes.
 2. It shows the person `verification_url` (`…/#/connect?code=XXXX-XXXX`). Signed in there, they check the code,
-   pick the workspace and the scopes, and approve or decline.
+   pick the workspace and the scopes, and approve or decline. Anyone in the workspace can approve: a Viewer's
+   approval gives `read` only, and the other scopes take an Owner, Admin or Developer, as does making a key in
+   Settings → Agent access. There, Owners, Admins and Developers see and revoke every key, and a Viewer the ones
+   they approved.
 3. The agent polls `POST /v1/agent/connect/poll` with `{ device_code }` every `interval` seconds: `pending`,
    `slow_down`, `denied`, `expired`, or `approved` with `{ token, workspace, scopes }`, which comes back once.
 
@@ -1187,6 +1224,14 @@ Glitchless's own billing).
   is exact from session states; past 31 days a store with daily rollups (§7) reads each day's sample of new players
   against the days' samples of active players, exact while small and named in `meta.approximate` (`retention`) once
   capped.
+- **Release order**: how versions are compared, oldest to newest, the same whatever the range: by when the store first
+  saw each version (the time of its earliest event, from the store's version first-seen index, §6). A range that
+  starts after a release, while players of the version before it still play, often sees the new version first; the
+  version finding, the `versions` query (and `glitchless_compare_versions`, which compares its last two), the alerts'
+  release rule and the weekly summary still compare the new version against the old one. A version the index has no
+  sighting of (one the game already had when the index began) came before every version it has, so it goes first.
+  Without sightings, versions that all read as version numbers (`1.2`, `1.10.0`, `2.0.0-beta.3`) go in version order,
+  a pre-release before its release; anything else (commit hashes, names) in the order the range first saw them.
 - **Players now**: sessions that sent anything in the last two minutes, counted as batches arrive. The open-source
   server counts in memory, per process; Glitchless Cloud counts across every server instance (whole minutes: this
   one and the two before) through the `auth.playersNow` hook.
@@ -1418,10 +1463,18 @@ activity feed and the query cache are all per project.
 ([`server/src/stores/file.js`](../server/src/stores/file.js) lists them), and optionally `cohorts` (the players first
 seen on each day of a range, for retention): the file store keeps that first-seen index in memory over everything it
 holds; a store without one counts players as new on their first day in the range (`first_seen: 'range'`). Optionally
+`versionsFirstSeen(projectId, service)`: a Map of version → the `ts` of its earliest event (intake keeps a device's
+clock within 7 days), the release order (§4) every version comparison uses. The file store keeps it in memory over
+every line it has on disk; Glitchless Cloud keeps it per game in DynamoDB from the moment its index began (the
+versions the game had then have no sighting). A store without it orders versions by number, or by the range. Optionally
 `claimBatch(projectId, service, id)` and `releaseBatch(...)` keep repeats of a batch out (§2 `batch_id`): `claimBatch`
 is true the first time an ID comes within 7 days and false after, across every server process the store serves (the
 file store keeps the IDs in `batches.jsonl`; Glitchless Cloud makes one conditional write per batch), and intake
 releases an ID whose events it failed to store, so the game's retry is taken. A store without them keeps every copy.
+Optionally `getBrand(projectId, service)`, `putBrand(…, brand)`, `getBrandImage(…, kind)` and `putBrandImage(…, kind,
+bytes)` keep a game's branding (§3b): what it is in one item and each image's bytes in one of their own (the file
+store: `brands.json` and `brand/<project>/<service>.<kind>`; Glitchless Cloud: items under `P#<project>#BRAND`, an
+image at most 300 KB of a 400 KB item). A store without them answers `/v1/brand` with 501.
 
 Data written before projects existed (JSONL lines without `project_id`) is read as the `default` project, so no
 migration is needed.

@@ -82,7 +82,7 @@ export function Events({ route }) {
                 </td>
                 <td className="num">{fmtNum(e.per_session, 1)}</td>
                 <td>
-                  <Sparkline values={e.series} color="#14213d" />
+                  <Sparkline values={e.series} color="var(--ink)" />
                 </td>
               </tr>
             ))}
@@ -92,7 +92,7 @@ export function Events({ route }) {
 
       {picked && (
         <Widget span={5} title={picked.name} sub={`${fmtNum(picked.count)} in ${fmtNum(picked.sessions)} sessions`} actions={<button className="btn" onClick={() => add({ type: 'series', event: picked.name, size: 'm' }, picked.name)}>Add to board</button>}>
-          <TimeSeries ts={data.ts} height={120} bars series={[{ label: picked.name, values: picked.series, color: '#14213d' }]} />
+          <TimeSeries ts={data.ts} height={120} bars series={[{ label: picked.name, values: picked.series, color: 'var(--ink)' }]} />
           {picked.attrs.map((a) => (
             <div key={a.key} style={{ marginTop: 14 }}>
               <div className="row" style={{ justifyContent: 'space-between' }}>

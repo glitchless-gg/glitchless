@@ -7,7 +7,9 @@
 // refunds), installs and active users per day next to the new players and players Glitchless measured, revenue by
 // version next to what Glitchless measured, installs and revenue by country on a world map (world.jsx) with a ranked
 // list, revenue by store next to the sessions on each store's platform, and revenue by product (Stripe). And a store's
-// score: its reviews' average stars next to the store's own rating. storeCsv is what their CSV button downloads.
+// score: its reviews' average stars next to the store's own rating. storeLine is a panel's one short line, storeInfo
+// what its info icon says (how the store counts, what Glitchless measured beside it, the server's notes); storeCsv is
+// what their CSV button downloads.
 import { useState } from 'react';
 import { TimeSeries, Status } from './components.jsx';
 import { fmtNum, fmtPct, fmtTime, fmtMoney } from './format.js';
@@ -45,54 +47,95 @@ export function StorePanelBody({ p }) {
 
 const money = (p, v, short = false) => (v == null ? '–' : p.currency ? fmtMoney(v, p.currency, short) : fmtNum(v, 2));
 
-// A store_revenue number: its value and the line under it (what it is out of, or how it moved).
+const days = (p) => `${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.incomplete ? ' (today so far)' : ''}`;
+
+// A store_revenue number: its value, the short line under it (what it counts, or how it moved) and what its info icon
+// says (where it comes from, over which days, what Glitchless measured beside it).
 export function revenueStat(p) {
   const value = p.currency ? fmtMoney(p.value, p.currency) : fmtNum(p.value);
+  const notes = [p.note, ...(p.notes ?? [])];
+  const anonymous = p.anonymous && !notes.some((n) => /player IDs/.test(n ?? '')) && 'Glitchless counts new players only when the game sends player IDs (install mode).';
   if (p.measure === 'revenue') {
-    const own = p.glitchless ? ` · the game's purchase events: ${money(p, p.glitchless.sum)} (${fmtPct(p.glitchless.coverage_pct, 0)})` : '';
     // Stripe's: payments rather than transactions, and what's left after refunds, disputes and its fees.
-    const net = p.net != null ? ` · ${money(p, p.net)} left after refunds and fees` : '';
-    return { value, sub: `${p.transactions != null ? `${fmtNum(p.transactions)} ${p.net != null ? (p.transactions === 1 ? 'payment' : 'payments') : 'transactions'} on ` : 'On '}${p.store_name}, ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.incomplete ? ' (today so far)' : ''}${net}${own}` };
+    const what = p.net != null ? ['payment', 'payments'] : ['transaction', 'transactions'];
+    return {
+      value,
+      sub: p.transactions != null ? `${fmtNum(p.transactions)} ${what[p.transactions === 1 ? 0 : 1]} on ${p.store_name}` : `On ${p.store_name}`,
+      info: [`${p.store_name}'s revenue over ${days(p)}.`, p.net != null && `${money(p, p.net)} left after refunds and fees.`, p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`, ...notes],
+    };
   }
-  if (p.measure === 'refunds') return { value, sub: `${fmtNum(p.refund_count)} ${p.refund_count === 1 ? 'refund' : 'refunds'}${p.disputes ? ` and ${money(p, p.disputes)} in disputes` : ''} on ${p.store_name}${p.share_pct != null ? `, ${fmtPct(p.share_pct)} of revenue` : ''}` };
-  if (p.measure === 'customers') return { value, sub: `First-time buyers on ${p.store_name}, ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.glitchless ? ` · Glitchless: ${fmtNum(p.glitchless.new_players)} new players` : p.anonymous ? ' · Glitchless counts new players with player IDs (install mode)' : ''}` };
-  if (p.measure === 'per_player') return { value, sub: `${money(p, p.total)} over ${fmtNum(p.players)} ${p.players_are_sessions ? 'sessions' : 'players'} measured` };
+  if (p.measure === 'refunds') return { value, sub: `${fmtNum(p.refund_count)} ${p.refund_count === 1 ? 'refund' : 'refunds'}${p.share_pct != null ? `, ${fmtPct(p.share_pct)} of revenue` : ''}`, info: [`Refunds on ${p.store_name}.`, p.disputes && `And ${money(p, p.disputes)} in disputes.`, ...notes] };
+  if (p.measure === 'customers') return { value, sub: p.glitchless ? `${fmtNum(p.glitchless.new_players)} new players measured` : `First-time buyers on ${p.store_name}`, info: [`First-time buyers on ${p.store_name} over ${days(p)}.`, p.glitchless && `Glitchless measured ${fmtNum(p.glitchless.new_players)} new players.`, anonymous, ...notes] };
+  if (p.measure === 'per_player') return { value, sub: `${money(p, p.total)} over ${fmtNum(p.players)} ${p.players_are_sessions ? 'sessions' : 'players'}`, info: [`${p.store_name}'s revenue over the ${p.players_are_sessions ? 'sessions' : 'players'} Glitchless measured.`, p.players_are_sessions && 'The game sends no player IDs, so this is per session.', ...notes] };
   if (p.measure === 'installs' || p.measure === 'active_users') {
-    if (p.from_overview) return { value, sub: `On ${p.store_name}, the last 28 days` };
-    if (p.measure === 'installs') return { value, sub: `${p.store_name}'s new customers (first app opens), ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'} · ${p.glitchless ? `Glitchless: ${fmtNum(p.glitchless.new_players)} new players (${fmtPct(p.glitchless.pct, 0)})` : p.anonymous ? 'Glitchless counts new players with player IDs (install mode)' : 'no new players measured'}` };
-    return { value, sub: `${p.store_name}'s active customers, average of ${fmtNum(p.days)} ${p.days === 1 ? 'day' : 'days'}${p.glitchless ? ` · Glitchless: ${fmtNum(p.glitchless.players_per_day)} players a day` : ''}` };
+    if (p.from_overview) return { value, sub: `On ${p.store_name}, the last 28 days`, info: [`From ${p.store_name}'s overview.`, ...notes] };
+    if (p.measure === 'installs')
+      return {
+        value,
+        sub: p.glitchless ? `${fmtNum(p.glitchless.new_players)} new players measured (${fmtPct(p.glitchless.pct, 0)})` : `New customers on ${p.store_name}`,
+        info: [`${p.store_name}'s new customers (first app opens) over ${days(p)}.`, p.glitchless ? `Glitchless measured ${fmtNum(p.glitchless.new_players)} new players, ${fmtPct(p.glitchless.pct, 0)} of them.` : anonymous || 'Glitchless measured no new players.', ...notes],
+      };
+    return { value, sub: p.glitchless ? `${fmtNum(p.glitchless.players_per_day)} players a day measured` : `Active customers on ${p.store_name}`, info: [`${p.store_name}'s active customers, the average of ${fmtNum(p.days)} ${p.days === 1 ? 'day' : 'days'}.`, p.glitchless && `Glitchless measured ${fmtNum(p.glitchless.players_per_day)} players a day.`, ...notes] };
   }
   const change = p.change == null ? null : `${p.change >= 0 ? '+' : '−'}${p.currency ? fmtMoney(Math.abs(p.change), p.currency) : fmtNum(Math.abs(p.change))} since ${p.since}`;
-  return { value, sub: p.from_overview ? `On ${p.store_name} now` : (change ?? `On ${p.store_name}, ${p.day}`) };
+  if (p.from_overview) return { value, sub: `On ${p.store_name} now`, info: notes };
+  return { value, sub: change ?? `On ${p.store_name}, ${p.day}`, info: [change && `On ${p.store_name}, ${p.day}.`, ...notes] };
 }
 
-// How to read a revenue panel's numbers (server/src/revenue.js notes).
-function Notes({ notes }) {
-  if (!notes?.length) return null;
-  return (
-    <div className="muted" style={{ marginTop: 8, fontSize: 11.5, display: 'grid', gap: 4 }}>
-      {notes.map((n, i) => (
-        <div key={i}>{n}</div>
-      ))}
-    </div>
-  );
+// A store panel's one short line under its title: how much is on it. The store score and the map say theirs in the
+// panel itself.
+export function storeLine(p) {
+  if (p.type === 'store_reviews') return `${fmtNum(p.total)} reviews, ${fmtPct(p.positive_pct, 0)} positive · ${fmtNum(p.perf_negative)} about performance`;
+  if (p.type === 'store_revenue') {
+    if (p.measure === 'by_day') return `${money(p, p.total)} on ${p.store_name}`;
+    if (p.measure === 'players_by_day') return `${fmtNum(p.installs)} installs on ${p.store_name}${p.new_players != null ? ` · ${fmtNum(p.new_players)} new players measured` : ''}`;
+    if (p.measure === 'by_version' && p.payers > 0) return `${fmtNum(p.payers)} ${p.payers === 1 ? 'player' : 'players'} paid${p.payers_pct != null ? ` (${fmtPct(p.payers_pct)} of those measured)` : ''}`;
+  }
+  return null;
+}
+
+// What a store panel's info icon says: how the store counts, what Glitchless measured beside it, the server's notes.
+export function storeInfo(p) {
+  if (p.empty) return [];
+  const notes = p.notes ?? [];
+  if (p.type === 'store_reviews')
+    return [
+      `Reviews by ${p.bucket_ms === DAY ? 'day' : 'hour'}. ${fmtNum(p.perf_negative)} negative ${p.perf_negative === 1 ? 'review mentions' : 'reviews mention'} stutter, lag, fps, freezes or crashes.`,
+      p.summary && `On ${p.store_name} overall: ${p.summary.desc} (${fmtNum(p.summary.positive)} positive, ${fmtNum(p.summary.negative)} negative).`,
+      p.source && `${SOURCE[p.source]?.(p.store_name)}. Frame p95 and crash-free are what Glitchless measured on that build's version.`,
+    ];
+  if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).`];
+  if (p.type === 'store_players') return [p.why_no_coverage || `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`];
+  if (p.type === 'store_sales') return [`By day, as ${p.store_name} reports them${p.store === 'steam' ? ' (units and returns by Pacific day, wishlists by GMT day), from the Financial API key' : ''}.`];
+  if (p.type === 'store_score') return scoreInfo(p);
+  if (p.type !== 'store_revenue') return notes;
+  if (p.measure === 'by_day')
+    return [
+      `By UTC day, as ${p.store_name} counts it${p.net_total != null ? `: ${money(p, p.refunds_total)} of it refunded or disputed, and ${money(p, p.net_total)} left after Stripe's fees` : ' (production purchases only)'}.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`,
+      p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`,
+      ...notes.filter((n) => !/add up to/.test(n)),
+    ];
+  if (p.measure === 'players_by_day') return [`Installs are ${p.store_name}'s new customers, by UTC day.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`, ...notes];
+  if (p.measure === 'by_version')
+    return [
+      p.unjoined ? `Left: the payments on ${p.store_name} tied to a session Glitchless measured, by that session's version.` : `Left: what ${p.store_name} counted on each version (production purchases only).`,
+      'Right: what Glitchless measured of the same version.',
+      p.platforms?.length > 0 && `By platform: ${p.platforms.map((x) => `${x.platform} ${money(p, x.revenue)}`).join(', ')}.`,
+      ...notes,
+    ];
+  if (p.measure === 'by_country') return [`${money(p, p.totals.revenue)} from ${fmtNum(p.totals.purchases)} ${p.store === 'stripe' ? 'payments' : 'purchases'}.`, ...notes];
+  return notes;
 }
 
 // Revenue's colour is the source's own (RevenueCat's coral, Stripe's purple).
-const DAY_COLORS = { revenue: '#f2545b', refunds: '#f2a93b', purchases: '#14213d' };
+const DAY_COLORS = { revenue: '#f2545b', refunds: '#f2a93b', purchases: 'var(--ink)' };
 
 function RevenueDays({ p }) {
   const own = p.series.find((s) => s.key === 'purchases' || s.label === "The game's purchase events");
-  const color = (s, i) => (s === own ? DAY_COLORS.purchases : i === 0 ? (p.store === 'stripe' ? '#635bff' : DAY_COLORS.revenue) : (DAY_COLORS[s.key] ?? '#7a7890'));
+  const color = (s, i) => (s === own ? DAY_COLORS.purchases : i === 0 ? (p.store === 'stripe' ? '#635bff' : DAY_COLORS.revenue) : (DAY_COLORS[s.key] ?? '#8a94a6'));
   return (
     <>
       <TimeSeries ts={p.ts} height={150} bars={p.series.length === 1} format={(v) => money(p, v, true)} series={p.series.map((s, i) => ({ ...s, color: color(s, i), ...(s === own ? { dash: [4, 3] } : {}) }))} />
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        {money(p, p.total)} by UTC day, as {p.store_name} counts it{p.net_total != null ? `, ${money(p, p.refunds_total)} of it refunded or disputed and ${money(p, p.net_total)} left after Stripe's fees` : ' (production purchases only)'}
-        {p.incomplete_day ? `; ${p.incomplete_day} is still filling in` : ''}.
-        {p.glitchless && ` The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`}
-      </div>
-      <Notes notes={p.notes?.filter((n) => !/add up to/.test(n))} />
     </>
   );
 }
@@ -127,12 +170,11 @@ function RevenueProducts({ p }) {
           </tbody>
         </table>
       </div>
-      <Notes notes={p.notes} />
     </>
   );
 }
 
-const CUSTOMER_COLORS = { installs: '#f2545b', new_players: '#14213d', active_users: '#f2a93b', players: '#3d8cf5' };
+const CUSTOMER_COLORS = { installs: '#f2545b', new_players: 'var(--ink)', active_users: '#f2a93b', players: '#3d8cf5' };
 
 // Installs (the source's new customers) and active users per day, next to the new players and players Glitchless
 // measured those days.
@@ -140,10 +182,6 @@ function CustomerDays({ p }) {
   return (
     <>
       <TimeSeries ts={p.ts} height={150} series={p.series.map((s) => ({ ...s, color: CUSTOMER_COLORS[s.key], ...(s.measured ? { dash: [4, 3] } : {}) }))} />
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        {fmtNum(p.installs)} installs by UTC day as {p.store_name} counts them{p.new_players != null ? `; Glitchless saw ${fmtNum(p.new_players)} new players` : ''}{p.incomplete_day ? `; ${p.incomplete_day} is still filling in` : ''}.
-      </div>
-      <Notes notes={p.notes} />
     </>
   );
 }
@@ -198,12 +236,6 @@ function RevenueVersions({ p }) {
           </tbody>
         </table>
       </div>
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        {p.unjoined ? `Left: the payments on ${p.store_name} tied to a session Glitchless measured, by that session's version` : `Left: what ${p.store_name} counted on each version (production purchases only)`}. Right: what Glitchless measured of the same version.
-        {p.platforms?.length > 0 && ` By platform: ${p.platforms.map((x) => `${x.platform} ${money(p, x.revenue)}`).join(', ')}.`}
-        {p.payers != null && p.payers > 0 && ` ${fmtNum(p.payers)} ${p.payers === 1 ? 'player' : 'players'} paid${p.payers_pct != null ? ` (${fmtPct(p.payers_pct)} of those measured)` : ''}.`}
-      </div>
-      <Notes notes={p.notes} />
     </>
   );
 }
@@ -238,7 +270,7 @@ function Countries({ p }) {
         )}
         <span className="muted">
           {installs ? `${fmtNum(t.installs)} installs · ` : ''}
-          {money(p, t.revenue)} from {fmtNum(t.purchases)} {bought[1]} · {fmtNum(p.countries)} {p.countries === 1 ? 'country' : 'countries'}
+          {money(p, t.revenue)} · {fmtNum(p.countries)} {p.countries === 1 ? 'country' : 'countries'}
         </span>
       </div>
       <div className="countries-body">
@@ -276,7 +308,6 @@ function Countries({ p }) {
           )}
         </div>
       </div>
-      <Notes notes={p.notes} />
     </div>
   );
 }
@@ -329,7 +360,6 @@ function RevenueStores({ p }) {
           </tbody>
         </table>
       </div>
-      <Notes notes={p.notes} />
     </>
   );
 }
@@ -337,22 +367,31 @@ function RevenueStores({ p }) {
 const stars = (v) => (v == null ? '–' : `${fmtNum(v, 1)} ★`);
 
 // A store's score: the store's own overall number where it has one (Apple's rating, Steam's summary), then the average
-// of the written reviews synced in the window, each saying which it is.
+// of the written reviews synced in the window; how each is counted is in scoreInfo, behind the info icon.
 function Score({ p }) {
   const o = p.overall;
   const s = p.synced;
+  const steam = p.store === 'steam';
   return (
-    <>
-      <div className="score">
-        {o && p.store === 'app_store' && <Figure label="Apple's rating" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}, every version${o.current ? ` · ${o.current.version ?? 'this version'}: ${stars(o.current.average)} (${fmtNum(o.current.count)})` : ''}`} />}
-        {o && p.store === 'steam' && <Figure label="On Steam" value={o.desc ?? fmtPct(o.positive_pct, 0)} sub={`${fmtPct(o.positive_pct, 0)} positive of ${fmtNum(o.count)} reviews`} />}
-        {s && p.store !== 'steam' && <Figure label={o ? 'Reviews in this window' : 'Average of the reviews in this window'} value={stars(s.average)} sub={`${fmtNum(s.reviews)} written ${s.reviews === 1 ? 'review' : 'reviews'} synced${s.since ? ` since ${fmtTime(s.since, true)}` : ''}`} title={`Stars: ${s.stars.map((n, i) => `${i + 1}★ ${n}`).join(', ')}`} />}
-        {s && p.store === 'steam' && <Figure label="Reviews in this window" value={fmtPct(s.positive_pct, 0)} sub={`positive, of ${fmtNum(s.reviews)}`} />}
-        {!s && <Figure label="Reviews in this window" value="–" sub="none synced" />}
-      </div>
-      <Notes notes={p.notes} />
-    </>
+    <div className="score">
+      {o && p.store === 'app_store' && <Figure label="Apple's rating" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}${o.current ? ` · ${o.current.version ?? 'this version'}: ${stars(o.current.average)}` : ''}`} />}
+      {o && steam && <Figure label="On Steam" value={o.desc ?? fmtPct(o.positive_pct, 0)} sub={`${fmtPct(o.positive_pct, 0)} of ${fmtNum(o.count)} positive`} />}
+      {s && <Figure label={o ? 'This window' : null} value={steam ? fmtPct(s.positive_pct, 0) : stars(s.average)} sub={steam ? `positive, of ${fmtNum(s.reviews)}` : `${fmtNum(s.reviews)} ${s.reviews === 1 ? 'review' : 'reviews'}${o ? '' : ' in this window'}`} />}
+      {!s && <Figure label="This window" value="–" sub="no reviews synced" />}
+    </div>
   );
+}
+
+function scoreInfo(p) {
+  const o = p.overall;
+  const s = p.synced;
+  return [
+    o && p.store === 'app_store' && `Apple's rating: ${stars(o.average)} from ${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}.${o.current ? ` ${o.current.version ?? 'This version'}: ${stars(o.current.average)} from ${fmtNum(o.current.count)}.` : ''}`,
+    o && p.store === 'steam' && `Steam's summary of every review: ${fmtPct(o.positive_pct, 0)} positive of ${fmtNum(o.count)}.`,
+    s && `${p.store === 'steam' ? 'The positive share' : 'The average'} of the ${fmtNum(s.reviews)} written ${s.reviews === 1 ? 'review' : 'reviews'} synced in this window${s.since ? ` (since ${fmtTime(s.since, true)})` : ''}.`,
+    s?.stars && `Stars: ${s.stars.map((n, i) => `${i + 1}★ ${n}`).join(', ')}.`,
+    ...(p.notes ?? []),
+  ];
 }
 
 function Reviews({ p }) {
@@ -369,17 +408,8 @@ function Reviews({ p }) {
           { ...perf, color: '#f2a93b', dash: [4, 3] },
         ]}
       />
-      <div className="muted" style={{ margin: '6px 0 10px' }}>
-        {fmtNum(p.total)} reviews by {p.bucket_ms === DAY ? 'day' : 'hour'}, {fmtPct(p.positive_pct, 0)} positive; {fmtNum(p.perf_negative)} negative about stutter, lag, fps, freezes or crashes.
-        {p.summary && (
-          <>
-            {' '}
-            On {p.store_name} overall: <b>{p.summary.desc}</b> ({fmtNum(p.summary.positive)} positive, {fmtNum(p.summary.negative)} negative).
-          </>
-        )}
-      </div>
       {p.builds.length > 0 && (
-        <div className="tablewrap">
+        <div className="tablewrap" style={{ marginTop: 8 }}>
           <table className="dt">
             <thead>
               <tr>
@@ -420,11 +450,6 @@ function Reviews({ p }) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-      {p.source && (
-        <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-          {SOURCE[p.source]?.(p.store_name)}. Frame p95 and crash-free are what Glitchless measured on that build’s version.
         </div>
       )}
     </>
@@ -486,9 +511,6 @@ function Vitals({ p }) {
           </tbody>
         </table>
       </div>
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        Left: what {p.store_name} measured{p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).
-      </div>
       {p.notes.length > 0 && (
         <div style={{ marginTop: 10, display: 'grid', gap: 6 }}>
           {p.notes.map((n, i) => (
@@ -531,10 +553,7 @@ function Players({ p }) {
         <Figure label="Coverage" value={p.coverage_pct == null ? '–' : fmtPct(p.coverage_pct, 0)} title={`Sessions Glitchless measured at the minutes ${p.store_name} was asked, over its players online then`} />
         <Figure label={`Peak on ${p.store_name}`} value={fmtNum(p.peak.store)} sub={fmtTime(p.peak.ts, true)} />
       </div>
-      <TimeSeries ts={p.ts} height={140} series={[{ ...counted, color: '#14213d' }, ...(measured ? [{ ...measured, color: '#3d8cf5' }] : [])]} />
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        {p.why_no_coverage || `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`}
-      </div>
+      <TimeSeries ts={p.ts} height={140} series={[{ ...counted, color: 'var(--ink)' }, ...(measured ? [{ ...measured, color: '#3d8cf5' }] : [])]} />
     </>
   );
 }
@@ -551,7 +570,7 @@ function Sales({ p }) {
       <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
         {p.sales_series && (
           <div style={{ flex: 1, minWidth: 220 }}>
-            <TimeSeries ts={p.ts} height={130} series={[{ ...p.sales_series[0], color: '#14213d' }, { ...p.sales_series[1], color: '#ff6b57' }]} />
+            <TimeSeries ts={p.ts} height={130} series={[{ ...p.sales_series[0], color: 'var(--ink)' }, { ...p.sales_series[1], color: '#ff6b57' }]} />
           </div>
         )}
         {p.wishlist_series && (
@@ -560,21 +579,16 @@ function Sales({ p }) {
           </div>
         )}
       </div>
-      <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        By day, as {p.store_name} reports them{p.store === 'steam' ? ' (units and returns by Pacific day, wishlists by GMT day), from the Financial API key' : ''}.
-      </div>
     </>
   );
 }
 
 function Figure({ label, value, sub, title }) {
   return (
-    <div title={title}>
-      <div className="muted" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 600 }}>{value}</div>
-      {sub && <div className="muted" style={{ fontSize: 11.5 }}>{sub}</div>}
+    <div className="figure" title={title}>
+      {label && <div className="figure-label">{label}</div>}
+      <div className="figure-value">{value}</div>
+      {sub && <div className="figure-sub">{sub}</div>}
     </div>
   );
 }

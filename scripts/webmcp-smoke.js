@@ -10,8 +10,8 @@
 // The game's own tools are found by name: <game>_load_level, <game>_get_state, and the tool that
 // sets off the expensive effect (<game>_trigger_zoomies or <game>_throw_ball).
 
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { Client } from '@modelcontextprotocol/client';
+import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { chromium } from 'playwright';
 
 const args = process.argv.slice(2);

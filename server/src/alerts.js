@@ -100,13 +100,15 @@ export function alertRules(saved = {}) {
   return out;
 }
 
-// The context the rules read: what query `name` gets from app.js, with no drill-downs.
+// The context the rules read: what query `name` gets from app.js, with no drill-downs, and versions in release order
+// (the store's first sighting of each, analytics.js releaseOrder), so "the newest" is the newest whatever the day.
 export async function contextFor(store, projectId, q) {
   const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: 'all', sessions: null, plan: q.plan ?? null };
   let ctx;
   if (store.context) ctx = await store.context(projectId, query, 'alerts');
   else ctx = buildContext(await store.query(projectId, query), query, await store.rollups(projectId, query));
   ctx.reports = store.reports ? reportsOf(await store.reports(projectId, q.service, { from: q.from, to: q.to }), ctx) : [];
+  if (store.versionsFirstSeen) ctx.versionsFirstSeen = await store.versionsFirstSeen(projectId, q.service);
   return ctx;
 }
 
@@ -155,8 +157,8 @@ function playersIn(sessions, lo, hi) {
   return { sessions: n, total: all.size, crashed: crashed.size, byVersion: Object.fromEntries([...byVersion].map(([v, set]) => [v, set.size])) };
 }
 
-// The two newest versions with a few sessions (as the version finding picks them), each counted in players: those
-// who stuttered, those who crashed; and the level whose hitches a minute rose the most between them.
+// The two newest versions with a few sessions (as the version finding picks them, in release order), each counted in
+// players: those who stuttered, those who crashed; and the level whose hitches a minute rose the most between them.
 export function releaseStats(ctx, real = realSessions(ctx), vers = versions(ctx)) {
   const recent = vers.filter((v) => v.sessions >= 5);
   if (recent.length < 2) return null;

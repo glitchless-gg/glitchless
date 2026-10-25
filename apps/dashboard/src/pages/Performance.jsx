@@ -93,7 +93,7 @@ export function Performance({ route }) {
 
       <GroupTitle>Hitch analysis</GroupTitle>
       <Widget span={4} title="Likely causes" sub="attributed per hitch (frame > 50ms)">
-        <BarList rows={Object.entries(data.hitch_causes).sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ label: CAUSE_LABEL[c] || c, value: n, color: c === 'script' ? '#14213d' : c === 'shader_compile' ? '#3d8cf5' : '#f2a93b' }))} />
+        <BarList rows={Object.entries(data.hitch_causes).sort((a, b) => b[1] - a[1]).map(([c, n]) => ({ label: CAUSE_LABEL[c] || c, value: n, color: c === 'script' ? 'var(--ink)' : c === 'shader_compile' ? '#3d8cf5' : '#f2a93b' }))} />
       </Widget>
       <Widget span={4} title="What's on screen during hitches" sub="game context gauges: hitch frames vs smooth frames">
         {gauges.length ? (
@@ -184,7 +184,7 @@ export function Performance({ route }) {
           ts={s.ts}
           height={170}
           series={[
-            { label: 'geometries', values: s.geometries, color: '#14213d' },
+            { label: 'geometries', values: s.geometries, color: 'var(--ink)' },
             { label: 'JS heap (MB)', values: s.heap_mb, color: '#3d8cf5' },
           ]}
         />

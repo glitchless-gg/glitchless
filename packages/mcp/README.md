@@ -11,6 +11,10 @@ It's a stdio server. Run it with `npx`, no install needed:
 npx -y glitchless-mcp
 ```
 
+Apps that connect to a URL instead of starting a process (claude.ai, ChatGPT, Claude Code's HTTP servers) use
+Glitchless Cloud's hosted copy at `https://api.glitchless.gg/mcp` and sign in with OAuth: see
+[Glitchless by URL](../../docs/remote-mcp.md). It has the same tools, less the ones that act on your own computer.
+
 ## Sign in to a workspace (Glitchless Cloud)
 
 ```bash
@@ -25,6 +29,18 @@ or touches billing or people. `npx -y glitchless-mcp whoami` shows where you're 
 key, and Settings → Agent access in the dashboard lists and revokes keys. An agent can also sign in from inside a
 chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
 approve.
+
+## Serve it over HTTP yourself
+
+```bash
+npx -y glitchless-mcp serve [--port 3001] [--host 127.0.0.1]
+```
+
+The tools that work from a server (all but sign-in, playtests and the Steam Deck) at `http://127.0.0.1:3001/mcp`, over
+Streamable HTTP, for clients of the 2026-07-28 protocol and older ones alike. It reads with the same settings as the
+stdio server (below), for a self-hosted server or a signed-in workspace. It answers this computer only, and checks
+`Host` and `Origin` so web pages can't reach it; to listen on another address, set `GLITCHLESS_MCP_TOKEN` and have
+clients send it as `Authorization: Bearer`.
 
 ## Settings
 

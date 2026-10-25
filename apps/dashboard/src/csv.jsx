@@ -135,7 +135,7 @@ export function panelCsv(p) {
       const cols = p.columns.filter((c) => !c.hidden);
       return [
         [{ steam_branch: 'Steam branch', steam_build: 'Steam build' }[p.by] || 'Version', 'First seen', 'Sessions', ...cols.map((c) => columnHeader(c))],
-        ...p.rows.map((v) => [v.version, iso(v.first_seen), v.sessions, ...p.columns.flatMap((c, i) => (c.hidden ? [] : [v.values[i]]))]),
+        ...p.rows.map((v) => [v.version, iso(v.first_seen_ever ?? v.first_seen), v.sessions, ...p.columns.flatMap((c, i) => (c.hidden ? [] : [v.values[i]]))]),
       ];
     }
     case 'reports':

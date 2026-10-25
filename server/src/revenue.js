@@ -64,22 +64,23 @@ export const REVENUE_SOURCES = {
 const sourceName = (s) => REVENUE_SOURCES[s]?.name ?? s;
 // A source as its panels name it: a Stripe connection with a test-mode key says so everywhere.
 const nameOf = (st) => `${sourceName(st.store)}${st.mode === 'test' ? ' (test mode)' : ''}`;
-// What a store_revenue panel shows (its `measure`), with its default title and size.
+// What a store_revenue panel shows (its `measure`), with its default title and size; `count`: a number of players,
+// installs or subscriptions rather than money.
 export const MEASURES = {
   revenue: { title: 'Revenue', size: 's' },
   per_player: { title: 'Revenue per player', size: 's' },
-  installs: { title: 'Installs', size: 's' },
-  active_users: { title: 'Active users a day', size: 's' },
+  installs: { title: 'Installs', size: 's', count: true },
+  active_users: { title: 'Active users a day', size: 's', count: true },
   mrr: { title: 'MRR', size: 's' },
-  actives: { title: 'Active subscriptions', size: 's' },
-  trials: { title: 'Active trials', size: 's' },
+  actives: { title: 'Active subscriptions', size: 's', count: true },
+  trials: { title: 'Active trials', size: 's', count: true },
   by_day: { title: 'Revenue per day', size: 'm' },
-  players_by_day: { title: 'Installs and active users per day', size: 'm' },
+  players_by_day: { title: 'Installs and active users per day', size: 'm', count: true },
   by_version: { title: 'Revenue by version', size: 'l' },
   by_country: { title: 'Installs and revenue by country', size: 'l', paymentsTitle: 'Revenue by country' },
   by_store: { title: 'Revenue by store', size: 'm' },
   refunds: { title: 'Refunds', size: 's' },
-  customers: { title: 'New paying customers', size: 's' },
+  customers: { title: 'New paying customers', size: 's', count: true },
   by_product: { title: 'Revenue by product', size: 'm' },
 };
 // What a sync brings that writeRevenue keeps.
@@ -435,6 +436,7 @@ export const REVENUE_PANEL = {
   title: (p) => (REVENUE_SOURCES[p.store]?.payments && MEASURES[p.measure]?.paymentsTitle) || (MEASURES[p.measure]?.title ?? 'Revenue'),
   size: (p) => MEASURES[p.measure]?.size ?? 'm',
   shared: 'sums',
+  hidden: (p) => (MEASURES[p.measure]?.count ? 'Store figures are not shown on this shared board.' : 'Revenue is not shown on this shared board.'),
 };
 
 // A store_revenue panel's own fields: `measure` (one of MEASURES) and `store` (a revenue source; default the game's

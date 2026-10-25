@@ -69,7 +69,8 @@ export function pctStatus(v, ok, warn, higherIsBetter = true) {
   return v <= ok ? 'ok' : v <= warn ? 'warn' : 'alert';
 }
 
-export const PALETTE = ['#14213d', '#3d8cf5', '#1fae84', '#f2a93b', '#ff6b57', '#4fc1d9', '#2ee6a6', '#8a94a6'];
+// The first is the ink (navy, or pale on dark: styles.css), so a chart's main series reads on either.
+export const PALETTE = ['var(--ink)', '#3d8cf5', '#1fae84', '#f2a93b', '#ff6b57', '#4fc1d9', '#2ee6a6', '#8a94a6'];
 // A death cause's colour: the same for a cause on every page and level, whatever the game calls its causes.
 const CAUSE_PALETTE = ['#3d8cf5', '#f2a93b', '#ff6b57', '#1fae84', '#4fc1d9', '#2ee6a6', '#b07cf2', '#e0437a'];
 export function causeColor(cause) {
