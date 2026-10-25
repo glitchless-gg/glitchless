@@ -27,8 +27,8 @@
 //                players: [[ts, n]] | null, sales: [{ day, units, returns }] | null,
 //                wishlists: [{ day, adds, deletes, purchases, gifts }] | null } }
 //   Mark: { source, build_id?, version?, from, title?, url?, approx? }
-// A revenue source (RevenueCat) comes in the same way, under its name, with revenue instead of reviews: it is stored
-// and read here with the stores' data, and its panel, page and query are revenue.js's.
+// A revenue source (RevenueCat, Stripe) comes in the same way, under its name, with revenue instead of reviews: it is
+// stored and read here with the stores' data, and its panel, page and query are revenue.js's.
 import { versions, pct, round } from './analytics.js';
 import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue } from './revenue.js';
 
@@ -120,7 +120,9 @@ const inSegment = (r) => r.steam?.deck === true;
 //                                                 rating (the App Store's own: { day, at, average, count, countries:
 //                                                 [{ country, average, count, version, current_average,
 //                                                 current_count }] }); a revenue source's overview and charts (revenue.js)
-//   STORE#<projectId>#<store>  REV#… REVV#…       a revenue source's revenue by day and by version (revenue.js)
+//   STORE#<projectId>#<store>  REV#… REVV#…       a revenue source's revenue by day and by version, REVC#… REVS#… by
+//                              REVC#… REVS#…      country and store; a payments source's REVP#… by product, and
+//                              REVP#… RPAY#…      RPAY#<day> its purchases tied to sessions (revenue.js)
 //   STORE#<projectId>#<store>  RELEASES | NOTES   { items: [Mark] }
 //   STORE#<projectId>#<store>  META               { summary, synced_at, reviews }
 //   STORE#<projectId>#<store>  X#<name>           what the store adapter keeps for itself (Steam: its builds)
@@ -329,14 +331,15 @@ export function createStoreData(kv) {
         players: STORES[store]?.players ? players.sort((a, b) => a[0] - b[0]) : null,
         sales: sales.length ? sales.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
         wishlists: wishlists.length ? wishlists.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
-        ...(REVENUE_SOURCES[store] ? await readRevenue(kv, key, months) : {}),
+        ...(REVENUE_SOURCES[store] ? await readRevenue(kv, key, months, store) : {}),
       };
     },
 
     // What Settings shows of the data kept (a revenue source: its overview now, instead of reviews).
     async stats(projectId, store) {
       const [meta, overview] = await Promise.all([kv.get(pk(projectId, store), 'META'), REVENUE_SOURCES[store] ? kv.get(pk(projectId, store), 'SNAP#overview') : null]);
-      return meta ? { reviews: meta.reviews ?? 0, syncedAt: meta.synced_at ?? null, summary: meta.summary ?? null, ...(overview ? { overview: { at: overview.at, currency: overview.currency, metrics: overview.metrics } } : {}) } : null;
+      const { pk: _, sk, ...now } = overview ?? {};
+      return meta ? { reviews: meta.reviews ?? 0, syncedAt: meta.synced_at ?? null, summary: meta.summary ?? null, ...(overview ? { overview: now } : {}) } : null;
     },
 
     // Everything synced for a game from one store (a disconnected or changed app).
@@ -594,7 +597,8 @@ export function storePanelFields(p, at, BoardError) {
 // a revenue source (revenue.js).
 export function storePages(ctx, { frames = false } = {}) {
   const all = Object.entries(ctx.stores ?? {});
-  return [...all.filter(([store]) => STORES[store]).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) })), ...all.filter(([store]) => REVENUE_SOURCES[store]).map(([store], i) => revenuePage(store, { id: i ? `revenue-${store}` : 'revenue' }))];
+  const revenue = all.filter(([store]) => REVENUE_SOURCES[store]);
+  return [...all.filter(([store]) => STORES[store]).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) })), ...revenue.map(([store], i) => revenuePage(store, { id: i ? `revenue-${store}` : 'revenue', named: revenue.length > 1 }))];
 }
 
 function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales = false } = {}) {
@@ -625,7 +629,12 @@ export function withStorePage(dashboard, store, { sales = false } = {}) {
   const base = revenue ? 'revenue' : store.replace(/_/g, '-');
   let id = base;
   for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
-  return { ...dashboard, pages: [...pages.slice(0, 1), revenue ? revenuePage(store, { id }) : storePage(store, { id, sales }), ...pages.slice(1)] };
+  // A game with another revenue source's page already: this one says whose it is, and so does that one if it still has
+  // the name it came with.
+  const other = (p) => [...new Set((p.panels ?? []).filter((x) => x.type === 'store_revenue' && x.store && x.store !== store).map((x) => x.store))];
+  const named = revenue && pages.some((p) => other(p).length);
+  const kept = named ? pages.map((p) => (p.title === 'Revenue' && other(p).length === 1 ? { ...p, title: `${REVENUE_SOURCES[other(p)[0]]?.name ?? other(p)[0]} revenue` } : p)) : pages;
+  return { ...dashboard, pages: [...kept.slice(0, 1), revenue ? revenuePage(store, { id, named }) : storePage(store, { id, sales }), ...kept.slice(1)] };
 }
 
 // `currency`: the dashboard's (the game's one currency, sums.js), for revenue.

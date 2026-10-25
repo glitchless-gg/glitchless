@@ -1,11 +1,12 @@
 // The store panels of a board (server/src/reviews.js), for a game connected to a store (Steam, Google Play, the App
 // Store): its reviews over time with each release marked and a row per build (what players said, what Glitchless
 // measured on it), the store's own vitals next to Glitchless's, players online next to the sessions measured, and units,
-// returns and wishlists by day. And a revenue source's (RevenueCat's, server/src/revenue.js): its revenue, installs,
-// active users, MRR, subscriptions and trials as numbers (Board.jsx draws them as stats, with revenueStat), revenue per
-// day next to the game's own purchase events, installs and active users per day next to the new players and players
-// Glitchless measured, revenue by version next to what Glitchless measured, installs and revenue by country on a world
-// map (world.jsx) with a ranked list, and revenue by store next to the sessions on each store's platform. And a store's
+// returns and wishlists by day. And a revenue source's (RevenueCat's or Stripe's, server/src/revenue.js): its revenue,
+// installs, active users, MRR, subscriptions and trials (Stripe: refunds and new paying customers) as numbers (Board.jsx
+// draws them as stats, with revenueStat), revenue per day next to the game's own purchase events (Stripe: and its
+// refunds), installs and active users per day next to the new players and players Glitchless measured, revenue by
+// version next to what Glitchless measured, installs and revenue by country on a world map (world.jsx) with a ranked
+// list, revenue by store next to the sessions on each store's platform, and revenue by product (Stripe). And a store's
 // score: its reviews' average stars next to the store's own rating. storeCsv is what their CSV button downloads.
 import { useState } from 'react';
 import { TimeSeries, Status } from './components.jsx';
@@ -14,7 +15,7 @@ import { WorldMap, rampColor } from './world.jsx';
 
 export const STORE_TYPES = new Set(['store_reviews', 'store_vitals', 'store_players', 'store_sales', 'store_revenue', 'store_score']);
 // The store_revenue measures that are one number.
-export const REVENUE_STATS = new Set(['revenue', 'per_player', 'installs', 'active_users', 'mrr', 'actives', 'trials']);
+export const REVENUE_STATS = new Set(['revenue', 'per_player', 'installs', 'active_users', 'mrr', 'actives', 'trials', 'refunds', 'customers']);
 // What of Glitchless's own measures each store vital compares with (server/src/reviews.js VITALS), and their names.
 const VS = { slow_rendering_20fps: 'slow20_pct', slow_rendering_30fps: 'slow30_pct', crash_rate: 'crashed_pct', hang_rate: 'hitches_per_min', launch_time: 'ttff_p50', animation_hitch_rate: 'hitches_per_min' };
 const MEASURED = { slow20_pct: ['Sessions under 20 fps', '%'], slow30_pct: ['Sessions under 30 fps', '%'], crashed_pct: ['Sessions crashed', '%'], hitches_per_min: ['Hitches a minute', ''], ttff_p50: ['First frame p50', 'ms'] };
@@ -35,6 +36,7 @@ export function StorePanelBody({ p }) {
   if (p.type === 'store_revenue' && p.measure === 'by_day') return <RevenueDays p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_version') return <RevenueVersions p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'players_by_day') return <CustomerDays p={p} />;
+  if (p.type === 'store_revenue' && p.measure === 'by_product') return <RevenueProducts p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_country') return <Countries p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_store') return <RevenueStores p={p} />;
   if (p.type === 'store_score') return <Score p={p} />;
@@ -48,8 +50,12 @@ export function revenueStat(p) {
   const value = p.currency ? fmtMoney(p.value, p.currency) : fmtNum(p.value);
   if (p.measure === 'revenue') {
     const own = p.glitchless ? ` · the game's purchase events: ${money(p, p.glitchless.sum)} (${fmtPct(p.glitchless.coverage_pct, 0)})` : '';
-    return { value, sub: `${p.transactions != null ? `${fmtNum(p.transactions)} transactions on ` : 'On '}${p.store_name}, ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.incomplete ? ' (today so far)' : ''}${own}` };
+    // Stripe's: payments rather than transactions, and what's left after refunds, disputes and its fees.
+    const net = p.net != null ? ` · ${money(p, p.net)} left after refunds and fees` : '';
+    return { value, sub: `${p.transactions != null ? `${fmtNum(p.transactions)} ${p.net != null ? (p.transactions === 1 ? 'payment' : 'payments') : 'transactions'} on ` : 'On '}${p.store_name}, ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.incomplete ? ' (today so far)' : ''}${net}${own}` };
   }
+  if (p.measure === 'refunds') return { value, sub: `${fmtNum(p.refund_count)} ${p.refund_count === 1 ? 'refund' : 'refunds'}${p.disputes ? ` and ${money(p, p.disputes)} in disputes` : ''} on ${p.store_name}${p.share_pct != null ? `, ${fmtPct(p.share_pct)} of revenue` : ''}` };
+  if (p.measure === 'customers') return { value, sub: `First-time buyers on ${p.store_name}, ${fmtNum(p.days)} UTC ${p.days === 1 ? 'day' : 'days'}${p.glitchless ? ` · Glitchless: ${fmtNum(p.glitchless.new_players)} new players` : p.anonymous ? ' · Glitchless counts new players with player IDs (install mode)' : ''}` };
   if (p.measure === 'per_player') return { value, sub: `${money(p, p.total)} over ${fmtNum(p.players)} ${p.players_are_sessions ? 'sessions' : 'players'} measured` };
   if (p.measure === 'installs' || p.measure === 'active_users') {
     if (p.from_overview) return { value, sub: `On ${p.store_name}, the last 28 days` };
@@ -72,16 +78,56 @@ function Notes({ notes }) {
   );
 }
 
+// Revenue's colour is the source's own (RevenueCat's coral, Stripe's purple).
+const DAY_COLORS = { revenue: '#f2545b', refunds: '#f2a93b', purchases: '#14213d' };
+
 function RevenueDays({ p }) {
-  const [revenue, own] = p.series;
+  const own = p.series.find((s) => s.key === 'purchases' || s.label === "The game's purchase events");
+  const color = (s, i) => (s === own ? DAY_COLORS.purchases : i === 0 ? (p.store === 'stripe' ? '#635bff' : DAY_COLORS.revenue) : (DAY_COLORS[s.key] ?? '#7a7890'));
   return (
     <>
-      <TimeSeries ts={p.ts} height={150} bars={!own} format={(v) => money(p, v, true)} series={[{ ...revenue, color: '#f2545b' }, ...(own ? [{ ...own, color: '#14213d', dash: [4, 3] }] : [])]} />
+      <TimeSeries ts={p.ts} height={150} bars={p.series.length === 1} format={(v) => money(p, v, true)} series={p.series.map((s, i) => ({ ...s, color: color(s, i), ...(s === own ? { dash: [4, 3] } : {}) }))} />
       <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        {money(p, p.total)} by UTC day, as {p.store_name} counts it (production purchases only){p.incomplete_day ? `; ${p.incomplete_day} is still filling in` : ''}.
+        {money(p, p.total)} by UTC day, as {p.store_name} counts it{p.net_total != null ? `, ${money(p, p.refunds_total)} of it refunded or disputed and ${money(p, p.net_total)} left after Stripe's fees` : ' (production purchases only)'}
+        {p.incomplete_day ? `; ${p.incomplete_day} is still filling in` : ''}.
         {p.glitchless && ` The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`}
       </div>
       <Notes notes={p.notes?.filter((n) => !/add up to/.test(n))} />
+    </>
+  );
+}
+
+// Revenue and refunds by product, most revenue first (Stripe).
+function RevenueProducts({ p }) {
+  return (
+    <>
+      <div className="tablewrap">
+        <table className="dt wrap-th">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th className="num">Revenue</th>
+              <th className="num">Share</th>
+              <th className="num">Payments</th>
+              <th className="num">Refunded</th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.rows.map((r) => (
+              <tr key={r.product}>
+                <td title={r.product === '(none)' ? undefined : r.product}>{r.name}</td>
+                <td className="num">{money(p, r.revenue)}</td>
+                <td className="num">{fmtPct(r.share_pct, 0)}</td>
+                <td className="num">{fmtNum(r.transactions)}</td>
+                <td className="num" title={r.refund_count ? `${fmtNum(r.refund_count)} ${r.refund_count === 1 ? 'refund' : 'refunds'}` : undefined}>
+                  {r.refunds ? `${money(p, r.refunds)} (${fmtPct(r.refunded_pct, 0)})` : '–'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Notes notes={p.notes} />
     </>
   );
 }
@@ -153,7 +199,9 @@ function RevenueVersions({ p }) {
         </table>
       </div>
       <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
-        Left: what {p.store_name} counted on each version (production purchases only). Right: what Glitchless measured of the same version.
+        {p.unjoined ? `Left: the payments on ${p.store_name} tied to a session Glitchless measured, by that session's version` : `Left: what ${p.store_name} counted on each version (production purchases only)`}. Right: what Glitchless measured of the same version.
+        {p.platforms?.length > 0 && ` By platform: ${p.platforms.map((x) => `${x.platform} ${money(p, x.revenue)}`).join(', ')}.`}
+        {p.payers != null && p.payers > 0 && ` ${fmtNum(p.payers)} ${p.payers === 1 ? 'player' : 'players'} paid${p.payers_pct != null ? ` (${fmtPct(p.payers_pct)} of those measured)` : ''}.`}
       </div>
       <Notes notes={p.notes} />
     </>
@@ -162,8 +210,11 @@ function RevenueVersions({ p }) {
 
 // Installs and revenue by country: the map (one of the two at a time) and the countries ranked by it, with both
 // numbers and the purchases. Hovering a country on either shows it on both.
+// A source without installs (Stripe) has its revenue and payments only.
 function Countries({ p }) {
-  const views = [p.has?.installs !== false && 'installs', p.has?.revenue !== false && 'revenue'].filter(Boolean);
+  const installs = p.has?.installs !== false;
+  const bought = p.store === 'stripe' ? ['payment', 'payments'] : ['purchase', 'purchases'];
+  const views = [installs && 'installs', p.has?.revenue !== false && 'revenue'].filter(Boolean);
   const [view, setView] = useState(views.includes(p.show) ? p.show : views[0]);
   const [active, setActive] = useState(null);
   const [all, setAll] = useState(false);
@@ -172,7 +223,7 @@ function Countries({ p }) {
   const shown = all ? rows : rows.slice(0, 12);
   const top = Math.max(0, ...p.rows.filter((r) => r.country).map((r) => r[view]));
   const value = (r, v = view) => (v === 'revenue' ? money(p, r.revenue) : fmtNum(r.installs));
-  const tip = (r) => `${fmtNum(r.installs)} ${r.installs === 1 ? 'install' : 'installs'} · ${money(p, r.revenue)} from ${fmtNum(r.purchases)} ${r.purchases === 1 ? 'purchase' : 'purchases'}`;
+  const tip = (r) => `${installs ? `${fmtNum(r.installs)} ${r.installs === 1 ? 'install' : 'installs'} · ` : ''}${money(p, r.revenue)} from ${fmtNum(r.purchases)} ${bought[r.purchases === 1 ? 0 : 1]}`;
   return (
     <div className="countries">
       <div className="countries-head">
@@ -186,7 +237,8 @@ function Countries({ p }) {
           </div>
         )}
         <span className="muted">
-          {fmtNum(t.installs)} installs · {money(p, t.revenue)} from {fmtNum(t.purchases)} purchases · {fmtNum(p.countries)} {p.countries === 1 ? 'country' : 'countries'}
+          {installs ? `${fmtNum(t.installs)} installs · ` : ''}
+          {money(p, t.revenue)} from {fmtNum(t.purchases)} {bought[1]} · {fmtNum(p.countries)} {p.countries === 1 ? 'country' : 'countries'}
         </span>
       </div>
       <div className="countries-body">
@@ -196,9 +248,9 @@ function Countries({ p }) {
             <thead>
               <tr>
                 <th>Country</th>
-                <th className="num">Installs</th>
+                {installs && <th className="num">Installs</th>}
                 <th className="num">Revenue</th>
-                <th className="num">Purchases</th>
+                <th className="num">{bought[1][0].toUpperCase() + bought[1].slice(1)}</th>
               </tr>
             </thead>
             <tbody>
@@ -210,7 +262,7 @@ function Countries({ p }) {
                       {r.name}
                     </span>
                   </td>
-                  <td className={`num${view === 'installs' ? ' b' : ''}`}>{value(r, 'installs')}</td>
+                  {installs && <td className={`num${view === 'installs' ? ' b' : ''}`}>{value(r, 'installs')}</td>}
                   <td className={`num${view === 'revenue' ? ' b' : ''}`}>{value(r, 'revenue')}</td>
                   <td className="num">{fmtNum(r.purchases)}</td>
                 </tr>
@@ -528,7 +580,7 @@ function Figure({ label, value, sub, title }) {
 }
 
 const iso = (ts) => (ts == null ? null : new Date(ts).toISOString());
-const MONEY_STATS = new Set(['revenue', 'per_player', 'mrr']);
+const MONEY_STATS = new Set(['revenue', 'per_player', 'mrr', 'refunds']);
 
 // Rows for a store panel's CSV: reviews by time with the build live then; players by sample; sales by day.
 export function storeCsv(p) {
@@ -558,11 +610,16 @@ export function storeCsv(p) {
   if (p.type === 'store_revenue') {
     const cur = p.currency ? ` (${p.currency})` : '';
     if (p.measure === 'by_day') {
-      const own = p.series[1];
+      const own = p.series.find((s) => s.key === 'purchases' || s.label === "The game's purchase events");
+      if (p.net) return [['Day', `Revenue${cur}`, 'Payments', `Refunds${cur}`, `Disputes${cur}`, `Stripe's fees${cur}`, `Net${cur}`, 'New paying customers', ...(own ? [`The game's purchase events${cur}`] : [])], ...p.days.map((d, i) => [d, p.series[0].values[i], p.transactions[i], p.refunds[i], p.disputes[i], p.fees[i], p.net[i], p.new_customers[i], ...(own ? [own.values[i]] : [])])];
       return [['Day', `Revenue${cur}`, 'Transactions', `MRR${cur}`, 'Active subscriptions', 'Active trials', ...(own ? [`The game's purchase events${cur}`] : [])], ...p.days.map((d, i) => [d, p.series[0].values[i], p.transactions[i], p.mrr[i], p.actives[i], p.trials[i], ...(own ? [own.values[i]] : [])])];
     }
+    if (p.measure === 'by_product') return [['Product', 'Product ID', `Revenue${cur}`, 'Share (%)', 'Payments', `Refunds${cur}`, 'Refunds'], ...p.rows.map((r) => [r.name, r.product, r.revenue, r.share_pct, r.transactions, r.refunds, r.refund_count])];
     if (p.measure === 'players_by_day') return [['Day', ...p.series.map((s) => s.label)], ...p.days.map((d, i) => [d, ...p.series.map((s) => s.values[i])])];
-    if (p.measure === 'by_country') return [['Country code', 'Country', 'Installs', `Revenue${cur}`, 'Purchases'], ...p.rows.map((r) => [r.country, r.name, r.installs, r.revenue, r.purchases])];
+    if (p.measure === 'by_country') {
+      if (p.has?.installs === false) return [['Country code', 'Country', `Revenue${cur}`, 'Payments'], ...p.rows.map((r) => [r.country, r.name, r.revenue, r.purchases])];
+      return [['Country code', 'Country', 'Installs', `Revenue${cur}`, 'Purchases'], ...p.rows.map((r) => [r.country, r.name, r.installs, r.revenue, r.purchases])];
+    }
     if (p.measure === 'by_store') return [['Store', `Revenue${cur}`, 'Share (%)', 'Purchases', 'Glitchless: platform', 'Glitchless: sessions', 'Glitchless: players', `Revenue per ${p.players_are_sessions ? 'session' : 'player'}${cur}`], ...p.rows.map((r) => [r.name, r.revenue, r.share_pct, r.purchases, r.platform, r.sessions, r.players, r.per_player])];
     if (p.measure === 'by_version') return [['Version', `Revenue${cur}`, 'Share (%)', 'Transactions', 'Glitchless: players', 'Glitchless: sessions', `Revenue per player${cur}`, ...(p.comparable ? [`The game's purchase events${cur}`] : []), 'Glitchless: crash-free sessions (%)', 'Glitchless: frame p95 (ms)'], ...p.rows.map((r) => [r.version, r.revenue, r.share_pct, r.transactions, r.players, r.sessions, r.per_player, ...(p.comparable ? [r.purchases] : []), r.crash_free_pct, r.frame_p95])];
     return [['Stat', `Value${MONEY_STATS.has(p.measure) ? cur : ''}`, 'Day'], [p.title, p.value, p.day ?? p.to_day ?? null]];

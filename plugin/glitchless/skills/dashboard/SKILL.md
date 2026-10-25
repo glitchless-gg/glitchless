@@ -90,7 +90,7 @@ one line on why it matters.
 | `live` | `events`: only these names or types, as they arrive |
 | `findings`, `frame_time`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports) |
 | `retention` | `limit`: how many of the latest first-seen days (default 14). Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on |
-| `store_revenue` | `measure` (required): `revenue`, `per_player`, `installs`, `active_users`, `mrr`, `actives`, `trials`, `by_day`, `players_by_day`, `by_version`, `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`) or `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured). Real revenue, installs and active users from RevenueCat, for a game connected to it in Glitchless Cloud |
+| `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat's `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe's `refunds`, `customers` (new paying customers) and `by_product`. `store`: `revenuecat` or `stripe` (default: the first connected). Real revenue from RevenueCat or the game's own Stripe account, for a game connected to it in Glitchless Cloud |
 | `store_score` | `store` (`app_store`, `google_play` or `steam`): a store's rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple's own rating on the App Store. Google Play has no API for its overall rating, so its panel is the reviews' average and says so |
 | `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
 
@@ -105,7 +105,10 @@ sending, or send the store's price in one currency) rather than the board. Reven
 unless the link is made to show it. A game connected to RevenueCat (Glitchless Cloud: Settings → Integrations) gets a Revenue page of
 `store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs
 and active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game's
-own `purchase` sums are for revenue by item, level or player.
+own `purchase` sums are for revenue by item, level or player. A game that sells through its own Stripe account gets a
+Stripe one (refunds, fees, new paying customers, revenue by product). For its revenue by version, the game's server puts
+the player's Glitchless session ID (`Glitchless.instance.sessionId` in a web game) in the Checkout Session's
+`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent.
 
 **Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by
 `$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or

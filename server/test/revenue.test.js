@@ -147,7 +147,7 @@ test("the store_revenue query: by day with the day's sessions, one version's rev
     const one = await g.get('store_revenue', { version: '1.4.2' });
     assert.equal(one.empty, true);
     assert.match(one.why, /no revenue of 1\.4\.2 alone/);
-    assert.equal((await g.get('store_revenue', { store: 'steam' })).why, 'store is one of revenuecat');
+    assert.equal((await g.get('store_revenue', { store: 'steam' })).why, 'store is one of revenuecat, stripe');
 
     // The dashboard's money is in euros: RevenueCat's dollars are shown as dollars, and not compared.
     const put = await fetch(`${g.base}/v1/dashboard?service=caverun`, { method: 'PUT', body: JSON.stringify({ currency: 'EUR', pages: [{ id: 'overview', title: 'Overview', panels: [{ type: 'store_revenue', measure: 'revenue' }] }] }) });
@@ -156,6 +156,129 @@ test("the store_revenue query: by day with the day's sessions, one version's rev
     assert.equal(eur.currency, 'USD');
     assert.equal(eur.glitchless.comparable, false);
     assert.match(eur.notes[0], /^RevenueCat reports in USD and this game's money is in EUR/);
+  } finally {
+    await g.close();
+  }
+});
+
+// ───────────────────────────── a payments source (Stripe, SPEC §3i) ─────────────────────────────
+
+test("a payments source's days, products, countries and tied purchases: kept by day, a day sent again replaces each; its measures checked by source", async () => {
+  const kv = memoryKv();
+  const data = createStoreData(kv);
+  const day = (d, x) => ({ day: d, revenue: 0, transactions: 0, refunds: 0, refund_count: 0, disputes: 0, fees: 0, net: 0, new_customers: 0, other_payments: 0, currency: 'USD', ...x });
+  await data.write('p', 'stripe', {
+    revenue: [day('2026-10-23', { revenue: 19.98, transactions: 2, fees: 1.18, net: 18.8, new_customers: 2, incomplete: true })],
+    revenue_products: [{ day: '2026-10-23', product: 'prod_Full', name: 'Full game', revenue: 14.99, transactions: 1, currency: 'USD' }, { day: '2026-10-23', product: 'prod_Dlc', name: 'DLC', revenue: 4.99, transactions: 1, currency: 'USD' }],
+    revenue_countries: [{ day: '2026-10-23', country: 'DE', name: 'Germany', revenue: 19.98, transactions: 2, currency: 'USD' }],
+    revenue_purchases: [{ day: '2026-10-23', ts: Date.parse('2026-10-23T10:00:00Z'), amount: 14.99, currency: 'USD', product: 'prod_Full', ref: 's_abc' }],
+    syncedAt: 1,
+  });
+  // The day read again, complete: a refund came, the DLC was refunded, and the purchase tied to a session is gone (another pick).
+  await data.write('p', 'stripe', { revenue: [day('2026-10-23', { revenue: 19.98, transactions: 2, refunds: 4.99, refund_count: 1, fees: 1.18, net: 13.81, new_customers: 2 })], revenue_products: [{ day: '2026-10-23', product: 'prod_Full', name: 'Full game', revenue: 14.99, transactions: 1, currency: 'USD' }], revenue_countries: [], revenue_purchases: [], syncedAt: 2 });
+  const read = await data.read('p', 'stripe', { from: Date.parse('2026-10-01'), to: Date.parse('2026-10-25') });
+  assert.deepEqual([read.revenue[0].refunds, read.revenue[0].net, read.revenue[0].incomplete], [4.99, 13.81, false]);
+  assert.deepEqual(read.revenue_products.map((r) => [r.product, r.revenue]), [['prod_Full', 14.99]], "the day's products replaced");
+  assert.deepEqual(read.revenue_countries.map((r) => [r.country, r.name]), [['DE', 'Germany']], 'a split sent empty leaves the day as it was');
+  assert.deepEqual(read.revenue_purchases, [], 'the day read again has none tied');
+  assert.equal((await data.read('p', 'revenuecat', { from: Date.parse('2026-10-01'), to: Date.parse('2026-10-25') })).revenue_products, undefined, 'only a payments source has them');
+
+  const page = (panels) => ({ pages: [{ id: 'money', title: 'Money', panels }] });
+  assert.throws(() => validateDashboard(page([{ type: 'store_revenue', store: 'stripe', measure: 'mrr' }])), /Stripe doesn't count mrr; its measures are revenue, per_player, by_day, by_version, by_country, refunds, customers, by_product/);
+  assert.throws(() => validateDashboard(page([{ type: 'store_revenue', store: 'revenuecat', measure: 'by_product' }])), /RevenueCat doesn't count by_product/);
+  validateDashboard(page([{ type: 'store_revenue', store: 'stripe', measure: 'by_product' }]));
+  assert.throws(() => validateDashboard(page([{ type: 'store_revenue', store: 'stripe', measure: 'by_store' }])), /Stripe doesn't count by_store/, 'it sells in no app store');
+
+  // Stripe's page after RevenueCat's: both say whose they are (RevenueCat's, still as it came, is renamed).
+  const overview = { id: 'overview', title: 'Overview', panels: [{ type: 'stat', metric: 'players' }] };
+  const withRc = withStorePage({ pages: [overview] }, 'revenuecat');
+  const both = withStorePage(withRc, 'stripe');
+  assert.deepEqual(both.pages.map((p) => [p.id, p.title]), [['overview', 'Overview'], ['revenue-2', 'Stripe revenue'], ['revenue', 'RevenueCat revenue']]);
+  assert.deepEqual(both.pages[1].panels.map((p) => [p.store, p.measure]), ['revenue', 'per_player', 'refunds', 'customers', 'by_day', 'by_product', 'by_version'].map((m) => ['stripe', m]));
+  const rows = [0];
+  for (const p of both.pages[1].panels) rows[rows.length - 1] + SIZES[p.size] > 12 ? rows.push(SIZES[p.size]) : (rows[rows.length - 1] += SIZES[p.size]);
+  assert.deepEqual(rows, [12, 12, 12]);
+  validateDashboard(both);
+  const renamed = withStorePage({ pages: [overview, { ...withRc.pages[1], title: 'Gems money' }] }, 'stripe');
+  assert.equal(renamed.pages[2].title, 'Gems money', "a page the developer named keeps its name");
+  assert.equal(withStorePage(both, 'stripe'), null, 'once');
+});
+
+// A game with telemetry and its Stripe days (test mode), some purchases tied to its sessions (by session, by the
+// session as client_reference_id, by player) and one tied to a session Glitchless never saw, served by the core.
+async function stripeGame({ mode = 'test' } = {}) {
+  const now = Date.now();
+  const release = now - 3 * DAY;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-stripe-'));
+  const store = new FileStore(dir);
+  const data = createStoreData(memoryKv());
+  const batches = scenarioSessions({ now, release, builds: [] }, { days: 5, perHour: 1 });
+  const days = [];
+  for (let d = 9; d >= 0; d--) days.push({ day: isoDay(now - d * DAY), revenue: 50 + d, transactions: 5, refunds: d % 3 ? 0 : 4.99, refund_count: d % 3 ? 0 : 1, disputes: d === 4 ? 14.99 : 0, fees: 2.5, net: 47.5 + d - (d % 3 ? 0 : 4.99) - (d === 4 ? 14.99 : 0), new_customers: 3, other_payments: d === 2 ? 1 : 0, currency: 'USD', incomplete: d === 0 });
+  const tied = batches.filter((_, i) => i % 6 === 0).map((b, i) => ({ day: isoDay(b.events[0].ts + 60_000), ts: b.events[0].ts + 60_000, amount: 4.99, currency: 'USD', product: 'prod_Dlc', ...(i % 3 === 0 ? { session: b.session_id } : i % 3 === 1 ? { ref: b.session_id } : { player: b.player_id }), version: b.version }));
+  await data.write('default', 'stripe', {
+    revenue: days,
+    revenue_products: days.flatMap((r) => [{ day: r.day, product: 'prod_Full', name: 'Full game', revenue: r.revenue - 10, transactions: 3, refunds: r.refunds, refund_count: r.refund_count, currency: 'USD' }, { day: r.day, product: 'prod_Dlc', name: 'Deep Caves DLC', revenue: 10, transactions: 2, currency: 'USD' }]),
+    revenue_purchases: [...tied.map(({ version: _, ...p }) => p), { day: isoDay(now - DAY), ts: now - DAY, amount: 9.99, currency: 'USD', product: 'prod_Full', session: 's_never_seen' }],
+    revenue_countries: days.flatMap((r) => [{ day: r.day, country: 'US', name: 'United States', revenue: r.revenue - 20, transactions: 3, currency: 'USD' }, { day: r.day, country: 'DE', name: 'Germany', revenue: 15, transactions: 1, currency: 'USD' }, { day: r.day, country: '(none)', name: 'Unknown', revenue: 5, transactions: 1, currency: 'USD' }]),
+    snapshots: { overview: { at: now, currency: 'USD', mode, metrics: [{ id: 'revenue', name: 'Gross volume', value: 540, unit: '$', period: 'P28D' }] } },
+    syncedAt: now,
+  });
+  const read = async (projectId, service, range) => ({ stripe: { app_id: null, mode, products: 'game=caverun', keys: { restricted: true }, ...(await data.read(projectId, 'stripe', range)) } });
+  const server = http.createServer(createApp({ store, stores: { read }, logger: { warn() {}, error() {} } }));
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const batch of batches) assert.equal((await fetch(`${base}/v1/intake?token=gl_pub_dev`, { method: 'POST', body: JSON.stringify(batch) })).status, 202);
+  const get = async (name, params = {}) => (await fetch(`${base}/v1/query/${name}?${new URLSearchParams({ service: 'caverun', from: now - 7 * DAY, to: now, ...params })}`)).json();
+  const window = days.filter((r) => r.day >= isoDay(now - 7 * DAY));
+  const put = (body) => fetch(`${base}/v1/dashboard?service=caverun`, { method: 'PUT', body: JSON.stringify(body) });
+  return { now, days, window, tied: tied.filter((p) => p.day >= isoDay(now - 7 * DAY)), get, put, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r)), fs.rmSync(dir, { recursive: true, force: true })) };
+}
+
+test("Stripe's Revenue page: revenue with its net, refunds and disputes, new paying customers, by product, and by version from purchases joined to their sessions; test mode says so", async () => {
+  const g = await stripeGame();
+  try {
+    assert.equal((await g.get('dashboard')).dashboard.pages.find((p) => p.id === 'revenue').title, 'Revenue', "the game's only revenue source");
+    const { board } = await g.get('board', { page: 'revenue' });
+    assert.deepEqual(board.panels.map((p) => p.measure), ['revenue', 'per_player', 'refunds', 'customers', 'by_day', 'by_product', 'by_version']);
+    const panel = (m) => board.panels.find((p) => p.measure === m);
+    const sum = (k) => round2(g.window.reduce((a, r) => a + r[k], 0));
+    const revenue = panel('revenue');
+    assert.deepEqual([revenue.value, revenue.net, revenue.fees, revenue.store_name, revenue.mode], [sum('revenue'), sum('net'), sum('fees'), 'Stripe (test mode)', 'test']);
+    assert.ok(revenue.notes[0].startsWith('This Stripe connection uses a test-mode key: these are test payments, not real revenue.'));
+    assert.ok(revenue.notes.some((n) => /^1 payment in this window settled in another currency than USD: left out/.test(n)));
+    assert.deepEqual([panel('refunds').value, panel('refunds').refund_count, panel('refunds').disputes], [round2(sum('refunds') + sum('disputes')), sum('refund_count'), sum('disputes')]);
+    assert.equal(panel('refunds').share_pct, Math.round(((sum('refunds') + sum('disputes')) / sum('revenue')) * 1000) / 10);
+    assert.equal(panel('customers').value, sum('new_customers'));
+    assert.ok(panel('customers').glitchless.new_players > 0);
+    assert.match(panel('customers').notes[0], /^Stripe counts a new paying customer on the day of their first payment/);
+    assert.deepEqual(panel('by_day').series.map((s) => s.label), ['Revenue', 'Refunds and disputes']);
+    assert.deepEqual(panel('by_day').net, g.window.map((r) => r.net));
+    assert.deepEqual(panel('by_product').rows.map((r) => [r.name, r.revenue]), [['Full game', round2(sum('revenue') - 10 * g.window.length)], ['Deep Caves DLC', 10 * g.window.length]]);
+    // By version: each tied purchase in its session's version (the one Glitchless never saw isn't).
+    const byVersion = panel('by_version');
+    const count = (v) => g.tied.filter((p) => p.version === v).length;
+    assert.deepEqual(byVersion.rows.map((r) => [r.version, r.transactions]), [['1.4.2', count('1.4.2')], ['1.4.1', count('1.4.1')]]);
+    assert.ok(byVersion.rows.every((r) => r.players > 0 && r.sessions > 0));
+    assert.equal(byVersion.unjoined.transactions, sum('transactions') - g.tied.length);
+    assert.deepEqual(byVersion.platforms.map((p) => p.platform).sort(), [...new Set(byVersion.platforms.map((p) => p.platform))].sort());
+    assert.ok(byVersion.payers > 0 && byVersion.payers_pct > 0);
+    // RevenueCat's measures aren't Stripe's.
+    const q = await g.get('store_revenue', { version: '1.4.2' });
+    assert.deepEqual([q.store, q.mode, q.version, q.totals.transactions, q.versions.map((r) => r.version)], ['stripe', 'test', '1.4.2', count('1.4.2'), ['1.4.2']]);
+    assert.equal(q.totals.refunds, sum('refunds'), "refunds are the whole game's");
+    assert.equal(q.stores, undefined, 'no split by store');
+
+    // Its countries on the map: revenue and payments (it has no installs), payments with no country listed apart.
+    assert.equal((await g.put({ pages: [{ id: 'map', title: 'Map', panels: [{ type: 'store_revenue', store: 'stripe', measure: 'by_country' }] }] })).status, 200);
+    const map = (await g.get('board', { page: 'map' })).board.panels[0];
+    assert.deepEqual([map.title, map.show, map.has], ['Revenue by country', 'revenue', { installs: false, revenue: true }]);
+    assert.deepEqual(map.rows.map((r) => [r.key, r.country]), [['US', 'US'], ['DE', 'DE'], ['(none)', null]]);
+    assert.deepEqual([map.totals.revenue, map.totals.purchases], [round2(sum('revenue') - 20 * g.window.length + 20 * g.window.length), 5 * g.window.length]);
+    assert.match(map.notes[0], /^Revenue is what Stripe settled from buyers in each country .* Stripe has no installs\. 8 payments came with no country\.$/);
+    assert.ok(!map.notes.some((n) => /Not on the map/.test(n)));
+    const countries = (await g.get('store_revenue', { store: 'stripe' })).countries;
+    assert.deepEqual(countries[0], { country: 'US', name: 'United States', revenue: round2(sum('revenue') - 20 * g.window.length), purchases: 3 * g.window.length });
   } finally {
     await g.close();
   }

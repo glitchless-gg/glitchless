@@ -233,7 +233,7 @@ players' numbers leave out. Each Steam fact (§4c: `steam_branch`,
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
 | `store_reviews` | One store's reviews of the game (Steam, Google Play, the App Store), filtered, with counts by build, topic and device (§3f); `{connected: false}` without a store |
 | `store_vitals` | One store's own measures of the game (Google Play's Android vitals, the App Store's hang, launch and animation metrics) by version, next to Glitchless's, with where they disagree (§3f) |
-| `store_revenue` | A game's real revenue from RevenueCat (production purchases only) by UTC day and, where RevenueCat splits it, by version, with installs (new customers), active users, MRR, active subscriptions and trials, next to the sessions, players, new players and purchase events Glitchless measured (§3h); `{connected: false, why}` for a game without it |
+| `store_revenue` | A game's real revenue from RevenueCat (production purchases only) by UTC day and, where RevenueCat splits it, by version, with installs (new customers), active users, MRR, active subscriptions and trials (§3h); or from its own Stripe account (`store=stripe`), with refunds, disputes, fees, net, new paying customers, by product, and by version for purchases tied to a session (§3i); next to the sessions, players, new players and purchase events Glitchless measured; `{connected: false, why}` for a game without it |
 
 ### 3b. Dashboards and boards
 
@@ -277,7 +277,7 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
 | `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, §3f): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
 | `store_score` | `store` | a store's rating (§3f): the average stars of the written reviews synced in the window and how many, next to the store's own rating where it has one (the App Store's, from Apple's lookup; Steam's summary); Google Play's is the synced reviews' average, and says so |
-| `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`) |
+| `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h) or Stripe (§3i): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`); Stripe's refunds, new paying customers, revenue by product (§3i; no installs, MRR, subscriptions, trials or stores) |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `retention` | `limit` (days, 1 to 90; default 14) | D1, D7 and D30 by first-seen day (§4), the latest days; a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
 | `versions` | `by` | the board's own stat panels, version by version; with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
@@ -827,8 +827,8 @@ permission (Owner, Admin).
 
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store` and `revenuecat` (§3h) |
-| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
+| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store`, `revenuecat` (§3h) and `stripe` (§3i) |
+| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
 | `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
 | `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour, within 20 seconds; the hourly sync does the rest) |
 | `GET`, `PUT`, `DELETE /api/projects/{p}/steam`, `POST …/steam/sync` | Steam's, as before the other stores: `{steam, status, data}` |
@@ -1017,6 +1017,142 @@ and the last day each chart was read).
 **Routes** are the stores' (§3f): `PUT /api/projects/{p}/stores/revenuecat` takes `{rcProjectId, currency?, secretKey?,
 service?}` (a key left out stays, `null` removes it); `GET …/stores` gives its `connection` (`rcProjectId`, `currency`,
 `keys.secret` hint), `status` and `data` (`overview`: RevenueCat's numbers now).
+
+### 3i. Revenue: Stripe (Glitchless Cloud)
+
+A game that sells through its own Stripe account (a web or PC game's full unlock, DLC, supporter packs; Checkout or a
+Payment Link) connects it in Settings → Integrations, and its real revenue sits next to the players and versions
+Glitchless measures, like RevenueCat's (§3h, whose Revenue page, panels and query it shares). This is the game's own
+account read with the game's own key: Glitchless Cloud's billing (its own Stripe account) is a different thing, and
+neither ever sees the other's keys. The core is the same store-neutral
+[`server/src/revenue.js`](../server/src/revenue.js), where Stripe is a *payments source*: money as the account settled
+it, so refunds, disputes, fees and net next to the revenue, new paying customers instead of installs, revenue by
+product and country, and the purchases a game tied to a session, which the core joins to that session's version and
+platform. The adapter that calls Stripe is Glitchless Cloud's. Read only: nothing is written to Stripe, and no webhook
+is used.
+
+**Connecting.** A **restricted key** (`rk_live_…`, or `rk_test_…` in test mode: Developers → API keys → Create
+restricted key) with these set to Read and everything else at None:
+
+| permission (Dashboard) | section | Stripe's name | for |
+| --- | --- | --- | --- |
+| Balance transaction sources | Core | `rak_balance_transaction_source_read` | listing balance transactions with the payment, refund or dispute behind each (`expand[]=data.source`); it also lets the key read the balance, payouts and transfers, read only |
+| Checkout Sessions | Checkout | `rak_checkout_session_read` | the line items (products) of the session that took each payment, and its `client_reference_id` and metadata |
+| Products | Core | `rak_product_read` | only when the game's products are picked by a metadata key |
+
+A secret key (`sk_…`, which can do anything in the account), a publishable key (`pk_…`) or a webhook secret
+(`whsec_…`) is refused before anything is sent, saying to create a restricted key with the permissions above. The key
+is checked with one read on save (`GET /v1/balance_transactions?limit=1&expand[]=data.source`: a deleted key, or one
+without the first permission, is refused with the permission Stripe names) and sealed like a store's credentials; the
+dashboard gets its last four characters and its mode. **Products** (optional): the game's product IDs (`prod_…`), or
+one metadata key its products have (`game=caverun`, or a bare key for any value), for an account that sells other
+things too. Then only payments made through Checkout or a Payment Link for those products count, each with the share
+of its line items that are the game's (a bundle with another game's product counts in part), and refunds and disputes
+with the share of the payment they're for. Without a pick, every payment the account takes counts. A new key (it may be
+another account's) or another pick forgets the kept data, and the next sync backfills it.
+
+**Test and live.** A live key only ever reads live payments, and a test key only test ones (Stripe keeps them apart);
+the sync also leaves out any source whose `livemode` isn't the key's. A test-mode connection says so wherever it shows:
+"Stripe (test mode)" on its panels, a note that these are test payments, a badge on the Integrations page, `mode:
+"test"` in the query.
+
+**The sync** (hourly with the stores, the `glitchless-stores` Lambda; `Authorization: Bearer rk_…`, `Stripe-Version:
+2026-09-30.endive` on every call, so the shapes read stay fixed whatever the account's default):
+
+| from | call | when |
+| --- | --- | --- |
+| the game's products | `GET /v1/products?limit=100` (at most 10 pages) | once a day, and at once after the pick changes, when a metadata key picks them |
+| the Checkout Sessions that may have taken the window's payments | `GET /v1/checkout/sessions?status=complete&created[gte]=<a day before the window>&created[lt]=&expand[]=data.line_items&limit=100` | every window |
+| payments, refunds, disputes, with their fees and net | `GET /v1/balance_transactions?created[gte]=&created[lt]=&expand[]=data.source&limit=100` | every window |
+| the session of a refund's or dispute's payment (or of a bank debit that succeeded days after its session) | `GET /v1/checkout/sessions?payment_intent=pi_…&expand[]=data.line_items&limit=1` | when it isn't the window's |
+
+Lists are paged with `starting_after` (the last object of the page) while `has_more`. A sync reads whole UTC days,
+oldest first, a week (a *window*) at a time: from the day after the last one closed, at first back the plan's retention
+(14, 90 or 400 days), to today. A day closes 30 minutes after it ends; until then every sync reads it again whole, so a
+day's numbers are always one whole read of it (a day sent again replaces what was kept). Calls go one at a time, at
+most 150 a sync (Stripe allows 100 reads a second, 25 in a sandbox), within the stores' daily budget (1,500 a game). A
+window cut short (calls or time out, or a 429, which stops the sync) keeps nothing, and the next sync reads it again.
+A key without Checkout Sessions: Read still counts revenue (Last sync says which permission to add), with no products,
+countries from the payments only, and no purchases tied to sessions; with products picked, it counts nothing.
+
+**What counts.** A balance transaction's `reporting_category` (else its `type`) says what it is: `charge` a purchase,
+`refund` a refund, `refund_failure` a refund that came back, `charge_failure` or `partial_capture_reversal` money
+reversed after a payment, `dispute` and `dispute_reversal` a dispute lost and won back; payouts, transfers, top-ups
+and the account's own fees (`fee`: Radar, Billing, Tax) are not a game's revenue. Per UTC day (the transaction's
+`created`): **revenue** (gross: the purchases' `amount`), payments, **refunds** (and how many), **disputes**, Stripe's
+**fees** (the transactions' `fee`: a payment's processing fee, a dispute's fee) and **net** (their `net`). All in the
+account's **settlement currency**, as Stripe settled each payment: a payment presented in EUR or GBP counts at the
+amount Stripe converted it to. The currency counted is the one most payments settle in; payments settled into another
+balance currency are counted apart (`other_payments`) and left out, never converted. Amounts are in each currency's
+units (Stripe's smallest unit over 100, 1 for zero-decimal currencies such as JPY and KRW, 1,000 for three-decimal
+ones). **New paying customers**: a buyer is counted on the day of their first payment for the game that Glitchless has
+read (by their Stripe customer, else their email), kept only as a hash of the game and that ID
+(`X#customers-<0…f>`), never the email. **By product**: each payment split between its line items by their amounts
+(`description`, else the product's name; "Not through Checkout" for a PaymentIntent of the game's own, which can't name
+a product, as can't a subscription's renewal). **By country**: the billing address's country, else the Checkout
+Session's customer's, else the card's issuing country (`revenue_countries`, an ISO code with its English name: the
+same rows a RevenueCat country split gives, kept in the same `REVC#<month>` items, so the `by_country` map shows them).
+
+**Revenue by version.** Stripe knows nothing of versions, so a game ties a purchase to its Glitchless session: its
+server puts the session ID (in a web game `Glitchless.instance.sessionId`, sent with the purchase request) on the
+Checkout Session it creates:
+
+```js
+stripe.checkout.sessions.create({ ..., client_reference_id: sessionId });
+```
+
+or sets `glitchless_session` (or `glitchless_player`, the player ID) in the Checkout Session's or the PaymentIntent's
+metadata (Stripe copies a PaymentIntent's metadata to its charge). The sync keeps those purchases
+(`revenue_purchases`: day, time, amount, product, and the ID given), and the core joins each, over a window of 31 days
+or less (longer ones have no sessions to join, and the panel says so), to the session named, else to the session the
+player was in when they paid or that ended within 30 minutes before. `by_version` is then revenue by that session's
+version next to Glitchless's players, sessions, crash-free sessions and frame p95, revenue per player, the platforms
+the purchases were made on, the players who paid (and their share of those measured), and what wasn't tied to any
+session. With `?version=` revenue is the purchases joined to that version's sessions; refunds, fees, net and new paying
+customers stay the whole game's.
+
+| panel `type` | fields | shows |
+| --- | --- | --- |
+| `store_revenue` | `store: stripe`, `measure`: `revenue` | the window's revenue, payments, and net after refunds, disputes and fees |
+| | `per_player` | that revenue over the players Glitchless measured |
+| | `refunds` | refunds and disputes in the window, how many refunds, their share of revenue |
+| | `customers` | new paying customers, next to the new players Glitchless saw |
+| | `by_day` | revenue per day with refunds and disputes per day (and the game's own purchase events when comparable); fees, net and new paying customers per day in its CSV |
+| | `by_product` | a row per product: revenue, share, payments, refunds (and their share of the product's revenue) |
+| | `by_version` | as §3h's, from the purchases tied to sessions, with platforms, players who paid and what wasn't tied |
+| | `by_country` | §3h's world map and ranked list, of revenue and payments only (Stripe has no installs, so it shows revenue whatever `show` says; titled "Revenue by country"); payments with no country are listed as "(none)", not on the map |
+
+RevenueCat's `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` aren't Stripe's (a board
+naming `store: stripe` with one is refused; one naming no store says so on the panel), nor are `refunds`, `customers`
+and `by_product` RevenueCat's. A game connected to Stripe gets a Revenue page (`revenue`, icon `money`: revenue,
+revenue per player, refunds, new paying customers in a row, revenue per day and by product, then by version) on the
+automatic dashboard, and on its saved ones on first connection (`withStorePage`). A game with both RevenueCat and Stripe
+gets both pages, each titled by its source ("RevenueCat revenue", "Stripe revenue"; a saved page still called
+"Revenue" is renamed, one the developer named is not). Revenue panels are sums: a share link shows them only when made
+with sums.
+
+**Query** `store_revenue` with `store=stripe` → §3h's `{connected, store, store_name, sources, synced_at, currency,
+version?, overview, from_day, to_day, …}` plus `mode` and `products_picked`, with `totals: {revenue, transactions,
+refunds, refund_count, disputes, fees, net, new_customers, other_payments, days, incomplete}` (no `latest`), `days:
+[{day, revenue, transactions, refunds, refund_count, disputes, fees, net, new_customers, incomplete?, sessions,
+players, new_players, purchases}]`, `products: [row]` (or `products_why`), `versions`, `platforms`, `unjoined`,
+`payers`, `payers_pct`, `countries: [{country, name, revenue, purchases}]` (or `countries_why`; no `stores`), and
+`notes`. `glitchless_revenue` reads it (`source: "stripe"`; without one, every source the
+game is connected to).
+
+**Stored** under `STORE#<project>#stripe` (§3f's layout, §3h's items): `REV#<month>` (by day: `revenue`,
+`transactions`, `refunds`, `refund_count`, `disputes`, `fees`, `net`, `new_customers`, `other_payments`, `currency`,
+`incomplete`), `REVP#<month>` (`revenue: {<day>|<product>: {name, revenue, transactions, refunds, refund_count,
+currency}}`), `REVC#<month>` (§3h's, its `revenue` only), `RPAY#<day>`
+(`rows`: the day's tied purchases, at most 2,000), `SNAP#overview` (the last 28 days, `days` of them kept: gross volume, payments, refunds,
+disputes, fees, net, new paying customers; `mode`; `other_payments`), `X#customers-<0…f>` and `META`; a day sent
+again replaces each. The sync's own state is `STRIPE_SALES#<project>` `STATE` (`through`: the last day closed;
+`currency`; the products a metadata key picked). The connection is `PROJECT#<project>` `STRIPE_SALES` (not `STRIPE#`,
+Glitchless's own billing).
+
+**Routes** are the stores' (§3f): `PUT /api/projects/{p}/stores/stripe` takes `{restrictedKey?, products?, service?}`
+(a key left out stays; `products: ""` picks none); `GET …/stores` gives its `connection` (`mode`, `products`,
+`keys.restricted: {hint, mode}`), `status` and `data` (`overview`: the last 28 days, `mode`).
 
 ## 4. Derived concepts
 

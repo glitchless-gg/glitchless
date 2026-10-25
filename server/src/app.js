@@ -388,7 +388,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store_vitals.
         return { meta, ...storeVitals(ctx, params) };
       case 'store_revenue':
-        // Real revenue from a revenue source (RevenueCat) by day and version, next to the sessions and players measured
+        // Real revenue from a revenue source (RevenueCat, Stripe) by day and version, next to the sessions and players measured
         // and the game's own purchase events (revenue.js revenueQuery), in the dashboard's currency: glitchless_revenue.
         return { meta, ...revenueQuery(ctx, params, { currency: (await store.getDashboard(projectId, service))?.currency ?? null }) };
       default:

@@ -41,10 +41,11 @@
 //   reports     the latest bug reports players sent, with their notes (`limit`)
 //   store_reviews, store_players, store_sales   a store's reviews by build, players online next to the sessions
 //               measured, units, returns and wishlists (reviews.js), for a game connected to a store (`store`)
-//   store_revenue  a revenue source's (RevenueCat's) revenue in the window, revenue per player measured, installs or
-//               active users next to the players measured, MRR, active subscriptions or trials, revenue or installs
-//               and active users per day, or revenue by version next to Glitchless's (`measure`, revenue.js); money
-//               in the source's currency, never converted
+//   store_revenue  a revenue source's (RevenueCat's or Stripe's) revenue in the window, revenue per player measured,
+//               installs or active users next to the players measured, MRR, active subscriptions or trials, revenue or
+//               installs and active users per day, or revenue by version next to Glitchless's; Stripe's refunds, new
+//               paying customers and revenue by product (`measure`, revenue.js); money in the source's currency,
+//               never converted
 //   retention   D1, D7 and D30 by the day players were first seen (the latest `limit` days); needs player IDs
 //   versions    this page's stat panels, version by version; `by` a Steam fact ($steam_branch, $steam_build)
 //               compares Steam branches or builds instead: the beta against public
