@@ -206,6 +206,12 @@ function PanelBody({ p }) {
         <>
           <TimeSeries ts={p.ts} height={160} bars={p.series.length === 1} format={p.currency ? (v) => fmtMoney(v, p.currency, true) : undefined} series={p.series.map((s, i) => ({ ...s, color: colorFor(s.label, i) }))} />
           <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
+          {p.counts === 'sessions' && <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>Sessions playing at the time, by their {p.split}.</div>}
+          {p.spread > 0 && (
+            <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
+              {fmtNum(p.spread)} of these events came from sessions that sent more than 16: Glitchless keeps when the first 16 were sent, and spreads the rest over the minutes those sessions played.
+            </div>
+          )}
         </>
       );
     case 'breakdown':
@@ -219,9 +225,20 @@ function PanelBody({ p }) {
             <LeftOut mismatch={p.mismatch} sandbox={p.sandbox} />
           </>
         );
+      // By $platform, $browser or $device_tier without an event: the sessions in each, and their players when the game
+      // sends player IDs.
+      if (p.counts === 'sessions')
+        return (
+          <>
+            <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sessions, color: colorFor(r.value, i), display: `${fmtNum(r.sessions)} sessions${r.players != null ? ` · ${fmtNum(r.players)} players` : ''}` }))} />
+            <div className="muted s12" style={{ marginTop: 6 }}>
+              {fmtNum(p.total)} sessions{p.players != null ? ` from ${fmtNum(p.players)} players` : ' (the game sends no player IDs, so players are not counted)'}{p.more > 0 ? ` · ${p.more} more` : ''}
+            </div>
+          </>
+        );
       return (
         <>
-          <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: r.sessions == null ? fmtNum(r.count) : `${fmtNum(r.count)} · ${fmtNum(r.sessions)} sessions` }))} />
+          <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: r.sessions == null ? fmtNum(r.count) : `${fmtNum(r.count)} · ${fmtNum(r.sessions)} sessions${r.players != null ? ` · ${fmtNum(r.players)} players` : ''}` }))} />
           <div className="muted s12" style={{ marginTop: 6 }}>
             {p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${fmtNum(p.sessions)} sessions`}{p.more > 0 ? ` · ${p.more} more values` : ''}
             {p.avg != null ? ` · average ${fmtNum(p.avg, 1)}` : ''}

@@ -52,9 +52,10 @@ test('GLITCHLESS_ALERT_WEBHOOK: a new error posts once, in Discord or Slack form
   assert.equal((await slack.check()).length, 1);
   assert.deepEqual((await discord.check()).length + (await slack.check()).length, 0, 'once');
   const [d, s] = [posts.find((p) => p.path === '/discord').body, posts.find((p) => p.path === '/slack').body];
-  assert.match(d.content, /New error in zoomies/);
+  assert.match(d.content, /A new error is spreading in zoomies\\: 3 sessions in/);
+  assert.match(d.embeds[0].description, /`TypeError: x is undefined`/);
   assert.match(d.embeds[0].description, /Use glitchless_triage on zoomies, then look at finding error-TypeError-x-is-undefined/);
   assert.equal(d.embeds[0].url, 'http://localhost:7777/#/errors/TypeError-x-is-undefined');
-  assert.match(s.text, /New error in zoomies: TypeError/);
+  assert.match(s.text, /^A new error is spreading in zoomies: 3 sessions in/);
   assert.ok(s.blocks.length >= 3);
 });

@@ -306,14 +306,14 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 ## Alerts in Discord or Slack
 
-Set `GLITCHLESS_ALERT_WEBHOOK` to a Discord or Slack incoming-webhook URL and `npm run server` checks the game every 15 minutes. It posts once when:
+Set `GLITCHLESS_ALERT_WEBHOOK` to a Discord or Slack incoming-webhook URL and `npm run server` checks the game every 15 minutes. It posts only when something got worse for real players, by enough to act on today:
 
-- a new error reaches 3 sessions within a day of first appearing;
-- the newest version's crash-free sessions fall 2 points below the version before, with 20 sessions or more of each and a drop too big to be chance;
-- the newest version's p95 frame time is 20% (and 2 ms) worse than the version before;
-- `glitchless_triage` has a new high or critical finding.
+- crashes jumped: 5 or more players crashed in the last 6 hours, at least 3 times the usual share for those hours over the last week;
+- a new error is spreading: first seen within a day, it has reached 10 players or 5% of sessions;
+- a release made it worse: the newest version stutters (2 or more hitches a minute) or crashes for noticeably more players than the one before, with enough players on each that it isn't chance;
+- the game went quiet: next to no sessions for 3 hours when those hours usually have 10 or more an hour, and a short note when they're back.
 
-Each message says what changed, gives its numbers and a link to the dashboard page, and ends with a line to paste into your coding agent, such as `Use glitchless_triage on zoomies, then look at finding error-3f9a1c`. Problems that were already there when the server started don't post, and an alert doesn't repeat while its problem lasts. The state is kept in memory, so a restart starts over. For a Slack-compatible webhook on another host (Mattermost, for one), add `GLITCHLESS_ALERT_FORMAT=slack`. The rules are in [`server/src/alerts.js`](server/src/alerts.js), and [SPEC §3e](docs/SPEC.md) has the numbers.
+Each message is one plain sentence, such as `zoomies is crashing: 14 players in the last 6 hours (usually about 2 a day). Started with 1.1.1.`, then how many players next to what's normal, what to do, a link to the dashboard page and a line to paste into your coding agent. The measurements behind it (rates, frame times, finding ids) are in a small "For your agent" part at the bottom. Players are counted by the player IDs a game sends, else in sessions, and the message says which. Problems that were already there when the server started don't post, and an alert doesn't repeat while its problem lasts. The state is kept in memory, so a restart starts over. For a Slack-compatible webhook on another host (Mattermost, for one), add `GLITCHLESS_ALERT_FORMAT=slack`. The rules are in [`server/src/alerts.js`](server/src/alerts.js), and [SPEC §3e](docs/SPEC.md) has the numbers. Glitchless Cloud adds Google Play's store limits, the plan's play sessions and a weekly summary.
 
 ## Run it on a server
 

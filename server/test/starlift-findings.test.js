@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { buildContext, performance, eventLift } from '../src/analytics.js';
 import { findings, versionFrames } from '../src/findings.js';
-import { evaluate, alertMessage } from '../src/alerts.js';
+import { evaluate, alertMessage, releaseStats } from '../src/alerts.js';
 import { versions } from '../src/analytics.js';
 import { createApp } from '../src/app.js';
 import { FileStore } from '../src/stores/file.js';
@@ -329,34 +329,31 @@ test('findings read the production sessions of players unless asked otherwise', 
   }
 });
 
-// The release alert's frame_p95 rule compared the versions' p95 over all their frames: Starlift 1.1 reached more 60 Hz
-// iPhones than 1.0.1, so its p95 rose with no frame any slower. It now compares on the screens both ran on.
-test('the release alert compares frame times on the screens both versions ran on', () => {
-  const alerts = (evs) => {
-    const ctx = ctxOf2(evs);
-    const [prev, cur] = versions(ctx).filter((v) => v.sessions >= 5).slice(-2);
-    const frames = versionFrames(ctx, prev, cur);
-    const out = evaluate({ now: T0 + 86_400e3 * 2, versions: [prev, cur].map((v) => ({ ...v, sessions: Math.max(v.sessions, 50) })), frames, settings: { rules: { crash_free: false, finding: false, new_error: false } } });
-    return out.signals.filter((x) => x.rule === 'frame_p95');
+// The release alert used to compare the versions' p95 over all their frames: Starlift 1.1 reached more 60 Hz iPhones than
+// 1.0.1, so its p95 rose with no frame any slower. It now counts players whose sessions stutter (2+ hitches a minute:
+// frames over 50 ms), which no screen's refresh rate makes.
+test('the release alert counts stutter, which more 60 Hz phones do not make', () => {
+  const release = (evs) => evaluate({ now: T0 + 86_400e3 * 2, release: releaseStats(ctxOf2(evs)), settings: {} }).signals.find((x) => x.rule === 'release');
+  // A session of 65 seconds: 13 frame windows, `hitches` of their frames over 50 ms.
+  const played = (version, i, { budget = 8.33, values = fast(300), hitches = 0 } = {}) => {
+    const t = T0 + (version === '1.0.1' ? 0 : 86_400e3 / 2) + i * 120_000;
+    const id = `${version}-${i}`;
+    return session({ id, version, ts: t, events: Array.from({ length: 13 }, (_, w) => frames('quick', t + 5000 * (w + 1), w < hitches ? [...values.slice(0, -1), 80] : values, { budget })) });
   };
+  const many = (version, n, o) => Array.from({ length: n }, (_, i) => played(version, i, typeof o === 'function' ? o(i) : o)).flat();
   // More 60 Hz phones, the same frames on each screen: no alert, though the p95 over everything rose.
-  const mix = [
-    ...versionSessions('1.0.1', Array.from({ length: 6 }, () => ({ values: fast(), budget: 8.33 }))),
-    ...versionSessions('1.1', [...Array.from({ length: 10 }, () => ({ values: fast(), budget: 8.33 })), ...Array.from({ length: 10 }, () => ({ values: slow60(), budget: 16.67 }))]),
-  ];
-  const [quiet] = alerts(mix);
+  const mix = [...many('1.0.1', 25), ...many('1.1', 50, (i) => (i % 2 ? { budget: 16.67, values: slow60(300) } : {}))];
+  const quiet = release(mix);
   assert.equal(quiet.holds, false);
-  assert.equal(quiet.frames.budget, 8.33);
-  assert.ok(quiet.cur.frame_p95 > 16, 'over all frames the p95 rose');
+  assert.deepEqual([quiet.prev.stutter, quiet.cur.stutter], [0, 0]);
+  const [prev, cur] = versions(ctxOf2(mix)).slice(-2);
+  assert.ok(cur.frame_p95 > prev.frame_p95 * 1.5, 'over all frames the p95 rose');
 
-  // Slower on the same 120 Hz screens: the alert holds, and says it compared the 120 Hz ones.
-  const slower = [
-    ...versionSessions('1.0.1', Array.from({ length: 6 }, () => ({ values: fast(), budget: 8.33 }))),
-    ...versionSessions('1.1', [...Array.from({ length: 10 }, () => ({ values: heavy(), budget: 8.33 })), ...Array.from({ length: 10 }, () => ({ values: slow60(), budget: 16.67 }))]),
-  ];
-  const [loud] = alerts(slower);
+  // 1.1 stutters for 1 in 2 players on the same 120 Hz screens (3 hitches in a 65-second session), 1.0.1 for none.
+  const stutter = [...many('1.0.1', 25), ...many('1.1', 50, (i) => ({ hitches: i % 2 ? 3 : 0 }))];
+  const loud = release(stutter);
   assert.equal(loud.holds, true);
+  assert.deepEqual([loud.prev.stutter, loud.cur.stutter, loud.cur.units], [0, 25, 50]);
   const m = alertMessage({ ...loud, service: 'starlift', at: T0 });
-  assert.match(m.title, /^starlift 1\.1 runs slower than 1\.0\.1: p95 frame time on 120 Hz screens [\d.]+ms → [\d.]+ms$/);
-  assert.match(m.facts[0], /^The versions ran on different screens, so this compares the 120 Hz ones/);
+  assert.equal(m.title, 'starlift 1.1 stutters for 5 in 10 players (1.0.1: none), most of all on quick.');
 });

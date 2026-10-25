@@ -1,12 +1,12 @@
-// A game's real revenue from RevenueCat (Glitchless Cloud: Settings → Integrations → RevenueCat), by day and by app
-// version where RevenueCat splits it, next to the sessions and players Glitchless measured and what the game's own
-// purchase events add up to.
+// A game's real revenue from RevenueCat (Glitchless Cloud: Settings → Integrations → RevenueCat), by day, and by app
+// version, country and store where RevenueCat splits it, next to the sessions and players Glitchless measured and what
+// the game's own purchase events add up to.
 import { z } from 'zod';
 import { query, resolveService, range, reply, common, filters, tool } from '../context.js';
 
 tool(
   'glitchless_revenue',
-  "The game's real revenue, installs and active users as RevenueCat counts them, for a game connected to RevenueCat in Glitchless Cloud (Settings → Integrations). RevenueCat counts production purchases only, never sandbox, TestFlight or licence-tester ones. It gives, for the window, revenue and transactions by UTC day, MRR, active subscriptions and trials, and revenue per player Glitchless measured. It also gives installs (RevenueCat's new customers: the first time its SDK starts on a device) next to the new players Glitchless saw, and active users a day next to Glitchless's players a day. Where RevenueCat splits revenue by the app version purchases were made on, it gives revenue by version too. Each day sits next to its sessions and players, and each version next to its players, crash-free sessions and frame-time p95. It also says what the game's own purchase events (track('purchase', { amount, currency })) add up to and how much of RevenueCat's revenue that is: the gap is purchases that never reach Glitchless. Use it for money questions, e.g. whether 1.4.2 earns more per player than 1.4.1. Use glitchless_events for purchases by item, level or player.",
+  "The game's real revenue, installs and active users as RevenueCat counts them, for a game connected to RevenueCat in Glitchless Cloud (Settings → Integrations). RevenueCat counts production purchases only, never sandbox, TestFlight or licence-tester ones. It gives, for the window, revenue and transactions by UTC day, MRR, active subscriptions and trials, and revenue per player Glitchless measured. It also gives installs (RevenueCat's new customers: the first time its SDK starts on a device) next to the new players Glitchless saw, and active users a day next to Glitchless's players a day. Where RevenueCat splits revenue by the app version purchases were made on, it gives revenue by version too; where it splits by country, installs, revenue and purchases by country; where it splits by store, revenue by store (App Store, Google Play) next to the sessions Glitchless measured on iOS and Android. Each day sits next to its sessions and players, and each version next to its players, crash-free sessions and frame-time p95. It also says what the game's own purchase events (track('purchase', { amount, currency })) add up to and how much of RevenueCat's revenue that is: the gap is purchases that never reach Glitchless. Use it for money questions, e.g. whether 1.4.2 earns more per player than 1.4.1. Use glitchless_events for purchases by item, level or player.",
   {
     service: common.service,
     hours: z.number().min(24).max(9600).optional().describe('Look-back window in hours (default 720, 30 days), read as whole UTC days'),
@@ -33,8 +33,14 @@ tool(
       r.versions?.length
         ? `By version:\n${r.versions.map((v) => `- ${v.version}: ${money(v.revenue)} (${v.share_pct}%), ${n(v.transactions)} transactions; ${v.players != null ? `${n(v.players)} players, ${money(v.per_player)} per player, crash-free ${v.crash_free_pct ?? '–'}%, frame p95 ${v.frame_p95 ?? '–'}ms` : 'no sessions of it in the window'}${v.purchases != null ? `; purchase events ${money(v.purchases)}` : ''}`).join('\n')}`
         : `By version: ${r.versions_why ?? 'none in this window'}`,
+      r.countries?.length
+        ? `By country${r.countries_as_of && r.countries_as_of < r.to_day ? ` (to ${r.countries_as_of})` : ''}: ${r.countries.slice(0, 10).map((c) => `${c.name} ${n(c.installs)} installs, ${money(c.revenue)} from ${n(c.purchases)} purchases`).join('; ')}${r.countries.length > 10 ? `; ${r.countries.length - 10} more in the data` : ''}.`
+        : `By country: ${r.countries_why ?? 'none in this window'}`,
+      r.stores?.length
+        ? `By store: ${r.stores.map((x) => `${x.name} ${money(x.revenue)} (${x.share_pct}%), ${n(x.purchases)} purchases${x.platform ? `; ${x.sessions != null ? `${n(x.sessions)} ${x.platform} sessions` : `${x.platform} sessions not counted over 31 days`}${x.per_player != null ? `, ${money(x.per_player)} per ${r.players_are_sessions ? 'session' : 'player'}` : ''}` : ''}`).join('; ')}.`
+        : `By store: ${r.stores_why ?? 'none in this window'}`,
       ...(r.notes?.length ? [`Notes:\n${r.notes.map((x) => `- ${x}`).join('\n')}`] : []),
     ];
-    return reply(lines.join('\n'), { days: r.days, versions: r.versions, overview: r.overview?.metrics ?? null });
+    return reply(lines.join('\n'), { days: r.days, versions: r.versions, countries: r.countries, stores: r.stores, overview: r.overview?.metrics ?? null });
   },
 );

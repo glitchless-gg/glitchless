@@ -248,7 +248,7 @@ test("versions compare the board's own numbers, and a board can split any event 
   // Per level, sessions can't be known from the cells: unknown, not zero.
   const [byLevel] = evaluateBoard(ctxOf(mobile, 'starlift'), validateBoard({ panels: [{ type: 'breakdown', event: 'play', by: '$level' }] }));
   assert.ok(byLevel.rows.length && byLevel.rows.every((r) => r.sessions === null), JSON.stringify(byLevel.rows));
-  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$device' }] }), /\$version or \$level/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$device' }] }), /\$version, \$level, \$platform, \$browser or \$device_tier/);
 });
 
 test('built-in sections as panels: findings, sessions that sent an event, versions and live', () => {
@@ -402,3 +402,86 @@ for (const [kind, make] of Object.entries(STORES)) {
 function round(v) {
   return Math.round(v * 10) / 10;
 }
+
+test('a breakdown or series by $platform: the sessions on each platform, or an event split by the platform of the sessions that sent it', () => {
+  // Starlift on iOS and Android (two of every three sessions on iOS), anonymous; one Android session taps 20 times.
+  const sessions = mobileGame().map((s, i) => s.map((e) => (e.type === 'session_start' ? { ...e, device: { ...e.device, os: i % 3 ? 'iOS' : 'Android' } } : e)));
+  const tapper = sessions[0];
+  const t0 = tapper[0].ts;
+  tapper.splice(1, 0, ...Array.from({ length: 20 }, (_, k) => ({ ...tapper[1], type: 'custom', name: 'tap', attrs: { what: k % 2 ? 'left' : 'right' }, ts: t0 + 1000 + k * 30_000 })));
+  const ctx = ctxOf(sessions.flat(), 'starlift');
+  const board = validateBoard({
+    panels: [
+      { type: 'breakdown', by: '$platform' },
+      { type: 'breakdown', event: 'buy=tapped', by: '$platform' },
+      { type: 'series', by: '$platform' },
+      { type: 'series', event: 'tap', by: '$platform' },
+      { type: 'series', event: 'tap=left', by: '$platform', title: 'Left taps' },
+      { type: 'breakdown', event: 'nope', by: '$platform' },
+    ],
+  });
+  const [sessionsBy, tapped, playing, taps, left, nope] = evaluateBoard(ctx, board);
+  assert.deepEqual([sessionsBy.title, sessionsBy.counts, sessionsBy.rows.map((r) => [r.value, r.sessions, r.players])], ['Sessions by platform', 'sessions', [['iOS', 8, null], ['Android', 4, null]]], 'no player IDs: sessions only');
+  assert.equal(sessionsBy.total, 12);
+  // buy=tapped: sessions m0, m4 and m8 (Android, iOS, iOS).
+  assert.deepEqual([tapped.title, tapped.counts, tapped.rows.map((r) => [r.value, r.count, r.sessions])], ['buy=tapped by platform', 'events', [['iOS', 2, 2], ['Android', 1, 1]]]);
+  assert.deepEqual(playing.series.map((s) => s.label), ['iOS', 'Android']);
+  assert.ok(playing.series[0].values.reduce((a, b) => a + b, 0) >= 8);
+  // 20 taps: the first 16 where they were sent, 4 spread over the minutes after.
+  assert.deepEqual([taps.series.map((s) => s.label), taps.series[0].values.reduce((a, b) => a + b, 0), taps.spread], [['Android'], 20, 4]);
+  assert.deepEqual([left.title, left.series[0].values.reduce((a, b) => a + b, 0)], ['Left taps', 10]);
+  assert.equal(nope.empty, true);
+
+  // With player IDs, players too.
+  const known = sessions.map((s, i) => s.map((e) => ({ ...e, player_id: `p${i % 5}` })));
+  const [withPlayers] = evaluateBoard(ctxOf(known.flat(), 'starlift'), validateBoard({ panels: [{ type: 'breakdown', by: '$platform' }] }));
+  assert.deepEqual(withPlayers.rows.map((r) => [r.value, r.sessions, r.players]), [['iOS', 8, 5], ['Android', 4, 4]]);
+  assert.equal(withPlayers.players, 5, 'a player on both platforms counted once');
+
+  // What a board with $platform can't do.
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$platform', sum: 'amount' }] }), /a sum can't be split by \$platform/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', by: 'what' }] }), /needs event/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'series', by: '$platform', sum: 'amount' }] }), /sum goes with event/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$os' }] }), /\$version, \$level, \$platform, \$browser or \$device_tier/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'series', event: 'buy', by: '$browser', sum: 'amount' }] }), /a sum can't be split by \$browser/);
+  // Over 31 days, answered by day without each session: it says so.
+  const [daily] = evaluateBoard({ ...ctx, daily: { all: { n: 12 } } }, validateBoard({ panels: [{ type: 'breakdown', by: '$platform' }] }));
+  assert.match(daily.why, /over 31 days or less/);
+});
+
+test('a split by $platform, $browser or $device_tier names each plainly: Steam hardware, OS names, engines that are not browsers, GPU tiers high to low', () => {
+  const devices = [
+    { os: 'Windows', browser: 'Chrome', gpu_tier: 'high' },
+    { os: 'Windows', browser: 'Edge', gpu_tier: 'mid' },
+    { os: 'macOS', browser: 'Safari', gpu_tier: 'mid' },
+    { os: 'Mac OS X', browser: 'Firefox', gpu_tier: 'mid' },
+    { os: 'Windows', browser: 'Godot', gpu_tier: 'low', steam_deck: true },
+    { os: 'Windows', browser: 'Unreal', gpu_tier: 'high', steam_hardware: 'machine' },
+    { os: 'Linux', browser: 'Godot', gpu_tier: 'mid' },
+    { os: 'iOS', browser: 'Godot', gpu_tier: 'low' },
+    { os: 'Android', browser: 'Unity', gpu_tier: 'low' },
+    { os: 'Web', browser: 'Unity', gpu_tier: 'software' },
+    { browser: 'Chrome' },
+  ];
+  const events = devices.flatMap((device, i) => {
+    const base = { service: 'any', env: 'prod', version: '1.0.0', session_id: `d${i}`, player_id: `p${i}`, level: null };
+    const ts = START + i * 60_000;
+    return [{ ...base, type: 'session_start', ts, session_type: 'user', device }, { ...base, type: 'custom', ts: ts + 1000, name: 'open', attrs: {} }, { ...base, type: 'session_end', ts: ts + 5000, reason: 'pagehide' }];
+  });
+  const ctx = ctxOf(events, 'any');
+  const [platforms, browsers, tiers, opens] = evaluateBoard(
+    ctx,
+    validateBoard({ panels: [{ type: 'breakdown', by: '$platform' }, { type: 'breakdown', by: '$browser', limit: 20 }, { type: 'breakdown', by: '$device_tier' }, { type: 'series', event: 'open', by: '$device_tier' }] }),
+  );
+  const rows = (p) => Object.fromEntries(p.rows.map((r) => [r.value, r.sessions]));
+  assert.deepEqual(rows(platforms), { Windows: 2, macOS: 2, 'Steam Deck': 1, 'Steam Machine': 1, Linux: 1, iOS: 1, Android: 1, Web: 1, unknown: 1 });
+  assert.deepEqual(rows(browsers), { Chrome: 2, Edge: 1, Safari: 1, Firefox: 1, 'Godot app': 3, 'Unreal app': 1, 'Unity app': 1, 'Unity web build': 1 });
+  assert.deepEqual([browsers.title, tiers.title, opens.title], ['Sessions by browser', 'Sessions by device tier', 'open by device tier']);
+  // Tiers in their order, high to low, whatever their counts.
+  assert.deepEqual(tiers.rows.map((r) => [r.value, r.sessions]), [['High-end GPU', 2], ['Mid-range GPU', 4], ['Low-end GPU', 3], ['Software rendering (no GPU)', 1], ['Unknown GPU', 1]]);
+  assert.deepEqual([tiers.split, tiers.players], ['device tier', 11]);
+  assert.deepEqual(opens.series.map((s) => s.label), ['High-end GPU', 'Mid-range GPU', 'Low-end GPU', 'Software rendering (no GPU)', 'Unknown GPU']);
+  assert.equal(opens.series.reduce((n, s) => n + s.values.reduce((a, b) => a + b, 0), 0), 11);
+  const [daily] = evaluateBoard({ ...ctx, daily: { all: { n: 11 } } }, validateBoard({ panels: [{ type: 'breakdown', by: '$browser' }] }));
+  assert.equal(daily.why, "Split by $browser over 31 days or less: longer ranges are answered by day, without each session's browser.");
+});

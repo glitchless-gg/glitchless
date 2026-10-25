@@ -3,7 +3,9 @@
 // sessions, what its own purchase events add up to (track('purchase', { amount, currency }), sums.js), its new players
 // next to the source's new customers (RevenueCat's nearest thing to installs: first seen by its SDK) and its players a
 // day next to the source's active customers, and, where the source splits revenue by app version, each version's
-// revenue next to its players, crash-free sessions and frame times. A source's charts count production purchases only (RevenueCat leaves sandbox, TestFlight and licence-tester
+// revenue next to its players, crash-free sessions and frame times; where it splits them by country, installs and
+// revenue on a world map; and where it splits revenue by store (the App Store, Google Play), each store's revenue
+// next to the sessions Glitchless measured on that store's platform (iOS, Android). A source's charts count production purchases only (RevenueCat leaves sandbox, TestFlight and licence-tester
 // purchases out), so its revenue is the number to trust for money; Glitchless's own purchase events are the ones to
 // read by level, item or player, and the gap between the two is the purchases that never reach Glitchless (builds
 // without the SDK, purchases the game doesn't track). Store-neutral like reviews.js, which stores and reads a
@@ -14,16 +16,27 @@
 //            incomplete }]   per UTC day: revenue, transactions, new customers and active customers in the day; MRR,
 //            active subscriptions and trials as the source's snapshot of the day; `incomplete`: a day still filling in
 //   revenue_versions: [{ day, version, revenue, transactions, currency }]   by the app version purchases were made on
+//   revenue_countries: [{ day, country, name, revenue, transactions, currency }]   by the customer's country: `country`
+//            an ISO 3166-1 alpha-2 code, else the source's name for it ("(other)": the countries past its top 50)
+//   installs_countries: [{ day, country, name, installs }]   new customers by country, the same way
+//   revenue_stores: [{ day, store, name, revenue, transactions, currency }]   by the store a purchase was made in
+//            (`store`: app_store, play_store, mac_app_store, amazon, stripe…; `name`: the source's)
 //   snapshots: { overview: { at, currency, metrics: [{ id, name, value, unit, period }] },
-//                charts: { day, version_segment, segments, currency } }   the source's numbers now, and what its charts
-//                                                                         can be split by
+//                charts: { day, version_segment, country_segment, installs_country_segment, store_segment, segments,
+//                          currency, countries_day, stores_day } }   the source's numbers now, what its charts can be
+//                                                                     split by, and the last day the splits were read
 //
 //   STORE#<projectId>#<source>  REV#<YYYY-MM>    { days: { <day>: { revenue, transactions, mrr, actives, trials,
 //                                                  new_customers, active_customers, currency, incomplete } } }   a day
 //                                                  sent again replaces what it has
 //   STORE#<projectId>#<source>  REVV#<YYYY-MM>   { rows: { <day>|<version>: { revenue, transactions, currency } } }
 //                                                  a day sent again replaces all of that day's versions
-import { overview, versions, eventIndex, playersAreSessions, retention, pct, round } from './analytics.js';
+//   STORE#<projectId>#<source>  REVC#<YYYY-MM>   { revenue: { <day>|<country>: { revenue, transactions, name, currency } },
+//                                                  installs: { <day>|<country>: { installs, name } } }
+//   STORE#<projectId>#<source>  REVS#<YYYY-MM>   { revenue: { <day>|<store>: { revenue, transactions, name, currency } } }
+//                                                  a day sent again replaces that day's countries (or stores) of what
+//                                                  it brings
+import { overview, versions, eventIndex, playersAreSessions, retention, sessionsBy, pct, round } from './analytics.js';
 import { sumsBy, gameCurrency } from './sums.js';
 
 export const REVENUE_SOURCES = { revenuecat: { name: 'RevenueCat' } };
@@ -40,7 +53,21 @@ export const MEASURES = {
   by_day: { title: 'Revenue per day', size: 'm' },
   players_by_day: { title: 'Installs and active users per day', size: 'm' },
   by_version: { title: 'Revenue by version', size: 'l' },
+  by_country: { title: 'Installs and revenue by country', size: 'l' },
+  by_store: { title: 'Revenue by store', size: 'm' },
 };
+// What a sync brings that writeRevenue keeps.
+export const REVENUE_BATCHES = ['revenue', 'revenue_versions', 'revenue_countries', 'installs_countries', 'revenue_stores'];
+// What a by_country panel's map shows first (the panel switches between them).
+export const COUNTRY_VIEWS = ['installs', 'revenue'];
+// The platform Glitchless names a store's sessions by (analytics.js platformOf).
+const STORE_PLATFORM = { app_store: 'iOS', play_store: 'Android', mac_app_store: 'macOS' };
+// The source's splits: by country (revenue and installs) and by store (revenue), kept by month.
+const SPLITS = [
+  { batch: 'revenue_countries', prefix: 'REVC', field: 'revenue', by: 'country', pick: (r) => ({ revenue: round(r.revenue ?? 0, 4), transactions: Number.isFinite(r.transactions) ? r.transactions : null, name: String(r.name ?? '').slice(0, 80) || null, currency: currencyOf(r.currency) }) },
+  { batch: 'installs_countries', prefix: 'REVC', field: 'installs', by: 'country', pick: (r) => ({ installs: Number.isFinite(r.installs) ? r.installs : 0, name: String(r.name ?? '').slice(0, 80) || null }) },
+  { batch: 'revenue_stores', prefix: 'REVS', field: 'revenue', by: 'store', pick: (r) => ({ revenue: round(r.revenue ?? 0, 4), transactions: Number.isFinite(r.transactions) ? r.transactions : null, name: String(r.name ?? '').slice(0, 80) || null, currency: currencyOf(r.currency) }) },
+];
 // The overview metric with a measure's number (by its ID or name), for before the charts have a day of it: MRR,
 // subscriptions and trials now; new and active customers over the last 28 days.
 const OVERVIEW = { mrr: /^mrr$/i, actives: /^active[_ ]subscriptions$/i, trials: /^active[_ ]trials$/i, installs: /^new[_ ]customers$/i, active_users: /^active[_ ](users|customers)$/i };
@@ -89,19 +116,40 @@ export async function writeRevenue(kv, key, batch, expires) {
     }
     await kv.put({ pk: key, sk: `REVV#${month}`, rows, expiresAt: expires(month) });
   }
+  // The splits: one item per prefix and month, each field's days replaced by the days sent.
+  const items = new Map();
+  for (const x of SPLITS) {
+    for (const [month, list] of byMonth(batch[x.batch])) {
+      const sk = `${x.prefix}#${month}`;
+      if (!items.has(sk)) items.set(sk, { month, item: (await kv.get(key, sk)) ?? {} });
+      const { item } = items.get(sk);
+      const sent = new Set(list.map((r) => r.day));
+      const rows = Object.fromEntries(Object.entries(item[x.field] ?? {}).filter(([k]) => !sent.has(k.slice(0, 10))));
+      for (const r of list) rows[`${r.day}|${String(r[x.by] ?? '(none)').slice(0, 80)}`] = x.pick(r);
+      item[x.field] = rows;
+    }
+  }
+  for (const [sk, { month, item }] of items) {
+    const { pk: _, sk: __, expiresAt, ...fields } = item;
+    await kv.put({ pk: key, sk, ...fields, expiresAt: expires(month) });
+  }
 }
 
-// A source's revenue days and versions for `months`, oldest first.
+// A source's revenue days, versions, countries and stores for `months`, oldest first.
 export async function readRevenue(kv, key, months) {
-  const items = await Promise.all(months.flatMap((m) => [kv.get(key, `REV#${m}`), kv.get(key, `REVV#${m}`)]));
+  const items = await Promise.all(months.flatMap((m) => ['REV', 'REVV', 'REVC', 'REVS'].map((p) => kv.get(key, `${p}#${m}`))));
   const revenue = [];
   const byVersion = [];
+  const splits = Object.fromEntries(SPLITS.map((x) => [x.batch, []]));
   months.forEach((_, i) => {
-    for (const [day, v] of Object.entries(items[i * 2]?.days ?? {})) revenue.push({ day, ...v });
-    for (const [k, v] of Object.entries(items[i * 2 + 1]?.rows ?? {})) byVersion.push({ day: k.slice(0, 10), version: k.slice(11), ...v });
+    const [rev, revv, ...rest] = items.slice(i * 4, i * 4 + 4);
+    for (const [day, v] of Object.entries(rev?.days ?? {})) revenue.push({ day, ...v });
+    for (const [k, v] of Object.entries(revv?.rows ?? {})) byVersion.push({ day: k.slice(0, 10), version: k.slice(11), ...v });
+    const item = { REVC: rest[0], REVS: rest[1] };
+    for (const x of SPLITS) for (const [k, v] of Object.entries(item[x.prefix]?.[x.field] ?? {})) splits[x.batch].push({ day: k.slice(0, 10), [x.by]: k.slice(11), ...v });
   });
   const order = (a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
-  return { revenue: revenue.sort(order), revenue_versions: byVersion.sort(order) };
+  return { revenue: revenue.sort(order), revenue_versions: byVersion.sort(order), ...Object.fromEntries(Object.entries(splits).map(([k, v]) => [k, v.sort(order)])) };
 }
 
 function currencyOf(v) {
@@ -262,7 +310,8 @@ export const REVENUE_PANEL = {
 export function revenuePanelFields(p, at, BoardError) {
   if (!MEASURES[p.measure]) throw new BoardError(`${at} (store_revenue) needs measure: one of ${Object.keys(MEASURES).join(', ')}`);
   if (p.store != null && !REVENUE_SOURCES[p.store]) throw new BoardError(`${at}.store must be one of ${Object.keys(REVENUE_SOURCES).join(', ')}`);
-  return { measure: p.measure, ...(p.store != null ? { store: p.store } : {}) };
+  if (p.show != null && (p.measure !== 'by_country' || !COUNTRY_VIEWS.includes(p.show))) throw new BoardError(`${at}.show goes with measure by_country: ${COUNTRY_VIEWS.join(' or ')} (what its map shows first)`);
+  return { measure: p.measure, ...(p.store != null ? { store: p.store } : {}), ...(p.show != null ? { show: p.show } : {}) };
 }
 
 // The Revenue page a game gets when it is connected to a revenue source: the source's revenue in the window, revenue
@@ -322,6 +371,10 @@ export function revenuePanel(ctx, p, { currency = null } = {}) {
       return w.days.length ? { ...named, ...byDay(w) } : none;
     case 'by_version':
       return { ...named, ...byVersion(ctx, st, w, currency) };
+    case 'by_country':
+      return { ...named, ...byCountry(st, w, p.show ?? 'installs') };
+    case 'by_store':
+      return { ...named, ...byStore(ctx, st, w) };
   }
   return named;
 }
@@ -436,6 +489,108 @@ function byVersion(ctx, st, w, currency) {
   return { rows: out, currency: w.currency, total: round(total, 2), segment: st.snapshots?.charts?.version_segment ?? null, comparable: w.comparable, notes: w.notes };
 }
 
+// The segments a source's revenue chart has, for a line saying it can't be split some way.
+const segmentsOf = (charts) => (charts?.segments?.length ? charts.segments.slice(0, 8).join(', ') : 'nothing');
+const readDaily = (name, what) => `${name}'s ${what} are read once a day: the first read comes with the next sync.`;
+// Lines for the splits, which are the whole game's and read once a day.
+function splitNotes(w, name, asOf, what) {
+  return [...(asOf && asOf < w.hi ? [`${name}'s ${what} are read once a day: these go to ${asOf}.`] : []), ...(w.version ? [`The whole game's ${what}, whatever the version filter.`] : []), ...w.notes.filter((n) => n.includes('never converted'))];
+}
+
+// The window's installs (the source's new customers), revenue and purchases (its transactions, renewals among them) by
+// the customer's country, most installs first (most revenue first when the panel shows revenue), the source's "Other"
+// last. `country` is the ISO code a map places, null for a name Glitchless couldn't place (the list still has it).
+function byCountry(st, w, show) {
+  const name = sourceName(st.store);
+  const charts = st.snapshots?.charts;
+  const inWindow = (r) => r.day >= w.lo && r.day <= w.hi;
+  const revenue = (st.revenue_countries ?? []).filter(inWindow);
+  const installs = (st.installs_countries ?? []).filter(inWindow);
+  if (!revenue.length && !installs.length) {
+    if (charts && !charts.country_segment && !charts.installs_country_segment) return { empty: true, why: `${name}'s charts for this project can't be split by country (its revenue chart splits by ${segmentsOf(charts)}).` };
+    if (!charts?.countries_day) return { empty: true, why: st.synced_at ? readDaily(name, 'countries') : `${name} has not been synced yet: the first sync runs within the hour.` };
+    return { empty: true, why: `No ${name} installs or revenue by country in this window.` };
+  }
+  const groups = new Map();
+  const group = (r) => {
+    const key = r.country;
+    if (!groups.has(key)) groups.set(key, { country: /^[A-Z]{2}$/.test(key) ? key : null, key, name: r.name || key, installs: 0, revenue: 0, purchases: 0 });
+    return groups.get(key);
+  };
+  for (const r of installs) group(r).installs += r.installs ?? 0;
+  for (const r of revenue) {
+    const g = group(r);
+    g.revenue += r.revenue ?? 0;
+    g.purchases += r.transactions ?? 0;
+  }
+  const totals = { installs: 0, revenue: 0, purchases: 0 };
+  for (const g of groups.values()) for (const k of Object.keys(totals)) totals[k] += g[k];
+  const first = show === 'revenue' ? ['revenue', 'installs'] : ['installs', 'revenue'];
+  const rows = [...groups.values()]
+    .map((g) => ({ ...g, revenue: round(g.revenue, 2), installs_pct: pct(g.installs, totals.installs), revenue_pct: pct(g.revenue, totals.revenue) }))
+    .sort((a, b) => (a.key === '(other)') - (b.key === '(other)') || b[first[0]] - a[first[0]] || b[first[1]] - a[first[1]] || (a.name < b.name ? -1 : 1));
+  const unplaced = rows.filter((r) => !r.country && r.key !== '(other)').map((r) => r.name);
+  return {
+    show,
+    rows,
+    currency: w.currency,
+    totals: { ...totals, revenue: round(totals.revenue, 2) },
+    countries: rows.filter((r) => r.country).length,
+    has: { installs: installs.length > 0 || Boolean(charts?.installs_country_segment), revenue: revenue.length > 0 || Boolean(charts?.country_segment) },
+    as_of: charts?.countries_day ?? null,
+    from_day: w.lo,
+    to_day: w.hi,
+    notes: [
+      `Installs are ${name}'s new customers in each country, purchases its transactions there (renewals count too).`,
+      ...(unplaced.length ? [`Not on the map (${name} named them in a way Glitchless doesn't know): ${unplaced.slice(0, 5).join(', ')}${unplaced.length > 5 ? ` and ${unplaced.length - 5} more` : ''}.`] : []),
+      ...splitNotes(w, name, charts?.countries_day, 'countries'),
+    ],
+  };
+}
+
+// The window's revenue by the store purchases were made in (the App Store, Google Play…), most first, next to the
+// sessions (and players) Glitchless measured on that store's platform: iOS for the App Store, Android for Google Play.
+function byStore(ctx, st, w) {
+  const name = sourceName(st.store);
+  const charts = st.snapshots?.charts;
+  const rows = (st.revenue_stores ?? []).filter((r) => r.day >= w.lo && r.day <= w.hi);
+  if (!rows.length) {
+    if (charts && !charts.store_segment) return { empty: true, why: `${name}'s revenue chart for this project can't be split by store (it splits by ${segmentsOf(charts)}).` };
+    if (!charts?.stores_day) return { empty: true, why: st.synced_at ? readDaily(name, 'stores') : `${name} has not been synced yet: the first sync runs within the hour.` };
+    return { empty: true, why: `No ${name} revenue by store in this window.` };
+  }
+  const groups = new Map();
+  for (const r of rows) {
+    const g = groups.get(r.store) ?? { store: r.store, name: r.name || r.store, revenue: 0, purchases: 0 };
+    g.revenue += r.revenue ?? 0;
+    g.purchases += r.transactions ?? 0;
+    groups.set(r.store, g);
+  }
+  const measured = ctx.daily ? null : new Map(sessionsBy(ctx).rows.map((x) => [x.value, x]));
+  const total = [...groups.values()].reduce((a, g) => a + g.revenue, 0);
+  const anon = w.players_are_sessions;
+  const out = [...groups.values()]
+    .map((g) => {
+      const platform = STORE_PLATFORM[g.store] ?? null;
+      const m = platform && measured ? measured.get(platform) : null;
+      const people = m ? (anon ? m.sessions : m.players) : null;
+      return { ...g, revenue: round(g.revenue, 2), share_pct: pct(g.revenue, total), platform, sessions: platform && measured ? (m?.sessions ?? 0) : null, players: platform && measured && !anon ? (m?.players ?? 0) : null, per_player: people ? round(g.revenue / people, 2) : null };
+    })
+    .sort((a, b) => (a.store === '(other)') - (b.store === '(other)') || b.revenue - a.revenue || (a.name < b.name ? -1 : 1));
+  return {
+    rows: out,
+    currency: w.currency,
+    total: round(total, 2),
+    players_are_sessions: anon,
+    as_of: charts?.stores_day ?? null,
+    notes: [
+      `Left: what ${name} counted in each store (production purchases only). Right: the sessions Glitchless measured on that store's platform (iOS for the App Store, Android for Google Play)${anon ? '; the game sends no player IDs, so revenue per player is per session' : ''}.`,
+      ...(ctx.daily ? ['Sessions by platform are counted over 31 days or less.'] : []),
+      ...splitNotes(w, name, charts?.stores_day, 'stores'),
+    ],
+  };
+}
+
 function compareVersions(a, b) {
   const pa = String(a).split(/[^0-9]+/).filter(Boolean).map(Number);
   const pb = String(b).split(/[^0-9]+/).filter(Boolean).map(Number);
@@ -447,7 +602,8 @@ function compareVersions(a, b) {
 
 // The store_revenue query (app.js, the glitchless_revenue MCP tool): the window's revenue, installs (new customers)
 // and active users from a revenue source (`store`, default the first connected), by day with the sessions, players and
-// new players Glitchless measured that day, and by version where the source splits it, with the source's overview now.
+// new players Glitchless measured that day, by version, by country and by store where the source splits them (by store
+// next to the sessions on that store's platform), with the source's overview now.
 // `version` (every query's filter of the sessions) reads that version's revenue only. `currency`: the dashboard's.
 export function revenueQuery(ctx, params = new URLSearchParams(), { currency = null } = {}) {
   const source = params.get('store')?.trim() || null;
@@ -471,6 +627,8 @@ export function revenueQuery(ctx, params = new URLSearchParams(), { currency = n
     return x ? { value: x.value, day: x.day ?? null, change: x.change ?? null, since: x.since ?? null } : null;
   };
   const v = byVersion(ctx, st, w, currency);
+  const countries = byCountry(st, w, 'installs');
+  const stores = byStore(ctx, st, w);
   return {
     ...head,
     from_day: w.lo,
@@ -502,6 +660,10 @@ export function revenueQuery(ctx, params = new URLSearchParams(), { currency = n
     })),
     versions: v.rows ?? null,
     ...(v.rows ? {} : { versions_why: v.why }),
+    countries: countries.rows ? countries.rows.slice(0, 50).map(({ country, name, installs, revenue, purchases }) => ({ country, name, installs, revenue, purchases })) : null,
+    ...(countries.rows ? { countries_as_of: countries.as_of } : { countries_why: countries.why }),
+    stores: stores.rows ? stores.rows.map(({ store, name, revenue, purchases, share_pct, platform, sessions, players, per_player }) => ({ store, name, revenue, purchases, share_pct, platform, sessions, players, per_player })) : null,
+    ...(stores.rows ? {} : { stores_why: stores.why }),
     notes: [...w.notes, ...c.notes],
   };
 }

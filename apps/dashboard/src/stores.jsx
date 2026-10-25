@@ -4,12 +4,15 @@
 // returns and wishlists by day. And a revenue source's (RevenueCat's, server/src/revenue.js): its revenue, installs,
 // active users, MRR, subscriptions and trials as numbers (Board.jsx draws them as stats, with revenueStat), revenue per
 // day next to the game's own purchase events, installs and active users per day next to the new players and players
-// Glitchless measured, and revenue by version next to what Glitchless measured. storeCsv is what their CSV
-// button downloads.
+// Glitchless measured, revenue by version next to what Glitchless measured, installs and revenue by country on a world
+// map (world.jsx) with a ranked list, and revenue by store next to the sessions on each store's platform. And a store's
+// score: its reviews' average stars next to the store's own rating. storeCsv is what their CSV button downloads.
+import { useState } from 'react';
 import { TimeSeries, Status } from './components.jsx';
 import { fmtNum, fmtPct, fmtTime, fmtMoney } from './format.js';
+import { WorldMap, rampColor } from './world.jsx';
 
-export const STORE_TYPES = new Set(['store_reviews', 'store_vitals', 'store_players', 'store_sales', 'store_revenue']);
+export const STORE_TYPES = new Set(['store_reviews', 'store_vitals', 'store_players', 'store_sales', 'store_revenue', 'store_score']);
 // The store_revenue measures that are one number.
 export const REVENUE_STATS = new Set(['revenue', 'per_player', 'installs', 'active_users', 'mrr', 'actives', 'trials']);
 // What of Glitchless's own measures each store vital compares with (server/src/reviews.js VITALS), and their names.
@@ -32,6 +35,9 @@ export function StorePanelBody({ p }) {
   if (p.type === 'store_revenue' && p.measure === 'by_day') return <RevenueDays p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_version') return <RevenueVersions p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'players_by_day') return <CustomerDays p={p} />;
+  if (p.type === 'store_revenue' && p.measure === 'by_country') return <Countries p={p} />;
+  if (p.type === 'store_revenue' && p.measure === 'by_store') return <RevenueStores p={p} />;
+  if (p.type === 'store_score') return <Score p={p} />;
   return null;
 }
 
@@ -148,6 +154,149 @@ function RevenueVersions({ p }) {
       </div>
       <div className="muted" style={{ marginTop: 6, fontSize: 11.5 }}>
         Left: what {p.store_name} counted on each version (production purchases only). Right: what Glitchless measured of the same version.
+      </div>
+      <Notes notes={p.notes} />
+    </>
+  );
+}
+
+// Installs and revenue by country: the map (one of the two at a time) and the countries ranked by it, with both
+// numbers and the purchases. Hovering a country on either shows it on both.
+function Countries({ p }) {
+  const views = [p.has?.installs !== false && 'installs', p.has?.revenue !== false && 'revenue'].filter(Boolean);
+  const [view, setView] = useState(views.includes(p.show) ? p.show : views[0]);
+  const [active, setActive] = useState(null);
+  const [all, setAll] = useState(false);
+  const t = p.totals;
+  const rows = [...p.rows].sort((a, b) => (a.key === '(other)') - (b.key === '(other)') || b[view] - a[view] || b[view === 'installs' ? 'revenue' : 'installs'] - a[view === 'installs' ? 'revenue' : 'installs']);
+  const shown = all ? rows : rows.slice(0, 12);
+  const top = Math.max(0, ...p.rows.filter((r) => r.country).map((r) => r[view]));
+  const value = (r, v = view) => (v === 'revenue' ? money(p, r.revenue) : fmtNum(r.installs));
+  const tip = (r) => `${fmtNum(r.installs)} ${r.installs === 1 ? 'install' : 'installs'} · ${money(p, r.revenue)} from ${fmtNum(r.purchases)} ${r.purchases === 1 ? 'purchase' : 'purchases'}`;
+  return (
+    <div className="countries">
+      <div className="countries-head">
+        {views.length > 1 && (
+          <div className="segmented" role="group" aria-label="What the map shows">
+            {views.map((v) => (
+              <button key={v} className={v === view ? 'on' : undefined} aria-pressed={v === view} onClick={() => setView(v)}>
+                {v === 'installs' ? 'Installs' : 'Revenue'}
+              </button>
+            ))}
+          </div>
+        )}
+        <span className="muted">
+          {fmtNum(t.installs)} installs · {money(p, t.revenue)} from {fmtNum(t.purchases)} purchases · {fmtNum(p.countries)} {p.countries === 1 ? 'country' : 'countries'}
+        </span>
+      </div>
+      <div className="countries-body">
+        <WorldMap rows={p.rows} measure={view} active={active} onActive={setActive} tip={tip} label={`${view === 'installs' ? 'Installs' : 'Revenue'} by country on ${p.store_name}`} format={(v) => (view === 'revenue' ? money(p, v, true) : fmtNum(v))} />
+        <div className="countries-list tablewrap">
+          <table className="dt wrap-th">
+            <thead>
+              <tr>
+                <th>Country</th>
+                <th className="num">Installs</th>
+                <th className="num">Revenue</th>
+                <th className="num">Purchases</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r, i) => (
+                <tr key={r.key} className={r.country && r.country === active ? 'sel' : undefined} onMouseEnter={() => setActive(r.country)} onMouseLeave={() => setActive(null)}>
+                  <td>
+                    <span className="country">
+                      <i className="swatch" style={{ background: r.country ? rampColor(r[view], top, view) : 'var(--map-none)' }} />
+                      {r.name}
+                    </span>
+                  </td>
+                  <td className={`num${view === 'installs' ? ' b' : ''}`}>{value(r, 'installs')}</td>
+                  <td className={`num${view === 'revenue' ? ' b' : ''}`}>{value(r, 'revenue')}</td>
+                  <td className="num">{fmtNum(r.purchases)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {rows.length > 12 && (
+            <button className="linkish" onClick={() => setAll(!all)}>
+              {all ? 'Show the top 12' : `Show all ${rows.length}`}
+            </button>
+          )}
+        </div>
+      </div>
+      <Notes notes={p.notes} />
+    </div>
+  );
+}
+
+// Revenue by store (left), and what Glitchless measured on that store's platform (right): its sessions, players and
+// revenue per player.
+function RevenueStores({ p }) {
+  const max = Math.max(...p.rows.map((r) => r.revenue), 0) || 1;
+  const per = p.players_are_sessions ? 'session' : 'player';
+  return (
+    <>
+      <div className="tablewrap">
+        <table className="dt wrap-th">
+          <thead>
+            <tr>
+              <th>Store</th>
+              <th style={{ width: '34%' }}>Revenue</th>
+              <th className="num">Purchases</th>
+              <th style={{ borderLeft: '1px solid var(--border)' }}>Platform</th>
+              <th className="num">Sessions</th>
+              {!p.players_are_sessions && <th className="num">Players</th>}
+              <th className="num" title={`${p.store_name}'s revenue in that store over the ${per}s Glitchless measured on its platform`}>
+                Per {per}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {p.rows.map((r) => (
+              <tr key={r.store}>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  <b>{r.name}</b>
+                </td>
+                <td>
+                  <div className="barrow" style={{ gridTemplateColumns: '1fr minmax(72px, max-content)' }}>
+                    <div className="bt">
+                      <div className="bf" style={{ width: `${(r.revenue / max) * 100}%`, background: '#f2545b' }} />
+                    </div>
+                    <div className="bv">
+                      {money(p, r.revenue)} <span className="muted">· {fmtPct(r.share_pct, 0)}</span>
+                    </div>
+                  </div>
+                </td>
+                <td className="num">{fmtNum(r.purchases)}</td>
+                <td style={{ borderLeft: '1px solid var(--border)' }}>{r.platform ?? <span className="muted">–</span>}</td>
+                <td className="num">{fmtNum(r.sessions)}</td>
+                {!p.players_are_sessions && <td className="num">{fmtNum(r.players)}</td>}
+                <td className="num">{money(p, r.per_player)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Notes notes={p.notes} />
+    </>
+  );
+}
+
+const stars = (v) => (v == null ? '–' : `${fmtNum(v, 1)} ★`);
+
+// A store's score: the store's own overall number where it has one (Apple's rating, Steam's summary), then the average
+// of the written reviews synced in the window, each saying which it is.
+function Score({ p }) {
+  const o = p.overall;
+  const s = p.synced;
+  return (
+    <>
+      <div className="score">
+        {o && p.store === 'app_store' && <Figure label="Apple's rating" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}, every version${o.current ? ` · ${o.current.version ?? 'this version'}: ${stars(o.current.average)} (${fmtNum(o.current.count)})` : ''}`} />}
+        {o && p.store === 'steam' && <Figure label="On Steam" value={o.desc ?? fmtPct(o.positive_pct, 0)} sub={`${fmtPct(o.positive_pct, 0)} positive of ${fmtNum(o.count)} reviews`} />}
+        {s && p.store !== 'steam' && <Figure label={o ? 'Reviews in this window' : 'Average of the reviews in this window'} value={stars(s.average)} sub={`${fmtNum(s.reviews)} written ${s.reviews === 1 ? 'review' : 'reviews'} synced${s.since ? ` since ${fmtTime(s.since, true)}` : ''}`} title={`Stars: ${s.stars.map((n, i) => `${i + 1}★ ${n}`).join(', ')}`} />}
+        {s && p.store === 'steam' && <Figure label="Reviews in this window" value={fmtPct(s.positive_pct, 0)} sub={`positive, of ${fmtNum(s.reviews)}`} />}
+        {!s && <Figure label="Reviews in this window" value="–" sub="none synced" />}
       </div>
       <Notes notes={p.notes} />
     </>
@@ -393,6 +542,15 @@ export function storeCsv(p) {
     return [['Version', 'Build', ...p.columns.map((c) => `${p.store_name}: ${c.label}${c.unit ? ` (${c.unit})` : ''}`), 'Glitchless: sessions', 'Glitchless: frame p95 (ms)', ...ours.map((k) => `Glitchless: ${MEASURED[k][0]}${MEASURED[k][1] ? ` (${MEASURED[k][1]})` : ''}`), 'Where they disagree'], ...p.rows.map((r) => [r.version, r.build, ...p.columns.map((c) => r.store[c.key]), r.glitchless?.sessions, r.glitchless?.frame_p95, ...ours.map((k) => r.glitchless?.[k]), r.notes.map((n) => n.says).join(' | ')])];
   }
   if (p.type === 'store_players') return [['Time', ...p.series.map((s) => s.label)], ...p.ts.map((t, i) => [iso(t), ...p.series.map((s) => s.values[i])])];
+  if (p.type === 'store_score') {
+    const o = p.overall;
+    return [
+      ['What', 'Value', 'Count'],
+      ...(o && p.store === 'app_store' ? [["Apple's rating (stars)", o.average, o.count]] : []),
+      ...(o && p.store === 'steam' ? [['Steam positive (%)', o.positive_pct, o.count]] : []),
+      ...(p.synced ? [[p.store === 'steam' ? 'Reviews in this window, positive (%)' : 'Reviews in this window (stars)', p.synced.average ?? p.synced.positive_pct, p.synced.reviews]] : []),
+    ];
+  }
   if (p.type === 'store_sales') {
     const series = [...(p.sales_series ?? []), ...(p.wishlist_series ?? [])];
     return [['Day', ...series.map((s) => s.label)], ...p.ts.map((t, i) => [iso(t).slice(0, 10), ...series.map((s) => s.values[i])])];
@@ -404,6 +562,8 @@ export function storeCsv(p) {
       return [['Day', `Revenue${cur}`, 'Transactions', `MRR${cur}`, 'Active subscriptions', 'Active trials', ...(own ? [`The game's purchase events${cur}`] : [])], ...p.days.map((d, i) => [d, p.series[0].values[i], p.transactions[i], p.mrr[i], p.actives[i], p.trials[i], ...(own ? [own.values[i]] : [])])];
     }
     if (p.measure === 'players_by_day') return [['Day', ...p.series.map((s) => s.label)], ...p.days.map((d, i) => [d, ...p.series.map((s) => s.values[i])])];
+    if (p.measure === 'by_country') return [['Country code', 'Country', 'Installs', `Revenue${cur}`, 'Purchases'], ...p.rows.map((r) => [r.country, r.name, r.installs, r.revenue, r.purchases])];
+    if (p.measure === 'by_store') return [['Store', `Revenue${cur}`, 'Share (%)', 'Purchases', 'Glitchless: platform', 'Glitchless: sessions', 'Glitchless: players', `Revenue per ${p.players_are_sessions ? 'session' : 'player'}${cur}`], ...p.rows.map((r) => [r.name, r.revenue, r.share_pct, r.purchases, r.platform, r.sessions, r.players, r.per_player])];
     if (p.measure === 'by_version') return [['Version', `Revenue${cur}`, 'Share (%)', 'Transactions', 'Glitchless: players', 'Glitchless: sessions', `Revenue per player${cur}`, ...(p.comparable ? [`The game's purchase events${cur}`] : []), 'Glitchless: crash-free sessions (%)', 'Glitchless: frame p95 (ms)'], ...p.rows.map((r) => [r.version, r.revenue, r.share_pct, r.transactions, r.players, r.sessions, r.per_player, ...(p.comparable ? [r.purchases] : []), r.crash_free_pct, r.frame_p95])];
     return [['Stat', `Value${MONEY_STATS.has(p.measure) ? cur : ''}`, 'Day'], [p.title, p.value, p.day ?? p.to_day ?? null]];
   }

@@ -249,3 +249,34 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 /* Retention: cohorts by first-seen day, each Dn cell shaded by its share. */
 .dt td.ret { color: var(--ink, #14213d); font-variant-numeric: tabular-nums; }
 .playing-now { font-size: 12.5px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-right: 4px; }
+
+/* ─── installs and revenue by country (world.jsx), store score ─── */
+:root {
+  --map-none: color-mix(in srgb, var(--text) 9%, var(--panel)); --map-edge: var(--panel);
+  --map-installs-1: #d6e4fa; --map-installs-2: #a3c2f2; --map-installs-3: #6d9be4; --map-installs-4: #3b70cc; --map-installs-5: #1c4590;
+  --map-revenue-1: #fcdedc; --map-revenue-2: #f6aea9; --map-revenue-3: #ec7b73; --map-revenue-4: #d44c45; --map-revenue-5: #982b27;
+}
+.countries { container-type: inline-size; }
+.countries-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.countries-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(250px, 1fr); gap: 14px; align-items: start; }
+@container (max-width: 680px) { .countries-body { grid-template-columns: minmax(0, 1fr); } }
+.countries-list { max-height: 360px; }
+.countries-list td.b { font-weight: 600; }
+.countries-list .dt th, .countries-list .dt td { padding: 6px 7px; }
+.countries-list .dt th { letter-spacing: 0; min-width: 0; }
+.countries-list .country { display: inline-flex; align-items: baseline; gap: 7px; }
+.countries-list .swatch { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+.linkish { border: 0; background: none; color: var(--info); cursor: pointer; padding: 6px 10px; font-size: 12px; }
+.world-map { position: relative; min-width: 0; }
+.world-map.loading { background: var(--map-none); border-radius: 4px; opacity: .5; }
+.world-map svg { display: block; width: 100%; height: auto; }
+.world-map path { stroke: var(--map-edge); stroke-width: .6; stroke-linejoin: round; }
+.world-map .dot { stroke: var(--map-edge); stroke-width: 1; }
+.world-map .ring { stroke: var(--text); stroke-width: 1.4; }
+.map-tip { position: absolute; z-index: 2; pointer-events: none; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 4px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(20, 33, 61, .12); max-width: 220px; }
+.map-tip b { display: block; margin-bottom: 2px; }
+.map-scale { display: flex; align-items: center; gap: 3px; margin-top: 6px; font-size: 11.5px; color: var(--text-2); font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.map-scale i { display: inline-block; width: 22px; height: 8px; border-radius: 2px; }
+.map-scale span:first-child { margin-right: 4px; }
+.map-scale span:nth-last-child(2) { margin-left: 4px; }
+.score { display: flex; flex-wrap: wrap; gap: 10px 22px; }

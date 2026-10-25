@@ -81,8 +81,8 @@ one line on why it matters.
 | type | fields |
 | --- | --- |
 | `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now: playing now, whatever the range), or `event` with an optional `per`: another event (a percentage) or `$players` / `$sessions` (the share of them that sent it: conversion). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player |
-| `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level`), `limit`, `sum` |
-| `breakdown` | `event`, `by`, `limit`, `sum` (each value's sum, largest first) |
+| `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level`, or the sessions' `$platform` / `$browser` / `$device_tier`), `limit`, `sum` |
+| `breakdown` | `event`, `by`, `limit`, `sum` (each value's sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web…), `$browser` (Chrome, Safari, Firefox, Edge…; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Counts only, no `sum`; ranges of 31 days or less |
 | `funnel` | `steps`: events in order, comma-separated |
 | `levels` | `label`: what the game calls a level ("Stop", "Puzzle", "Wave") |
 | `sessions` | `sent`: only sessions that sent this event ("buy=done"), `limit` |
@@ -90,7 +90,8 @@ one line on why it matters.
 | `live` | `events`: only these names or types, as they arrive |
 | `findings`, `frame_time`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports) |
 | `retention` | `limit`: how many of the latest first-seen days (default 14). Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on |
-| `store_revenue` | `measure` (required): `revenue`, `per_player`, `installs`, `active_users`, `mrr`, `actives`, `trials`, `by_day`, `players_by_day` or `by_version`. Real revenue, installs and active users from RevenueCat, for a game connected to it in Glitchless Cloud |
+| `store_revenue` | `measure` (required): `revenue`, `per_player`, `installs`, `active_users`, `mrr`, `actives`, `trials`, `by_day`, `players_by_day`, `by_version`, `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`) or `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured). Real revenue, installs and active users from RevenueCat, for a game connected to it in Glitchless Cloud |
+| `store_score` | `store` (`app_store`, `google_play` or `steam`): a store's rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple's own rating on the App Store. Google Play has no API for its overall rating, so its panel is the reviews' average and says so |
 | `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
 
 An event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. With `sum` and `by`
@@ -105,6 +106,12 @@ unless the link is made to show it. A game connected to RevenueCat (Glitchless C
 `store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs
 and active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game's
 own `purchase` sums are for revenue by item, level or player.
+
+**Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by
+`$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or
+sessions on each), the same with `event: "purchase"` (purchases tracked on each), and with RevenueCat connected,
+`store_revenue` `by_store` (the money in each store) and `by_country` (where installs and money come from). Add a
+`store_score` per store the game is connected to.
 
 Every panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a
 developer can take any number to a spreadsheet: no export panel is needed.

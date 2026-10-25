@@ -1022,6 +1022,69 @@ function steamEventsBy(ctx, f, dim) {
   return [...out.values()].sort((a, b) => b.count - a.count || (a.value < b.value ? -1 : 1));
 }
 
+// What a board can split sessions by (series and breakdowns, `by: "$<name>"`), each from the session's session_start
+// device, in plain words: the platform it ran on (platformOf: Windows, macOS, Linux, Steam Deck, iOS, Android…), the
+// browser it ran in (browserOf), and its GPU tier as the Performance view sorts it (high to low). `order`: rows in this
+// order rather than most first.
+const TIERS = { high: 'High-end GPU', mid: 'Mid-range GPU', low: 'Low-end GPU', software: 'Software rendering (no GPU)', unknown: 'Unknown GPU' };
+export const SESSION_SPLITS = {
+  platform: { label: 'platform', of: (dev) => platformOf(dev) },
+  browser: { label: 'browser', of: (dev) => browserOf(dev) },
+  device_tier: { label: 'device tier', of: (dev) => TIERS[dev?.gpu_tier] ?? TIERS.unknown, order: Object.values(TIERS) },
+};
+
+// By one of SESSION_SPLITS (default the platform), from the sessions themselves, so over 31 days or less. With an event
+// (`f`): its count from each group's sessions, the sessions and (with player IDs) players that sent it, and its count
+// over time. A session keeps when it sent the first 16 of an event (EV.occurrences); a session that sent more has the
+// rest spread over the minutes it played after the 16th, and `spread` counts them. Without one: the sessions in each
+// group and their players, and the sessions playing in each time bucket. `players`: all of them, each once (a player
+// can be in two groups: a phone and a PC), or null without player IDs.
+// → { rows: [{ value, count, sessions, players, series, spread }] most first (or in the split's order), players }
+export function sessionsBy(ctx, f = null, split = 'platform') {
+  const { of, order } = SESSION_SPLITS[split];
+  const nb = ctx.buckets.length;
+  const ids = !playersAreSessions(ctx);
+  const out = new Map();
+  const everyone = new Set();
+  for (const s of ctx.sessions.values()) {
+    const n = f ? sessionEventCount(s, f) : 1;
+    if (!n) continue;
+    if (ids && hasPlayerId(s)) everyone.add(s.player_id);
+    const value = of(s.device);
+    let x = out.get(value);
+    if (!x) out.set(value, (x = { value, count: 0, sessions: 0, players: new Set(), series: new Array(nb).fill(0), spread: 0 }));
+    x.count += n;
+    x.sessions++;
+    if (ids && hasPlayerId(s)) x.players.add(s.player_id);
+    if (f) x.spread += placeEvents(ctx, s, f, n, x.series);
+    else for (const i of new Set([...s.minutes].map((m) => bucketIndex(ctx, m)))) x.series[i]++;
+  }
+  const rank = (v) => (order ? order.indexOf(v) : 0);
+  const rows = [...out.values()].map((x) => ({ ...x, players: ids ? x.players.size : null })).sort((a, b) => rank(a.value) - rank(b.value) || b.count - a.count || (a.value < b.value ? -1 : 1));
+  return { rows, players: ids ? everyone.size : null };
+}
+
+// A session's `n` events matching `f` into `series`: the ones it kept the time of where they were sent, the rest spread
+// evenly over the minutes it played after the last one kept. → how many were spread
+function placeEvents(ctx, s, f, n, series) {
+  const kept = s.ev?.[f.name]?.o ?? [];
+  const matches = (attrs) => f.value == null || Object.entries(attrs ?? {}).some(([k, v]) => (!f.key || k === f.key) && String(v) === f.value);
+  let placed = 0;
+  for (const [ts, attrs] of kept) {
+    if (placed >= n) break;
+    if (!matches(attrs)) continue;
+    series[bucketIndex(ctx, ts)]++;
+    placed++;
+  }
+  const rest = n - placed;
+  if (rest <= 0) return 0;
+  const after = kept.at(-1)?.[0] ?? s.first_ts;
+  const minutes = [...s.minutes].filter((m) => m + 60_000 > after).sort((a, b) => a - b);
+  if (!minutes.length) minutes.push(after);
+  minutes.forEach((m, i) => (series[bucketIndex(ctx, m)] += Math.floor(rest / minutes.length) + (i < rest % minutes.length ? 1 : 0)));
+  return rest;
+}
+
 // The game's own metrics: every custom event name with its count over time, the sessions and players that
 // sent it, and how each attribute's values break down. `name` keeps one event; `sdk` adds the SDKs' own.
 export function customEvents(ctx, { name = null, sdk = false } = {}) {
@@ -1642,12 +1705,30 @@ function naturalSortBy(arr, key) {
   return arr.sort((a, b) => String(a[key]).localeCompare(String(b[key]), undefined, { numeric: true }));
 }
 
-// The platform a session ran on, for the performance breakdown: Valve's hardware on its own, whatever OS the build
-// is for (a Windows build runs on a Deck under Proton), else the OS. Steamworks names the hardware (steam_hardware)
-// when the game uses it; otherwise the SDKs' own steam_deck tag finds a Deck.
+// The platform a session ran on, for the performance breakdown and a board's $platform: Valve's hardware on its own,
+// whatever OS the build is for (a Windows build runs on a Deck under Proton), else the OS, in the words the SDKs use
+// (Windows, macOS, Linux, iOS, Android, SteamOS, ChromeOS, Web for an engine's web build…; other spellings of them are
+// read as these). Steamworks names the hardware (steam_hardware) when the game uses it; otherwise the SDKs' own
+// steam_deck tag finds a Deck.
 const STEAM_PLATFORMS = { deck: 'Steam Deck', machine: 'Steam Machine', frame: 'Steam Frame' };
+const OS_NAMES = { windows: 'Windows', win32: 'Windows', win64: 'Windows', macos: 'macOS', mac: 'macOS', osx: 'macOS', macosx: 'macOS', 'mac os x': 'macOS', linux: 'Linux', x11: 'Linux', ios: 'iOS', ipados: 'iOS', android: 'Android', steamos: 'SteamOS', chromeos: 'ChromeOS', tvos: 'tvOS', web: 'Web', html5: 'Web', webgl: 'Web' };
 export function platformOf(dev) {
-  return STEAM_PLATFORMS[dev?.steam_hardware] || (dev?.steam_deck === true ? 'Steam Deck' : dev?.os || 'unknown');
+  if (STEAM_PLATFORMS[dev?.steam_hardware]) return STEAM_PLATFORMS[dev.steam_hardware];
+  if (dev?.steam_deck === true) return 'Steam Deck';
+  const os = String(dev?.os ?? '').trim();
+  return os ? (OS_NAMES[os.toLowerCase()] ?? os) : 'unknown';
+}
+
+// The browser a session ran in, for a board's $browser: the browser SDK's name for it (Chrome, Safari, Firefox, Edge,
+// Opera, Other). The engine SDKs put their engine there instead, so their sessions are "Godot app" (no browser), or
+// "Unity web build" for a web build, whose browser the engine doesn't say.
+const ENGINES = new Set(['Godot', 'Unity', 'Unreal', 'GameMaker']);
+const WEB_OS = /^(web|html5|webgl|gx\.games|opera gx)$/i;
+export function browserOf(dev) {
+  const b = String(dev?.browser ?? '').trim();
+  if (!b) return 'unknown';
+  if (ENGINES.has(b)) return WEB_OS.test(String(dev?.os ?? '')) ? `${b} web build` : `${b} app`;
+  return b;
 }
 
 function tierRank(t) {

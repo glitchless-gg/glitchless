@@ -95,11 +95,15 @@ export function panelCsv(p) {
     case 'series':
       return [['Time', ...p.series.map((s) => (p.sum ? sumHeader(s.label, p.currency) : s.label))], ...p.ts.map((t, i) => [iso(t), ...p.series.map((s) => s.values[i])])];
     case 'breakdown': {
-      const by = p.by.startsWith('$') ? p.by.slice(1) : p.by;
+      // A split of sessions ($platform, $browser, $device_tier) names its column in words.
+      const by = p.split ?? (p.by.startsWith('$') ? p.by.slice(1) : p.by);
       const sessions = p.rows.some((r) => r.sessions != null);
+      const players = p.rows.some((r) => r.players != null);
+      // Split without an event, the count is the sessions.
+      if (p.counts === 'sessions') return [[by, 'Sessions', ...(players ? ['Players'] : [])], ...p.rows.map((r) => [r.value, r.sessions, ...(players ? [r.players] : [])])];
       return [
-        [by, 'Count', ...(sessions ? ['Sessions'] : []), ...(p.sum ? [sumHeader(p.sum, p.currency)] : [])],
-        ...p.rows.map((r) => [r.value, r.count, ...(sessions ? [r.sessions] : []), ...(p.sum ? [r.sum] : [])]),
+        [by, 'Count', ...(sessions ? ['Sessions'] : []), ...(players ? ['Players'] : []), ...(p.sum ? [sumHeader(p.sum, p.currency)] : [])],
+        ...p.rows.map((r) => [r.value, r.count, ...(sessions ? [r.sessions] : []), ...(players ? [r.players] : []), ...(p.sum ? [r.sum] : [])]),
       ];
     }
     case 'funnel':

@@ -1,7 +1,8 @@
 // The App Store as a review store (reviews.js), without a key: Apple's public RSS feed of a country's latest reviews,
 // 50 a page and 10 pages deep (about 500 a country), each with the version it was written on (`im:version`) and its
 // stars. Enough for a game with no setup at all; Glitchless Cloud adds the App Store Connect API (every review, joined
-// to its version, and Apple's own hang, launch and animation metrics). SPEC §3f.
+// to its version, and Apple's own hang, launch and animation metrics). And Apple's overall rating in each country, from
+// its public lookup (lookupRating). SPEC §3f.
 //
 // The reviewer (their name and profile link) is never read or kept.
 import { reviewText, plain } from './reviews.js';
@@ -75,6 +76,52 @@ export function appStoreRss({ fetch = globalThis.fetch, base = ITUNES, timeoutMs
       }
     },
   };
+}
+
+// Apple's own rating of an app in one country's store, from the public lookup (GET /lookup?id=&country=): the average
+// stars and how many ratings, of every version and of the current one (ratings with or without a review). → { country,
+// average, count, version, current_average, current_count } or null when the app isn't sold there.
+export function parseLookup(json, country) {
+  if (!json || typeof json !== 'object' || !Array.isArray(json.results)) throw new AppStoreError(502, 'Apple sent a lookup Glitchless could not read.');
+  const app = json.results.find((r) => r?.wrapperType === 'software' || r?.kind === 'software') ?? json.results[0];
+  if (!app) return null;
+  const num = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+  const average = num(app.averageUserRating);
+  const count = num(app.userRatingCount);
+  return { country: String(country).toLowerCase(), average: average != null ? Math.round(average * 100) / 100 : null, count: count ?? 0, version: plain(app.version) || null, current_average: num(app.averageUserRatingForCurrentVersion), current_count: num(app.userRatingCountForCurrentVersion) };
+}
+
+// The lookup for each of `countries` → { rating: { countries: [...], average, count } | null, errors }: `average` is
+// weighted by each country's ratings. A country where the app isn't sold is left out.
+export async function lookupRating({ fetch = globalThis.fetch, base = ITUNES, appId, countries = ['us'], timeoutMs = 15_000, onCall = () => {} }) {
+  const out = [];
+  const errors = [];
+  for (const country of countries) {
+    const url = new URL('/lookup', base);
+    url.searchParams.set('id', appId);
+    url.searchParams.set('country', country);
+    onCall('keyless');
+    try {
+      let res;
+      try {
+        res = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(timeoutMs) });
+      } catch (err) {
+        throw new AppStoreError(0, err.name === 'TimeoutError' ? `Apple did not answer within ${timeoutMs / 1000} seconds.` : `Could not reach Apple (${err.cause?.code || err.name}).`);
+      }
+      if (!res.ok) {
+        await res.arrayBuffer().catch(() => null);
+        throw new AppStoreError(res.status, `Apple answered HTTP ${res.status}.`);
+      }
+      const r = parseLookup(await res.json().catch(() => null), country);
+      if (r) out.push(r);
+    } catch (err) {
+      if (!(err instanceof AppStoreError)) throw err;
+      errors.push({ part: `rating (${country})`, status: err.status, error: err.message });
+    }
+  }
+  const rated = out.filter((r) => r.average != null && r.count > 0);
+  const count = rated.reduce((a, r) => a + r.count, 0);
+  return { rating: out.length ? { countries: out, average: count ? Math.round((rated.reduce((a, r) => a + r.average * r.count, 0) / count) * 100) / 100 : null, count } : null, errors };
 }
 
 // One run over the feeds of `countries` (ISO codes, e.g. ['us', 'gb']): newest first, page by page, each country until

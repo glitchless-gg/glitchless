@@ -30,7 +30,7 @@
 // A revenue source (RevenueCat) comes in the same way, under its name, with revenue instead of reviews: it is stored
 // and read here with the stores' data, and its panel, page and query are revenue.js's.
 import { versions, pct, round } from './analytics.js';
-import { REVENUE_SOURCES, REVENUE_PANEL, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue } from './revenue.js';
+import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue } from './revenue.js';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -73,7 +73,8 @@ const DAY_BYTES = 300_000;
 const READ_REVIEWS = 3000;
 const LOOKBACK = 30 * DAY;
 const RECORD_DAYS = 62;
-const SNAPSHOTS = ['devices', 'hangs', 'overview', 'charts'];
+// health: Google Play's 28-day user-perceived crash and ANR rates over every version (the alerts' store rule).
+const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health'];
 
 // ───────────────────────────── topics ─────────────────────────────
 
@@ -115,8 +116,10 @@ const inSegment = (r) => r.steam?.deck === true;
 //   STORE#<projectId>#<store>  WISH#<YYYY-MM>     { days: { <YYYY-MM-DD>: { adds, deletes, purchases, gifts } } }
 //   STORE#<projectId>#<store>  VIT#<YYYY-MM>      { rows: { <key>: Vital } }   vitals by day (a day sent again replaces)
 //   STORE#<projectId>#<store>  VITV               { rows: { <key>: Vital } }   vitals by version, the latest of each
-//   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs;
-//                                                 a revenue source's overview and charts (revenue.js)
+//   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs,
+//                                                 rating (the App Store's own: { day, at, average, count, countries:
+//                                                 [{ country, average, count, version, current_average,
+//                                                 current_count }] }); a revenue source's overview and charts (revenue.js)
 //   STORE#<projectId>#<store>  REV#… REVV#…       a revenue source's revenue by day and by version (revenue.js)
 //   STORE#<projectId>#<store>  RELEASES | NOTES   { items: [Mark] }
 //   STORE#<projectId>#<store>  META               { summary, synced_at, reviews }
@@ -221,8 +224,8 @@ export function createStoreData(kv) {
 
   return {
     // What one sync brought: any of { reviews, players: [ts, n] (or a list of them), releases, notes, summary, sales,
-    // wishlists, vitals, snapshots: { devices?, hangs?, overview?, charts? }, extras: { <name>: object }, and a revenue
-    // source's revenue and revenue_versions (revenue.js) }. → reviews added
+    // wishlists, vitals, snapshots: { devices?, hangs?, rating?, overview?, charts? }, extras: { <name>: object }, and a
+    // revenue source's revenue, revenue_versions and splits by country and store (revenue.js) }. → reviews added
     async write(projectId, store, batch) {
       const key = pk(projectId, store);
       const added = batch.reviews?.length ? await addReviews(key, batch.reviews) : 0;
@@ -247,7 +250,7 @@ export function createStoreData(kv) {
       for (const [name, value] of Object.entries(batch.extras ?? {})) await kv.put({ pk: key, sk: `X#${name}`, ...value });
       if (batch.sales?.length) await addDays(key, 'SALES', batch.sales, ({ units, returns }) => ({ units, returns }));
       if (batch.wishlists?.length) await addDays(key, 'WISH', batch.wishlists, ({ adds, deletes, purchases, gifts }) => ({ adds, deletes, purchases, gifts }));
-      if (batch.revenue?.length || batch.revenue_versions?.length) await writeRevenue(kv, key, batch, (month) => expires(monthEnd(month)));
+      if (REVENUE_BATCHES.some((k) => batch[k]?.length)) await writeRevenue(kv, key, batch, (month) => expires(monthEnd(month)));
       const meta = (await kv.get(key, 'META')) ?? {};
       await kv.put({ pk: key, sk: 'META', summary: batch.summary ?? meta.summary ?? null, synced_at: batch.syncedAt ?? Date.now(), reviews: (meta.reviews ?? 0) + added });
       return added;
@@ -571,6 +574,8 @@ export const STORE_PANELS = {
   store_vitals: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} vitals next to Glitchless`, size: 'l', shared: true },
   store_players: { title: (p) => `On ${p.store ? storeName(p.store) : 'the store'} now vs measured`, size: 'm', shared: true },
   store_sales: { title: () => 'Units, returns and wishlists', size: 'm', shared: 'sums' },
+  // Stars: the window's written reviews' average, and the store's own rating (the App Store's, Steam's summary).
+  store_score: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} rating`, size: 's', shared: true },
   // A revenue source's revenue, MRR, subscriptions and trials (revenue.js; `measure`): money, so like sales.
   store_revenue: REVENUE_PANEL,
 };
@@ -633,6 +638,7 @@ export function storePanel(ctx, p, { currency = null } = {}) {
   if (p.type === 'store_vitals') return { ...named, ...vitalsPanel(ctx, st) };
   if (p.type === 'store_players') return { ...named, ...playersPanel(ctx, st) };
   if (p.type === 'store_sales') return { ...named, ...salesPanel(ctx, st) };
+  if (p.type === 'store_score') return { ...named, ...scorePanel(ctx, st) };
   return {};
 }
 
@@ -675,6 +681,40 @@ function reviewsPanel(ctx, st) {
     positive_pct: pct(total.up, total.reviews),
     perf_negative: total.perf,
   };
+}
+
+// A store's score: the average stars of the written reviews Glitchless synced in the window and how many (Steam: the
+// share of them that recommend the game), next to the store's own overall number where it gives one: the App Store's
+// rating from Apple's public lookup (every rating, with or without a review, in the countries the connection reads),
+// Steam's review summary. Google Play has no API for its overall rating, so it has the synced reviews' average only.
+function scorePanel(ctx, st) {
+  const name = storeName(st.store);
+  const from = Math.max(ctx.from, st.reviews_from ?? ctx.from);
+  const stars = st.store !== 'steam';
+  const rated = stars ? (st.reviews ?? []).filter((r) => r.ts >= from && r.ts <= ctx.to && r.rating != null) : [];
+  const c = countsIn(st.hours ?? [], ctx.from, ctx.to + 1);
+  const synced = stars
+    ? rated.length ? { average: round(rated.reduce((a, r) => a + r.rating, 0) / rated.length, 1), reviews: rated.length, stars: [1, 2, 3, 4, 5].map((n) => rated.filter((r) => r.rating === n).length), since: from > ctx.from ? from : null, capped: Boolean(st.capped) } : null
+    : c.reviews ? { positive_pct: pct(c.up, c.reviews), reviews: c.reviews } : null;
+  const r = st.snapshots?.rating;
+  const overall =
+    st.store === 'app_store' && r?.average != null
+      ? { average: r.average, count: r.count, countries: (r.countries ?? []).filter((x) => x.count > 0).map((x) => x.country), day: r.day, current: currentRating(r) }
+      : st.store === 'steam' && st.summary?.total
+        ? { desc: st.summary.desc ?? null, positive_pct: pct(st.summary.positive, st.summary.total), count: st.summary.total }
+        : null;
+  if (!synced && !overall) return { empty: true, why: st.synced_at ? (st.store === 'app_store' ? `No ${name} reviews in this window, and no rating from Apple yet: it is read once a day.` : `No ${name} reviews were written in this window.`) : notSynced(st) };
+  const notes = [];
+  if (st.store === 'google_play') notes.push("Google Play has no API for its overall rating, so this is the average of the written reviews Glitchless synced (Google Play gives a week of them at a time).");
+  if (st.store === 'app_store') notes.push(overall ? `Apple's rating counts every rating in ${overall.countries.map((x) => x.toUpperCase()).join(', ')}, with or without a review, for every version; the reviews' average is of the written reviews Glitchless synced.` : "Apple's own rating is read once a day from its public lookup: none yet.");
+  return { synced, overall, notes };
+}
+
+// The current version's rating, summed over the countries that have one.
+function currentRating(r) {
+  const list = (r.countries ?? []).filter((x) => x.current_average != null && x.current_count > 0);
+  const count = list.reduce((a, x) => a + x.current_count, 0);
+  return count ? { average: round(list.reduce((a, x) => a + x.current_average * x.current_count, 0) / count, 2), count, version: list.find((x) => x.version)?.version ?? null } : null;
 }
 
 // Players online, as the store counts them each sync, next to the sessions Glitchless saw playing in that minute: the

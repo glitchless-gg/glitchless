@@ -268,15 +268,16 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 | panel `type` | fields | shows |
 | --- | --- | --- |
 | `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now) or `event`, optional `per`, optional `sum` | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
-| `series` | `event`, optional `by`, `limit`, `sum` | the event's count (or its `sum`) over time, split by an attribute's top values; `by` can also be `$version` or `$level` |
-| `breakdown` | `event`, `by`, `limit`, `sum` | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item); `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), counted by count, with `(none)` for sessions without it |
+| `series` | `event`, optional `by`, `limit`, `sum` | the event's count (or its `sum`) over time, split by an attribute's top values; `by` can also be `$version`, `$level`, or the sessions' `$platform`, `$browser` or `$device_tier` (below) |
+| `breakdown` | `event`, `by`, `limit`, `sum` | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item); `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), counted by count, with `(none)` for sessions without it, or the sessions' `$platform`, `$browser` or `$device_tier` (below) |
 | `funnel` | `steps` | sessions through the steps, in order |
 | `levels` | `label` | starts, completion, fails, deaths and times per level; columns only for what the game reports |
 | `frame_time`, `errors`, `deaths`, `events` | `limit` (errors) | frame-time p50/p95, top errors, deaths by level and cause, every custom event |
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
 | `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, §3f): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
-| `store_revenue` | `measure`, `store` | for a game connected to RevenueCat (§3h): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, or revenue by version next to what Glitchless measured |
+| `store_score` | `store` | a store's rating (§3f): the average stars of the written reviews synced in the window and how many, next to the store's own rating where it has one (the App Store's, from Apple's lookup; Steam's summary); Google Play's is the synced reviews' average, and says so |
+| `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`) |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `retention` | `limit` (days, 1 to 90; default 14) | D1, D7 and D30 by first-seen day (§4), the latest days; a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
 | `versions` | `by` | the board's own stat panels, version by version; with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build |
@@ -286,6 +287,32 @@ Heatmaps if it sends positions, Sessions, Versions and Live Tail. Versions are c
 Every panel takes `title`, `note` and `size` (`s`, `m` or `l`). An event is written like a funnel step: `name`,
 `name=value` (any attribute) or `name:key=value`. A panel with no data in the window says why instead of showing
 zeros.
+
+**By platform, browser and device tier** (`sessionsBy` and `SESSION_SPLITS` in `server/src/analytics.js`). `by` on a
+breakdown or a series can split the sessions themselves, each by its `session_start.device`, in plain words:
+
+| `by` | each session's | values |
+| --- | --- | --- |
+| `$platform` | platform, as the Performance view's (`platformOf`) | Valve's hardware whatever the OS (`Steam Deck`, `Steam Machine`, `Steam Frame`), else the OS as the SDKs name it: `Windows`, `macOS`, `Linux`, `iOS`, `Android`, `SteamOS`, `ChromeOS`, `Web` (an engine's web build)…; other spellings of these (`Mac`, `OSX`, `X11`, `HTML5`) read as them; `unknown` without one |
+| `$browser` | browser (`device.browser`, the Performance view's `by_browser`) | the browser SDK's `Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`, `Other`; the engine SDKs send their engine there, so their sessions are `Godot app`, `Unity app`, `Unreal app`, `GameMaker app`, or `<engine> web build` when the OS is the web (its browser unknown) |
+| `$device_tier` | GPU tier (`device.gpu_tier`, the Performance view's tiers) | `High-end GPU`, `Mid-range GPU`, `Low-end GPU`, `Software rendering (no GPU)`, `Unknown GPU`, in that order (other splits: most first) |
+
+With an `event`, a split counts that event from each group's sessions (a breakdown's rows: `{value, count, sessions,
+players}`; `players` is null when the game sends no player IDs), and a series places each session's events where the
+session kept their time: a session keeps the first 16 of an event (above), so the rest of a session that sent more are
+spread evenly over the minutes it played after the 16th, and the panel's `spread` says how many. Without an `event`, a
+breakdown counts the sessions in each group and their players (`counts: "sessions"`; `total`, and `players`, each
+player once, with player IDs), and a series the sessions playing in each time bucket. Either answers `split`: what
+the groups are, in words (`platform`, `browser`, `device tier`). Counts only: a `sum` can't be split this way (sums are
+kept per minute, not per session; for money by store, `store_revenue` `by_store`). Read from the sessions, so over 31
+days or less; a longer range says so.
+
+```json
+[ { "type": "breakdown", "by": "$platform", "title": "Players by platform" },
+  { "type": "breakdown", "event": "purchase", "by": "$platform", "title": "Purchases: iOS vs Android" },
+  { "type": "breakdown", "by": "$browser", "title": "Which browsers they play in" },
+  { "type": "series", "event": "play", "by": "$device_tier", "title": "Plays, by GPU tier" } ]
+```
 
 **Positions** (`levelPositions` in `server/src/analytics.js`). A `positions` panel answers
 
@@ -431,8 +458,10 @@ says (so only share links'), keyed on the query string, cookies and the share, k
   (`bin`, `cells`, `samples`, `truncated`): counts per bin, never a session, player, version or time
 - live panels, and any panel type not listed as safe. Stat, series, breakdown, funnel, levels, frame_time, deaths,
   events, versions and retention panels show counts and the game's own event names (retention: new players and
-  returns per day, never an id), and pass as they are; a new panel type stays off shared boards until it is added
-  there.
+  returns per day, never an id; a breakdown or series by `$platform`, `$browser` or `$device_tier`: counts per group), and pass as they are; a
+  new panel type stays off shared boards until it is added there. Store panels follow §3f (reviews, vitals, players
+  online and store scores as counts and stars, never what players wrote) and §3h (RevenueCat's panels, installs and
+  countries among them, only with sums).
 - sums (revenue, revenue per player, revenue by item), unless the link was made with `sums: true`: a panel with
   `sum` says it isn't shown, and a versions panel marks its sum columns `hidden` and leaves their values out.
   Conversion (a share of players or sessions) is shown: it is a rate, not an amount.
@@ -504,52 +533,89 @@ their evidence, so no file, function or line of source reaches a shared board.
 
 ### 3e. Alerts
 
-A game's alerts tell its developers when it gets worse, in Discord, Slack or email, with a line to paste into their
-coding agent. The rules, the check and the messages are the core's
-([`server/src/alerts.js`](../server/src/alerts.js)). Glitchless Cloud keeps settings per game and checks every
-15 minutes; a self-hosted server posts to one webhook (`GLITCHLESS_ALERT_WEBHOOK`, README "Alerts").
+A game's alerts tell its developers when something got worse for real players, by enough to act on today, in
+Discord, Slack or email: in one plain sentence, with how many players next to what's normal, one line on what to do
+and a line to paste into their coding agent. Standing problems (findings, §4) aren't alerts: a weekly summary lists
+the few worth fixing. The rules, the check and the messages are the core's
+([`server/src/alerts.js`](../server/src/alerts.js)). Glitchless Cloud keeps settings per game, checks every 15
+minutes and adds the store, plan and weekly parts; a self-hosted server posts to one webhook
+(`GLITCHLESS_ALERT_WEBHOOK`, README "Alerts").
 
-**A check** reads each service that sent data in the last day, over the last day: the range `glitchless_triage`
-reads by default, so the finding an alert names is in the agent's triage. It reads summaries only (no drill-downs).
+**A check** reads each service that sent data in the last day, over the last day (summaries only, no drill-downs).
+Every rule counts real players: sessions of type `synthetic` and `simulated` (autoplay, playtests) are left out,
+and a session counts in the hour its `session_start` came. Players are player IDs; a game that sends none is
+counted in sessions, and its messages say so. What's usual comes from a **profile**: for each hour of the last 8
+days, its sessions, its players and the players who crashed (by the hour their session started). It is read once
+(8 days) when a service has none or it is over 20 hours old, and the day every check reads keeps its last 24 hours
+up to date. "The same hours over the last 7 days" are those hours on each of the 7 days before, counting only days
+the profile has whole. A session **stutters** when it has 2 or more hitches (frames over 50 ms, §2) a minute over at
+least a minute of frames, and 3 hitches at least; **crashed** is §4's crash.
 
 | rule | fires when | holds while | key |
 | --- | --- | --- | --- |
-| `new_error` | an error first occurred after alerts went on and within the last day, and has reached `newErrorSessions` sessions (default 3; 1–1,000) | it occurs in the last day | `error-<fingerprint>` |
-| `crash_free` | of the two newest versions with 5+ sessions (as the version finding picks them), each has 20+ sessions in the day, and the newer one's crash-free sessions are 2+ points lower with z ≥ 2 (two-proportion test) | the drop is 1+ point | `crash-free-<prev>-<cur>` |
-| `frame_p95` | the same two versions, 20+ sessions each, and the newer one's p95 frame time is 20% and 2 ms worse, compared like with like: when the versions ran on different screens (their frame windows split across refresh rates 20+ points apart), on the commonest refresh rate both had with 3+ sessions, as the version finding compares them, and not at all when there is none | it is 10% worse | `frame-p95-<prev>-<cur>` |
-| `finding` | a finding (§4) is high or critical. Version findings belong to the two rules above while either is on | it is medium or above | the finding's id |
+| `crashes` | at least 5 players who started a session in the last 6 hours crashed, that share is at least 3× the usual share for the same hours (from 20+ players in them), and a Poisson test puts it past chance (p ≤ 0.01) | 3+ players and 2× the usual share | `crashes` |
+| `new_error` | an error first occurred after alerts went on and within the last day, and has reached 10 players, or 5% of the day's sessions and 3 sessions at least | it occurs in the last day | `error-<fingerprint>` |
+| `release` | of the two newest versions with 5+ sessions in the day (as the version finding picks them), each has 20+ players, and the newer one's share of players who stuttered (or crashed) is higher by a one-sided two-proportion z ≥ 2.33 (p < 0.01), 1.5× and 5 points (2 points for crashes) | still higher, by z ≥ 1 and 1.2× | `release-<prev>-<cur>` |
+| `quiet` | the last 3 hours had under a tenth of the usual sessions for those hours, which average 10+ an hour (from 3+ days of the profile) | until the last hour has half its usual (then a "back" note, once, if the alert was sent, and the key clears) | `quiet` |
+| `store` | Google Play's 28-day user-perceived crash rate is over 1.09%, or its user-perceived ANR rate over 0.47%: the bad-behaviour thresholds past which Play may show a game to fewer people ([Android vitals](https://developer.android.com/topic/performance/vitals)). Glitchless Cloud only, from the Google Play integration's freshest day (§3f), at most 7 days old | 90% of the threshold | `play-crash`, `play-anr` |
+| `plan` | the workspace's play sessions this period reach 80%, then 100%, of what its plan includes (or of its cap, when that is lower). Glitchless Cloud only, once per workspace | once per share and period | `K#<period>#80`, `#100` |
 
-An error without a fingerprint is skipped. The finding an alert names is `error-<fingerprint>`,
-`version-<prev>-<cur>` (the version finding also names a crash-free drop of 2 points or more) or the finding's own.
-`env` narrows a check to one env's sessions (default: all).
+The **crashes** message names a version when it has 60% of the crashed players: "Started with <version>" when its
+first session was within the last 7 days, else "Most are on <version>". **Release** names the level whose hitches a
+minute rose the most between the two versions (by 0.5 or more, with 2 minutes of frames on each). The release
+message's finding is `version-<prev>-<cur>`, a new error's `error-<fingerprint>`.
 
-**Firing once.** Rules give one signal per key: a new error that is also a high error finding is one alert, said as
-the new error. A key fires when it starts to hold: it is claimed with a conditional write, so checks running at
+Settings saved before these rules name `new_error`, `crash_free`, `frame_p95` and `finding`. They read as the rules
+now: `crash_free` is `crashes`; `crash_free` or `frame_p95` on is `release`; `finding` is the weekly summary's
+part (there is no finding alert); rules that are new (`quiet`, `store`, `plan`) are on. The next save writes the new
+names. `newErrorSessions` is no longer read. `env` narrows a check to one env's sessions (default: all).
+
+**Firing once.** A key fires when it starts to hold: it is claimed with a conditional write, so checks running at
 once send it once. It stays claimed while it holds at the lower bar, and clears after it has not held for 24 hours;
-then it can fire again. The first check after alerts are turned on (or on again) is the **baseline**: what already
-holds is claimed without a message. New errors are the exception: whether they are new comes from their first
-occurrence, which a 7-day read of errors on a service's first check provides. Fingerprints are remembered (first
-and last seen) for 30 days, at most 2,000 a service. A check sends at most 5 alerts a service; the rest wait for
-the next.
+then it can fire again. The first check after alerts are turned on (or on again), or on state from older rules (no
+`v: 2`), is the **baseline**: what already holds is claimed without a message. New errors are the exception: whether
+they are new comes from their first occurrence, which a 7-day read of errors on a service's first check provides. A
+quiet only the baseline saw sends no "back" note. Fingerprints are remembered (first and last seen) for 30 days, at
+most 2,000 a service. A check sends at most 5 alerts a service; the rest wait for the next.
 
-**The message**: a title (one line: what changed), facts (the numbers), a link to the dashboard page, the finding id
-and the line to paste: `Use glitchless_triage on <service>, then look at finding <id>.` (a new error adds
-`(glitchless_get_error with fingerprint <fp> has its stack)`). A figure carries the headline number for channels
-that draw one: `{kind, headline, value, label, series, stats}` (a new error's `series` is its count over the last
-day).
+**The message**, in every channel:
 
-- Discord: `content` is the title in bold; one embed has the facts, the finding, the paste line in a code block,
-  the page as `url`, and a colour by severity. `allowed_mentions: {parse: []}`.
-- Slack: Block Kit sections (title, facts, paste line, a context line with the link and the finding), no unfurls.
-- Email (Glitchless Cloud): HTML with the figure as a card (big number, the error's last day in hourly bars, up to
-  three stats), the facts, a button to the page and the paste line, plus a plain-text part; from
-  `Glitchless alerts <alerts@glitchless.gg>`, saying why the reader gets it and linking to Settings → Alerts.
+| part | what it is |
+| --- | --- |
+| `title` | the sentence, the email's subject: "Starlift is crashing: 14 players in the last 6 hours (usually about 2 a day). Started with 1.1.1." No percentiles, milliseconds, shares of frames or finding ids |
+| `big` | `{value, label, normal}`: the number of players, and what's normal next to it ("Usually about 2 a day") |
+| `quote` | the game's own text the alert is about (a new error's message), shown as code |
+| `todo` | one line on what to do |
+| `paste` | the line to paste into a coding agent: `Use glitchless_triage on <game>, then look at finding <id>.` (a new error adds `(glitchless_get_error with fingerprint <fp> has its stack)`; a release starts with `glitchless_compare_versions`; quiet with `glitchless_overview`; store with `glitchless_store_vitals`); none for the plan |
+| `agent` | "For your agent": the measurements behind it (counts and shares, the usual, z or p, frame times, the Play metric and day, finding ids), small at the bottom |
+| `link`, `figure` | the dashboard page, and for a channel that draws a card `{kind, headline, series, stats}` (crashed players or sessions per hour over the last day; a new error's counts) |
+
+The game is its Glitchless Cloud name when it has one service, else the service.
+
+- Discord: `content` is the title in bold; one embed has the big line, the quote, what to do, the paste line in a
+  code block, the page as `url`, a colour by severity, and "For your agent" as its footer (small, plain text).
+  `allowed_mentions: {parse: []}`.
+- Slack: Block Kit sections (title; big line, quote and what to do; the paste line), then a context line with the
+  link and "For your agent". No unfurls.
+- Email (Glitchless Cloud): the shared layout (`cloud/docs/email.md`): a card with the big number and what's normal,
+  hourly bars, up to three stats; what to do; a button to the page; the paste line; "For your agent" in small type;
+  and a plain-text part. From `Glitchless alerts <alerts@glitchless.gg>`, saying why the reader gets it and linking
+  to Settings → Alerts.
 
 Text from a game (error messages, level and version names) is cut to one line without control characters, then
-escaped for each channel (Discord markdown and `@`, Slack's `&<>`, HTML), so it can't ping, link or format.
+escaped for each channel (Discord markdown and `@`, Slack's `&<>`, HTML; inside code, backticks become `'`), so it
+can't ping, link or format.
+
+**The weekly summary** (Glitchless Cloud, `weekly`, default on): for each service with sessions in the two weeks,
+once a week from the same 15-minute check, the first one on or after Monday 14:00 UTC, for games whose alerts were
+on before that week began (claimed as `W#<service>#<monday>`, so no new schedule). It covers last week (Monday to
+Sunday, UTC) against the week before: players (or sessions) and sessions, the share of players who crashed, revenue
+(RevenueCat's when connected, §3h, else the game's own `purchase` events' `amount`), and **Worth fixing**: the top
+three standing findings (critical, high or medium), each as one plain sentence with its paste line. A service with
+no sessions in either week gets none. It goes to the game's channels like an alert.
 
 **Glitchless Cloud.** Settings → Alerts, per game: a webhook URL, email to every active member of the workspace,
-which rules, the new-error sessions and an env. Changing them, and the test button, needs the exporters' permission
+which rules, the weekly summary and an env. Changing them, and the test button, needs the exporters' permission
 (Owner, Admin). Discord (`discord.com/api/webhooks/…`) and Slack (`hooks.slack.com/services/…`) URLs are
 recognised; any other public https URL takes the format chosen (Slack's suits Mattermost, Discord's Guilded). The
 URL is sealed like an exporter's secrets (KMS, encryption context `{project}`) and never returned: the dashboard
@@ -557,14 +623,20 @@ gets the host and its last four characters. Sends go through the exporters' guar
 and no private, loopback, link-local or metadata address after DNS. A send's result is `HTTP <status>` or why it
 could not connect, never the URL. Links open the game: `https://app.glitchless.gg/?ws=<workspace>&game=<project>#/<page>`.
 
+The **plan** notice goes to every channel of the workspace's games that have the rule on, each webhook once and the
+members' email once. On Free, 100% is also billing's own email to the Owners (`freeLimitEmail`, sent when intake
+stops), so the plan notice's email then goes to the other members only (`{channel: 'email', ok: true, to: 0, note}`
+when there are none). Spike protection keeps its own email; the plan notice says where it would pause.
+
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/alerts` | `{alerts: {on, onSince, webhook: {format, host, hint} \| null, email, emailRecipients, rules, newErrorSessions, env}, log, defaults, mail, permissions}`; `log` is the last 20 sends, tests included, each with what every channel answered |
-| `PATCH /api/projects/{p}/alerts` | any of `{webhookUrl, webhookFormat, email, rules: {rule: bool}, newErrorSessions, env}`; `webhookUrl: null` removes the webhook. Alerts are on when there is a channel and a rule |
+| `GET /api/projects/{p}/alerts` | `{alerts: {on, onSince, webhook: {format, host, hint} \| null, email, emailRecipients, rules, weekly, env}, log, defaults, mail, permissions}`; `log` is the last 20 sends, tests included, each with what every channel answered |
+| `PATCH /api/projects/{p}/alerts` | any of `{webhookUrl, webhookFormat, email, rules: {rule: bool}, weekly, env}`; `webhookUrl: null` removes the webhook. Alerts are on when there is a channel and a rule or the weekly summary |
 | `POST /api/projects/{p}/alerts/test` | sends a test alert to every channel → `{sent: [{channel, ok, to?, error?}]}`; 10 an hour |
 | `POST /api/dev/alerts/check` | the dev server only: runs the check now |
 
-Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time.
+Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time, then each of their
+workspaces' plan.
 
 ### 3f. Store reviews and vitals: Steam, Google Play, the App Store
 
@@ -638,6 +710,7 @@ less.
 | `store_players` | `store` | players online as the store counted them each sync (Steam), next to the sessions Glitchless saw playing in that minute (for ranges of 31 days or less): `coverage_pct`, measured over counted, is how much of the game's play has telemetry |
 | `store_sales` | `store` | units sold, returns (and the return rate), wishlist adds and deletes by day (Steam: from the Financial API Group key) |
 | `store_vitals` | `store` | the store's vitals version by version (newest first; by day weighted by users, or the store's latest for the version), next to the sessions, frame p95, crash-free % and the matching measures Glitchless has of the same version; the lines where the two disagree; Google Play's slowest devices and GPUs on its freshest day; the App Store's heaviest hang signatures in the latest build |
+| `store_score` | `store` | a store's rating, small (default size `s`; one panel per store): the average stars of the written reviews Glitchless synced in the window and how many (`synced: {average, reviews, stars: [1★…5★ counts], since, capped}`; on Steam the share positive instead), next to the store's own overall number where it has one (`overall`): the App Store's rating from Apple's public lookup, every rating with or without a review, weighted over the connection's countries, and the current version's (`{average, count, countries, day, current: {average, count, version}}`); Steam's review summary (`{desc, positive_pct, count}`). Google Play has no API for its overall rating: `overall` is null and a note says the number is the synced reviews' average. `notes` say which number is which |
 
 `store` is `steam`, `app_store` or `google_play` (default: the game's first connected store). A game connected to a
 store gets a **page per store** on the automatic dashboard, after the Overview (`steam`, `app-store`, `google-play`):
@@ -645,8 +718,8 @@ store gets a **page per store** on the automatic dashboard, after the Overview (
 `frame_time` when the game sends frame times, and `store_sales` when there are sales (or, on Steam, a financial key).
 A saved dashboard adds the panels like any other, and Glitchless Cloud adds the store's page to a game's saved
 dashboards when the game is first connected to that store (`withStorePage`: after the first page, unless a page already
-shows that store; taken off, it isn't added again). A share link shows `store_reviews`, `store_vitals` and
-`store_players` (counts, never review text) and `store_sales` only when made with sums.
+shows that store; taken off, it isn't added again). A share link shows `store_reviews`, `store_vitals`,
+`store_players` and `store_score` (counts and stars, never review text) and `store_sales` only when made with sums.
 
 **The finding** (`store-reviews-<store>-<release key>`, category `reviews`), per store: of the releases in the last
 30 days, the latest with 5 or more reviews since it went live (on Google Play and the App Store, 5 or more reviews of
@@ -681,8 +754,8 @@ metric, with `:p50` or `:p90` where the store gives percentiles. The MCP tool `g
 reviews, up to 300 KB of UTF-8: past that a review is counted but its text not kept), `RH#<month>` (review counts per
 hour: up, down, down about performance, and the same in the store's segment), `PL#<month>` (players-online samples),
 `SALES#<month>` and `WISH#<month>` (by day; a day the store sends again replaces what was there), `VIT#<month>`
-(vitals by day; likewise), `VITV` (each version's latest vitals), `SNAP#devices` and `SNAP#hangs` (the latest
-snapshot of each), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
+(vitals by day; likewise), `VITV` (each version's latest vitals), `SNAP#devices`, `SNAP#hangs` and `SNAP#rating` (the
+App Store's own rating; the latest snapshot of each), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
 itself (Steam: its builds). Each day or month item expires 400 days after its period.
 
 **Steam.** What a sync takes, per game, from where its last sync stopped:
@@ -712,6 +785,7 @@ token from the key (RS256, scopes `androidpublisher` and `playdeveloperreporting
 | reviews | Android Publisher `reviews.list` (Play keeps only reviews with text, on production versions, from the last week) | every 6 hours: every page (at most 10), skipping reviews already kept (an edit keeps the first text) |
 | vitals by version code | Reporting API `slowRenderingRateMetricSet`, `crashRateMetricSet`, `anrRateMetricSet`: `:query` by `versionCode`, daily, Pacific days; each set's freshest day from its own `GET` | once a day: 30 days on the first sync, then from two days before the last day read (Play fills days in late) |
 | slowest devices and GPUs | the same sets on the freshest day, by `deviceModel` and `deviceGpuModel` | once a day: the ten with the most users affected (10 users or more) |
+| 28-day rates (the alerts' store rule, §3e) | `crashRateMetricSet` `userPerceivedCrashRate28dUserWeighted` and `anrRateMetricSet` `userPerceivedAnrRate28dUserWeighted`, each set's freshest day, no dimension (every version) | once a day: kept as the `health` snapshot `{day, crash: {rate, day, users}, anr}` |
 
 Play's review history beyond a week is in the monthly review CSVs in its Cloud Storage bucket (`reviews_<package>_<YYYYMM>.csv`): an import of them is a later step.
 
@@ -728,6 +802,12 @@ token, 20 minutes):
 | reviews | `GET /v1/apps/{id}/customerReviews` (newest first), and `GET /v1/appStoreVersions/{id}/customerReviews` for the latest 3 versions, which name each review's version | every 6 hours, from a day before the newest kept (first: the plan's retention, at most 90 days), at most 5 pages |
 | hang rate, launch time, animation hitches | `GET /v1/apps/{id}/perfPowerMetrics` (iOS, all devices, p50 and p90, by version) | once a day |
 | heaviest hangs | the latest build's `GET /v1/builds/{id}/diagnosticSignatures` (`HANGS`), the top 5 by weight | once a day |
+
+With or without the key, **Apple's own rating** comes from its public lookup, once a day, one call per country set
+(keyless, counted in the daily keyless budget): `GET https://itunes.apple.com/lookup?id={id}&country={cc}` →
+`averageUserRating` and `userRatingCount` (every rating in that country's store, with or without a review, all
+versions) and `averageUserRatingForCurrentVersion` and `userRatingCountForCurrentVersion`. A country where the app isn't
+sold answers no result and is left out; the rating kept (`SNAP#rating`) is weighted by each country's ratings.
 
 The feed's and the API's review IDs differ, so adding or removing the key starts the game's App Store data again.
 Apple's crash counts come from the Analytics Reports API ("App Crashes"), which an Admin must request once in App
@@ -840,9 +920,13 @@ currency forgets the kept revenue, and the next sync backfills it in the new one
 | each chart's resolutions and segments | `GET /projects/{p}/charts/{revenue,mrr,actives,trials,customers_new,customers_active}/options?realtime=true` | once a day |
 | revenue and transactions, MRR, active subscriptions, active trials, new customers, active customers, by UTC day | `GET /projects/{p}/charts/{chart}?realtime=true&resolution=<the daily resolution's ID>&start_date=&end_date=&currency=` | every sync: the first back the plan's retention (14, 90 or 400 days; active customers 28, the days RevenueCat says are accurate), then from 3 days before the last day read (late renewals; Charts v3 takes refunds off on the day they are processed) |
 | revenue by app version | the revenue chart with `segment=<its app version segment>&limit_num_segments=20` | every sync, when the revenue chart's options list an app version segment |
+| revenue and transactions by country; new customers (installs) by country | the revenue and new customers charts with `segment=<their country segment>&limit_num_segments=50` | once a day, when the chart's options list a country segment (an ID or name `country`, `country_code` or `customer_country`, never a first-seen or store country) |
+| revenue and transactions by store | the revenue chart with `segment=<its store segment>&limit_num_segments=10` | once a day, when its options list a store segment (`store`) |
 
 Charts & Metrics allow 25 requests a minute per RevenueCat project: a sync asks one call at a time, 7 or 8 of them
-(13 or 14 once a day, with the options), and a 429 ends it: the rest wait for the next sync, from where it was. The
+(16 or 17 once a day, with the options and the splits by country and store), never more than 20, and a 429 ends it:
+the rest wait for the next sync, from where it was. Options kept from before Glitchless looked for the country and
+store segments are read again at once. The
 stores' daily budget (1,500 calls a game) applies too. A chart's points are `{cohort, measure, value, incomplete,
 segment}` (`cohort`: the period's start in Unix seconds; `measure` and `segment` index the chart's `measures` and
 `segments`, whose first is the total; older charts' arrays `[cohort, value…]` are read too). Each chart's measure is
@@ -869,6 +953,15 @@ the version a purchase was made on). Without one, revenue is by day only, the `b
 use instead (a breakdown of `purchase` by `$version` with `sum: "amount"`), and a query filtered to a `version` answers
 `{empty, why}` rather than the whole game's revenue over one version's players.
 
+**By country and by store.** RevenueCat's country segments are named as its charts name them (an English name, maybe
+a code): Glitchless finds each one's ISO 3166-1 alpha-2 code (`server/src/countries.js`: English names, other names,
+alpha-3 and numeric codes) and keeps RevenueCat's own name for one it can't place, which the list shows and the map
+can't (a note names them); RevenueCat's "Other" (the countries past its top 50) is `(other)`, listed last. A store
+segment is kept with a key (`app_store`, `play_store`, `mac_app_store`, `amazon`, `stripe`, else its name) and
+RevenueCat's name for it. Both are read once a day, from three days before the last day read (first: the backfill),
+so the panels say which day they go to when it is before the window's last; they are the whole game's, whatever the
+version filter. Purchases are RevenueCat's transactions (renewals among them).
+
 **Money.** Amounts are in the connection's currency, as RevenueCat converted them. The game's own purchase events are
 put next to them only in that currency; when the game's currency (the dashboard's, else its purchases', §3b) is
 another, RevenueCat's amounts are shown in theirs, never converted or added to the game's, and a note says to set the
@@ -884,6 +977,8 @@ connection's currency. Revenue panels are sums: a share link shows them only whe
 | | `by_day` | revenue per day (bars), with the game's own purchase events per day when comparable; transactions, MRR, subscriptions and trials per day in its CSV |
 | | `players_by_day` | installs and active users per day, with Glitchless's new players and players per day |
 | | `by_version` | a row per version purchases were made on (newest first, RevenueCat's "Other" last): revenue, share, transactions, and Glitchless's players, sessions, revenue per player, purchase events, crash-free % and frame p95 of the same version |
+| | `by_country` | a world map of installs or revenue by country (one at a time, `show` picks the first: `installs`, the default, or `revenue`; people switch), drawn from outlines bundled with the dashboard (`apps/dashboard/src/world-map.js`, Natural Earth through world-atlas, made by `scripts/world-map.mjs`; no tiles or other requests), one hue light to dark on a log scale, grey for none; and the countries ranked by it with their installs, revenue and purchases. `{show, rows: [{country, key, name, installs, revenue, purchases, installs_pct, revenue_pct}], totals, countries, has: {installs, revenue}, as_of, from_day, to_day, currency, notes}`; `country` is null for a name Glitchless couldn't place |
+| | `by_store` | a row per store (most revenue first): revenue, share and purchases, next to the sessions (and players) Glitchless measured on that store's platform (iOS for the App Store, Android for Google Play, macOS for the Mac App Store; over 31 days or less) and revenue per player (per session without player IDs): `{rows: [{store, name, revenue, purchases, share_pct, platform, sessions, players, per_player}], total, players_are_sessions, as_of, currency, notes}` |
 
 `store` is `revenuecat` (the default). A game connected to RevenueCat gets a **Revenue page** (`revenue`, icon `money`)
 on the automatic dashboard after the store pages: revenue, revenue per player, installs, active users a day, revenue per
@@ -900,7 +995,9 @@ to_day, totals: {revenue, transactions, installs, active_users_per_day, days, in
 {value, day, change, since}}, new_players, new_players_pct, players_per_day, players, sessions, players_are_sessions,
 per_player, glitchless: {purchases, events, currency, sandbox, comparable, coverage_pct} | null, days: [{day, revenue,
 transactions, installs, active_users, mrr, actives, trials, incomplete?, sessions, players, new_players, purchases}],
-versions: [row] | null, versions_why?, notes}`, or `{empty, why}`. A day's `sessions` are those that started that UTC
+versions: [row] | null, versions_why?, countries: [{country, name, installs, revenue, purchases}] | null (the top 50),
+countries_as_of | countries_why, stores: [{store, name, revenue, purchases, share_pct, platform, sessions, players,
+per_player}] | null, stores_why?, notes}`, or `{empty, why}`. A day's `sessions` are those that started that UTC
 day (null over 31 days), its `players` those who played that day, its `new_players` those first seen that day (null
 without player IDs). `notes` are plain lines: a currency that isn't the game's, purchase events covering under 80% or
 over 110% of RevenueCat's revenue (and why that happens), sandbox purchases left out, how RevenueCat's installs differ
@@ -909,7 +1006,11 @@ from Glitchless's new players, no player IDs. The MCP tool `glitchless_revenue` 
 **Stored** under `STORE#<project>#revenuecat` (§3f's layout): `REV#<month>` (by day: `revenue`, `transactions`,
 `mrr`, `actives`, `trials`, `new_customers`, `active_customers`, `currency`, `incomplete`; a day sent again replaces the measures it has), `REVV#<month>`
 (`<day>|<version>`: `revenue`, `transactions`, `currency`; a day sent again replaces all of its versions),
-`SNAP#overview`, `SNAP#charts` (the version segment found, the segments the revenue chart has, the currency) and `META`;
+`REVC#<month>` (`revenue: {<day>|<country>: {revenue, transactions, name, currency}}`, `installs: {<day>|<country>:
+{installs, name}}`), `REVS#<month>` (`revenue: {<day>|<store>: {revenue, transactions, name, currency}}`; a day sent
+again replaces that day's countries or stores of what it brings), `SNAP#overview`, `SNAP#charts` (the version, country
+and store segments found, the segments the revenue chart has, the currency, and the last day the splits were read:
+`countries_day`, `stores_day`) and `META`;
 each month item expires 400 days after its month. The sync's own state is `REVENUECAT#<project>` `STATE` (the options
 and the last day each chart was read).
 

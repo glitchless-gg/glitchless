@@ -27,6 +27,9 @@
 //   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
 //               (`by` can also be $version or $level, which every event has: purchases by version, or a
 //               Steam fact of the session that sent it, such as $steam_branch, counted by count only)
+//               Both take `by` $platform, $browser or $device_tier: the platform, browser or GPU tier of the
+//               sessions that sent the event (Windows, macOS, Steam Deck, iOS, Android…; Chrome, Safari…; high to
+//               low), counted (no sum); without `event`, the sessions in each (and their players)
 //   funnel      sessions that went through `steps` in order ("paywall,buy=tapped,buy=done")
 //   levels      starts, completions, fails and deaths per level; `label` is what the game calls a level
 //   frame_time  frame-time p50 and p95 over time against the frame budget
@@ -52,7 +55,7 @@
 //
 // Events are written as funnel steps are (analytics.js parseFunnel): "name", "name=value" or "name:key=value".
 
-import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, retention, cellsOf, levelPositions, round } from './analytics.js';
+import { overview, funnel as levelFunnel, errorIssues, customEvents, eventCount, eventsBy, eventFunnel, parseFunnel, eventIndex, sessionsList, versions, retention, cellsOf, levelPositions, sessionsBy, SESSION_SPLITS, round } from './analytics.js';
 import { findings } from './findings.js';
 import { STEAM_DIMENSIONS } from './analytics.js';
 import { reportSummary } from './reports.js';
@@ -97,6 +100,9 @@ const MAX_PANELS = 24;
 const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
 const DIMENSIONS = ['version', 'level'];
+// What series and breakdowns can split sessions by (analytics.js SESSION_SPLITS): $platform, $browser, $device_tier.
+const SESSION_BY = Object.keys(SESSION_SPLITS).map((k) => `$${k}`);
+const SESSION_WORDS = SESSION_BY.join(', ').replace(/, ([^,]+)$/, ' or $1');
 // What a Steam fact (analytics.js STEAM_DIMENSIONS) is called in a panel's title.
 const STEAM_LABELS = { steam_branch: 'Steam branch', steam_build: 'Steam build', steam_hardware: 'Steam hardware', steam_controller: 'controller', steam_language: 'Steam language', proton: 'Proton', big_picture: 'Big Picture', family_shared: 'Family Sharing', timed_trial: 'timed trial' };
 const STEAM_BY = STEAM_DIMENSIONS.map((d) => `$${d}`);
@@ -202,13 +208,22 @@ function validatePanel(p, at) {
     return v;
   };
   // A Steam fact ($steam_branch…) splits a breakdown by the sessions that sent the event (`steam`), not a series.
+  // $platform splits either by the sessions' platform.
   const by = (required, { steam = false } = {}) => {
     if (p.by == null && !required) return;
     const v = need('by');
     if (STEAM_BY.includes(v)) {
       if (!steam) throw new BoardError(`${at}.by: a ${p.type} can't be split by ${v} (sessions count their events, not per minute); use a breakdown, a versions panel with by ${v}, or filter the board (?${v.slice(1)}=…)`);
-    } else if (v.startsWith('$') && !DIMENSIONS.includes(v.slice(1))) throw new BoardError(`${at}.by is an attribute name, or $version or $level${steam ? `, or a Steam fact of the session (${STEAM_BY.join(', ')})` : ''}`);
+    } else if (v.startsWith('$') && !SESSION_BY.includes(v) && !DIMENSIONS.includes(v.slice(1))) throw new BoardError(`${at}.by is an attribute name, or $version, $level, ${SESSION_WORDS}${steam ? `, or a Steam fact of the session (${STEAM_BY.join(', ')})` : ''}`);
     out.by = v;
+  };
+  // A series or breakdown by $platform, $browser or $device_tier without an event counts the sessions in each.
+  const eventOrSessions = () => {
+    if (p.event == null && SESSION_BY.includes(p.by)) {
+      if (p.sum != null) throw new BoardError(`${at}.sum goes with event`);
+      return;
+    }
+    out.event = event('event');
   };
   const limit = (max) => {
     if (p.limit == null) return;
@@ -225,6 +240,7 @@ function validatePanel(p, at) {
   const sumSplit = () => {
     if (out.sum && out.by && !out.by.startsWith('$') && parseFunnel(out.event)[0].value != null) throw new BoardError(`${at}: with sum and by an attribute, event is a name only ("purchase", not "purchase=done")`);
     if (out.sum && STEAM_BY.includes(out.by)) throw new BoardError(`${at}: a sum can't be split by ${out.by} (sums are kept per minute, not per session); count instead, or filter the board (?${out.by.slice(1)}=…)`);
+    if (out.sum && SESSION_BY.includes(out.by)) throw new BoardError(`${at}: a sum can't be split by ${out.by} (sums are kept per minute, not per session); count instead${out.by === '$platform' ? ', or for revenue by store a store_revenue panel with measure by_store' : ''}`);
   };
   switch (p.type) {
     case 'stat':
@@ -244,14 +260,14 @@ function validatePanel(p, at) {
       }
       break;
     case 'series':
-      out.event = event('event');
+      eventOrSessions();
       sum();
       by(false);
       sumSplit();
       limit(8);
       break;
     case 'breakdown':
-      out.event = event('event');
+      eventOrSessions();
       sum();
       by(true, { steam: true });
       sumSplit();
@@ -421,6 +437,7 @@ function panelData(ctx, p, board, maps, currency) {
       return base ? { value: round((count / base) * 100, 1), unit: '%', count, base } : missing(g.name);
     }
     case 'series': {
+      if (SESSION_BY.includes(p.by)) return sessionSeries(ctx, p);
       const [f] = parseFunnel(p.event);
       if (!hasEvent(ctx, f.name)) return missing(f.name);
       if (p.sum) return sumSeries(ctx, p, f, currency);
@@ -439,6 +456,7 @@ function panelData(ctx, p, board, maps, currency) {
       return { ts: ctx.buckets, series };
     }
     case 'breakdown': {
+      if (SESSION_BY.includes(p.by)) return sessionBreakdown(ctx, p);
       const [f] = parseFunnel(p.event);
       if (p.sum) return sumBreakdown(ctx, p, f, currency);
       if (STEAM_BY.includes(p.by) && ctx.daily) return overDays(p.by);
@@ -521,6 +539,43 @@ function panelData(ctx, p, board, maps, currency) {
     }
   }
   return {};
+}
+
+// ── by the sessions' platform, browser or GPU tier (analytics.js sessionsBy) ──
+
+// Read from the sessions, which a range of more than 31 days answers from day rollups without. `split`: what the
+// panel's rows are, in words (its titles and lines use it).
+function sessionRows(ctx, p) {
+  const name = p.by.slice(1);
+  const split = SESSION_SPLITS[name].label;
+  if (ctx.daily) return { why: `Split by ${p.by} over 31 days or less: longer ranges are answered by day, without each session's ${split}.` };
+  const [f] = p.event ? parseFunnel(p.event) : [null];
+  if (f && !hasEvent(ctx, f.name)) return { why: missing(f.name).why };
+  const { rows, players } = sessionsBy(ctx, f, name);
+  if (!rows.length) return { why: f ? missing(f.name).why : 'No sessions in this window.' };
+  return { rows, players, f, split };
+}
+
+// A breakdown by the sessions' platform, browser or GPU tier: an event's count from each group's sessions, or (no
+// event) the sessions in each, with their players when the game sends player IDs.
+function sessionBreakdown(ctx, p) {
+  const { rows, players, f, split, why } = sessionRows(ctx, p);
+  if (why) return { empty: true, why };
+  const top = rows.slice(0, p.limit || 10).map(({ series, spread, ...r }) => r);
+  return { total: rows.reduce((s, r) => s + r.count, 0), sessions: f ? rows.reduce((s, r) => s + r.sessions, 0) : null, rows: top, more: rows.length - top.length, avg: null, counts: f ? 'events' : 'sessions', split, ...(players != null ? { players } : {}) };
+}
+
+// A series by the sessions' platform, browser or GPU tier: an event's count over time from each group's sessions, or
+// (no event) the sessions playing in each bucket in each group.
+function sessionSeries(ctx, p) {
+  const { rows, f, split, why } = sessionRows(ctx, p);
+  if (why) return { empty: true, why };
+  const top = rows.slice(0, p.limit || 5);
+  const rest = rows.slice(top.length);
+  const series = top.map((x) => ({ label: x.value, values: x.series }));
+  if (rest.length) series.push({ label: 'other', values: ctx.buckets.map((_, i) => rest.reduce((s, x) => s + x.series[i], 0)) });
+  const spread = rows.reduce((s, r) => s + r.spread, 0);
+  return { ts: ctx.buckets, series, counts: f ? 'events' : 'sessions', split, ...(spread ? { spread } : {}) };
 }
 
 // ── sums and conversion (sums.js) ──
@@ -638,7 +693,7 @@ function defaultSize(p) {
 
 function defaultTitle(p) {
   if (STORE_PANELS[p.type]) return STORE_PANELS[p.type].title(p);
-  const by = (k) => (k?.startsWith('$') ? k.slice(1) : k);
+  const by = (k) => (SESSION_BY.includes(k) ? SESSION_SPLITS[k.slice(1)].label : k?.startsWith('$') ? k.slice(1) : k);
   switch (p.type) {
     case 'stat':
       if (p.metric) return STATS[p.metric].label;
@@ -646,9 +701,9 @@ function defaultTitle(p) {
       if (PER[p.per]) return p.per === '$players' ? `Players who sent ${p.event}` : `Sessions that sent ${p.event}`;
       return p.per ? `${p.event} per ${p.per}` : p.event;
     case 'series':
-      return `${p.event}${p.sum ? ` ${p.sum}` : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
+      return `${p.event ?? 'Sessions'}${p.sum ? ` ${p.sum}` : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'breakdown':
-      return `${p.event}${p.sum ? ` ${p.sum}` : ''} by ${STEAM_BY.includes(p.by) ? STEAM_LABELS[p.by.slice(1)] : by(p.by)}`;
+      return `${p.event ?? 'Sessions'}${p.sum ? ` ${p.sum}` : ''} by ${STEAM_BY.includes(p.by) ? STEAM_LABELS[p.by.slice(1)] : by(p.by)}`;
     case 'funnel':
       return p.steps
         .split(',')
