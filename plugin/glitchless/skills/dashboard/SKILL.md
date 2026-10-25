@@ -1,6 +1,6 @@
 ---
 name: dashboard
-description: Build a game's own Glitchless dashboard. Work out what this game's developer wants to know, add the collectors for it (custom events with track(), levels, gauges, positions, game tools agents can call), check the data arrives, then design the game's dashboard (its pages: boards of panels and the built-in views it needs) with the glitchless_set_dashboard MCP tool. Use when the user asks for a dashboard, metrics, KPIs or analytics for their game, wants to track or count something, asks "how many players…", "which mode…", "does the paywall convert", or wants a different view of their game in Glitchless.
+description: Build a game's own Glitchless dashboard. Work out what this game's developer wants to know, add the collectors for it (custom events with track(), levels, gauges, positions, game tools agents can call), check the data arrives, then design the game's dashboard (its pages, which are boards of panels and the built-in views it needs) with the glitchless_set_dashboard MCP tool. Use when the user asks for a dashboard, metrics, KPIs or analytics for their game, wants to track or count something, asks "how many players…", "which mode…", "does the paywall convert", or wants a different view of their game in Glitchless.
 ---
 
 # Build a game's own dashboard
