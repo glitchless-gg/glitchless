@@ -37212,7 +37212,7 @@ var init_context = __esm({
   "src/context.js"() {
     init_dist();
     init_zod();
-    VERSION = "0.8.0";
+    VERSION = "0.9.0";
     CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "glitchless", "credentials.json");
     saved = process.env.GLITCHLESS_API_KEY ? null : readCredentials();
     local = connection({

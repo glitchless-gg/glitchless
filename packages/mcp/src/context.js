@@ -9,7 +9,7 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-export const VERSION = '0.8.0';
+export const VERSION = '0.9.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
