@@ -179,7 +179,10 @@ for (const [kind, make] of Object.entries(STORES)) {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${server.address().port}`;
     const call = async (method, p, body) => (await fetch(base + p, { method, headers: { 'x-glitchless-api-key': 'k' }, ...(body ? { body: JSON.stringify(body) } : {}) })).json();
-    const recent = play.filter((l) => l[0].ts > NOW - 30 * 3_600_000);
+    // The last 30 hours of the data, wherever the clock is: a window ending now held fewer sessions the later in the
+    // UTC day the test ran (the data ends at 13:00 the day before), and none of them ultra by the afternoon.
+    const END = Math.max(...play.map((l) => l.at(-1).ts)) + 60_000;
+    const recent = play.filter((l) => l[0].ts > END - 30 * 3_600_000);
     const PANELS = [
       { type: 'stat', metric: 'sessions' },
       { type: 'breakdown', by: '$rank' },
@@ -194,7 +197,7 @@ for (const [kind, make] of Object.entries(STORES)) {
       }
       await settle?.();
       await call('PUT', '/v1/dashboard?service=rift', { pages: [{ id: 'all', title: 'All', panels: PANELS }, { id: 'high', title: 'Diamond and up', where: { $rank: ['diamond', 'master'] }, panels: PANELS }] });
-      const range = `service=rift&from=${NOW - 30 * 3_600_000}&to=${NOW + 1}`;
+      const range = `service=rift&from=${END - 30 * 3_600_000}&to=${END}`;
       const flat = recent.flat().sort((a, b) => a.ts - b.ts);
       for (const [page, props] of [['all', null], ['high', { rank: ['diamond', 'master'] }]]) {
         const { meta, board: got } = await call('GET', `/v1/query/board?${range}&page=${page}`);
