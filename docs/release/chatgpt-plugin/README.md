@@ -20,11 +20,9 @@ like a key), then zips the files into `dist/chatgpt-plugin/` at the repo root
 
 ## Before it's ready
 
-One value only the owner can give is still marked `OWNER-TODO` in `submission.json`, and while it's there the zip is
-named `glitchless-1.0.0-DRAFT.zip` and the build lists it:
-
-- `review.demo_recording_url`: a video a reviewer can open that shows the main use cases in ChatGPT and Codex.
-  [demo-video.md](demo-video.md) is the shot list.
+Nothing in `submission.json` is marked `OWNER-TODO` any more, so the build names the zip `glitchless-1.0.0.zip`. The
+demo video is https://youtu.be/HXlTWgm3foA (Unlisted on YouTube, 1:54): ChatGPT and Codex on the review account,
+cut from the owner's recordings of 26 October 2026 ([demo-video.md](demo-video.md) was the plan).
 
 `developerName` is the owner's own name, Banjo Obayomi: the listing goes out under the owner's individual
 verification for now (a "Glitchless" name needs a verified business). The portal shows the verified identity's name
