@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "glitchless": {
+      "serverUrl": "https://api.glitchless.gg/mcp"
+    }
+  }
+}

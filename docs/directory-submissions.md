@@ -1,8 +1,10 @@
-# Listing Glitchless in the Claude and ChatGPT directories
+# Listing Glitchless in agent directories
 
 What each directory's submission asks for, filled in for Glitchless, and what's left before submitting. Requirements
 were read from the directories' own pages on 25 October 2026 (links at the end); check them again before you submit,
-because both change often. Claude: submitted 25 October 2026 and approved the same day as a Community connector (automated review). ChatGPT: not submitted yet.
+because they change often. Claude: submitted 25 October 2026 and approved the same day as a Community connector
+(automated review). ChatGPT and Codex (one directory): not submitted yet. Cursor, Antigravity and the rest:
+[below](#cursor-marketplace).
 
 The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 23 tools. How it
 works and how people connect is in [remote-mcp.md](remote-mcp.md).
@@ -179,9 +181,9 @@ rotate and an `invalid_grant` when one is dead; token endpoint answering form po
 `/mcp`; no strict `Origin` check (Claude's requests come from `160.79.104.0/21`). Its callback is
 `https://claude.ai/api/mcp/auth_callback`; Claude Code uses `http://localhost:<port>/callback`, which matches on any port.
 
-## ChatGPT: Plugin directory
+## ChatGPT and Codex: Plugin directory
 
-OpenAI moved its apps directory to the Plugin directory on 9 July 2026. Submit at https://platform.openai.com/plugins →
+OpenAI moved its apps directory to the Plugin directory on 9 July 2026; one listing serves ChatGPT and Codex. Submit at https://platform.openai.com/plugins →
 Upload new or existing plugin, from an organization whose identity is verified, as an owner or with Apps Management
 Write. Upload a ZIP with the plugin manifest and the MCP server in the first version (an MCP server can't be added to a
 plugin later). Automated checks, then the MCP connection, domain check and tool scan, then Review details and
@@ -190,9 +192,11 @@ afterwards, so list `https://api.glitchless.gg` only once that address is final.
 
 ### Manifest fields
 
-The upload is built from [release/chatgpt-plugin](release/chatgpt-plugin/README.md): `plugin.json`, `mcp.json` and
-the logo, checked against OpenAI's rules and zipped by `node docs/release/chatgpt-plugin/build.mjs`. Those files are
-the source of truth; this table is what they hold. `extensions["com.openai"].interface` in `plugin.json`:
+The upload is built by [release/chatgpt-plugin](release/chatgpt-plugin/README.md) from the Agent Plugins package in
+[`plugins/glitchless`](../plugins/glitchless) (`plugin.json`, `mcp.json`, the logo and the instrument, dashboard and
+triage skills) plus the kit's `submission.json` (developer name, review, release notes), checked against OpenAI's rules
+and zipped by `node docs/release/chatgpt-plugin/build.mjs`. Those files are the source of truth; this table is what
+they hold. `extensions["com.openai"].interface` in `plugin.json`:
 
 | Field | Value |
 | --- | --- |
@@ -203,9 +207,9 @@ the source of truth; this table is what they hold. `extensions["com.openai"].int
 | `displayName` (30) | Glitchless |
 | `shortDescription` (30) | Find what's wrong in your game |
 | `longDescription` (4,000) | The description above |
-| `developerName` (80) | Replaced by the verified identity |
+| `developerName` (80) | From `submission.json`; the portal replaces it with the verified identity |
 | `category` | Developer Tools |
-| `capabilities` (20 × 120) | Rank what's wrong in a game by how many players it hits · Frame times by level, GPU tier, browser and version · Errors with stacks and the gameplay before them · Where players die on each level · One play session's timeline · The game's own events and funnels · Bug reports players sent, with screenshots · Store reviews and vitals next to each build's numbers · Revenue next to the players who made it · Read and design the game's dashboard · Create games and read-only share links |
+| `capabilities` (20 × 120) | Add Glitchless to a game in a coding agent, in any of the eight engines · Rank what's wrong in a game by how many players it hits · Frame times by level, GPU tier, browser and version · Errors with stacks and the gameplay before them · Where players die on each level · One play session's timeline · The game's own events and funnels · Bug reports players sent, with screenshots · Store reviews and vitals next to each build's numbers · Revenue next to the players who made it · Read and design the game's dashboard · Create games and read-only share links |
 | `websiteURL` | https://www.glitchless.gg |
 | `supportURL` | https://www.glitchless.gg/support.html |
 | `privacyPolicyURL` | https://www.glitchless.gg/privacy.html |
@@ -255,7 +259,41 @@ tokens; explicit read-only, destructive and open-world hints on every tool; no p
 
 Review risks to know about: tools return session ids, timestamps and level positions, which the guidelines ask to keep
 to what a request needs (they're how an assistant drills from a finding into a session, and the privacy policy should
-name them, step 3); and a reviewer must be able to sign in at once (step 2).
+name them, step 3); and a reviewer must be able to sign in at once (step 2). The skills are scanned too: they tell a
+coding agent to edit a game's code, install an SDK and run its bots, which is what they're for.
+
+**Before the listing**, Codex installs the same package from the public repo: `codex plugin marketplace add
+glitchless-gg/glitchless` reads `.agents/plugins/marketplace.json`, then `codex plugin add glitchless@glitchless`.
+
+## Cursor: Marketplace
+
+Cursor lists plugins from open-source Git repositories and reviews every plugin and every update by hand (a tracker
+showed the queue taking weeks in October 2026). The package is the same folder, `plugins/glitchless`:
+`.cursor-plugin/plugin.json` (name, display name, logo, the skills) and `.cursor-plugin/mcp.json` (`"type": "http"`,
+the hosted URL; Cursor runs the OAuth sign-in), the layout Cursor's own plugins use. The repo root's
+`.cursor-plugin/marketplace.json` points Cursor at it.
+
+1. Check it in Cursor first: copy `plugins/glitchless` to `~/.cursor/plugins/local/glitchless`, restart Cursor, and
+   see that the three skills and the Glitchless server show, and that connecting opens Glitchless's sign-in.
+2. Submit `https://github.com/glitchless-gg/glitchless` at https://cursor.com/marketplace/publish (it accepts Cursor's
+   Marketplace Publisher Terms). Category: developer tools.
+3. Until it's listed, the README tells Cursor users to add the server to `.cursor/mcp.json` themselves.
+
+## Antigravity: Marketplace
+
+Google's Antigravity (which replaced the Gemini CLI for personal accounts in June 2026) lists plugins by invitation:
+fill in the interest form linked from https://antigravity.google/docs/marketplace. The package is again
+`plugins/glitchless`, read through `plugin.json` and `mcp_config.json` (`serverUrl`, the hosted URL);
+`agy plugin validate plugins/glitchless` passes (3 skills, 1 server). Until it's listed, people install it from a
+clone, as the README shows: `agy plugin install` takes a folder or a repo whose root is a plugin.
+
+## Other directories
+
+- **Meta Muse:** https://platform.muse.ai → Submit a connector (a Meta sign-in): the hosted MCP endpoint and OAuth.
+  Meta reviews it (function, security, legal, an end-to-end test) and admits connectors in waves.
+- **Smithery** and **Glama's hosted connectors** (https://glama.ai/mcp/connectors): the hosted URL; both list remote
+  servers with OAuth.
+- **Gemini app:** Google adds connectors itself; there's no form.
 
 ## Reviewer instructions
 
@@ -272,6 +310,9 @@ Paste into both portals' test instructions (the credentials go in the private fi
 
 ## Sources
 
+- Cursor: [plugins](https://cursor.com/docs/plugins), [publish](https://cursor.com/marketplace/publish).
+- Antigravity: [plugins](https://antigravity.google/docs/plugins/), [marketplace](https://antigravity.google/docs/marketplace/).
+- Codex: [package your plugin](https://developers.openai.com/plugins/build/plugins) (repo marketplaces, `codex plugin`).
 - Claude: [submission](https://claude.com/docs/connectors/building/submission),
   [authentication](https://claude.com/docs/connectors/building/authentication),
   [review criteria](https://claude.com/docs/connectors/building/review-criteria),

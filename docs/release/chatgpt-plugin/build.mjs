@@ -1,6 +1,8 @@
-// Packs Glitchless for ChatGPT's plugin directory: checks plugin.json, mcp.json and the logo against the rules OpenAI
-// publishes for a remote MCP submission (developers.openai.com/plugins/deploy/submission and submission-errors, read
-// 25 October 2026), then zips them, Agent Plugins layout, into dist/chatgpt-plugin/ at the repo root.
+// Packs Glitchless for OpenAI's plugin directory (ChatGPT and Codex): the Agent Plugins package in plugins/glitchless
+// (plugin.json, mcp.json, the logo and the skills, the same package Cursor and Antigravity install) plus this folder's
+// submission.json (the verified developer name, review test cases, release notes). It checks them against the rules
+// OpenAI publishes for a remote MCP submission (developers.openai.com/plugins/deploy/submission and
+// submission-errors, read 25 and 26 October 2026), then zips them into dist/chatgpt-plugin/ at the repo root.
 //
 //   node docs/release/chatgpt-plugin/build.mjs
 //
@@ -15,11 +17,18 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
-const plugin = JSON.parse(fs.readFileSync(path.join(here, 'plugin.json'), 'utf8'));
-const mcp = JSON.parse(fs.readFileSync(path.join(here, 'mcp.json'), 'utf8'));
-const ui = plugin.extensions?.['com.openai']?.interface ?? {};
-const review = plugin.extensions?.['com.openai']?.review ?? {};
-const publication = plugin.extensions?.['com.openai']?.publication ?? {};
+const pkg = path.join(repo, 'plugins/glitchless');
+const submission = JSON.parse(fs.readFileSync(path.join(here, 'submission.json'), 'utf8'));
+// The uploaded plugin.json is the package's, with the submission's developer name, review and publication added.
+const plugin = JSON.parse(fs.readFileSync(path.join(pkg, 'plugin.json'), 'utf8'));
+const openai = plugin.extensions['com.openai'];
+openai.interface.developerName = submission.developerName;
+openai.review = submission.review;
+openai.publication = submission.publication;
+const mcp = JSON.parse(fs.readFileSync(path.join(pkg, 'mcp.json'), 'utf8'));
+const ui = openai.interface;
+const review = openai.review ?? {};
+const publication = openai.publication ?? {};
 
 const CATEGORIES = ['Productivity', 'Creativity', 'Developer Tools', 'Business & Operations', 'Data & Analytics', 'Communication', 'Education & Research', 'Security', 'Finance', 'Healthcare', 'Travel', 'Entertainment', 'Other'];
 const problems = [];
@@ -80,16 +89,16 @@ for (const [key, against] of [['brandColor', '#FFFFFF'], ['brandColorDark', '#21
 }
 
 // Images: the manifest's relative paths, square, 48 to 4,096 px, 5 MiB at most (PNG read from its header).
-const files = new Set(['plugin.json', 'mcp.json']);
+const files = new Set(['mcp.json']);
 for (const key of ['logo', 'logoDark', 'composerIcon', 'composerIconDark']) {
   if (ui[key] == null) {
     check(key !== 'logo', 'logo is required');
     continue;
   }
   const rel = ui[key].replace(/^\.\//, '');
-  const file = path.join(here, rel);
+  const file = path.join(pkg, rel);
   if (!ui[key].startsWith('./') || !fs.existsSync(file)) {
-    problems.push(`${key}: ${ui[key]} must be a ./ path to a file in this folder`);
+    problems.push(`${key}: ${ui[key]} must be a ./ path to a file in plugins/glitchless`);
     continue;
   }
   files.add(rel);
@@ -126,6 +135,31 @@ for (const [name, s] of servers) {
   check(!JSON.stringify(s).includes('clientSecret'), `${name}: no clientSecret (enter it in the portal)`);
 }
 
+// ── skills ──────────────────────────────────────────────────────
+// Each skills/<name>/SKILL.md (references/ beside it) with frontmatter naming it: lowercase letters, digits and
+// hyphens up to 64, matching its folder, and a description up to 1,024 (the Agent Skills limits). No keys or tokens
+// beyond the public placeholders the skills show (gl_pub_dev, gl_pub_…).
+const skills = fs.existsSync(path.join(pkg, 'skills')) ? fs.readdirSync(path.join(pkg, 'skills')).filter((d) => !d.startsWith('.')) : [];
+check(skills.length > 0, 'the package has no skills (run node scripts/sync-agent-plugin.mjs)');
+const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.name === '.DS_Store' ? [] : e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+for (const name of skills) {
+  const md = path.join(pkg, 'skills', name, 'SKILL.md');
+  if (!fs.existsSync(md)) {
+    problems.push(`skills/${name} has no SKILL.md`);
+    continue;
+  }
+  const fm = fs.readFileSync(md, 'utf8').match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? '';
+  const field = (k) => fm.match(new RegExp(`^${k}: (.*)$`, 'm'))?.[1]?.replace(/^(["'])(.*)\1$/, '$2');
+  check(field('name') === name && /^[a-z0-9-]{1,64}$/.test(name), `skills/${name}: frontmatter name must be "${name}" (a-z, 0-9 and -, at most 64)`);
+  check(field('description') && field('description').length <= 1024, `skills/${name}: description is required, at most 1,024 characters`);
+  for (const f of walk(path.join(pkg, 'skills', name))) {
+    const rel = path.relative(pkg, f);
+    files.add(rel);
+    const secret = fs.readFileSync(f, 'utf8').match(/\bgl_(?:sk|ws|share)_[A-Za-z0-9]{8,}|\bgl_pub_(?!dev\b)[A-Za-z0-9]{8,}|sk-[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}/);
+    check(!secret, `${rel} holds something that looks like a key (${secret?.[0].slice(0, 12)}…)`);
+  }
+}
+
 // ── what only the owner can give ───────────────────────────────
 const owner = [];
 (function walk(value, at) {
@@ -143,14 +177,15 @@ const zip = path.join(out, `${plugin.name}-${plugin.version}${owner.length ? '-D
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-chatgpt-plugin-'));
 for (const f of files) {
   fs.mkdirSync(path.dirname(path.join(stage, f)), { recursive: true });
-  fs.copyFileSync(path.join(here, f), path.join(stage, f));
+  fs.copyFileSync(path.join(pkg, f), path.join(stage, f));
 }
+fs.writeFileSync(path.join(stage, 'plugin.json'), `${JSON.stringify(plugin, null, 2)}\n`);
 fs.mkdirSync(out, { recursive: true });
 fs.rmSync(zip, { force: true });
-execFileSync('zip', ['-q', '-X', '-r', zip, ...files], { cwd: stage });
+execFileSync('zip', ['-q', '-X', '-r', zip, 'plugin.json', ...files], { cwd: stage });
 fs.rmSync(stage, { recursive: true, force: true });
 
 console.log(`Checked against OpenAI's rules: ${ui.displayName} — "${ui.shortDescription}", ${ui.category}, ${ui.capabilities.length} capabilities, ${prompts.length} starter prompts, ${positive.length}+${negative.length} test cases.`);
 console.log(colours.map((c) => `  ${c}`).join('\n'));
-console.log(`Packed ${[...files].join(', ')} into ${path.relative(repo, zip)}.`);
-if (owner.length) console.log(`\nNOT READY TO SUBMIT: fill these in plugin.json, then build again:\n${owner.map((o) => `  - ${o}`).join('\n')}`);
+console.log(`Packed plugin.json, mcp.json, the logo and ${skills.length} skills (${skills.join(', ')}; ${files.size} files besides plugin.json) into ${path.relative(repo, zip)}.`);
+if (owner.length) console.log(`\nNOT READY TO SUBMIT: fill these in submission.json, then build again:\n${owner.map((o) => `  - ${o}`).join('\n')}`);

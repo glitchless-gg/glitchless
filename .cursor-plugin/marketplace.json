@@ -1,0 +1,20 @@
+{
+  "name": "glitchless",
+  "owner": {
+    "name": "Glitchless",
+    "email": "support@glitchless.gg"
+  },
+  "metadata": {
+    "description": "Glitchless for Cursor: game observability from real players' sessions",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "glitchless",
+      "source": "./plugins/glitchless",
+      "description": "Find what's wrong in your game from what real players' sessions measured, add Glitchless to a game, and design its dashboard.",
+      "category": "developer-tools",
+      "tags": ["games", "gamedev", "observability", "performance", "crashes", "analytics", "mcp"]
+    }
+  ]
+}

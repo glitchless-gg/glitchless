@@ -1,0 +1,61 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "glitchless",
+  "version": "1.0.0",
+  "description": "Game observability: ranked findings, frame times, errors, where players die, store reviews, revenue and each game's own dashboard, from what real players' sessions measured. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
+  "author": {
+    "name": "Glitchless",
+    "email": "support@glitchless.gg",
+    "url": "https://www.glitchless.gg"
+  },
+  "homepage": "https://www.glitchless.gg",
+  "repository": "https://github.com/glitchless-gg/glitchless",
+  "license": "MIT",
+  "keywords": [
+    "games",
+    "game development",
+    "observability",
+    "performance",
+    "crashes",
+    "analytics",
+    "dashboards"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Glitchless",
+        "shortDescription": "Find what's wrong in your game",
+        "longDescription": "Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and GameMaker. Connect it and ask about your games in plain words: what's wrong this week, where players die, which error hits the most sessions, whether last night's build fixed the stutter on level 2.\n\nAnswers come from what your players' sessions actually measured. Triage ranks findings by how many players they hit, each with its evidence and a suggested fix: frame-time spikes per level and what they correlate with, memory leaks, top errors with their stack and the gameplay right before them, difficulty spikes and rage quits, and version regressions. You can drill into frame times by level, GPU tier and browser, one error, one session's whole timeline, the game's own events and funnels, and bug reports players sent from inside the game, with their screenshots.\n\nFor games connected to a store or a payments provider, it reads Steam, Google Play and App Store reviews and vitals next to what Glitchless measured on each build, and RevenueCat or Stripe revenue next to the players who made it.\n\nEach game has its own dashboard in its own terms, and the assistant can read it or design a new one. It can also create a game and make a read-only share link to a board.\n\nIn a coding agent such as Codex, the plugin's skills add Glitchless to your game in any of those engines (levels, events, bots and privacy settings included), design its dashboard from what you want to know, and work through what players hit until the fix shows up in the next version.\n\nYou sign in with your Glitchless account and choose the workspace and what the assistant may do. It acts as you, never deletes data and never touches billing or people, and you can disconnect it any time in Settings → Keys & access. You need a Glitchless account (free). A workspace with no games yet can start on the demo game, a week of sample play.",
+        "developerName": "Glitchless",
+        "category": "Developer Tools",
+        "capabilities": [
+          "Add Glitchless to a game in a coding agent: Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal, GameMaker",
+          "Rank what's wrong in a game by how many players it hits, with evidence",
+          "Frame times by level, GPU tier, browser and version",
+          "Errors with their stack and the gameplay just before them",
+          "Where players die on each level, and what kills them",
+          "One play session's whole timeline",
+          "The game's own events and funnels",
+          "Bug reports players sent from inside the game, with screenshots",
+          "Store reviews and vitals next to what was measured on each build",
+          "Revenue next to the players who made it",
+          "Read and design the game's dashboard",
+          "Create games and read-only share links to a board"
+        ],
+        "websiteURL": "https://www.glitchless.gg",
+        "supportURL": "https://www.glitchless.gg/support.html",
+        "privacyPolicyURL": "https://www.glitchless.gg/privacy.html",
+        "termsOfServiceURL": "https://www.glitchless.gg/terms.html",
+        "defaultPrompt": [
+          "What's wrong with my game this week?",
+          "Where do players die most on level 2, and what kills them?",
+          "Design a dashboard for my game that fits how it's played."
+        ],
+        "brandColor": "#14213D",
+        "brandColorDark": "#2EE6A6",
+        "logo": "./assets/logo.png",
+        "composerIcon": "./assets/logo.png"
+      }
+    }
+  }
+}

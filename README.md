@@ -45,6 +45,7 @@ It's open source and runs anywhere Node runs: one server with a file store, on a
 | [glitchless-deck](https://github.com/glitchless-gg/glitchless-deck) (its own repo) | `glitchless-deck`: send a Godot, Unity, Unreal or web build from macOS, Windows or Linux to a Steam Deck on your network, start it, and measure it there against a saved baseline. Also the `glitchless_deck_send` and `glitchless_deck_measure` MCP tools and the `/glitchless:deck` skill |
 | [`packages/sourcemaps`](packages/sourcemaps) | `glitchless-sourcemaps`: a CLI and a Vite plugin that upload a web build's source maps, so errors from minified builds show the original function, file and line |
 | [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard`, `/glitchless:triage` and `/glitchless:deck` skills + both MCP servers |
+| [`plugins/glitchless`](plugins/glitchless) | The same instrument, dashboard and triage skills with the hosted MCP server, packaged for Codex and ChatGPT, Cursor and Antigravity |
 | [`datadog`](datadog) | Datadog dashboard + monitors JSON and a setup script |
 | [`scripts/seed.js`](scripts/seed.js) | Simulated player history generated from the game's real level data (tagged `simulated`) |
 | [`docs`](docs) | [Technical spec](docs/SPEC.md), [set-up prompt for any coding agent](docs/agent-setup-prompt.md) |
@@ -244,6 +245,21 @@ claude mcp add webmcp -- npx -y @jason.today/webmcp@latest --mcp
 /plugin marketplace add glitchless-gg/glitchless
 /plugin install glitchless@glitchless
 ```
+
+On [Glitchless Cloud](https://app.glitchless.gg), connect the hosted MCP server, `https://api.glitchless.gg/mcp`, and you sign in through the browser. [`plugins/glitchless`](plugins/glitchless) packages it with the instrument, dashboard and triage skills for other agents:
+
+```bash
+# Codex
+codex plugin marketplace add glitchless-gg/glitchless
+codex plugin add glitchless@glitchless
+# Antigravity
+git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
+agy plugin install ~/.glitchless/plugins/glitchless
+# Claude Code, the hosted server alone
+claude mcp add --transport http glitchless https://api.glitchless.gg/mcp
+```
+
+In Cursor, add `"glitchless": { "url": "https://api.glitchless.gg/mcp" }` under `mcpServers` in `.cursor/mcp.json`.
 
 ## Playtest every change
 

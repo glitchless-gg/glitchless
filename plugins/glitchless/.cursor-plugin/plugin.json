@@ -1,0 +1,17 @@
+{
+  "name": "glitchless",
+  "displayName": "Glitchless",
+  "version": "1.0.0",
+  "description": "Game observability for Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and GameMaker: ranked findings, frame times, errors, where players die, store reviews and each game's own dashboard, from what real players' sessions measured. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
+  "author": {
+    "name": "Glitchless",
+    "email": "support@glitchless.gg"
+  },
+  "homepage": "https://www.glitchless.gg",
+  "repository": "https://github.com/glitchless-gg/glitchless",
+  "license": "MIT",
+  "logo": "assets/logo.png",
+  "keywords": ["games", "gamedev", "observability", "performance", "crashes", "analytics", "unity", "godot", "unreal", "threejs", "phaser"],
+  "skills": "./skills/",
+  "mcpServers": "./.cursor-plugin/mcp.json"
+}

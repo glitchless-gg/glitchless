@@ -17,7 +17,7 @@
     "game:playcanvas": "npm run dev -w glitchless-playcanvas-demo",
     "build": "npm run build -w glitchless && npm run build -w glitchless-dashboard && npm run build -w zoomies && npm run bundle -w glitchless-mcp",
     "seed": "node scripts/seed.js",
-    "test": "npm test -w glitchless -w glitchless-server -w glitchless-playtest -w glitchless-sourcemaps -w glitchless-mcp && node scripts/setup-prompt.mjs --check",
+    "test": "npm test -w glitchless -w glitchless-server -w glitchless-playtest -w glitchless-sourcemaps -w glitchless-mcp && node scripts/setup-prompt.mjs --check && node scripts/sync-agent-plugin.mjs --check",
     "test:godot": "node godot/test/e2e.mjs",
     "test:unity": "node unity/test/e2e.mjs",
     "test:gamemaker": "node gamemaker/test/e2e.mjs",

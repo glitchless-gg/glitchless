@@ -1,10 +1,12 @@
-# Glitchless for ChatGPT's plugin directory
+# Glitchless for OpenAI's plugin directory (ChatGPT and Codex)
 
-The package uploaded to OpenAI's plugin portal (https://platform.openai.com/plugins → Upload new or existing plugin),
-in the Agent Plugins layout: `plugin.json` (the listing, review test cases and release notes), `mcp.json` (the
-server at `https://api.glitchless.gg/mcp`, OAuth with ChatGPT's Client ID Metadata Document) and `assets/logo.png`
-(512 × 512). What each field is for, and what the portal asks besides, is in
-[directory-submissions.md](../../directory-submissions.md).
+The package uploaded to OpenAI's plugin portal (https://platform.openai.com/plugins → Upload new or existing plugin).
+One listing serves ChatGPT and Codex. The build takes the Agent Plugins package in
+[`plugins/glitchless`](../../../plugins/glitchless) (the same one Codex, Cursor and Antigravity install from this repo:
+`plugin.json` with the listing, `mcp.json` with the server at `https://api.glitchless.gg/mcp` and OAuth with
+ChatGPT's Client ID Metadata Document, the 512 × 512 logo, and the instrument, dashboard and triage skills) and adds
+this folder's `submission.json`: the verified developer name, the review test cases and the release notes. What each
+field is for, and what the portal asks besides, is in [directory-submissions.md](../../directory-submissions.md).
 
 ```bash
 node docs/release/chatgpt-plugin/build.mjs
@@ -12,16 +14,17 @@ node docs/release/chatgpt-plugin/build.mjs
 
 It checks every field against the rules OpenAI publishes for a remote MCP submission (lengths, one-line fields, the
 category, URLs, the brand colours' 2:1 contrast, a square logo, exactly 5 positive and 3 negative test cases, one
-streamable-http server with no headers or secrets), then zips the files into `dist/chatgpt-plugin/` at the repo root
+streamable-http server with no headers or secrets, each skill's name and description, nothing in a skill that looks
+like a key), then zips the files into `dist/chatgpt-plugin/` at the repo root
 (git-ignored). It never uploads anything.
 
 ## Before it's ready
 
-Two values only the owner can give are marked `OWNER-TODO` in `plugin.json`. While either is there, the zip is named
+Two values only the owner can give are marked `OWNER-TODO` in `submission.json`. While either is there, the zip is named
 `glitchless-1.0.0-DRAFT.zip` and the build lists what's missing:
 
-- `interface.developerName`: the verified developer or business name (the portal replaces it with the verified
-  identity, but the package must carry one).
+- `developerName`: the verified developer or business name (the portal replaces it with the verified identity,
+  but the package must carry one). `plugins/glitchless/plugin.json` says "Glitchless" for local installs.
 - `review.demo_recording_url`: a video a reviewer can open, showing the main use cases: connecting, approving in
   Glitchless, then the five test-case prompts.
 

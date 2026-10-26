@@ -1,0 +1,59 @@
+{
+  "developerName": "OWNER-TODO: the verified developer or business name",
+  "review": {
+    "test_cases": {
+      "positive": [
+        {
+          "description": "Rank what's wrong with a game",
+          "prompt": "What's wrong with Zoomies this week?",
+          "tools_triggered": "glitchless_triage",
+          "expected_behavior": "Lists Zoomies' findings ranked by severity and players affected, each with its evidence: the difficulty spike at the vacuum on level 2 (Dog Park, around x 40, about two thirds of the level's deaths), the TypeError reading 'velocity' that hits about a fifth of sessions, and level 2's stutter from shader compiles in 1.0.0, with 1.1.0 named as the version that removed it."
+        },
+        {
+          "description": "Where players die on a level",
+          "prompt": "Where do players die most on level 2 of Zoomies, and what kills them?",
+          "tools_triggered": "glitchless_death_hotspots",
+          "expected_behavior": "Names the spot around x 38 to 43 on level 2 where most deaths happen, its share of the level's deaths (about two thirds), the vacuum as what kills players there, and the level's completion rate."
+        },
+        {
+          "description": "The top error and what came before it",
+          "prompt": "Which error hits the most Zoomies sessions, and what happened right before it?",
+          "tools_triggered": "glitchless_get_error",
+          "expected_behavior": "Names the TypeError reading 'velocity' in Player.update, the share of sessions it hits (about a fifth), that it happens on level 2 in both versions, and what came just before it: entering level 2 and, in 1.0.0, the hitches there."
+        },
+        {
+          "description": "Read the game's dashboard",
+          "prompt": "Show me Zoomies' dashboard.",
+          "tools_triggered": "glitchless_dashboard",
+          "expected_behavior": "Lists the dashboard's pages (a Zoomies board, then Performance, Errors, Players, Heatmaps, Sessions, Versions and Live Tail) and reads the board's numbers for the window: players, play sessions, frame time, rage quits, findings, levels, where players die in the Dog Park, power-ups and errors."
+        },
+        {
+          "description": "Confirm a fix with real players",
+          "prompt": "Compare Zoomies 1.0.0 and 1.1.0 over the past week. Did 1.1.0 fix the level 2 stutter?",
+          "tools_triggered": "glitchless_compare_versions",
+          "expected_behavior": "Compares 1.0.0 and 1.1.0 side by side and says level 2's hitches went from several a minute in 1.0.0 to none in 1.1.0, while errors and deaths at the vacuum stayed about the same."
+        }
+      ],
+      "negative": [
+        {
+          "description": "Unrelated coding question",
+          "prompt": "Write a Python function that sorts a list."
+        },
+        {
+          "description": "General knowledge question",
+          "prompt": "What's the weather in Seattle tomorrow?"
+        },
+        {
+          "description": "Game recommendation, not the user's own game data",
+          "prompt": "Recommend a good platformer to play this weekend."
+        }
+      ]
+    },
+    "demo_recording_url": "https://OWNER-TODO.invalid/demo-recording",
+    "commerce": false,
+    "commerce_description": "Glitchless doesn't sell anything or take payments through ChatGPT. Its tools read and organize the user's own game data."
+  },
+  "publication": {
+    "release_notes": "First release: findings, frame times, errors, death hotspots, sessions, events, bug reports, store reviews and vitals, revenue and dashboards for your games, with sign-in to your Glitchless workspace, and skills that add Glitchless to a game, design its dashboard and triage what players hit."
+  }
+}
