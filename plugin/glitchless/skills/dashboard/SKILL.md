@@ -130,140 +130,15 @@ has the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_
 ask about any pair or trio this way. With `sum` and `by` an attribute, the event is a name only (`purchase`, not
 `purchase=done`).
 
-**Balance, outcomes and economies.** A rate breakdown answers "which hero wins too often" with how sure it is: each
-row's whisker is the range its rate likely sits in, and a row whose range misses the line (all heroes, or `expect`)
-is drawn in colour. Set `min` so rows of a handful of matches stay out (100 or more for a balance question), and say
-in the `note` what the line should be ("Should sit near 50%"). A game with published odds (a gacha banner's 0.6%) can
-put them in `expect` on a rate of its pulls: the board and a finding then say when what players got misses it, and the
-developer decides what that means. Per-hour numbers (`per: "$hours"`) compare versions fairly when sessions get
-longer or shorter, so put an economy's earn and spend rates in stats and add a `versions` panel; a sum per hour that
-moves 50% between versions, or a distribution whose median moves 30%, becomes a finding. To check one combination
-the board doesn't show, ask `glitchless_events` with `name`, `rate` and `by` (and a filter in `name`), or `of` for a
-distribution.
-
-**Money.** A sum of events that carry a `currency` is money: the dashboard shows it with the currency's symbol and
-two decimals. A game has one currency, the dashboard's `currency` (`glitchless_set_dashboard` with
-`currency: "USD"`, sent again with every save) or else the one most purchases are sent in; purchases in another
-currency are listed on the panel as left out, never added in. If one shows up, fix the game (convert before
-sending, or send the store's price in one currency) rather than the board. Revenue is hidden on a shared board
-unless the link is made to show it. A game connected to RevenueCat (Glitchless Cloud: Settings → Integrations) gets a Revenue page of
-`store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs
-and active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game's
-own `purchase` sums are for revenue by item, level or player. A game that sells through its own Stripe account gets a
-Stripe one (refunds, fees, new paying customers, revenue by product). For its revenue by version, the game's server puts
-the player's Glitchless session ID (`Glitchless.instance.sessionId` in a web game) in the Checkout Session's
-`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent.
-
-**Who is playing.** A game that sets properties splits anything by them (`by: "$rank"`): win rate by hero at each
-rank is a page with `"where": { "$rank": ["diamond", "master"] }` and the same breakdown on it; retention by
-`$spender`, frame time by `$preset` (the Performance view's by-property table), versions by `$class`. A property with
-more than 200 values a day is an ID and reads as "(too many values)": fix the game. These read the sessions, so
-ranges of 31 days or less.
-
-**Multiplayer.** A game with online play gets a Network page: `stat` ping_p95 and disconnect_pct, a `net` panel by
-`$region` (or `$link` on mobile: Wi-Fi against mobile data) and one with `show: "disconnects"`, and `findings`; a
-whole lobby lagging at once (the server) and one player lagging (their connection) are findings of their own. With
-match groups, keep the `matches` view. With dedicated servers in server mode, a Servers page (`servers_now`,
-`server_tick_p95`, `server_crash_free_pct`, a `servers` panel `by: "players"`) or the built-in `servers` view; the
-servers' sessions are kept under `<game>.server`, never counted as players. An open world splits by `$zone`.
-
-**Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by
-`$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or
-sessions on each), the same with `event: "purchase"` (purchases tracked on each), and with RevenueCat connected,
-`store_revenue` `by_store` (the money in each store) and `by_country` (where installs and money come from). Add a
-`store_score` per store the game is connected to.
+For a game with heroes, decks or builds to balance, money, player properties, online play, or several platforms
+and devices, read [references/genres.md](references/genres.md): the panels each of those asks for.
 
 Every panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a
 developer can take any number to a spreadsheet: no export panel is needed.
 
-A mobile game with modes, stops and a paywall:
-
-```json
-{
-  "currency": "USD",
-  "pages": [
-    { "title": "Overview", "icon": "overview", "panels": [
-      { "type": "stat", "metric": "players", "size": "s" },
-      { "type": "stat", "event": "open", "title": "App opens", "size": "s" },
-      { "type": "stat", "event": "buy=done", "per": "paywall", "title": "Paywall to purchase", "size": "s" },
-      { "type": "stat", "event": "purchase", "sum": "amount", "title": "Revenue", "size": "s" },
-      { "type": "findings", "limit": 3, "size": "l" },
-      { "type": "breakdown", "event": "play", "by": "what", "title": "Which modes they play", "size": "m" },
-      { "type": "series", "event": "open", "by": "what", "title": "Opens, free vs full", "size": "m" }
-    ] },
-    { "id": "paywall", "title": "Paywall", "icon": "bolt", "panels": [
-      { "type": "stat", "event": "purchase", "sum": "amount", "per": "$players", "title": "Revenue per player", "size": "s" },
-      { "type": "stat", "event": "purchase", "per": "$players", "title": "Players who bought", "size": "s" },
-      { "type": "breakdown", "event": "purchase", "sum": "amount", "by": "item", "title": "Revenue by item", "size": "m" },
-      { "type": "funnel", "steps": "paywall,buy=tapped,buy=done", "title": "Paywall to purchase", "size": "l" },
-      { "type": "breakdown", "event": "paywall", "by": "what", "title": "Where the paywall opens", "size": "m" },
-      { "type": "versions", "title": "Paywall numbers by version", "size": "m" },
-      { "type": "sessions", "sent": "buy=done", "title": "Sessions that bought", "size": "l" }
-    ] },
-    { "id": "stops", "title": "Stops", "icon": "flag", "panels": [
-      { "type": "levels", "label": "Stop", "title": "Stops won and lost", "size": "l" },
-      { "type": "breakdown", "event": "difficulty", "by": "what", "title": "Difficulty picked", "size": "m" }
-    ] },
-    { "id": "purchases-live", "title": "Purchases, live", "view": "live", "options": { "events": ["paywall", "buy"] } },
-    { "view": "events" },
-    { "view": "sessions" },
-    { "view": "versions" },
-    { "view": "errors" }
-  ]
-}
-```
-
-A competitive game (a MOBA, a card battler, a roguelite: the same shape with its own words):
-
-```json
-{ "pages": [
-  { "id": "heroes", "title": "Heroes", "icon": "players", "panels": [
-    { "type": "stat", "event": "match_end", "rate": "won", "title": "Matches won", "size": "s", "note": "Should sit near 50%" },
-    { "type": "stat", "event": "match_end", "of": "duration_s", "quantile": 50, "unit": "s", "title": "Median match", "size": "s" },
-    { "type": "stat", "event": "match_end", "per": "$hours", "title": "Matches per hour played", "size": "s" },
-    { "type": "breakdown", "event": "match_end", "by": "hero", "rate": "won", "min": 100, "limit": 20, "title": "Win rate by hero", "size": "l" },
-    { "type": "breakdown", "event": "match_end", "by": "items", "rate": "won", "min": 100, "limit": 20, "title": "Win rate of builds with each item", "size": "m" },
-    { "type": "distribution", "event": "match_end", "of": "duration_s", "by": "mode", "unit": "s", "title": "Match length", "size": "m" },
-    { "type": "versions", "title": "Version by version", "size": "l" }
-  ] },
-  { "view": "performance" },
-  { "view": "errors" }
-] }
-```
-
-A battle royale or other online game, next to its own pages:
-
-```json
-{ "pages": [
-  { "id": "network", "title": "Network", "icon": "live", "panels": [
-    { "type": "stat", "metric": "ping_p95", "title": "Ping for the slowest 5%", "size": "s" },
-    { "type": "stat", "metric": "disconnect_pct", "title": "Matches ended by a disconnect", "size": "s" },
-    { "type": "net", "show": "ping", "by": "$region", "title": "Ping by server region", "size": "l" },
-    { "type": "net", "show": "disconnects", "title": "Disconnects and why", "size": "m" },
-    { "type": "findings", "limit": 5, "size": "m" }
-  ] },
-  { "id": "servers", "title": "Servers", "icon": "perf", "panels": [
-    { "type": "stat", "metric": "servers_now", "title": "Servers running", "size": "s" },
-    { "type": "stat", "metric": "server_tick_p95", "title": "Server tick, slowest 5%", "size": "s" },
-    { "type": "stat", "metric": "server_crash_free_pct", "title": "Server runs without a crash", "size": "s" },
-    { "type": "servers", "show": "ticks", "by": "players", "title": "Tick time by players connected", "size": "l" }
-  ] },
-  { "id": "endgame", "title": "Dungeons", "icon": "flag", "panels": [
-    { "type": "levels", "label": "Dungeon", "by": "tier", "title": "Clears by tier", "size": "l" },
-    { "type": "levels", "label": "Dungeon", "by": "$class", "title": "Clears by class", "size": "m" }
-  ] },
-  { "view": "matches" },
-  { "view": "performance" }
-] }
-```
-
-A puzzle game: an Overview with `stat` players and average session, `levels` with `"label": "Puzzle"` (completion
-and time), a `breakdown` of `hint` by `what` and a `funnel` of `tutorial=done,puzzle_solved`; then Events, Sessions
-and Errors. No Performance unless it's slow, no Heatmaps, no deaths.
-
-A platformer or shooter: an Overview with `stat` frame_p95 and crash_free_pct, `findings`, `frame_time`, `levels`,
-`deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions. A
-level whose deaths tell its story gets a `positions` panel (`"show": "both"` to see where players went too).
+Whole dashboards to start from, a mobile game, a competitive game, a battle royale, a puzzle game and a platformer,
+are in [references/examples.md](references/examples.md). Take the shape, not the words: every page and panel uses
+this game's own names.
 
 **A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], …]` on the
 level's plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,
