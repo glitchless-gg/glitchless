@@ -1,6 +1,6 @@
 # What Glitchless for Godot sends
 
-This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd`, `steam.gd` and `bug_report.gd` and checked against what reached a local server in `npm run test:godot`. Keep it in step with those files.
+This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd`, `steam.gd`, `bug_report.gd`, `properties.gd` and `net.gd` and checked against what reached a local server (and, for the multiplayer additions, a test intake) in `npm run test:godot`. Keep it in step with those files.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -29,6 +29,7 @@ No mode reads or sends:
 - a name, email, account, or anything the player types (except a bug report's note, below)
 - the advertising ID, Apple's identifier for vendors, or Android's ID
 - contacts, location, locale, time zone, or the network address
+- in a multiplayer game: an IP address, the game server's address or host name, the internet provider, the Wi-Fi network's name, or other players' names or IDs
 
 The Glitchless server does not read or store the address a request came from. The host it runs on may log it, so check that host's logging settings.
 
@@ -36,20 +37,26 @@ The Glitchless server does not read or store the address a request came from. Th
 
 Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-godot/0.2.0`) and `batch_id` (random, made for each batch and sent again with its retries).
 
-Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
+Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game has set them, every event and window also carries `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` (the [group](#groups) IDs).
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session), when it set any) | the first batch of a session |
 | `session_end` | `reason` (`background`, `close`, `quit`), `duration_s` | going to the background, closing, quitting |
-| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts) | every 5 s |
+| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts); while connected to a game server, `net` ([network quality](#network-quality)) | every 5 s |
 | `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK measures in the game), draw calls, primitives, timings, pipeline compiles, nodes added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
 | `load` | when the first frame was drawn, `ttff_ms` (engine start to first frame), `first_launch` (whether this is the first launch of this game version on the device), `ttp_ms` (to first touch or key) | once |
 | `error` | `kind`, `message`, `stack` (script files, lines and functions), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `Glitchless.error`), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session |
-| `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them | the game calls them |
-| `level_abandon` | `duration_s`; `reason` (`background`, `close`, `quit`) when Glitchless sends it | the game calls it, or the game goes to the background or closes mid-level |
+| `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, and `level_start`'s `attrs` (the attempt in the game's words, such as difficulty and party size), as the game passes them | the game calls them |
+| `level_abandon` | `duration_s`; `reason` (`background`, `close`, `quit`, `disconnect`) when Glitchless sends it | the game calls it, or the game goes to the background, closes or loses its connection mid-level |
 | `death` | `cause`; **full** or `positions`: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `track()`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
+| `counts` | `counts` (for each name and its words: `name`, `attrs`, `n` how many, `sums` of its numbers, `first_ts`), `duration_s`, `dropped`: the game's own words via `count()`, added up on the device | once a window that counted anything |
+| `props` | `props`: the [properties](#properties-the-games-words-about-the-session) that changed, null for one removed | at most once a window, when the game changed one |
+| `group` | `kind` (`match`, `party`, `run`), `id` (hashed for a match or party, null when it ends), `attrs` (the game's words), `resumed` | the game sets or ends a [group](#groups) |
+| `disconnect` | `reason` (`timeout`, `connection_lost`, `kicked`, `server_closed`, `failed_to_connect`, `other`), `connected_s`, `rtt_p95`, `loss_pct` | the connection to the game's server drops, at most 20 a session |
+| `reconnect` | `after_s` | connected again within 5 minutes |
+| `server_window` | a [dedicated server](#server-mode)'s physics ticks: their count, a tick-time sketch and percentiles, the budget and the ticks over it, the tick rate reached, `players` (a count) and `players_max`, the players' round trips (`rtt_p95`), kbps in and out, memory and CPU use, `ctx` | every 5 s, from a dedicated server only |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key code or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or `positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
 | `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the game's window as it was last drawn), `device` (the same fields as `session_start`, in the same mode), `recent` (the last 20 game events and hitches: when, which, and the few fields above that say what happened), `frames` (fps and p95 of the last frame windows); **full** or `positions`: `x`, `y`, `z` | the player sends one from the form, or the game calls `Glitchless.report_bug()`. Off unless the game turns it on |
@@ -76,6 +83,22 @@ The screen size is sent so that an iPhone Duo's open and closed states can be to
 **Error text.** Godot's error messages come from the engine and the game's code, not from the player. Paths on the device are cut down before sending: the user-data folder becomes `user://`, `/Users/<name>` and `C:\Users\<name>` lose the name, and iOS container IDs (made per install) become `<id>`. If the game puts anything of the player's into `push_error()` text or `Glitchless.error()` attributes, it is sent. Don't.
 
 **Game words.** `track(event, what)`, level names, death causes and gauges are whatever the game passes. The rule from the games' `Metrics.count` carries over: the game's own words, never anything typed by or particular to the player.
+
+## Properties: the game's words about the session
+
+A game can describe the session with `set_properties`, for example its mode, the player's rank tier or class, the input they use, or the region of the game's servers. Properties go with the session in every mode, in `session_start` and in a `props` event when one changes, as event attributes do. They are checked before they are sent (`properties.gd`): keys such as `email`, `user_id`, `name`, `steam_id`, `age` or `gender`, and values that look like an email address, a phone number or a long number, an ID (a UUID, or a long run of hex or base64) or a link, are dropped. Values are short words, booleans or whole numbers; free text and fractions are not taken. A property is not a player ID: in anonymous mode nothing ties one session's properties to another session, and nothing is kept on the device. Glitchless's server drops the same shapes again, and treats a property with more than 200 values in a day as an ID.
+
+## Groups
+
+A game can mark the events of one match, party or run with an ID. Match and party IDs are made by the game's servers for that match or party and shared by the players in it. They are never a player's account, guild or friends-list ID. Glitchless sends them hashed (SHA-1 with the game's name), so they say that some sessions played together but can't be looked up in the game's own logs; a game can turn the hash off (`hash_group_ids: false`) to match them against its own server's logs. Run IDs are made by the SDK. In anonymous mode, a run that goes on after the game restarts gets a new ID, so no ID ties two launches together.
+
+## Network quality
+
+In a multiplayer game on Godot's MultiplayerAPI, every mode sends how the connection to the game's server behaved, as it sends frame times: the round trip (ping), its jitter, packet loss, how much was sent and received, the kind of transport (`enet`, `websocket`), whether this player hosts the game, and disconnects with their reason. It describes the connection, not the person. Never sent: IP addresses, the server's address or host name, the internet provider, the Wi-Fi network's name, or where the player is. `link` (Wi-Fi or mobile data) is always null: Godot can't tell.
+
+## Server mode
+
+A dedicated server (a dedicated-server export, or run with `--server`) sends nothing about players: no player IDs, account IDs, names, chat or IP addresses. `players` is a count, and their round trips are numbers the server measured. About itself it sends its OS, core count and memory, its tick times, its memory use and CPU, and its region in the game's own words, never its IP address or host name. Its envelope says `role: "server"` with no player ID, its device is sent as in anonymous mode, and it sends no positions and no bug reports.
 
 ## Steam facts
 
@@ -115,6 +138,7 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | --- | --- | --- |
 | `user://glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id` so the server stores a batch once however often it arrives; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
 | `user://glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
+| `user://glitchless/server_outbox.json` | a dedicated server's batches not yet sent, kept apart from a player build's: the [server mode](#server-mode) events, with no player ID | a dedicated server |
 | `user://glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 
 Deleting the app deletes them all.
@@ -150,6 +174,11 @@ If the game ships on Steam and uses Steamworks, add:
 > **Steam**
 > On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
 
+If the game is played online, add:
+
+> **Multiplayer**
+> In online matches, the reports also say how the connection to our servers behaved (its delay, lost data and dropped connections), which match they belong to (as a code our servers made for the match, not linked to your account), and what you were doing in the game's own terms, such as the mode, your rank tier or class, and the server region you play on. They never say who you are, and carry no IP address.
+
 If the game turns bug reports on, add:
 
 > **Bug reports**
@@ -161,8 +190,8 @@ If the game turns bug reports on, add:
 
 | Apple's type | from | anonymous mode | install mode | full mode |
 | --- | --- | --- | --- | --- |
-| Usage Data → Product Interaction | levels, deaths, `track()` events | collected | collected | collected |
-| Diagnostics → Performance Data | frame times, hitches, load times | collected | collected | collected |
+| Usage Data → Product Interaction | levels, deaths, `track()` and `count()` events, properties, match and party groups | collected | collected | collected |
+| Diagnostics → Performance Data | frame times, hitches, load times, and in a multiplayer game ping, packet loss and disconnects | collected | collected | collected |
 | Diagnostics → Other Diagnostic Data | errors, device tier, screen, engine counts | collected | collected | collected |
 | Diagnostics → Crash Data | Glitchless sends no crash logs, but script errors that stop a function are close; listing it is the cautious answer | optional | optional | optional |
 | Identifiers → Device ID | the random player ID | not collected | collected | collected |
@@ -193,6 +222,7 @@ For each type, Apple asks four things:
 Read it again when any of these change:
 
 - the events or fields in `glitchless.gd`, or what the bug report form sends (`bug_report.gd`)
+- the property checks in `properties.gd`, or what `net.gd` reads from the game's networking
 - the device fields in `device.gd`, or the Steam facts in `steam.gd`
 - what the server stores (`server/src/ingest.js`, `server/src/stores/`)
 - whether the server forwards to Datadog

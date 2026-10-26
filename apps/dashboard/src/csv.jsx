@@ -78,6 +78,17 @@ export function panelCsv(p) {
     case 'stat': {
       const head = ['Stat', p.currency ? `Value (${p.currency})` : p.unit ? `Value (${p.unit})` : 'Value'];
       const row = [p.title, p.value];
+      // A rate with the range it likely sits in; a percentile or average with its events; per hour with the hours.
+      if (p.low != null) {
+        head.push('Events', 'Likely from (%)', 'Likely to (%)');
+        row.push(p.events, p.low, p.high);
+      } else if (p.unit === 'per hour') {
+        head.push(p.total != null ? sumHeader('Total', p.currency) : 'Count', 'Hours played');
+        row.push(p.total ?? p.count, p.hours);
+      } else if (p.events != null || (p.of && p.count != null)) {
+        head.push('Events');
+        row.push(p.events ?? p.count);
+      }
       if (p.base != null) {
         head.push(p.sum ? sumHeader('Total', p.currency) : 'Count', p.per === '$players' ? 'Players' : p.per === '$sessions' ? 'Sessions' : p.per);
         row.push(p.sum ? p.total : p.count, p.base);
@@ -94,9 +105,16 @@ export function panelCsv(p) {
     }
     case 'series':
       return [['Time', ...p.series.map((s) => (p.sum ? sumHeader(s.label, p.currency) : s.label))], ...p.ts.map((t, i) => [iso(t), ...p.series.map((s) => s.values[i])])];
+    case 'distribution': {
+      if (p.rows) return [[p.by.startsWith('$') ? p.by.slice(1) : p.by, 'Events', `Median ${p.of}`, `p90 ${p.of}`, `Mean ${p.of}`], ...p.rows.map((r) => [r.value, r.count, r.p50, r.p90, r.mean])];
+      return [[`${p.of} from`, `${p.of} to`, 'Events'], ...(p.under ? [['', p.histogram[0]?.lo, p.under]] : []), ...p.histogram.map((b) => [b.lo, b.hi, b.count]), ...(p.over ? [[p.histogram.at(-1)?.hi, '', p.over]] : [])];
+    }
     case 'breakdown': {
       // A split of sessions ($platform, $browser, $device_tier) names its column in words.
       const by = p.split ?? (p.by.startsWith('$') ? p.by.slice(1) : p.by);
+      if (p.rate) return [[by, 'Rate (%)', 'Likely from (%)', 'Likely to (%)', 'Events', 'Sessions'], ...p.rows.map((r) => [r.value, r.rate, r.low, r.high, r.events, r.sessions])];
+      if (typeof p.avg === 'string') return [[by, `Average ${p.avg}`, 'Events', 'Sessions'], ...p.rows.map((r) => [r.value, r.avg, r.events, r.sessions])];
+      if (p.per === '$hours') return [[by, p.sum ? sumHeader(`${p.sum} per hour played`, p.currency) : 'Per hour played', p.sum ? sumHeader(p.sum, p.currency) : 'Count', 'Hours played'], ...p.rows.map((r) => [r.value, r.per_hour, p.sum ? r.sum : p.counts === 'sessions' ? r.sessions : r.count, r.hours])];
       const sessions = p.rows.some((r) => r.sessions != null);
       const players = p.rows.some((r) => r.players != null);
       // Split without an event, the count is the sessions.
@@ -110,9 +128,13 @@ export function panelCsv(p) {
       return [['Step', 'Sessions', '% of first', '% of the step before', 'Seconds from the step before'], ...p.steps.map((s, i) => [s.step, s.sessions, s.pct_of_first, i ? s.pct_of_previous : null, i ? s.median_s_from_previous : null])];
     case 'levels': {
       const h = p.has;
+      // Split by an attempt's attribute or a property (by), and runs counted once per level (count: "runs").
+      const split = p.rows.some((l) => l.value != null && l.value !== '');
+      const runs = p.rows.some((l) => l.runs != null);
+      const by = typeof p.by === 'string' ? p.by.replace(/^\$/, '') : 'Value';
       return [
-        [p.label || 'Level', 'Sessions', 'Attempts', ...(h.completion ? ['Completion %'] : []), ...(h.fails ? ['Fails'] : []), ...(h.deaths ? ['Deaths / session'] : []), ...(h.time ? ['Avg time (s)'] : []), ...(h.rage_quits ? ['Rage quits'] : [])],
-        ...p.rows.map((l) => [l.level, l.sessions, l.attempts, ...(h.completion ? [l.completion_pct] : []), ...(h.fails ? [l.fails] : []), ...(h.deaths ? [l.deaths_per_session] : []), ...(h.time ? [l.avg_complete_s] : []), ...(h.rage_quits ? [l.rage_quits] : [])]),
+        [p.label || 'Level', ...(split ? [by] : []), ...(runs ? ['Runs'] : []), 'Sessions', 'Attempts', ...(h.completion ? ['Completion %'] : []), ...(h.fails ? ['Fails'] : []), ...(h.deaths ? ['Deaths / session'] : []), ...(h.time ? ['Avg time (s)', 'Median clear (s)', 'p90 clear (s)'] : []), ...(h.disconnects ? ['Disconnects'] : []), ...(h.rage_quits ? ['Rage quits'] : [])],
+        ...p.rows.map((l) => [l.level, ...(split ? [l.value] : []), ...(runs ? [l.runs] : []), l.sessions, l.attempts, ...(h.completion ? [l.completion_pct] : []), ...(h.fails ? [l.fails] : []), ...(h.deaths ? [l.deaths_per_session] : []), ...(h.time ? [l.avg_complete_s, l.p50_complete_s ?? null, l.p90_complete_s ?? null] : []), ...(h.disconnects ? [l.disconnects] : []), ...(h.rage_quits ? [l.rage_quits] : [])]),
       ];
     }
     case 'frame_time':
@@ -123,7 +145,35 @@ export function panelCsv(p) {
     }
     case 'deaths': {
       const causes = [...new Set(p.rows.flatMap((r) => Object.keys(r.causes)))];
-      return [['Level', 'Deaths', ...causes], ...p.rows.map((r) => [r.level, r.deaths, ...causes.map((c) => r.causes[c] || 0)])];
+      const split = p.rows.some((r) => r.value != null);
+      const by = typeof p.by === 'string' ? p.by.replace(/^\$/, '') : 'Value';
+      return [['Level', ...(split ? [by] : []), 'Deaths', ...causes], ...p.rows.map((r) => [r.level, ...(split ? [r.value] : []), r.deaths, ...causes.map((c) => r.causes[c] || 0)])];
+    }
+    case 'net': {
+      // Network quality (A8): the series, or the rows when the panel is split.
+      if (p.rows?.length) {
+        const sessions = p.rows.some((r) => r.sessions != null);
+        return [
+          [p.by.replace(/^\$/, ''), ...(sessions ? ['Sessions'] : []), 'Median ping (ms)', 'p95 ping (ms)', 'Play lagging (%)', 'Loss (%)', 'Jitter (ms)', 'Hours connected', 'Disconnects', 'Disconnects per hour', 'Attempts ended (%)'],
+          ...p.rows.map((r) => [r.value, ...(sessions ? [r.sessions] : []), r.ping_p50, r.ping_p95, r.lag_pct, r.loss_pct, r.jitter_ms, r.connected_h, r.disconnects, r.disconnects_per_hour, r.disconnect_pct]),
+        ];
+      }
+      if (p.show === 'disconnects') return [['Reason', 'Disconnects', 'Per hour played'], ...(p.reasons || []).map((r) => [r.reason, r.count, r.per_hour])];
+      if (p.show === 'loss') return [['Time', 'Loss (%)'], ...p.ts.map((t, i) => [iso(t), p.loss_pct[i]])];
+      return [['Time', 'Median ping (ms)', 'p95 ping (ms)'], ...p.ts.map((t, i) => [iso(t), p.p50[i], p.p95[i]])];
+    }
+    case 'servers': {
+      // The game's servers (A9): crashes, the rows of a split, or the series.
+      if (p.show === 'crashes') return [['Crash', 'Location', 'Times', 'Matches ended', 'Players dropped'], ...(p.crashes || []).map((c) => [c.message, c.location, c.count, c.matches_ended, c.players_dropped])];
+      if (p.rows?.length) {
+        const servers = p.rows.some((r) => r.servers != null);
+        return [
+          [p.by === 'players' ? 'Players connected' : p.by.replace(/^\$/, ''), ...(servers ? ['Servers'] : []), 'Windows', 'p95 tick (ms)', 'Windows over budget (%)', 'Late ticks (%)', 'Players'],
+          ...p.rows.map((r) => [r.value, ...(servers ? [r.servers] : []), r.windows, r.tick_p95, r.over_budget_pct, r.late_pct, r.players]),
+        ];
+      }
+      if (p.show === 'players') return [['Time', 'Players per server', 'Servers running'], ...p.ts.map((t, i) => [iso(t), p.players[i], p.servers[i]])];
+      return [['Time', 'Median tick (ms)', 'p95 tick (ms)'], ...p.ts.map((t, i) => [iso(t), p.tick_p50[i], p.tick_p95[i]])];
     }
     case 'events':
       return [['Event', 'Count', 'Sessions', 'Sessions %', 'Per session', 'Attributes'], ...p.events.map((e) => [e.name, e.count, e.sessions, e.sessions_pct, e.per_session, e.attrs.join(' ')])];
@@ -141,6 +191,8 @@ export function panelCsv(p) {
     case 'reports':
       return reportsCsv(p.reports);
     case 'retention':
+      // By a property (A6), each value's D1, D7 and D30; else the cohorts.
+      if (p.split?.rows) return [[p.split.key, 'New players', 'D1 %', 'D7 %', 'D30 %'], ...p.split.rows.map((r) => [r.value, r.new_players, r.d1, r.d7, r.d30])];
       return retentionCsv(p);
     case 'positions': {
       // One row per bin: its centre on the level's plane and how many fell in it.

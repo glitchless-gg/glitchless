@@ -7,9 +7,20 @@
 // one currency: the dashboard's (`currency`), else the one most of its events were sent in. Events without a
 // currency count in it; events in another are left out of the sum and named (`mismatch`), never added up.
 
-import { cellsOf, eventIndex, eventsBy, sentEvent, parseFunnel, round } from './analytics.js';
+import { cellsOf, eventIndex, eventsBy, eventCount, sentEvent, parseFunnel, round } from './analytics.js';
 import { splitSumKey, FIXED } from './rollups.js';
 import { approximate } from './daily.js';
+import { hoursPlayed, perHour, measureOf, measureBy, rateOf, avgOf } from './rates.js';
+import { percentileOf } from './distributions.js';
+import { netStats, NET_METRICS } from './network.js';
+
+// One version's context: its rollup cells (as versions() hands them over) and its sessions, or over more than 31 days
+// its day groups and sampled sessions, with nothing cached from the whole range.
+export function versionContext(ctx, version, cells) {
+  const mine = (x) => String(x.version) === String(version);
+  const daily = ctx.daily && { ...ctx.daily, all: ctx.daily.byVersion.get(version) ?? ctx.daily.all, samples: ctx.daily.samples.map((d) => ({ ...d, list: d.list.filter(mine) })) };
+  return { ...ctx, cells: cells.map((c) => ({ m: ctx.buckets[0], c })), sessions: new Map([...ctx.sessions].filter(([, s]) => mine(s))), daily, evIndex: null, hoursTotal: undefined, overviewCache: null, netStats: undefined };
+}
 
 // The currency a game's money is shown in: `configured` (the dashboard's), else the currency most of its
 // events were sent with (any event name), else null.
@@ -119,10 +130,27 @@ export function senders(ctx, f, of) {
   return players.size;
 }
 
-// A stat panel's number on one version (versions()): a sum per session, player or session as `per` says, or
-// a conversion. `v` is the version's summary (sessions, players) and `cells` its rollup cells.
+// A stat panel's number on one version (versions()): a sum per session, player or session as `per` says, a
+// conversion, a count or sum per hour played (over the version's own hours), a rate, an average or a percentile. `v` is
+// the version's summary (sessions, players) and `cells` its rollup cells.
 export function versionStat(ctx, p, v, cells, currency = null) {
+  const sub = versionContext(ctx, v.version, cells);
+  if (p.metric === 'hours_played') return round(hoursPlayed(sub), 2);
+  if (NET_METRICS[p.metric]) return netStats(sub)?.[p.metric] ?? null;
+  if (p.metric) return perHour(cells.reduce((n, c) => n + (c.n[p.metric === 'deaths' ? 'death' : 'error'] || 0), 0), hoursPlayed(sub));
   const [f] = parseFunnel(p.event);
+  if (p.rate || p.avg) {
+    const m = measureOf(p);
+    const { num, den } = measureBy(sub, f, m, null).overall;
+    return m.kind === 'avg' ? avgOf(num, den) : rateOf(num, den).rate;
+  }
+  if (p.of) return percentileOf(sub, f, p.of, p.quantile)?.value ?? null;
+  if (p.per === '$hours') {
+    const x = p.sum ? (sumsBy(sub, f, p.sum, { currency: currency ?? gameCurrency(ctx) }).groups.get('')?.sum ?? 0) : eventCount(sub, f);
+    return perHour(x, hoursPlayed(sub));
+  }
+  // "Contains all of" per session: the version's sessions' occurrences.
+  if (f.all && !p.sum && !p.per) return v.sessions ? round(eventCount(sub, f) / v.sessions, 2) : null;
   if (p.sum) {
     const sums = sumsBy({ ...ctx, cells: cells.map((c) => ({ m: ctx.buckets[0], c })) }, f, p.sum, { currency: currency ?? gameCurrency(ctx) });
     const total = sums.groups.get('')?.sum ?? 0;

@@ -11,7 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SDK_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SCRIPTS = ['Glitchless', '__glitchless_core', '__glitchless_send', '__glitchless_sketch', '__glitchless_text', '__glitchless_device', '__glitchless_bug_report', '__glitchless_engine'];
+const SCRIPTS = ['Glitchless', '__glitchless_core', '__glitchless_send', '__glitchless_sketch', '__glitchless_text', '__glitchless_device', '__glitchless_bug_report', '__glitchless_play', '__glitchless_engine'];
 const OBJECTS = ['obj_glitchless', 'obj_glitchless_tail'];
 const FOLDER = 'Glitchless';
 

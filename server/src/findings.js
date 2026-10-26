@@ -2,12 +2,17 @@
 // Written for two readers: a human on the dashboard, and a coding agent over MCP — so every
 // finding says what's wrong, how sure we are (numbers), where to look, and what usually fixes it.
 
-import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, sessionCount, gaugeClimbs, noWin, rageDeathTs, quantile, round, pct, cellsOf, versionFramesAt, SLOW_START_MS } from './analytics.js';
+import { performance, errorIssues, funnel, versions, deathHotspots, eventLift, deathsOf, levelFacts, errorSessions, sessionCount, gaugeClimbs, noWin, rageDeathTs, quantile, round, pct, cellsOf, versionFramesAt, SLOW_START_MS } from './analytics.js';
+import { propertyLean, leanLine, slowSettings } from './properties.js';
+import { attributeWalls } from './levels.js';
+import { netFindings } from './network.js';
+import { serverFindings } from './servers.js';
 import { MARK } from './session-state.js';
 import { dailySdks } from './daily.js';
 import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './facts.js';
 import { reportFindings } from './reports.js';
 import { storeFindings } from './reviews.js';
+import { boardFindings } from './board-findings.js';
 import { WEB_ENGINES, WEB_ENGINE_FATAL_WORDS, WEB_ENGINE_QUALITY_TIPS, WEB_ENGINE_SLOW_START_TIPS, webEngineErrorSuggestion, webEnginePerfSuggestion } from './web-engine-advice.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -87,7 +92,9 @@ export function findings(ctx, maps = []) {
     const corr = correlateGauges(facts);
     const preceding = eventLift(ctx, l.key).filter((p) => p.lift >= 2);
     const evidenceBits = [];
+    const bursts = correlateCounters(facts);
     if (corr[0]) evidenceBits.push(`hitches coincide with high \`${corr[0].key}\` (median ${fmt(corr[0].during)} during hitches vs ${fmt(corr[0].otherwise)} otherwise)`);
+    if (bursts[0]) evidenceBits.push(`hitches come in windows with ${fmt(bursts[0].during)} or so \`${bursts[0].name}\` (a calm window: ${fmt(bursts[0].otherwise)})`);
     if (preceding[0] && preceding[0].share >= 0.3) evidenceBits.push(`${Math.round(preceding[0].share * 100)}% of hitches come within 1.5s of a \`${preceding[0].event}\` event (${preceding[0].lift}× its base rate)`);
     const carried = carriedGauges(ctx, l.key, best?.key);
     if (!corr.length && carried[0]) evidenceBits.push(`\`${carried[0].key}\` sits at ${fmt(carried[0].here)} for this whole level vs ${fmt(carried[0].baseline)} on ${best.key} — objects created earlier are never cleaned up`);
@@ -102,7 +109,7 @@ export function findings(ctx, maps = []) {
       summary:
         `${l.key} misses the frame budget on ${l.pct_over_budget}% of frames (${l.hitches_per_min} hitches/min${best && best.key !== l.key ? `; ${best.key} p95 is ${best.p95}ms` : ''}).` +
         (evidenceBits.length ? ` Evidence: ${evidenceBits.join('; ')}.` : ''),
-      evidence: { level: l.key, p50: l.p50, p95: l.p95, p99: l.p99, hitches_per_min: l.hitches_per_min, draw_calls_avg: l.draw_calls, draw_calls_max: l.draw_calls_max, correlated_gauges: corr.slice(0, 3), carried_over_gauges: carried.slice(0, 3), preceding_events: preceding.slice(0, 3), hitch_causes: causes, sessions: l.sessions },
+      evidence: { level: l.key, p50: l.p50, p95: l.p95, p99: l.p99, hitches_per_min: l.hitches_per_min, draw_calls_avg: l.draw_calls, draw_calls_max: l.draw_calls_max, correlated_gauges: corr.slice(0, 3), carried_over_gauges: carried.slice(0, 3), preceding_events: preceding.slice(0, 3), ...(bursts.length ? { counter_bursts: bursts.slice(0, 3) } : {}), hitch_causes: causes, sessions: l.sessions },
       suggestion: perfSuggestion(corr.length ? corr : carried, preceding, causes, l, engine),
       link: { page: 'performance', level: l.key },
       impact: l.sessions / totalSessions,
@@ -266,6 +273,8 @@ export function findings(ctx, maps = []) {
     const severity = issue.kind === 'webgl_context_lost' || issue.kind === 'crash' || share > 0.25 ? 'high' : share > 0.05 ? 'medium' : 'low';
     const crumbs = issue.breadcrumbs?.map((b) => b.name || b.type).filter(Boolean).slice(-4) || [];
     const also = loggedWith.get(issue.fingerprint);
+    // Most of it on one value of a property (decision 5): "crashes are mostly class necromancer".
+    const lean = propertyLean(ctx, errorSessions(ctx, issue.fingerprint));
     out.push({
       id: `error-${issue.fingerprint}`,
       severity,
@@ -273,8 +282,9 @@ export function findings(ctx, maps = []) {
       title: `${issue.message.slice(0, 90)}`,
       summary:
         `${issue.count} occurrences in ${issue.sessions} sessions (${issue.sessions_pct}% of sessions)${issue.levels.length ? ` on ${issue.levels.join(', ')}` : ''}, first seen in ${issue.first_version}. ${issue.fatal ? fatalWords(ctx, issue) || 'Unhandled — reaches window.onerror.' : ''}${crumbs.length ? ` Typically right after: ${crumbs.join(' → ')}.` : ''}` +
-        (also.length ? ` Each time it comes with ${also.map((a) => `"${a.message.slice(0, 60)}"${a.location ? ` at ${a.location}` : ''}`).join(' and ')}: one failure, logged ${also.length + 1} ways.` : ''),
-      evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs, ...(also.length ? { logged_with: also.map((a) => ({ fingerprint: a.fingerprint, message: a.message, location: a.location })) } : {}) },
+        (also.length ? ` Each time it comes with ${also.map((a) => `"${a.message.slice(0, 60)}"${a.location ? ` at ${a.location}` : ''}`).join(' and ')}: one failure, logged ${also.length + 1} ways.` : '') +
+        leanLine(lean),
+      evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs, ...(also.length ? { logged_with: also.map((a) => ({ fingerprint: a.fingerprint, message: a.message, location: a.location })) } : {}), ...(lean ? { property: lean } : {}) },
       suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs, errorWhen(ctx, issue)),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
@@ -345,6 +355,8 @@ export function findings(ctx, maps = []) {
       const typical = others.length ? round(quantile(others, 0.5), 1) : null;
       if (typical == null || typical - l.through_pct < 25) continue;
       const left = l.abandoned ? ` ${l.abandoned} more left it before it ended and aren't counted.` : '';
+      const stuck = ctx.daily ? [] : [...ctx.sessions.values()].filter((s) => s.levels.has(l.level) && !s.completed.has(l.level) && !s.abandoned?.[l.level]);
+      const lean = propertyLean(ctx, stuck);
       out.push({
         id: `design-wall-${l.level}`,
         severity: (l.through_pct < 50 || l.rage_quit_pct >= 25) && l.decided >= CONFIDENT_SESSIONS ? 'high' : 'medium',
@@ -355,14 +367,18 @@ export function findings(ctx, maps = []) {
           left +
           (l.deaths ? ` Its ${l.deaths} deaths (${l.deaths_per_session} per session) are spread out, not at one spot.` : ` Nobody dies on it: ${l.fails ? `${l.fails} fails end the attempts` : 'sessions end before they finish it'}.`) +
           (l.rage_quits ? ` ${l.rage_quits} sessions rage-quit here (${l.rage_quit_pct}% of sessions that reached it).` : '') +
+          leanLine(lean, 'the sessions it stopped') +
           smallSample(l.decided),
-        evidence: { level: l.level, sessions: l.sessions, abandoned: l.abandoned, completed: l.completed, completion_pct: l.through_pct, other_levels_median_pct: typical, deaths: l.deaths, deaths_per_session: l.deaths_per_session, fails: l.fails, abandons: l.abandons, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct },
+        evidence: { level: l.level, sessions: l.sessions, abandoned: l.abandoned, completed: l.completed, completion_pct: l.through_pct, other_levels_median_pct: typical, deaths: l.deaths, deaths_per_session: l.deaths_per_session, fails: l.fails, abandons: l.abandons, rage_quits: l.rage_quits, rage_quit_pct: l.rage_quit_pct, ...(lean ? { property: lean } : {}) },
         suggestion: `Play ${l.level} against the level before it and list what steps up (enemy count, speed, timers, resources, the rules). Ease the biggest step, or add a level that teaches it, then compare ${l.level}'s completion rate between versions.`,
         link: { page: 'players', level: l.level },
         impact: l.sessions / totalSessions,
       });
     }
   }
+
+  // 4c. A wall at one difficulty (finding 10, A7): a level's attempts split by an attribute of their starts.
+  if (!endless) out.push(...attributeWalls(ctx, { quantile, totalSessions }));
 
   // 5. Version-over-version regressions and wins. Improved only when nothing got worse: fewer errors don't make up
   // for slower frames. Versions that ran on different screens (refresh rates) compare frame times only on the
@@ -427,6 +443,9 @@ export function findings(ctx, maps = []) {
     });
   }
 
+  // 6b. One setting runs slow (finding 14, A6): a value of a session property whose frame p95 is 1.5× the rest's.
+  out.push(...slowSettings(ctx, budget, totalSessions));
+
   // 7. Slow first frame. It hits the sessions that waited longer than SLOW_START_MS, not every session.
   if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > SLOW_START_MS) {
     const engine = engineIn(ctx, (s) => s.ttff != null);
@@ -449,8 +468,18 @@ export function findings(ctx, maps = []) {
     });
   }
 
+  // 7b. The network (A8): a whole lobby lagging at once, one kind of connection or region lagging, disconnects rising.
+  out.push(...netFindings(ctx, vers, totalSessions));
+
+  // 7c. The game's servers (A9, its companion service): falling behind when full, a crash that ends matches, a leak.
+  if (ctx.server) out.push(...serverFindings(ctx, totalSessions));
+
   // 8. Players' bug reports piling up on one level (ctx.reports, which app.js reads for the range).
   out.push(...reportFindings(ctx, totalSessions, gameEngine(ctx)));
+
+  // 8b. The numbers on the game's own boards (ctx.dashboard): a rate out of line or off what the board expects, a sum
+  // per hour played or a distribution that moved between the last two versions (board-findings.js).
+  out.push(...boardFindings(ctx, vers, totalSessions));
 
   // 9. Store reviews (Steam) about stutter, lag, fps, freezes or crashes rising after a build (ctx.stores, reviews.js).
   out.push(...storeFindings(ctx, out));
@@ -471,6 +500,21 @@ function correlateGauges(facts) {
     if (ratio >= 2) out.push({ key, during: d, otherwise: o, ratio: round(ratio, 1) });
   }
   return out.sort((a, b) => b.ratio - a.ratio);
+}
+
+// Counters (A5) whose per-window total in windows with hitches is far above their total in calm windows (finding 13):
+// a burst of kills or spawns that the frames can't keep up with. A name needs 3 or more windows with hitches.
+function correlateCounters(facts) {
+  const out = [];
+  for (const [name, during] of Object.entries(facts.kh || {})) {
+    if (valueCount(during) < 3) continue;
+    const d = valueQuantile(during, 0.5);
+    const calm = facts.kc?.[name];
+    const o = valueCount(calm) ? valueQuantile(calm, 0.5) : 0;
+    const ratio = (d + 1) / (o + 1);
+    if (ratio >= 2) out.push({ name, during: d, otherwise: o, ratio: round(ratio, 1), windows: valueCount(during) });
+  }
+  return out.sort((a, b) => b.ratio - a.ratio || (a.name < b.name ? -1 : 1));
 }
 
 // Gauges that are high for the whole level (not just during hitches) compared with the smoothest level.

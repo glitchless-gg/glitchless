@@ -13,6 +13,8 @@ export const VIEWS = {
   versions: { title: 'Versions', icon: 'versions', about: 'releases compared on the stats of every board' },
   live: { title: 'Live Tail', icon: 'live', about: 'events as they arrive' },
   reports: { title: 'Bug Reports', icon: 'bug', about: 'what players reported from inside the game, with screenshots' },
+  servers: { title: 'Servers', icon: 'perf', about: "the game's servers: ticks, players and crashes" },
+  matches: { title: 'Matches', icon: 'players', about: 'every match from every side, slot by slot' },
 };
 
 // The pages of a game that has sent nothing yet.

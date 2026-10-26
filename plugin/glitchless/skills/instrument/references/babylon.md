@@ -63,6 +63,10 @@ draws its picture for the heatmaps (pass `BABYLON` for it). Register WebMCP tool
 Three.js ([4](threejs.md#4-give-agents-hands-register-game-tools-webmcp), [4b](threejs.md#4b-bug-reports-from-players-ask-first),
 [4c](threejs.md#4c-readable-errors-from-the-production-build-source-maps)).
 
+Streams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in
+[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,
+and its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).
+
 ## 5. Bots and playtests
 
 As for Phaser ([5](phaser.md#5-bots-and-playtests)): `?autoplay=1&seed=N&skill=0..1&level=N`, synthetic sessions and

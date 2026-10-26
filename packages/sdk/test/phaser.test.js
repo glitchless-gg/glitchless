@@ -158,10 +158,11 @@ test('the levels option and a manual levelStart take over', () => {
   assert.equal(gd.level, null);
   start(game, 'Play');
   assert.equal(gd.level, 'world-1');
-  gd.levelStart('world-1-2'); // the game knows better: scene levels stop
+  gd.levelStart('world-1-2', { mode: 'speedrun' }); // the game knows better: scene levels stop
   stop(game, 'Play');
   start(game, 'Play');
   assert.equal(gd.level, 'world-1-2');
+  assert.deepEqual(gd.queue.filter((e) => e.type === 'level_start').at(-1).attrs, { mode: 'speedrun' }, 'its attributes pass through');
 });
 
 test('scenes already running when the adapter arrives are picked up', () => {

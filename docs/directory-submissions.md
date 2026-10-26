@@ -2,9 +2,9 @@
 
 What each directory's submission asks for, filled in for Glitchless, and what's left before submitting. Requirements
 were read from the directories' own pages on 25 October 2026 (links at the end); check them again before you submit,
-because both change often. Nothing has been submitted.
+because both change often. Claude: submitted 25 October 2026 and approved the same day as a Community connector (automated review). ChatGPT: not submitted yet.
 
-The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 20 tools. How it
+The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 23 tools. How it
 works and how people connect is in [remote-mcp.md](remote-mcp.md).
 
 ## Before submitting
@@ -132,6 +132,9 @@ tool.
 | `glitchless_store_reviews` | Store reviews | yes | no | yes | no | Reads store reviews Glitchless already synced; calls no store |
 | `glitchless_store_vitals` | Store vitals | yes | no | yes | no | Reads synced store vitals |
 | `glitchless_revenue` | Revenue | yes | no | yes | no | Reads synced revenue |
+| `glitchless_match` | Match | yes | no | yes | no | Reads a multiplayer game's matches |
+| `glitchless_network` | Network | yes | no | yes | no | Reads ping, packet loss and disconnects |
+| `glitchless_servers` | Servers | yes | no | yes | no | Reads the game's dedicated servers |
 | `glitchless_list_share_links` | List share links | yes | no | yes | no | Reads a game's share links |
 | `glitchless_set_dashboard` | Save dashboard | no | yes | yes | no | Replaces the saved dashboard (reset: true deletes it); saving the same pages twice changes nothing |
 | `glitchless_create_game` | Create game | no | no | no | no | Adds a game inside the workspace; each call adds another |
@@ -139,7 +142,7 @@ tool.
 | `glitchless_revoke_share_link` | Revoke share link | no | yes | yes | no | Ends a link for everyone who has it |
 
 The four that write need the `dashboard` or `manage` scope, and so does listing share links; a person who grants only
-`read` gives the app the other 15 reads.
+`read` gives the app the other 18 reads.
 Tools that act on the computer the server runs on (`glitchless_sign_in`, `glitchless_playtest`,
 `glitchless_deck_send`, `glitchless_deck_measure`) exist only in the stdio server and are never listed here.
 

@@ -45,11 +45,11 @@ export function instrumentBabylon(gd, { engine, scene, BABYLON, levels = 'auto',
   // A level call from the game itself switches scene levels off: the game knows its levels better. The frames that
   // build and first draw the level are its load, not play.
   const levelStart = gd.levelStart.bind(gd);
-  gd.levelStart = (id) => {
+  gd.levelStart = (id, attrs) => {
     manualLevels = true;
     levelScene = null;
     frame.sceneChanged = loadNext = true;
-    return levelStart(id);
+    return levelStart(id, attrs);
   };
 
   // A scene is a level when the game names it: scene.metadata.level (read whenever the scene renders, so setting it

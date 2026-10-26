@@ -2,6 +2,7 @@
 // the test game, a fresh local Glitchless server, a recorder in front of it that keeps every batch as the
 // plugin sent it, the server's query API, and the checks on the scripted run (-autoplay).
 import { spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -67,11 +68,25 @@ export async function startServer(port, dataDir) {
   throw new Error('Glitchless server did not start');
 }
 
+// What a server with the genre additions answers in GET /v1/health (docs/design/genre-coverage.md A5, A9): the
+// plugin sends counts only to a server that lists counts, and a server's session only to one that lists server_mode.
+export const FEATURES = ['counts', 'props', 'groups', 'net', 'server_mode'];
+
 // Sits in front of the server, keeping every batch as the plugin sent it, then passes it on: the
-// server drops event types it doesn't know yet, and these tests check what the plugin sends too.
+// server drops event types it doesn't know yet, and these tests check what the plugin sends too. Its
+// health answer adds `features` (FEATURES unless told otherwise) for a server that has none yet.
 // host 0.0.0.0 lets a phone on the network reach it.
-export function startRecorder(port, serverPort, batches, host = '127.0.0.1') {
-  const server = http.createServer((req, res) => {
+export function startRecorder(port, serverPort, batches, host = '127.0.0.1', features = FEATURES) {
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url.startsWith('/v1/health')) {
+      let health = { ok: true };
+      try {
+        health = await (await fetch(`http://127.0.0.1:${serverPort}/v1/health`)).json();
+      } catch {}
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ ...health, features: health.features ?? features }));
+      return;
+    }
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', async () => {
@@ -267,4 +282,76 @@ export function checkMeasureLine(check, stdout, level = 'Template_Default') {
     assert.equal(m.level_start, level);
   });
   return line ? JSON.parse(line).glitchless_measure : null;
+}
+
+// A match or party ID as every SDK sends it: "h_" and 24 hex digits of SHA-1 of the service, ":" and the game's ID.
+export const hashed = (id, service = SERVICE) => `h_${crypto.createHash('sha1').update(`${service.toLowerCase()}:${id}`, 'utf8').digest('hex').slice(0, 24)}`;
+
+// The genre run (-glitchless-test-genre): properties, groups, a level with attributes, a zone, counts, flags and
+// lists, and a connection that drops and comes back (docs/design/genre-coverage.md A4 to A8).
+export function checkGenre(check, run, stdout) {
+  check('genre: properties start with the session and change by props events; what identifies is dropped', () => {
+    const start = run.find((e) => e.type === 'session_start');
+    const props = [start?.props || {}, ...run.filter((e) => e.type === 'props').map((e) => e.props)];
+    const seen = props.flatMap((p) => Object.entries(p).map(([k, v]) => `${k}=${v}`));
+    assert.ok(seen.includes('mode=squads') && seen.includes('level_band=30') && seen.includes('mode=duos'), JSON.stringify(props));
+    assert.ok(!seen.some((p) => p.startsWith('email')), 'email was sent');
+    assert.equal(Object.assign({}, ...props).mode, 'duos');
+  });
+  check('genre: the level start says what the attempt is', () => {
+    const start = run.find((e) => e.type === 'level_start' && e.level === 'nmd_ghoa');
+    assert.deepEqual(start?.attrs, { tier: 'pit_80', party_size: 3, build: ['blood_surge', 'corpse_explosion'] });
+  });
+  check('genre: match and party IDs go hashed, runs are the plugin\'s, and events carry them', () => {
+    const groups = run.filter((e) => e.type === 'group');
+    const party = groups.find((g) => g.kind === 'party');
+    const match = groups.find((g) => g.kind === 'match' && g.id);
+    assert.equal(party?.id, hashed('party-0001'));
+    assert.equal(match?.id, hashed('e2e-match-0001'));
+    assert.deepEqual(match.attrs, { mode: 'squads' });
+    assert.ok(groups.some((g) => g.kind === 'match' && g.id === null), 'the match never ended');
+    assert.match(groups.find((g) => g.kind === 'run')?.id || '', /^r_[a-z0-9]{12}$/);
+    const battle = run.find((e) => e.type === 'custom' && e.name === 'battle_end');
+    assert.deepEqual(battle?.attrs, { won: true, duration_s: 184, deck: ['hog_rider', 'fireball'] });
+    assert.equal(battle.match, match.id);
+    assert.equal(battle.party, party.id);
+    assert.equal(battle.zone, 'crypt');
+  });
+  check('genre: counts go once a window, added up on the device', () => {
+    const counts = run.filter((e) => e.type === 'counts').flatMap((e) => e.counts.map((c) => ({ ...c, level: e.level, match: e.match })));
+    const kill = counts.find((c) => c.name === 'kill');
+    assert.equal(kill?.n, 37);
+    assert.deepEqual(kill.attrs, { monster: 'elite' });
+    assert.equal(kill.level, 'nmd_ghoa');
+    assert.equal(kill.match, hashed('e2e-match-0001'));
+    const gold = counts.find((c) => c.name === 'gold');
+    assert.equal(gold?.n, 3);
+    assert.deepEqual(gold.sums, { amount: 35 });
+    assert.ok(!run.some((e) => e.type === 'custom' && (e.name === 'kill' || e.name === 'gold')), 'a count went as a custom event');
+  });
+  check('genre: frame windows carry the zone and the connection', () => {
+    const windows = run.filter((e) => e.type === 'frame_window');
+    assert.ok(windows.some((w) => w.zone === 'crypt'), 'no window in the crypt');
+    const net = windows.find((w) => w.net?.samples > 0)?.net;
+    assert.ok(net, 'no window with net');
+    assert.equal(net.transport, 'custom');
+    assert.equal(net.rtt.a, 0.05);
+    for (const k of ['rtt_p50', 'rtt_p95', 'rtt_max', 'loss_pct', 'jitter_ms']) assert.equal(typeof net[k], 'number', k);
+    assert.ok(windows.some((w) => w.level === 'nmd_ghoa' && !('zone' in w)), 'a window after the zone was left still has it');
+  });
+  check('genre: a disconnect abandons the level, and the reconnect plays on to its end', () => {
+    const lost = run.find((e) => e.type === 'disconnect');
+    assert.equal(lost?.reason, 'timeout');
+    assert.equal(typeof lost.connected_s, 'number');
+    const abandon = run.find((e) => e.type === 'level_abandon');
+    assert.equal(abandon?.reason, 'disconnect');
+    assert.equal(abandon.level, 'nmd_ghoa');
+    const back = run.find((e) => e.type === 'reconnect');
+    assert.ok(back && back.after_s >= 1 && back.after_s <= 4, JSON.stringify(back));
+    assert.equal(run.find((e) => e.type === 'level_complete')?.score, 9100);
+    assert.ok(!run.some((e) => e.type === 'level_fail'), 'a disconnect is never a fail');
+  });
+  check('genre: a development build says once to count a stream of events', () => {
+    assert.ok(stdout.includes('Count(\\"shot\\")') || stdout.includes('Count("shot")'), 'no warning in the log');
+  });
 }

@@ -3,15 +3,20 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { parsePayload, normalize, IntakeError, decodeBody } from './ingest.js';
-import { buildContext, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount } from './analytics.js';
+import { parsePayload, normalize, IntakeError, decodeBody, FEATURES, companionOf, isCompanion, gameOf, withServers } from './ingest.js';
+import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
-import { validateDashboard, autoDashboard, evaluateBoard, versionColumns, dashboardStats, pathLevels, VIEWS, BoardError } from './board.js';
+import { validateDashboard, autoDashboard, evaluateBoard, eventQuery, versionColumns, dashboardStats, pathLevels, levelRows, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
 import { reportsOf, reportSummary, reportDetail, reportTimeline } from './reports.js';
 import { createSourcemaps, MAX_UPLOAD_BYTES } from './sourcemaps.js';
 import { eventSums } from './sums.js';
+import { hoursPlayed } from './rates.js';
+import { eventPercentiles } from './distributions.js';
 import { Presence, PLAYERS_NOW_MS } from './presence.js';
+import { propsWhere, pageWhere, andWhere, propertyList, propertyKey } from './properties.js';
+import { matchList, matchDetail } from './matches.js';
+import { serversView } from './servers.js';
 import { storeReviews, storeVitals } from './reviews.js';
 import { revenueQuery } from './revenue.js';
 import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
@@ -34,6 +39,10 @@ const RETENTION_QUERIES = new Set(['players', 'board', 'store_revenue']);
 // Queries that compare versions or pick the newest: they put versions in release order from the store's first
 // sighting of each (ctx.versionsFirstSeen, analytics.js releaseOrder), whatever the range.
 const VERSION_QUERIES = new Set(['overview', 'versions', 'findings', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
+// Queries that make findings, which read the game's saved boards.
+const FINDING_QUERIES = new Set(['overview', 'findings', 'board']);
+// Queries that read the game's servers too (A9): its companion service's sessions, as ctx.server (servers.js).
+const SERVER_QUERIES = new Set(['overview', 'findings', 'board', 'servers', 'matches']);
 // Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
 // their panels, finding, queries.
 const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
@@ -74,6 +83,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
   // Players now, counted in this process unless the host counts them itself (auth.playersNow).
   const presence = auth.playersNow ? null : new Presence();
   const playersNow = (projectId, service) => (auth.playersNow ? auth.playersNow(projectId, service) : presence.count(projectId, service));
+  // Servers now (A9): a game's servers that sent anything in the last two minutes, and the players connected to them.
+  const serversNow = async (projectId, service) => {
+    const companion = companionOf(service);
+    if (auth.serversNow) return auth.serversNow(projectId, companion);
+    return { servers: presence.count(projectId, companion), players: presence.players(projectId, companion) };
+  };
 
   async function handle(req, res) {
     counters.requests++;
@@ -84,7 +99,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
     try {
       if (p === '/v1/health') {
-        return json(res, 200, { ok: true, store: store.kind, runtime: `${process.platform}-${process.arch}`, uptime_s: Math.round((Date.now() - counters.startedAt) / 1000), received: counters.received, exporters: forwarder?.status?.() ?? [] });
+        // features: what intake folds of the genre additions (ingest.js FEATURES); the SDKs read it before they send
+        // counters, and a server-role SDK before it sends anything.
+        return json(res, 200, { ok: true, store: store.kind, runtime: `${process.platform}-${process.arch}`, uptime_s: Math.round((Date.now() - counters.startedAt) / 1000), received: counters.received, exporters: forwarder?.status?.() ?? [], features: FEATURES });
       }
 
       if (p === '/v1/intake' && req.method === 'POST') {
@@ -297,14 +314,15 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
   async function query(projectId, name, params, reader = {}) {
     // max_range_days: the longest range this store answers for the reader (null: no limit).
     if (name === 'services') {
-      const services = await store.services(projectId);
+      const services = withServers(await store.services(projectId));
       const max = store.maxRangeDays ? store.maxRangeDays(reader.plan) : null;
       if (reader.share) return { services: services.filter((s) => s.service === reader.share.service), max_range_days: Math.min(max ?? SHARE_MAX_DAYS, SHARE_MAX_DAYS), window: pinned(reader.share) ? { from: reader.share.from, to: reader.share.to } : null };
       return { services, max_range_days: max };
     }
     if (name === 'activity') return { activity: activity.filter((a) => a.projectId === projectId).reverse().map(({ projectId: _, ...a }) => a) };
     const services = await store.services(projectId);
-    const service = params.get('service') || services.sort((a, b) => b.last_seen - a.last_seen)[0]?.service;
+    // The default game is the one that sent last, never a game's servers (its companion, A9).
+    const service = params.get('service') || services.filter((s) => !isCompanion(s.service) || !services.some((x) => x.service === gameOf(s.service))).sort((a, b) => b.last_seen - a.last_seen)[0]?.service;
     if (!service) return emptyFor(name);
     const now = Date.now();
     const to = num(params.get('to')) ?? now;
@@ -314,7 +332,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       const r = params.get('id') && store.getReport ? await store.getReport(projectId, service, params.get('id')) : null;
       return r ? { meta: { service }, report: reportDetail(r, null, { screenshot: params.get('screenshot') !== '0' }) } : { meta: { service }, error: 'report not found' };
     }
-    if (name === 'players_now') return { meta: { service }, players_now: await playersNow(projectId, service), window_s: PLAYERS_NOW_MS / 1000 };
+    if (name === 'players_now') return { meta: { service }, players_now: await playersNow(projectId, service), window_s: PLAYERS_NOW_MS / 1000, ...(services.some((s) => s.service === companionOf(service)) ? { servers_now: await serversNow(projectId, service) } : {}) };
     if (name === 'dashboard') {
       // A saved dashboard needs no data: only the automatic one is made from what the game sent.
       const saved = await store.getDashboard(projectId, service);
@@ -335,30 +353,44 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     if (levels.length) q.positions = levels;
     // Steam facts the sessions must have (steam_branch=beta…, SPEC §4c), and the one versions are grouped by instead.
     q.where = steamWhere(params);
-    q.by = name === 'versions' && STEAM_DIMENSIONS.includes(params.get('by')) ? params.get('by') : null;
+    // Session properties the sessions must have (prop.rank=diamond, A6), and a board page's own `where`.
+    q.props = andWhere(propsWhere(params), name === 'board' && saved ? pageWhere(boardPage(saved, params.get('page'))?.where) : null);
+    const by = params.get('by');
+    q.by = name === 'versions' && (STEAM_DIMENSIONS.includes(by) || propertyKey(`$${by}`)) ? by : null;
     let versionsSeen;
+    let dashboardSaved;
     const contextFor = async (q) => {
       let ctx;
       if (store.context) {
         // Stores that keep summaries build the context themselves (and answer in whole minutes).
         ctx = await store.context(projectId, q, name, params);
       } else {
-        const raw = await store.query(projectId, { service, from, to });
-        const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions && !q.where ? await store.rollups(projectId, { service, from, to }) : null;
+        const raw = await store.query(projectId, { service: q.service, from, to });
+        const rollups = ROLLUP_QUERIES.has(name) && q.type === 'all' && !q.sessions && !q.where && !q.props ? await store.rollups(projectId, { service: q.service, from, to }) : null;
         ctx = buildContext(raw, q, rollups);
       }
+      if (q.service !== service) return ctx; // the game's servers (A9): their sessions and cells only
       // Reports are kept apart from the events (stored as they arrive), so they answer for the range as asked.
       ctx.reports = REPORT_QUERIES.has(name) && store.reports ? reportsOf(await store.reports(projectId, service, { from, to }), ctx) : [];
       if (SOURCEMAP_QUERIES.has(name)) await sourcemaps.prepare(ctx, projectId, service);
       // Day groups carry their new players (daily.js); other contexts ask the store who was first seen in the range.
       if (RETENTION_QUERIES.has(name) && !ctx.daily && store.cohorts) ctx.cohorts = await store.cohorts(projectId, service, ctx.from, ctx.to);
       if (VERSION_QUERIES.has(name) && store.versionsFirstSeen) ctx.versionsFirstSeen = await (versionsSeen ??= store.versionsFirstSeen(projectId, service));
+      // Findings read the rates, per-hour sums and distributions on the game's saved boards (board-findings.js).
+      if (FINDING_QUERIES.has(name)) ctx.dashboard = await (dashboardSaved ??= store.getDashboard(projectId, service));
+      // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
+      // sessions aren't players': the same env and session type, never the players' property filters.
+      if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });
       return ctx;
     };
+    const companion = companionOf(service);
+    const hasServers = !isCompanion(service) && services.some((s) => s.service === companion);
     const ctx = await contextFor(q);
+    ctx.hasServers = hasServers;
     if (stores && STORE_QUERIES.has(name)) ctx.stores = await storesOf(projectId, service, ctx, name === 'store_reviews' ? ctx.from : null, services);
     // A store's own notes (ctx.meta): resolution 'day' and what is approximate, for long ranges.
-    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(q.where ? { where: q.where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
+    const where = q.where || q.props ? { ...q.where, ...Object.fromEntries(Object.entries(q.props || {}).map(([k, v]) => [`prop.${k}`, v])) } : null;
+    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(where ? { where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
     // A game in anonymous mode sends no player IDs, so every players count in the answer is a count of sessions.
     if (playersAreSessions(ctx)) Object.assign(meta, { players_are_sessions: true, note: [meta.note, PLAYERS_ARE_SESSIONS].filter(Boolean).join('; ') });
     // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
@@ -378,17 +410,24 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       case 'overview':
         return { meta, ...overview(ctx), findings: findings(await findingsContext(), await store.getMaps(projectId, service)).slice(0, 6) };
       case 'performance':
-        return { meta, ...performance(ctx) };
+        // by_prop=<key>: frame time, hitches and crash-free sessions per value of a session property (A6).
+        return { meta, ...performance(ctx, { byProp: propertyKey(`$${params.get('by_prop')}`) }) };
       case 'errors':
         return { meta, issues: errorIssues(ctx) };
       case 'players':
-        return { meta, ...players(ctx) };
+        // by_prop=<key>: retention per value of a session property too (A6).
+        // by=<attribute of the starts, $property or $platform> (and level=, count=runs): the level funnel per value (A7).
+        return { meta, ...players(ctx, { byProp: propertyKey(`$${params.get('by_prop')}`) }), ...(params.get('by') || params.get('count') ? { funnel_by: levelRows(ctx, { by: params.get('by') || null, level: params.get('level') || null, count: params.get('count') === 'runs' ? 'runs' : null }) } : {}) };
       case 'events': {
         const steps = parseFunnel(params.get('funnel'));
-        // Each event with the sums of its numeric attributes, per currency (sums.js).
+        // Each event with the sums of its numeric attributes, per currency (sums.js), and their p50, p90 and p99
+        // (distributions.js); `hours`, the hours played in the range, turns any count into a rate per hour.
         const own = customEvents(ctx, { name: params.get('name') || null, sdk: params.get('sdk') === '1' });
         const sums = eventSums(ctx);
-        return { meta, ...own, events: own.events.map((e) => ({ ...e, sums: sums.get(e.name) || [] })), ...(steps.length ? { funnel: eventFunnel(ctx, steps) } : {}) };
+        const spread = eventPercentiles(ctx);
+        const events = own.events.map((e) => ({ ...e, attrs: e.attrs.map((a) => ({ ...a, ...(spread.get(e.name)?.[a.key] ?? {}) })), sums: sums.get(e.name) || [] }));
+        // properties: what held for the sessions (A6), each with its values; identifier_like marks one that is really an ID.
+        return { meta, ...own, events, hours: round(hoursPlayed(ctx), 2), properties: ctx.daily ? [] : propertyList(ctx, { players: !playersAreSessions(ctx) }), ...(steps.length ? { funnel: eventFunnel(ctx, steps) } : {}), ...eventQuery(ctx, params) };
       }
       case 'dashboard': {
         // The game's pages, in order: what the dashboard's sidebar shows. Boards are evaluated one at a time (board).
@@ -404,6 +443,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         if (!page.panels) return { meta, error: `"${page.id}" is the built-in ${page.view} view, not a board`, view: page.view };
         const maps = page.panels.some((x) => x.type === 'findings' || x.type === 'positions') ? await store.getMaps(projectId, service) : [];
         if (page.panels.some((x) => x.metric === 'players_now')) ctx.playersNow = await playersNow(projectId, service);
+        if (page.panels.some((x) => x.metric === 'servers_now')) ctx.serversNow = hasServers ? await serversNow(projectId, service) : null;
         return { meta, board: { page: page.id, title: page.title, source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { panels: page.panels }, panels: evaluateBoard(ctx, page, { maps, shared: reader.share || false, currency: spec.currency }) } };
       }
       case 'heatmap': {
@@ -441,6 +481,18 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return { meta, summary: playtestSummary(ctx) };
       case 'findings':
         return { meta, findings: findings(await findingsContext(), await store.getMaps(projectId, service)) };
+      case 'servers':
+        // The game's servers (A9): ticks, players, crashes and memory, from its companion service (servers.js).
+        return { meta: { ...meta, companion }, ...serversView(ctx, hasServers ? await serversNow(projectId, service) : null) };
+      case 'matches': {
+        // The range's matches (A7), or one with `id`: every side of it, slot by slot (matches.js).
+        const id = params.get('id');
+        if (id) {
+          const match = matchDetail(ctx, id);
+          return match ? { meta, match } : { meta, error: `no match ${id} in this window` };
+        }
+        return { meta, ...matchList(ctx, { sort: params.get('sort') || 'recent', limit: Math.min(200, Number(params.get('limit')) || 100) }) };
+      }
       case 'store_reviews':
         // A store's reviews of the game in the range, filtered (reviews.js storeReviews): what glitchless_store_reviews reads.
         return { meta, ...storeReviews(ctx, params) };

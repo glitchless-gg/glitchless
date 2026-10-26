@@ -83,7 +83,7 @@ test("tools that act on the server's computer never show, and scopes decide whic
   scopes = ['read', 'dashboard', 'manage'];
   const all = await list();
   for (const write of ['glitchless_set_dashboard', 'glitchless_create_game', 'glitchless_share_board', 'glitchless_list_share_links', 'glitchless_revoke_share_link']) assert.ok(all.includes(write), write);
-  assert.equal(all.length, 20);
+  assert.equal(all.length, 23);
   await client.close();
 });
 

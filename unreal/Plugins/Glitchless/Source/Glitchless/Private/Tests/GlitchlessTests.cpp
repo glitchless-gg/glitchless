@@ -5,6 +5,7 @@
 // unreal/test/core.mjs runs the core's own tests, the JavaScript parity ones among them, without the engine.
 
 #include "Glitchless.h"
+#include "GlitchlessAttributesJson.h"
 #include "GlitchlessBlueprintLibrary.h"
 #include "GlitchlessBugReport.h"
 #include "GlitchlessDevice.h"
@@ -115,6 +116,39 @@ bool FGlitchlessBlueprintLevelsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+// What a game sends with FGlitchlessAttributes reaches the wire as JSON's own types: flags as booleans, lists as arrays.
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGlitchlessAttributesTest, "Glitchless.Attributes.FlagsAndListsReachTheWire", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
+bool FGlitchlessAttributesTest::RunTest(const FString& Parameters)
+{
+	FGlitchlessAttributes A;
+	A.Add(TEXT("deck"), TArray<FString>{TEXT("hog_rider"), TEXT("fireball")});
+	A.Add(TEXT("won"), true);
+	A.Add(TEXT("duration_s"), 184.0);
+	A.Add(TEXT("arena"), TEXT("arena_7"));
+	A.Add(TEXT("crowns"), 3);
+	A.Add(TEXT("won"), false); // a key holds one value
+	TestEqual(TEXT("five attributes"), A.Num(), 5);
+	TestEqual(TEXT("as the core sends them"), GlitchlessText::Tchar(GlitchlessAttributesJson::Of(A).Serialize()),
+		FString(TEXT("{\"arena\":\"arena_7\",\"won\":false,\"duration_s\":184,\"crowns\":3,\"deck\":[\"hog_rider\",\"fireball\"]}")));
+	const FGlitchlessAttributes Built = UGlitchlessBlueprintLibrary::AddList(UGlitchlessBlueprintLibrary::AddFlag(FGlitchlessAttributes(), TEXT("won"), true), TEXT("boons"), {TEXT("zeus_strike")});
+	TestEqual(TEXT("the Blueprint builder"), GlitchlessText::Tchar(GlitchlessAttributesJson::Of(Built).Serialize()), FString(TEXT("{\"won\":true,\"boons\":[\"zeus_strike\"]}")));
+	for (const TCHAR* Name : {TEXT("TrackAttributes"), TEXT("Count"), TEXT("SetProperty"), TEXT("SetPropertyNumber"), TEXT("SetPropertyFlag"), TEXT("ClearProperty"), TEXT("SetGroup"), TEXT("ClearGroup"),
+			 TEXT("SetZone"), TEXT("NetSample"), TEXT("Disconnect"), TEXT("Reconnect"), TEXT("AddWord"), TEXT("AddNumber"), TEXT("AddFlag"), TEXT("AddList")})
+	{
+		const UFunction* Function = UGlitchlessBlueprintLibrary::StaticClass()->FindFunctionByName(Name);
+		TestTrue(FString::Printf(TEXT("%s is a Blueprint node"), Name), Function && Function->HasAnyFunctionFlags(FUNC_BlueprintCallable));
+	}
+	const UFunction* Start = UGlitchlessBlueprintLibrary::StaticClass()->FindFunctionByName(TEXT("LevelStart"));
+	TestTrue(TEXT("Level Start has an Attributes pin"), Start && Start->FindPropertyByName(TEXT("Attributes")) != nullptr);
+	// Safe without a running Glitchless, as every call is.
+	FGlitchless::Count(TEXT("kill"), FGlitchlessAttributes().Add(TEXT("monster"), TEXT("elite")));
+	FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"));
+	FGlitchless::SetGroup(EGlitchlessGroup::Match, TEXT("m_8f2c91d04ab7"));
+	FGlitchless::ClearGroup(EGlitchlessGroup::Match);
+	FGlitchless::SetZone(TEXT("crypt"));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FGlitchlessAbandonTest, "Glitchless.Core.QuittingMidLevelAbandonsIt", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::EngineFilter)
 bool FGlitchlessAbandonTest::RunTest(const FString& Parameters)
 {
@@ -183,7 +217,11 @@ bool FGlitchlessSettingsTest::RunTest(const FString& Parameters)
 	Settings->Privacy = EGlitchlessPrivacy::Install;
 	Settings->bEnabled = false;
 	Settings->bPositions = true;
+	Settings->bHashGroupIds = false;
+	Settings->ServerRegion = TEXT("eu-west");
 	const FGlitchlessOptions Options = FGlitchlessOptions::FromSettings(*Settings);
+	TestFalse(TEXT("group IDs as they are, when asked"), Options.bHashGroupIds);
+	TestEqual(TEXT("a server's region"), Options.ServerRegion, FString(TEXT("eu-west")));
 	TestEqual(TEXT("service"), Options.Service, FString(TEXT("my-game")));
 	TestEqual(TEXT("privacy"), Options.Privacy, EGlitchlessPrivacy::Install);
 	TestTrue(TEXT("off when the settings say off"), Options.Enabled.IsSet() && !Options.Enabled.GetValue());

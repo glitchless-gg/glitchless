@@ -15,6 +15,11 @@ import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysB
 import { idCount } from './facts.js';
 import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, dailyGaugeClimbs, dailyRetention, sessionTotal, approximate } from './daily.js';
 import { versionStat } from './sums.js';
+import { occurrenceCount, sessionOccurrenceCount } from './occurrences.js';
+import { propertyKey, propertySplit, propOf, sessionPasses, NONE } from './properties.js';
+import { measureOf, measureBy, rateOf, avgOf } from './rates.js';
+import { percentileFromOccurrences } from './distributions.js';
+import { linkOf, networkView, NET_METRICS } from './network.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
 // A first frame later than this is a slow start (the slow-start finding, and the share of sessions it hits).
@@ -23,12 +28,12 @@ export const SLOW_START_MS = 4000;
 // ───────────────────────────── context ─────────────────────────────
 
 // `rollups` ({ lo, hi, minutes } from store.rollups()) stands in for the raw events of every minute in
-// [lo, hi); the rest of the range is folded from raw events. Rollups have no session type, ids or Steam
-// facts, so those filters always use the raw events.
+// [lo, hi); the rest of the range is folded from raw events. Rollups have no session type, ids, Steam
+// facts or properties, so those filters always use the raw events.
 export function buildContext(rawEvents, q, rollups = null) {
   const ctx = sessionContext(q, indexSessions(rawEvents));
   ctx.events = rawEvents.filter((e) => ctx.sessions.has(e.session_id));
-  if (rollups && (!q.type || q.type === 'all') && !q.sessions && !q.where) {
+  if (rollups && (!q.type || q.type === 'all') && !q.sessions && !q.where && !q.props) {
     const { lo, hi } = rollups;
     ctx.cells = [...cellList(rollups.minutes, wantedCell(q)), ...cellList(rollup(ctx.events.filter((e) => e.ts < lo || e.ts >= hi)))];
   }
@@ -44,6 +49,8 @@ export function sessionContext(q, sessions) {
     if (q.type && q.type !== 'all' && s.session_type !== q.type) return false;
     if (q.sessions && !q.sessions.has(s.session_id)) return false;
     if (q.where) for (const [k, v] of Object.entries(q.where)) if (steamValue(s, k) !== v) return false;
+    // Session properties (A6): prop.<key>= and a board page's where (properties.js).
+    if (q.props && !sessionPasses(s, q.props)) return false;
     return true;
   };
   for (const [id, s] of sessions) if (!keep(s)) sessions.delete(id);
@@ -115,6 +122,16 @@ export function levelFacts(ctx, level) {
   return mergedFacts(ctx, level);
 }
 
+// The sessions of the context an error issue hit (its facts keep their ids up to 31 days; by day they are a
+// sketch, and this is empty).
+export function errorSessions(ctx, fingerprint) {
+  const x = mergedFacts(ctx).er[fingerprint === undefined ? '\u0000' : JSON.stringify(fingerprint)];
+  if (!x || !x.sessions || typeof x.sessions.count === 'function') return [];
+  return Object.keys(x.sessions)
+    .map((id) => ctx.sessions.get(id))
+    .filter(Boolean);
+}
+
 // All facts of the context merged into one, or those of one level.
 function mergedFacts(ctx, level = undefined) {
   const key = level === undefined ? 'all' : `level:${level}`;
@@ -172,7 +189,7 @@ export function sessionSummary(s) {
     session_type: s.session_type,
     start: s.start ?? s.first_ts,
     duration_s: round(s.duration_s, 1),
-    browser: s.device ? `${s.device.browser} ${s.device.browser_version || ''}`.trim() : null,
+    browser: s.device?.browser ? `${s.device.browser} ${s.device.browser_version || ''}`.trim() : null,
     os: s.device?.os ?? null,
     steam_deck: s.device?.steam_deck === true,
     steam_build: s.device?.steam_build ?? null,
@@ -195,6 +212,8 @@ export function sessionSummary(s) {
     ended: s.ended,
     geometries: s.geo_first != null ? { first: s.geo_first, last: s.geo_last, max: s.geo_max } : null,
     ttff_ms: s.ttff,
+    // What held for the session, in the game's words (A6).
+    ...(s.props && Object.values(s.props).some(([v]) => v != null) ? { props: Object.fromEntries(Object.entries(s.props).filter(([, [v]]) => v != null).map(([k, [v]]) => [k, v])) } : {}),
     // What the player did, in the game's own events (not the SDKs'): the most sent first.
     events: Object.fromEntries(
       Object.entries(s.ev || {})
@@ -263,6 +282,8 @@ export function overview(ctx) {
       pct_frames_over_budget: all.n ? round((total.over / all.n) * 100, 1) : 0,
       avg_fps: frameSeconds ? round(total.frames / frameSeconds, 1) : null,
       hitches_per_min: frameSeconds ? round(total.hitches / (frameSeconds / 60), 2) : null,
+      // Hours played: the time the game was on screen drawing frames (SPEC §4), from every frame window's duration_s.
+      hours_played: round(frameSeconds / 3600, 2),
       avg_session_s: meanSeconds(sessions),
       rage_quits: rageQuits,
       rage_quit_pct: pct(rageQuits, n),
@@ -290,8 +311,8 @@ function deployments(ctx) {
 
 // ───────────────────────────── performance ─────────────────────────────
 
-export function performance(ctx) {
-  if (ctx.daily) return dailyPerformance(ctx);
+export function performance(ctx, { byProp = null } = {}) {
+  if (ctx.daily) return { ...dailyPerformance(ctx), ...(byProp ? { by_prop: { key: byProp, rows: [], why: `By a property over 31 days or less: longer ranges are answered by day, without each session's properties.` } } : {}) };
   const nb = ctx.buckets.length;
   const total = newCell();
   const byLevel = new Map();
@@ -302,6 +323,7 @@ export function performance(ctx) {
   const byPlatform = new Map();
   const byBranch = new Map();
   const byBuild = new Map();
+  const byZone = new Map();
   const bucketSketch = Array.from({ length: nb }, () => new Sketch());
   const bucketCalls = Array.from({ length: nb }, () => [0, 0]);
   const bucketGeo = Array.from({ length: nb }, () => [0, 0]);
@@ -325,6 +347,8 @@ export function performance(ctx) {
     if (!c.fw) continue;
     mergeCell(group(byLevel, c.level ?? '(menu)'), c);
     mergeCell(group(byVersion, c.version), c);
+    // Zones (decision 6): where the player was in an open world, apart from the level; cells keep them.
+    if (c.zone != null) mergeCell(group(byZone, c.zone), c);
     const i = bucketIndex(ctx, m);
     mergeSketch(bucketSketch[i], c.ft);
     addPair(bucketCalls[i], c.calls);
@@ -424,6 +448,8 @@ export function performance(ctx) {
     by_platform: [...byPlatform.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_branch: [...byBranch.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_build: [...byBuild.values()].map(summarize).sort((a, b) => Number(a.key) - Number(b.key)),
+    // Sessions per zone aren't known from the cells (they carry no session IDs): null, not zero.
+    ...(byZone.size ? { by_zone: naturalSortBy([...byZone.values()].map((g) => ({ ...summarize(g), sessions: null })), 'key') } : {}),
     hitch_causes: { ...mergedFacts(ctx).hc },
     hitch_context: hitchContext(ctx),
     hitches: recentHitches(ctx).map((h) => ({
@@ -442,7 +468,27 @@ export function performance(ctx) {
     texture_growth: textureGrowth(sessions),
     node_growth: nodeGrowth(sessions),
     load: Object.fromEntries(Object.entries(loadByVersion).map(([v, arr]) => [v, { p50: quantile(arr, 0.5), p95: quantile(arr, 0.95), n: arr.length }])),
+    ...(byProp ? { by_prop: { key: byProp, rows: propRows(ctx, byProp, summarize) } } : {}),
+    // Network quality (A8): ping, loss and disconnects, by level, version, platform and kind of connection.
+    ...(networkView(ctx) ? { network: networkView(ctx, byProp) } : {}),
   };
+}
+
+// Frame time, hitches and crash-free sessions per value of a property (performance `by_prop`, A6): frames from each
+// session's own frame windows, crash-free from every session with the value. The most sessions first.
+function propRows(ctx, key, summarize) {
+  const { of } = propertySplit(ctx, key);
+  const groups = new Map();
+  const group = (v) => groups.get(v) ?? groups.set(v, { ...newCell(), key: v, sessions: new Set(), all: 0, crashed: 0 }).get(v);
+  for (const s of ctx.sessions.values()) {
+    const g = group(of(s));
+    g.all++;
+    if (s.crashed) g.crashed++;
+    if (!s.cell.fw) continue;
+    mergeCell(g, s.cell);
+    g.sessions.add(s.session_id);
+  }
+  return [...groups.values()].map((g) => ({ ...summarize(g), all_sessions: g.all, crash_free_pct: pct(g.all - g.crashed, g.all) })).sort((a, b) => b.all_sessions - a.all_sessions || (a.key < b.key ? -1 : 1));
 }
 
 // Groups in the order their first frame window arrived, as iterating the raw events would give them.
@@ -671,10 +717,23 @@ export function crumbsOf(events, sessionId, ts) {
   const out = [];
   for (const e of events) {
     if (e.session_id !== sessionId || e.ts > ts) continue;
-    if (['frame_window', 'pos', 'error', 'map', 'load'].includes(e.type)) continue;
-    out.push({ ts: e.ts, type: e.type, name: e.name || e.cause || null, level: e.level });
+    if (['frame_window', 'pos', 'error', 'map', 'load', 'server_window', 'props'].includes(e.type)) continue;
+    out.push({ ts: e.ts, type: e.type, name: e.type === 'counts' ? countsLine(e) : e.type === 'disconnect' ? e.reason : e.name || e.cause || null, level: e.level });
   }
   return out.slice(-6);
+}
+
+// A window's counters in one breadcrumb: "kill ×37, gold ×52", the most counted first.
+export function countsLine(e) {
+  const by = new Map();
+  for (const c of e.counts || []) by.set(c.name, (by.get(c.name) || 0) + c.n);
+  return (
+    [...by]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name, n]) => `${name} ×${n}`)
+      .join(', ') || null
+  );
 }
 
 export function crumbKey(sessionId, ts) {
@@ -688,7 +747,7 @@ export function funnel(ctx) {
   const levels = new Map();
   const get = (l) => {
     let v = levels.get(l);
-    if (!v) levels.set(l, (v = { level: l, sessions_started: new Set(), sessions_completed: new Set(), players: new Set(), attempts: 0, completes: 0, fails: 0, deaths: 0, abandons: 0, abandoned: 0, durations: [], causes: {}, rage_quits: 0 }));
+    if (!v) levels.set(l, (v = { level: l, sessions_started: new Set(), sessions_completed: new Set(), players: new Set(), attempts: 0, completes: 0, fails: 0, deaths: 0, abandons: 0, abandoned: 0, disconnects: 0, durations: [], causes: {}, rage_quits: 0 }));
     return v;
   };
   const durations = [];
@@ -720,6 +779,8 @@ export function funnel(ctx) {
       l.abandons += n;
       if (!ended.has(level)) l.abandoned++;
     }
+    // Attempts a disconnect ended (A8): abandons, never fails.
+    for (const [level, n] of Object.entries(s.dropped || {})) get(level).disconnects += n;
   }
   // Averaged in time order across sessions, as the raw events come.
   for (const [, l, d] of durations.sort((a, b) => a[0] - b[0])) l.durations.push(d);
@@ -737,7 +798,11 @@ export function funnel(ctx) {
       fails: l.fails,
       abandons: l.abandons,
       abandoned: l.abandoned,
+      disconnects: l.disconnects,
       avg_complete_s: l.durations.length ? round(l.durations.reduce((a, d) => a + Math.round(d * FIXED.sec), 0) / FIXED.sec / l.durations.length, 1) : null,
+      // Clear times: half of the completed attempts took under p50, and 1 in 10 over p90 (as day rollups' quantile maps give them).
+      p50_complete_s: l.durations.length ? round(quantile(l.durations.map((d) => Math.round(d * 100) / 100), 0.5), 1) : null,
+      p90_complete_s: l.durations.length ? round(quantile(l.durations.map((d) => Math.round(d * 100) / 100), 0.9), 1) : null,
       death_causes: l.causes,
       rage_quits: l.rage_quits,
       rage_quit_pct: pct(l.rage_quits, l.sessions_started.size || 1),
@@ -746,8 +811,9 @@ export function funnel(ctx) {
   );
 }
 
-export function players(ctx) {
-  if (ctx.daily) return dailyPlayers(ctx);
+// `byProp`: retention per value of a session property too (A6: D7 by spender band).
+export function players(ctx, { byProp = null } = {}) {
+  if (ctx.daily) return { ...dailyPlayers(ctx), ...(byProp ? { retention: retention(ctx, { by: byProp }) } : {}) };
   const sessions = [...ctx.sessions.values()];
   const byPlayer = new Map();
   for (const s of sessions) {
@@ -788,7 +854,7 @@ export function players(ctx) {
     session_length: { labels: lengthLabels, counts: lengths },
     death_causes: causes,
     rage_quits: rageQuits,
-    retention: retention(ctx),
+    retention: retention(ctx, { by: byProp }),
   };
 }
 
@@ -804,30 +870,49 @@ export function players(ctx) {
 export const RETENTION_DAYS = [1, 7, 30];
 const DAY_MS = 86_400_000;
 
-export function retention(ctx) {
-  if (ctx.daily) return dailyRetention(ctx);
-  const players = new Map(); // id → { started: days its sessions started on, active: days it played on }
+// `by` (a property, A6): the same per value, each player in the value of the first session they started on their
+// first-seen day (`by: { key, rows: [{ value, new_players, d1, d7, d30, returned }] }`), over 31 days or less.
+export function retention(ctx, { by = null } = {}) {
+  if (ctx.daily) return { ...dailyRetention(ctx), ...(by ? { by: { key: by, rows: [], why: 'Retention by a property over 31 days or less: longer ranges are answered by day, without each session\'s properties.' } } : {}) };
+  const players = new Map(); // id → { started: days its sessions started on, active: days it played on, value: day → [start, property value] }
   let withId = 0;
+  const of = by ? propertySplit(ctx, by).of : null;
   for (const s of ctx.sessions.values()) {
     if (!hasPlayerId(s)) continue;
     withId++;
     let p = players.get(s.player_id);
-    if (!p) players.set(s.player_id, (p = { started: new Set(), active: new Set() }));
-    p.started.add(utcDay(s.start ?? s.first_ts));
+    if (!p) players.set(s.player_id, (p = { started: new Set(), active: new Set(), value: new Map() }));
+    const start = s.start ?? s.first_ts;
+    const day = utcDay(start);
+    p.started.add(day);
+    if (of && !(p.value.get(day)?.[0] <= start)) p.value.set(day, [start, of(s)]);
     for (const m of s.minutes) p.active.add(utcDay(m));
   }
   const firstDay = new Map();
   for (const [day, ids] of ctx.cohorts || []) for (const id of ids) firstDay.set(id, day);
   const cohorts = new Map();
+  const byValue = new Map(); // value → day → cohort
+  const cohortOf = (map, day) => map.get(day) ?? map.set(day, { players: 0, returned: RETENTION_DAYS.map(() => 0) }).get(day);
   for (const [id, p] of players) {
     const day = ctx.cohorts ? firstDay.get(id) : Math.min(...p.started);
     if (day == null || !p.started.has(day)) continue; // first seen before the range, or not in this selection that day
-    let c = cohorts.get(day);
-    if (!c) cohorts.set(day, (c = { players: 0, returned: RETENTION_DAYS.map(() => 0) }));
-    c.players++;
-    RETENTION_DAYS.forEach((n, i) => p.active.has(day + n * DAY_MS) && c.returned[i]++);
+    const cs = [cohortOf(cohorts, day)];
+    if (of) {
+      const v = p.value.get(day)[1];
+      cs.push(cohortOf(byValue.get(v) ?? byValue.set(v, new Map()).get(v), day));
+    }
+    for (const c of cs) {
+      c.players++;
+      RETENTION_DAYS.forEach((n, i) => p.active.has(day + n * DAY_MS) && c.returned[i]++);
+    }
   }
-  return retentionAnswer(ctx, { sessions: ctx.sessions.size, withId, cohorts, firstSeen: ctx.cohorts ? 'index' : 'range' });
+  const answer = retentionAnswer(ctx, { sessions: ctx.sessions.size, withId, cohorts, firstSeen: ctx.cohorts ? 'index' : 'range' });
+  if (!by) return answer;
+  const rows = [...byValue].map(([value, days]) => {
+    const r = retentionAnswer(ctx, { sessions: ctx.sessions.size, withId, cohorts: days, firstSeen: answer.first_seen });
+    return { value, new_players: r.new_players, d1: r.d1, d7: r.d7, d30: r.d30 };
+  });
+  return { ...answer, by: { key: by, rows: rows.filter((r) => r.new_players).sort((a, b) => b.new_players - a.new_players || (a.value < b.value ? -1 : 1)) } };
 }
 
 // Whether a session's player has an ID of their own (install or full mode): ingest files an anonymous session under
@@ -897,7 +982,7 @@ export function eventIndex(ctx) {
   const names = new Map();
   const get = (n) => {
     let e = names.get(n);
-    if (!e) names.set(n, (e = { name: n, count: 0, sessions: 0, players: new Set(), series: new Array(nb).fill(0), attrs: new Map() }));
+    if (!e) names.set(n, (e = { name: n, count: 0, counted: 0, sessions: 0, players: new Set(), series: new Array(nb).fill(0), attrs: new Map() }));
     return e;
   };
   const attrOf = (e, key) => {
@@ -917,10 +1002,22 @@ export function eventIndex(ctx) {
       e.count += k;
       e.series[i] += k;
     }
+    // Events that came from counters (A5): a name sent with count() reads like any event, and says so.
+    for (const [n, k] of Object.entries(c.evk || {})) get(n).counted += k;
     for (const [k, count] of Object.entries(c.evv || {})) {
       const { name, key, value } = splitAttrKey(k);
       if (!key) continue; // OTHER: past the cell's cap
       const x = valueOf(attrOf(get(name), key), value);
+      x.count += count;
+      x.series[i] += count;
+    }
+    // A list's elements are its values: each counts the events whose list has it (SPEC §2 custom).
+    for (const [k, count] of Object.entries(c.evl || {})) {
+      const { name, key, value } = splitAttrKey(k);
+      if (!key) continue;
+      const a = attrOf(get(name), key);
+      a.list = true;
+      const x = valueOf(a, value);
       x.count += count;
       x.series[i] += count;
     }
@@ -944,8 +1041,10 @@ export function eventIndex(ctx) {
 }
 
 // How many events match a filter ({ name, key, value }, as parseFunnel gives): with a value but no key,
-// the first attribute that has that value counts.
+// the first attribute that has that value counts. A list counts the events that contain the value; one that
+// must contain several at once ("contains all of", f.all) is read from the sessions' occurrences.
 export function eventCount(ctx, f, field = 'count') {
+  if (f.all) return occurrenceCount(ctx, f, field);
   const e = eventIndex(ctx).get(f.name);
   if (!e) return 0;
   if (f.value == null) return field === 'series' ? e.series : e[field];
@@ -959,20 +1058,24 @@ export function eventCount(ctx, f, field = 'count') {
 // has it (as eventCount does).
 export function cellCount(c, f) {
   if (f.value == null) return c.ev?.[f.name] || 0;
-  if (f.key) return c.evv?.[attrKey(f.name, f.key, f.value)] || 0;
+  if (f.key) return (c.evv?.[attrKey(f.name, f.key, f.value)] || 0) + (c.evl?.[attrKey(f.name, f.key, f.value)] || 0);
   let n = 0;
-  for (const [k, count] of Object.entries(c.evv || {})) {
-    const a = splitAttrKey(k);
-    if (a.name === f.name && a.value === f.value) n += count;
+  for (const counts of [c.evv, c.evl]) {
+    for (const [k, count] of Object.entries(counts || {})) {
+      const a = splitAttrKey(k);
+      if (a.name === f.name && a.value === f.value) n += count;
+    }
   }
   return n;
 }
 
-// How many events of one session match a filter, from its state (as cellCount counts a cell's).
+// How many events of one session match a filter, from its state (as cellCount counts a cell's). "Contains all of"
+// reads the session's occurrences.
 export function sessionEventCount(s, f) {
   const v = s.ev?.[f.name];
   if (!v) return 0;
   if (f.value == null) return v.n;
+  if (f.all) return Math.round(sessionOccurrenceCount(s, f));
   let n = 0;
   for (const [k, t] of Object.entries(v.a)) if (!f.key || k === f.key) n += t.v[f.value] || 0;
   return n;
@@ -983,7 +1086,21 @@ export function sentEvent(s, f) {
   const v = s.ev?.[f.name];
   if (!v) return false;
   if (f.value == null) return true;
+  if (f.all) return v.o.some((o) => matchAttrs(o[1], f));
   return Object.entries(v.a).some(([k, t]) => (!f.key || k === f.key) && t.v[f.value]);
+}
+
+// Whether an event's attributes (smallAttrs) match a filter: an attribute equal to the value, or a list that has it;
+// with f.all, a list that has every one of its values (or a word equal to the whole value).
+export function matchAttrs(attrs, f) {
+  if (f.value == null) return true;
+  const values = f.key ? [attrs?.[f.key]] : Object.values(attrs || {});
+  return values.some((v) => {
+    if (v == null) return false;
+    if (!Array.isArray(v)) return String(v) === f.value;
+    const has = new Set(v.map(String));
+    return f.all ? f.all.every((x) => has.has(x)) : has.has(f.value);
+  });
 }
 
 // An event's counts split by a dimension every event has: 'version' or 'level' (from the rollup cells),
@@ -1028,12 +1145,22 @@ function steamEventsBy(ctx, f, dim) {
 // order rather than most first.
 const TIERS = { high: 'High-end GPU', mid: 'Mid-range GPU', low: 'Low-end GPU', software: 'Software rendering (no GPU)', unknown: 'Unknown GPU' };
 export const SESSION_SPLITS = {
-  platform: { label: 'platform', of: (dev) => platformOf(dev) },
-  browser: { label: 'browser', of: (dev) => browserOf(dev) },
-  device_tier: { label: 'device tier', of: (dev) => TIERS[dev?.gpu_tier] ?? TIERS.unknown, order: Object.values(TIERS) },
+  platform: { label: 'platform', of: (s) => platformOf(s.device) },
+  browser: { label: 'browser', of: (s) => browserOf(s.device) },
+  device_tier: { label: 'device tier', of: (s) => TIERS[s.device?.gpu_tier] ?? TIERS.unknown, order: Object.values(TIERS) },
+  // The kind of connection the session played most of its connected time on (A8): Wi-Fi, mobile data, wired.
+  link: { label: 'connection', of: (s) => linkOf(s) },
 };
 
-// By one of SESSION_SPLITS (default the platform), from the sessions themselves, so over 31 days or less. With an event
+// How sessions split by `dim` (a name without its $): one of SESSION_SPLITS, or a session property (A6,
+// properties.js) → { label, of(s), order? }, or null for anything else.
+export function sessionSplit(ctx, dim) {
+  if (SESSION_SPLITS[dim]) return SESSION_SPLITS[dim];
+  if (propertyKey(`$${dim}`)) return propertySplit(ctx, dim);
+  return null;
+}
+
+// By one of SESSION_SPLITS (default the platform) or a property, from the sessions themselves, so over 31 days or less. With an event
 // (`f`): its count from each group's sessions, the sessions and (with player IDs) players that sent it, and its count
 // over time. A session keeps when it sent the first 16 of an event (EV.occurrences); a session that sent more has the
 // rest spread over the minutes it played after the 16th, and `spread` counts them. Without one: the sessions in each
@@ -1041,7 +1168,7 @@ export const SESSION_SPLITS = {
 // can be in two groups: a phone and a PC), or null without player IDs.
 // → { rows: [{ value, count, sessions, players, series, spread }] most first (or in the split's order), players }
 export function sessionsBy(ctx, f = null, split = 'platform') {
-  const { of, order } = SESSION_SPLITS[split];
+  const { of, order } = sessionSplit(ctx, split);
   const nb = ctx.buckets.length;
   const ids = !playersAreSessions(ctx);
   const out = new Map();
@@ -1050,7 +1177,7 @@ export function sessionsBy(ctx, f = null, split = 'platform') {
     const n = f ? sessionEventCount(s, f) : 1;
     if (!n) continue;
     if (ids && hasPlayerId(s)) everyone.add(s.player_id);
-    const value = of(s.device);
+    const value = of(s);
     let x = out.get(value);
     if (!x) out.set(value, (x = { value, count: 0, sessions: 0, players: new Set(), series: new Array(nb).fill(0), spread: 0 }));
     x.count += n;
@@ -1068,13 +1195,14 @@ export function sessionsBy(ctx, f = null, split = 'platform') {
 // evenly over the minutes it played after the last one kept. → how many were spread
 function placeEvents(ctx, s, f, n, series) {
   const kept = s.ev?.[f.name]?.o ?? [];
-  const matches = (attrs) => f.value == null || Object.entries(attrs ?? {}).some(([k, v]) => (!f.key || k === f.key) && String(v) === f.value);
   let placed = 0;
-  for (const [ts, attrs] of kept) {
+  for (const [ts, attrs, , k = 1] of kept) {
     if (placed >= n) break;
-    if (!matches(attrs)) continue;
-    series[bucketIndex(ctx, ts)]++;
-    placed++;
+    if (!matchAttrs(attrs, f)) continue;
+    // A counter's occurrence stands for its window's events (session-state.js addCounted).
+    const x = Math.min(k, n - placed);
+    series[bucketIndex(ctx, ts)] += x;
+    placed += x;
   }
   const rest = n - placed;
   if (rest <= 0) return 0;
@@ -1095,6 +1223,8 @@ export function customEvents(ctx, { name = null, sdk = false } = {}) {
     .map((e) => ({
       name: e.name,
       sdk: SDK_EVENTS.has(e.name),
+      // Sent with count() (A5): summed on the device per window, so its numbers have sums and averages, no spread.
+      ...(e.counted ? { counted: true } : {}),
       count: e.count,
       sessions: e.sessions,
       players: e.players.size,
@@ -1103,6 +1233,8 @@ export function customEvents(ctx, { name = null, sdk = false } = {}) {
       series: e.series,
       attrs: [...e.attrs.values()].map((a) => ({
         key: a.key,
+        // A list (a deck): each value counts the events whose list has it, so they add up to more than the count.
+        ...(a.list ? { list: true } : {}),
         values: [...a.values.values()].map(({ series, ...x }) => x).sort((x, y) => y.count - x.count || (x.value < y.value ? -1 : 1)),
         avg: a.n ? round(a.sum / 1e3 / a.n, 2) : null,
       })),
@@ -1112,7 +1244,9 @@ export function customEvents(ctx, { name = null, sdk = false } = {}) {
 }
 
 // "open,paywall,buy=done" or "buy:step=done" → [{ name, key, value }]. A value without a key matches any
-// attribute that has it.
+// attribute that has it, and a list that contains it. "battle_end:deck=hog_rider+ice_spirit" asks for a list that
+// contains all of several values (`all`, at most 8): any pair or trio, read from the sessions' occurrences.
+export const MAX_ALL = 8;
 export function parseFunnel(spec) {
   return String(spec || '')
     .split(',')
@@ -1122,8 +1256,16 @@ export function parseFunnel(spec) {
     .map((step) => {
       const [left, value] = step.split('=');
       const [name, key] = left.split(':');
-      return { name: name.trim(), key: key?.trim() || null, value: value?.trim() ?? null };
+      const f = { name: name.trim(), key: key?.trim() || null, value: value?.trim() ?? null };
+      const all = f.value?.split('+').map((x) => x.trim()).filter(Boolean);
+      if (all?.length > 1) f.all = [...new Set(all)].slice(0, MAX_ALL);
+      return f;
     });
+}
+
+// A filter as it is written: "name", "name=value", "name:key=value".
+export function stepLabel(f) {
+  return `${f.name}${f.key ? `:${f.key}` : ''}${f.value != null ? `=${f.value}` : ''}`;
 }
 
 // Ordered funnel over custom events: how many sessions reached each step after the one before it (the
@@ -1132,24 +1274,18 @@ export function eventFunnel(ctx, steps) {
   if (ctx.daily) return dailyEventFunnel(ctx, steps);
   const reached = steps.map(() => 0);
   const gaps = steps.map(() => []);
-  const matches = (attrs, st) => {
-    if (st.value == null) return true;
-    if (st.key) return String(attrs?.[st.key]) === st.value;
-    return Object.values(attrs || {}).some((v) => String(v) === st.value);
-  };
   for (const s of ctx.sessions.values()) {
     let t = -Infinity;
     for (let i = 0; i < steps.length; i++) {
-      const hit = s.ev?.[steps[i].name]?.o.find(([ts, attrs]) => ts >= t && matches(attrs, steps[i]));
+      const hit = s.ev?.[steps[i].name]?.o.find(([ts, attrs]) => ts >= t && matchAttrs(attrs, steps[i]));
       if (!hit) break;
       if (i > 0) gaps[i].push((hit[0] - t) / 1000);
       t = hit[0];
       reached[i]++;
     }
   }
-  const label = (st) => `${st.name}${st.key ? `:${st.key}` : ''}${st.value != null ? `=${st.value}` : ''}`;
   return steps.map((st, i) => ({
-    step: label(st),
+    step: stepLabel(st),
     sessions: reached[i],
     pct_of_first: pct(reached[i], reached[0] || 1),
     pct_of_previous: i ? pct(reached[i], reached[i - 1] || 1) : 100,
@@ -1426,7 +1562,8 @@ export function sessionDetail(ctx, id, maps) {
   }
   const levels = [...s.levels];
   return {
-    session: { ...sessionSummary(s), device: s.device, annotations: s.annotations },
+    // groups: the matches, parties and runs the session was in (A7), each from its first event to its last.
+    session: { ...sessionSummary(s), device: s.device, annotations: s.annotations, groups: (s.groups || []).map(({ at, ...g }) => g) },
     timeline,
     frames,
     positions,
@@ -1467,9 +1604,10 @@ export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
     };
     v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
     v.board = stats.map((p) => {
+      // Sums (revenue per session or player), conversion (per $players or $sessions), per hour played, rates, averages
+      // and percentiles: sums.js, each from this version's own cells and sessions.
+      if (p.sum || p.per?.startsWith('$') || p.rate || p.avg || p.of || p.metric === 'hours_played' || NET_METRICS[p.metric] || (p.event && parseFunnel(p.event)[0].all)) return versionStat(ctx, p, v, cells, p.currency);
       if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
-      // Sums (revenue per session or player) and conversion (per $players or $sessions): sums.js.
-      if (p.sum || p.per?.startsWith('$')) return versionStat(ctx, p, v, cells, p.currency);
       if (!p.per) return round(count(p.event) / n, 2);
       const base = count(p.per);
       return base ? round((count(p.event) / base) * 100, 1) : null;
@@ -1531,11 +1669,14 @@ const VERSION_METRIC = { errors: 'errors_per_session', deaths: 'deaths_per_sessi
 // frame times from the sessions' own frame windows, the game's events from what each session sent. Rows keep
 // `version` as the group's name, so a version comparison reads them unchanged. Sessions without the fact (no
 // Steamworks) are left out. Sums (revenue) are kept per minute and currency, not per session: null here.
+// `by` can also be a session property (A6): its values side by side (class against class), the most sessions first.
 function steamGroups(ctx, { stats, events, by }) {
   const groups = new Map();
+  const prop = !STEAM_DIMENSIONS.includes(by);
+  const of = prop ? propertySplit(ctx, by).of : null;
   for (const s of ctx.sessions.values()) {
-    const value = steamValue(s, by);
-    if (value == null) continue;
+    const value = prop ? of(s) : steamValue(s, by);
+    if (value == null || value === NONE) continue;
     if (!groups.has(value)) groups.set(value, []);
     groups.get(value).push(s);
   }
@@ -1549,8 +1690,11 @@ function steamGroups(ctx, { stats, events, by }) {
     };
     v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
     v.board = stats.map((p) => {
+      if (p.metric === 'hours_played') return round(sessions.reduce((h, s) => h + s.cell.sec, 0) / FIXED.sec / 3600, 2);
       if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
       if (p.sum) return null;
+      // Rates, averages, percentiles and counts per hour played, from the group's own sessions.
+      if (p.rate || p.avg || p.of || p.per === '$hours') return groupStat(ctx, p, by, value, sessions);
       if (p.per === '$sessions' || p.per === '$players') {
         const [f] = parseFunnel(p.event);
         const sent = sessions.filter((s) => sentEvent(s, f));
@@ -1564,7 +1708,24 @@ function steamGroups(ctx, { stats, events, by }) {
     return v;
   });
   // Steam build IDs only grow, so builds go in build order; branches in the order the range first saw them.
+  if (prop) return list.sort((a, b) => b.sessions - a.sessions || (a.version < b.version ? -1 : 1));
   return list.sort((a, b) => (by === 'steam_build' ? Number(a.version) - Number(b.version) : 0) || a.first_seen - b.first_seen);
+}
+
+// A stat panel's rate, average, percentile or count per hour played for one group of sessions (a Steam branch, a
+// property's value): from the sessions' own counts and occurrences, as a split by that session fact reads them.
+function groupStat(ctx, p, by, value, sessions) {
+  const [f] = parseFunnel(p.event);
+  if (p.rate || p.avg) {
+    const m = measureOf(p);
+    const g = measureBy(ctx, f, m, `$${by}`).groups.get(value);
+    if (!g?.den) return null;
+    return m.kind === 'avg' ? avgOf(g.num, g.den) : rateOf(g.num, g.den).rate;
+  }
+  const sub = { ...ctx, sessions: new Map(sessions.map((s) => [s.session_id, s])), evIndex: null, daily: null };
+  if (p.of) return percentileFromOccurrences(sub, { ...f, value: f.value ?? undefined }, p.of, p.quantile);
+  const hours = sessions.reduce((h, s) => h + s.cell.sec, 0) / FIXED.sec / 3600;
+  return hours >= 0.1 ? round(sessions.reduce((n, s) => n + sessionEventCount(s, f), 0) / hours, 2) : null;
 }
 
 // The metrics both a version comparison and a playtest run report for one group of sessions (or their

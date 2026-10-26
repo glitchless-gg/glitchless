@@ -1,5 +1,6 @@
-// The game's own metrics: every custom event it sends with track(), how its attribute values break down,
-// and funnels between events. Anything here can be added to one of the game's boards.
+// The game's own metrics: every custom event it sends with track() or count(), how its attribute values break down,
+// funnels between events, and the session properties it sets (setProps). Anything here can be added to one of the
+// game's boards.
 import { useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
@@ -40,7 +41,7 @@ export function Events({ route }) {
   const total = events.reduce((n, e) => n + e.count, 0);
   return (
     <div className="grid">
-      <QueryValue span={3} label="Event types" value={fmtNum(events.length)} sub={sdk ? 'including the SDK\'s own' : 'sent by the game with track()'} />
+      <QueryValue span={3} label="Event types" value={fmtNum(events.length)} sub={sdk ? 'including the SDK\'s own' : 'sent by the game with track() or count()'} />
       <QueryValue span={3} label="Events" value={fmtNum(total)} />
       <QueryValue span={3} label="Sessions" value={fmtNum(data.sessions)} sub="in this window" />
       <QueryValue span={3} label="Most sent" value={events[0]?.name ?? '–'} sub={events[0] ? `${fmtNum(events[0].count)} times` : null} />
@@ -75,6 +76,11 @@ export function Events({ route }) {
                 <td>
                   <b>{e.name}</b>
                   {e.sdk && <span className="tag">sdk</span>}
+                  {e.counted && (
+                    <span className="tag" title="Counted in the game with count() and sent as totals">
+                      counted
+                    </span>
+                  )}
                 </td>
                 <td className="num">{fmtNum(e.count)}</td>
                 <td className="num">
@@ -92,6 +98,7 @@ export function Events({ route }) {
 
       {picked && (
         <Widget span={5} title={picked.name} sub={`${fmtNum(picked.count)} in ${fmtNum(picked.sessions)} sessions`} actions={<button className="btn" onClick={() => add({ type: 'series', event: picked.name, size: 'm' }, picked.name)}>Add to board</button>}>
+          {picked.counted && <div className="muted" style={{ marginBottom: 8 }}>Counted in the game with count() and sent as totals every few seconds, so even thousands a minute cost nothing. Each attribute value is its own count.</div>}
           <TimeSeries ts={data.ts} height={120} bars series={[{ label: picked.name, values: picked.series, color: 'var(--ink)' }]} />
           {picked.attrs.map((a) => (
             <div key={a.key} style={{ marginTop: 14 }}>
@@ -135,8 +142,36 @@ export function Events({ route }) {
         </form>
         {data.funnel && <div style={{ marginTop: 10 }}><FunnelTable steps={data.funnel} /></div>}
       </Widget>
+      {data.properties?.length > 0 && <Properties list={data.properties} f={f} />}
       {added && <div className="s12 muted">{added}</div>}
     </div>
+  );
+}
+
+// Session properties (A6): what the game says holds for a session (a mode, a rank, a class), each with its values.
+// A value opens every page filtered to it; a key with too many values is really an ID and splits nothing.
+function Properties({ list, f }) {
+  return (
+    <Widget span={12} title="Session properties" sub="set with setProps; click a value to see only those sessions" info="Each session keeps the latest value of each property. Split any board panel by one with by: $<key>, or keep a page to some sessions with its where.">
+      <div className="prop-grid">
+        {list.map((p) => (
+          <div key={p.key}>
+            <b className="mono">${p.key}</b>
+            {p.identifier_like ? (
+              <div className="why warn-t" style={{ marginTop: 4 }}>
+                This looks like an ID, not a property: over 200 values a day. Splits show it as (too many values). Send it as an event attribute instead, or leave it out.
+              </div>
+            ) : (
+              <BarList
+                rows={p.values.slice(0, 8).map((v, i) => ({ label: v.value, value: v.sessions, color: colorFor(v.value, i), display: `${fmtNum(v.sessions)} sessions`, title: `${fmtNum(v.players)} players` }))}
+                onClick={f.setProps ? (r) => f.setProps({ [p.key]: [r.label] }) : undefined}
+              />
+            )}
+            {!p.identifier_like && p.values.length > 8 && <div className="muted">{p.values.length - 8} more values</div>}
+          </div>
+        ))}
+      </div>
+    </Widget>
   );
 }
 

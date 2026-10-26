@@ -37,6 +37,7 @@
     {"id":{"name":"__glitchless_core","path":"scripts/__glitchless_core/__glitchless_core.yy",},},
     {"id":{"name":"__glitchless_device","path":"scripts/__glitchless_device/__glitchless_device.yy",},},
     {"id":{"name":"__glitchless_engine","path":"scripts/__glitchless_engine/__glitchless_engine.yy",},},
+    {"id":{"name":"__glitchless_play","path":"scripts/__glitchless_play/__glitchless_play.yy",},},
     {"id":{"name":"__glitchless_send","path":"scripts/__glitchless_send/__glitchless_send.yy",},},
     {"id":{"name":"__glitchless_sketch","path":"scripts/__glitchless_sketch/__glitchless_sketch.yy",},},
     {"id":{"name":"__glitchless_text","path":"scripts/__glitchless_text/__glitchless_text.yy",},},

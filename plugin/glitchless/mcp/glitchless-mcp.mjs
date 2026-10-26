@@ -37152,8 +37152,10 @@ ${JSON.stringify(data, null, 2)}` }] };
 function fail(err) {
   return { content: [{ type: "text", text: `Glitchless error: ${err.message}` }], isError: true };
 }
-function filters({ version: version2, steam_branch, env, session_type } = {}) {
-  return { version: version2, steam_branch, env, type: session_type };
+function filters({ version: version2, steam_branch, env, session_type, props } = {}) {
+  const out = { version: version2, steam_branch, env, type: session_type };
+  for (const [key, value] of Object.entries(props || {})) out[`prop.${key}`] = (Array.isArray(value) ? value : [value]).map(String).join(",");
+  return out;
 }
 function define(name, config2, handler, { scope = "read", local: local2 = false } = {}) {
   tools.push({ name, config: { ...config2, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...config2.annotations } }, handler, scope, local: local2 });
@@ -37191,7 +37193,8 @@ function instructions(remote) {
     remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
     "Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.",
     "When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.",
-    "For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events.",
+    "For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.",
+    "For a multiplayer game, glitchless_network gives ping, packet loss and disconnects by level, region, platform, kind of connection and version; glitchless_match lists matches or opens one from every side, telling a whole lobby lagging (the server) from one player lagging (their connection); and glitchless_servers reads the game's dedicated servers (tick time against its budget by players connected, crashes that ended matches, memory that climbs).",
     "For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version.",
     "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to.",
     "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
@@ -37234,7 +37237,8 @@ var init_context = __esm({
       version: external_exports.string().optional().describe("Only include sessions from this game version"),
       steam_branch: external_exports.string().optional().describe(`Only include sessions that ran this Steam branch ("public", or a beta's name); games that use Steamworks send it`),
       env: external_exports.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
-      session_type: external_exports.enum(["user", "tester", "synthetic", "all"]).optional().describe(`"user": players only; "tester": people on TestFlight and other test builds only; "synthetic": bots, playtests and store test devices only; "all" or unset: every session. Findings (glitchless_triage, and the overview's) read the production sessions of players unless env or session_type is given`)
+      session_type: external_exports.enum(["user", "tester", "synthetic", "all"]).optional().describe(`"user": players only; "tester": people on TestFlight and other test builds only; "synthetic": bots, playtests and store test devices only; "all" or unset: every session. Findings (glitchless_triage, and the overview's) read the production sessions of players unless env or session_type is given`),
+      props: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean(), external_exports.array(external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]))])).optional().describe('Only sessions with these session properties (what the game set with setProperties): { rank: "diamond" }, or a list of values for any of them, { rank: ["diamond", "master"] }; "(none)" keeps the sessions without one. glitchless_events lists the properties and their values. Read from the sessions, so over 31 days or less')
     };
     tools = [];
     READS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -37358,7 +37362,7 @@ var init_core3 = __esm({
     });
     tool(
       "glitchless_triage",
-      "Ranked findings for a game: performance spikes per level (with the gauges and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots and version regressions \u2014 ranked by severity and player impact, each with evidence and a suggested fix. Start here when asked 'what's wrong with my game?'.",
+      "Ranked findings for a game: performance spikes per level (with the gauges, counter bursts and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots, walls (a level, or one value of a level start's attribute such as a tier), version regressions, settings that run slow (a session property), the network (a whole lobby lagging at once: the server; one kind of connection, platform or region lagging; disconnects rising in a release) and the game's dedicated servers (falling behind when full, a crash that ends matches, memory that keeps climbing) \u2014 ranked by severity and player impact, each with evidence and a suggested fix, and naming a session property when most of a problem falls on one value. Start here when asked 'what's wrong with my game?'.",
       { ...common },
       async ({ service, hours, ...f }) => {
         const svc = await resolveService(service);
@@ -37378,11 +37382,15 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
     });
     tool(
       "glitchless_performance",
-      "Frame-time breakdown for a game: global percentiles vs the frame budget, per-level p50/p95/p99 with draw calls / triangles / geometry counts / game-context gauges, hitch causes (script, shader compile, PSO compile in Unreal, GC, asset or map load), what is on screen during hitches, which events precede hitches, per GPU tier / browser / version, memory growth per level load and the slowest recent hitches with script attribution.",
-      { ...common, level: external_exports.string().optional().describe('Focus on one level id, e.g. "level-2"') },
-      async ({ service, hours, level, ...f }) => {
+      "Frame-time breakdown for a game: global percentiles vs the frame budget, per-level p50/p95/p99 with draw calls / triangles / geometry counts / game-context gauges, hitch causes (script, shader compile, PSO compile in Unreal, GC, asset or map load), what is on screen during hitches, which events precede hitches, per GPU tier / browser / platform / version, per zone for an open-world game that sets them, memory growth per level load and the slowest recent hitches with script attribution. With by_prop, frame time, hitches and crash-free sessions per value of a session property (a graphics preset, a class). A multiplayer game also gets `network` (ping, loss and disconnects; glitchless_network has more).",
+      {
+        ...common,
+        level: external_exports.string().optional().describe('Focus on one level id, e.g. "level-2"'),
+        by_prop: external_exports.string().optional().describe('A session property (glitchless_events lists them), e.g. "preset": frame time, hitches and crash-free sessions per value, over 31 days or less')
+      },
+      async ({ service, hours, level, by_prop, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("performance", { service: svc, ...filters(f), ...range(hours) });
+        const d = await query("performance", { service: svc, ...filters(f), by_prop, ...range(hours) });
         const hitches = (level ? d.hitches.filter((h) => h.level === level) : d.hitches).slice(0, 12);
         return reply(`Frame performance for ${svc}${level ? ` (${level})` : ""}`, {
           kpis: d.kpis,
@@ -37392,6 +37400,10 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
           by_gpu_tier: d.by_gpu_tier.map(slimGroup),
           by_browser: d.by_browser.map(slimGroup),
           by_version: d.by_version.map(slimGroup),
+          by_platform: (d.by_platform || []).map(slimGroup),
+          ...d.by_zone ? { by_zone: d.by_zone.map(slimGroup) } : {},
+          ...d.by_prop ? { by_prop: { key: d.by_prop.key, ...d.by_prop.why ? { why: d.by_prop.why } : {}, rows: d.by_prop.rows.map((r) => ({ ...slimGroup(r), all_sessions: r.all_sessions, crash_free_pct: r.crash_free_pct })) } } : {},
+          ...d.network ? { network: d.network.kpis } : {},
           memory: d.memory,
           load: d.load,
           slowest_recent_hitches: hitches
@@ -37412,11 +37424,22 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
         return reply(`Error issue ${issue2.fingerprint} in ${svc}`, rest);
       }
     );
-    tool("glitchless_player_funnel", 'Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, average clear time, rage quits (quit \u226420s after dying), session length distribution and recent rage quits with positions. Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on.', { ...common }, async ({ service, hours, ...f }) => {
-      const svc = await resolveService(service);
-      const d = await query("players", { service: svc, ...filters(f), ...range(hours) });
-      return reply(`Player funnel for ${svc}`, { kpis: d.kpis, funnel: d.funnel, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15), retention: d.retention });
-    });
+    tool(
+      "glitchless_player_funnel",
+      `Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, fails, abandons and the attempts a disconnect ended (never counted as fails), median and slowest clear times, rage quits (quit \u226420s after dying), session length distribution and recent rage quits with positions. With by, each level per value of what describes the attempt: an attribute the game passed to levelStart ("tier", "difficulty", "party_size"; a list such as "build" counts under each element), a session property ("$class") or a split ("$platform"): clears and wipes by difficulty, by group size, by class; level keeps one level; count "runs" counts each run once at each level it reached (a roguelite's biomes). Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1), and with by_prop per value of a session property (spenders against the rest). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on.`,
+      {
+        ...common,
+        by: external_exports.string().optional().describe(`Split each level's attempts: an attribute of its levelStart ("tier"), a session property ("$class") or $platform, $browser, $device_tier, $link`),
+        level: external_exports.string().optional().describe("With by or count: only this level"),
+        count: external_exports.enum(["runs"]).optional().describe('"runs": each run (setGroup("run")) counted once at each level it reached'),
+        by_prop: external_exports.string().optional().describe('Retention per value of this session property, e.g. "spender"')
+      },
+      async ({ service, hours, by, level, count, by_prop, ...f }) => {
+        const svc = await resolveService(service);
+        const d = await query("players", { service: svc, ...filters(f), by, level, count, by_prop, ...range(hours) });
+        return reply(`Player funnel for ${svc}${by ? ` by ${by}` : ""}${count ? ", counting runs" : ""}`, { kpis: d.kpis, funnel: d.funnel, ...d.funnel_by ? { funnel_by: d.funnel_by } : {}, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15), retention: d.retention });
+      }
+    );
     tool(
       "glitchless_death_hotspots",
       "Where players die on a level: clustered death positions in world coordinates (x range, share of the level\u2019s deaths, top cause, rage quits at that spot), plus the level bounds and completion stats. Use it to find difficulty spikes, then look up the level data around those coordinates.",
@@ -37429,13 +37452,15 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
     );
     tool(
       "glitchless_session",
-      "One play session in detail: device/GPU, outcome (crashed, rage quit), and the full event timeline (levels, deaths with positions, errors, hitches with causes, agent annotations) plus per-5s frame stats. Use with session ids from errors, hitches or rage quits.",
+      `One play session in detail: device/GPU, outcome (crashed, rage quit), its properties and its groups (the matches, parties and runs it was in), and the full event timeline (levels with their attributes, deaths with positions, errors, hitches with causes, counters once a window, disconnects, agent annotations) plus per-5s frame stats. Use with session ids from errors, hitches, rage quits or a match. A game server's session (service "<game>.server") gives its tick windows instead of frames.`,
       { service: common.service, session_id: external_exports.string().describe("Session id (s_\u2026)") },
       async ({ service, session_id }) => {
         const svc = await resolveService(service);
         const d = await query("session", { service: svc, id: session_id });
         if (d.error) return reply(`Session ${session_id} not found in ${svc}`, {});
-        return reply(`Session ${session_id}`, { session: d.session, timeline: d.timeline.slice(0, 150), frames: d.frames.map(({ ctx, ...f }) => ({ ...f, ...ctx })).slice(0, 120) });
+        const ticks = d.timeline.filter((e) => e.type === "server_window").map(({ ts, level, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, match }) => ({ ts, level, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, ...match ? { match } : {} }));
+        const timeline = d.timeline.filter((e) => e.type !== "server_window").map(({ tick, ...e }) => e);
+        return reply(`Session ${session_id}`, { session: d.session, timeline: timeline.slice(0, 150), frames: d.frames.map(({ ctx, ...f }) => ({ ...f, ...ctx })).slice(0, 120), ...ticks.length ? { server_windows: ticks.slice(0, 120) } : {} });
       }
     );
   }
@@ -37448,41 +37473,60 @@ var init_analytics = __esm({
     init_context();
     tool(
       "glitchless_events",
-      "The game's own metrics, from the custom events it sends with track(): each event's count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done), and the sums of its numeric attributes per currency (revenue: the amount of purchase events). Give `funnel` to count the sessions that went from one event to the next, in that order.",
+      'The game\'s own metrics, from the custom events it sends with track() and the streams it counts with count() (marked counted: summed on the device per window, so their numbers have sums and averages but no spread): each event\'s count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done; a list attribute such as a deck by element, each event counted once under each), the sums of its numeric attributes per currency (revenue: the amount of purchase events) and their p50, p90 and p99, and `hours`, the hours played in the window, to turn any count into a rate per hour. Give `funnel` to count the sessions that went from one event to the next, in that order. With name and `rate` (a flag such as "won", or a word outcome "result=win") or `avg` (a numeric attribute), it measures that event: overall, or with `by` per value (win rate by hero, with a 95% interval for each, next to the overall rate). With name and `of` (a numeric attribute), it gives that attribute\'s distribution: percentiles and a histogram, optionally `by` a split. `properties` lists what the game set for its sessions with setProperties (rank, class, region, a preset), each with its values and their sessions and players; identifier_like marks one with more than 200 values a day, which is an ID rather than a property. Every read tool filters by them (props) and splits by them (by "$rank").',
       {
         ...common,
-        name: external_exports.string().optional().describe('Only this event, e.g. "paywall"'),
-        funnel: external_exports.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"')
+        name: external_exports.string().optional().describe(`Only this event, e.g. "paywall". With rate, avg or of, the event to measure; it can carry a filter like a panel's event: "match_end:mode=ranked", or "battle_end:deck=hog_rider+ice_spirit" for decks with both`),
+        funnel: external_exports.string().optional().describe('Steps in order, comma-separated: "open,paywall,buy". A step can require a value: "buy=done" (any attribute) or "buy:step=done"; a list matches when it has the value'),
+        rate: external_exports.string().optional().describe(`The share of the event's events where a flag holds ("won": true or false, or 1 or 0) or a word outcome holds ("result=win")`),
+        avg: external_exports.string().optional().describe(`A numeric attribute's mean per event, e.g. "duration_s"`),
+        of: external_exports.string().optional().describe('A numeric attribute whose distribution to give, e.g. "duration_s" (match length) or "placement"'),
+        by: external_exports.string().optional().describe('With rate, avg or of: split by an attribute (a list splits by element), $version, $level, $zone, $platform, $browser, $device_tier, $link (the kind of connection), or a session property ("$rank")'),
+        min: external_exports.number().int().optional().describe("With rate or avg and by: the fewest events a row needs (default 30 for a rate, 10 for an average); smaller rows are counted in small")
       },
-      async ({ service, hours, name, funnel, ...f }) => {
+      async ({ service, hours, name, funnel, rate, avg, of, by, min, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("events", { service: svc, ...filters(f), name, funnel, ...range(hours) });
-        const brief = d.events.slice(0, 15).map((e) => `${e.name}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ""}`).join(", ")}` : ""}`).join("\n");
-        return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions):
-${brief || "None in this window. A game sends them with track(name, attrs)."}`, {
+        const d = await query("events", { service: svc, ...filters(f), name: name?.split(/[:=]/)[0].trim(), event: name, funnel, rate, avg, of, by, min, ...range(hours) });
+        const brief = d.events.slice(0, 15).map((e) => `${e.name}${e.counted ? " (counted)" : ""}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ""}`).join(", ")}` : ""}`).join("\n");
+        const props = d.properties || [];
+        const propLine = props.length ? `
+Session properties: ${props.map((p) => p.identifier_like ? `${p.key} (an ID: too many values)` : `${p.key} (${p.values.slice(0, 5).map((v) => v.value).join(", ")}${p.values.length > 5 ? ", \u2026" : ""})`).join("; ")}` : "";
+        const m = d.measure;
+        const measured = m ? `
+${m.event} ${m.rate ? `rate of ${m.rate}` : `average ${m.avg}`}${m.by ? ` by ${m.by}` : ""}: ${m.empty ? m.why : m.rows ? `${m.rows.length} rows, overall ${m.overall}${m.rate ? "%" : ""}` : `${m.value}${m.unit === "%" ? "%" : ""} of ${m.events} events`}` : "";
+        const dist = d.distribution ? `
+${d.distribution.event} ${d.distribution.of}: ${d.distribution.empty ? d.distribution.why : `p50 ${d.distribution.p50}, p90 ${d.distribution.p90} of ${d.distribution.count}`}` : "";
+        return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):
+${brief || "None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs)."}${propLine}${measured}${dist}`, {
           events: d.events.map(({ series, ...e }) => e),
-          ...d.funnel ? { funnel: d.funnel } : {}
+          hours_played: d.hours ?? null,
+          properties: props,
+          ...d.funnel ? { funnel: d.funnel } : {},
+          ...m ? { measure: (({ ts, series, ...x }) => x)(m) } : {},
+          ...d.distribution ? { distribution: d.distribution } : {}
         });
       }
     );
     tool(
       "glitchless_compare_versions",
-      `Compare game versions side by side, in the game's own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version. Versions come in release order (when each first showed up at all, not in this window), so by default it compares the newest with the one before it, also while players of older versions still play. For a game on Steam, by "steam_branch" compares Steam branches instead (a beta against "public"), and by "steam_build" Steam builds: a and b are then branch names or build ids.`,
+      `Compare game versions side by side, in the game's own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version. Versions come in release order (when each first showed up at all, not in this window), so by default it compares the newest with the one before it, also while players of older versions still play. For a game on Steam, by "steam_branch" compares Steam branches instead (a beta against "public"), and by "steam_build" Steam builds: a and b are then branch names or build ids. By a session property ("class", "spender"; glitchless_events lists them) it compares that property's values the same way, the most sessions first (over 31 days or less): a and b are then values.`,
       {
         service: common.service,
         hours: common.hours,
         env: common.env,
         session_type: common.session_type,
+        props: common.props,
         a: external_exports.string().optional().describe("Baseline version, branch or build (default: the one before the newest)"),
         b: external_exports.string().optional().describe("New version, branch or build (default: newest)"),
-        by: external_exports.enum(["version", "steam_branch", "steam_build"]).optional().describe("What to compare (default version). steam_branch and steam_build need a game that uses Steamworks")
+        by: external_exports.string().optional().describe(`What to compare (default version): steam_branch or steam_build (a game that uses Steamworks), or a session property's key, e.g. "class"`)
       },
-      async ({ service, hours, a, b, by, env, session_type }) => {
+      async ({ service, hours, a, b, by, env, session_type, props }) => {
         const svc = await resolveService(service);
-        const steam = by && by !== "version" ? by : null;
-        const { versions, has = {}, board = [] } = await query("versions", { service: svc, ...filters({ env, session_type }), ...steam ? { by: steam } : {}, ...range(hours || 72) });
-        const what = steam === "steam_branch" ? "Steam branch" : steam === "steam_build" ? "Steam build" : "version";
-        if (steam && !versions.length) return reply(`No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
+        const steam = by && by !== "version" ? by.replace(/^\$/, "") : null;
+        const { versions, has = {}, board = [] } = await query("versions", { service: svc, ...filters({ env, session_type, props }), ...steam ? { by: steam } : {}, ...range(hours || 72) });
+        const prop = steam && steam !== "steam_branch" && steam !== "steam_build";
+        const what = steam === "steam_branch" ? "Steam branch" : steam === "steam_build" ? "Steam build" : prop ? `${steam} value` : "version";
+        if (steam && !versions.length) return reply(prop ? `No session of ${svc} has the property ${steam} in this window: the game sets it with setProperties (glitchless_events lists the properties it sends)` : `No session of ${svc} sent its ${what} in this window: the SDKs read it from Steamworks when the game uses it and runs from Steam`, versions);
         if (versions.length < 2 && !(a && b)) return reply(`Only one ${what} of ${svc} has reported in this window`, versions);
         const va = a ? versions.find((v) => v.version === a) : versions.at(-2);
         const vb = b ? versions.find((v) => v.version === b) : versions.at(-1);
@@ -37497,7 +37541,7 @@ ${brief || "None in this window. A game sends them with track(name, attrs)."}`, 
         const events = Object.fromEntries(Object.keys(vb.events || va.events || {}).map((n) => [n, pair2(va.events?.[n], vb.events?.[n])]));
         const levels = [.../* @__PURE__ */ new Set([...Object.keys(va.level_p95 || {}), ...Object.keys(vb.level_p95 || {})])];
         const level_p95 = Object.fromEntries(levels.map((l) => [l, { [va.version]: va.level_p95?.[l] ?? null, [vb.version]: vb.level_p95?.[l] ?? null }]));
-        return reply(`${svc}: ${steam ? `${what} ` : ""}${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { board: own2, events_per_session: events, delta, ...steam ? {} : { level_p95 }, [steam ? `all_${steam === "steam_branch" ? "branches" : "builds"}` : "all_versions"]: versions.map((v) => ({ [steam || "version"]: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString(), ...steam ? {} : { first_seen_ever: v.first_seen_ever == null ? null : new Date(v.first_seen_ever).toISOString() } })) });
+        return reply(`${svc}: ${steam ? `${what} ` : ""}${va.version} (${va.sessions} sessions) vs ${vb.version} (${vb.sessions} sessions)`, { board: own2, events_per_session: events, delta, ...steam ? {} : { level_p95 }, [steam ? `all_${steam === "steam_branch" ? "branches" : steam === "steam_build" ? "builds" : "values"}` : "all_versions"]: versions.map((v) => ({ [steam || "version"]: v.version, sessions: v.sessions, first_seen: new Date(v.first_seen).toISOString(), ...steam ? {} : { first_seen_ever: v.first_seen_ever == null ? null : new Date(v.first_seen_ever).toISOString() } })) });
       }
     );
   }
@@ -37511,7 +37555,7 @@ var init_dashboard = __esm({
     init_context();
     tool(
       "glitchless_dashboard",
-      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports), and one board's panels with their numbers for the window. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency`, and `mismatch` lists amounts sent in another currency, which are left out. `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (people upload those in the dashboard: Edit pages \u2192 Look).",
+      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency`, and `mismatch` lists amounts sent in another currency, which are left out. `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (people upload those in the dashboard: Edit pages \u2192 Look).",
       { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
       async ({ service, hours, page, ...f }) => {
         const svc = await resolveService(service);
@@ -37519,29 +37563,40 @@ var init_dashboard = __esm({
         if (!dashboard) return reply(`${svc} has sent no data yet`, {});
         const b = await query("board", { service: svc, ...filters(f), page, ...range(hours) });
         const brand = (await write("GET", `/v1/brand?service=${encodeURIComponent(svc)}`).catch(() => null))?.brand;
-        const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...p.view ? { view: p.view, ...p.options ? { options: p.options } : {} } : { panels: p.panels } }));
+        const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...p.view ? { view: p.view, ...p.options ? { options: p.options } : {} } : { panels: p.panels, ...p.where ? { where: p.where } : {} } }));
         const brief = (p) => p.type === "positions" && !p.empty ? { ...p, deaths: p.deaths?.slice(0, 10), path: p.path && { ...p.path, cells: p.path.cells.slice(0, 10) } } : p;
-        const board = b.board ? { page: b.board.page, title: b.board.title, panels: b.board.panels.map(({ ts, series, p50: p502, p95, ...p }) => brief(p)) } : { error: b.error };
+        const overTime = ({ ts, series, ...p }) => Array.isArray(ts) ? Object.fromEntries(Object.entries(p).filter(([, v]) => !(Array.isArray(v) && v.length === ts.length))) : p;
+        const board = b.board ? { page: b.board.page, title: b.board.title, panels: b.board.panels.map((p) => brief(overTime(p))) } : { error: b.error };
         return reply(`Dashboard for ${svc} (${dashboard.source}${dashboard.updated_by ? `, saved by ${dashboard.updated_by}` : ""}):`, { pages, board, spec: dashboard.spec, brand: brand ? { accent: brand.accent, logo: !!brand.logo, banner: !!brand.banner } : null });
       }
     );
     panelSchema = external_exports.object({
-      type: external_exports.enum(["stat", "series", "breakdown", "funnel", "levels", "frame_time", "errors", "deaths", "events", "findings", "sessions", "versions", "live", "reports", "retention", "positions"]).describe("retention: D1, D7 and D30 by the day players were first seen; needs player IDs (privacy install or full). positions: where players died on one level (and where they went), as counts per bin: safe on a shared board, and a game can poll it through a share link to draw its own dead"),
+      type: external_exports.enum(["stat", "series", "breakdown", "distribution", "funnel", "levels", "frame_time", "errors", "deaths", "events", "findings", "sessions", "versions", "live", "reports", "retention", "positions", "net", "servers"]).describe(`distribution: how a numeric attribute (of) spreads, as percentiles (p50, p90, p99) and a histogram, optionally by a split: match length, time in queue, placement, floors reached. levels: starts, completions, fails, deaths and disconnects per level, with the median and p90 clear time; by splits each level's attempts (clears by tier, by class), count "runs" counts runs per biome. retention: D1, D7 and D30 by the day players were first seen; needs player IDs (privacy install or full); by a property, per value. positions: where players died on one level (and where they went), as counts per bin: safe on a shared board, and a game can poll it through a share link to draw its own dead. net (a multiplayer game): show ping (p50 and p95 over time, and the share of play over 150 ms), loss, or disconnects (per hour played, by reason), optionally by a split ($region, $link, $level, $version). servers (a game whose dedicated servers run the SDK in server mode): show ticks (tick time against its budget, by "players" connected, $level or $version), players, or crashes (with the matches and players each ended)`),
       title: external_exports.string().optional().describe(`In the game's own words, e.g. "Stops won vs lost"`),
       note: external_exports.string().optional().describe("One line on why this panel matters: people read it behind the info icon next to the panel's title"),
       size: external_exports.enum(["s", "m", "l"]).optional().describe("s = a quarter row (stats), m = half, l = full width"),
-      metric: external_exports.string().optional().describe("stat: sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct or players_now (sessions playing in the last two minutes, whatever the range)"),
-      event: external_exports.string().optional().describe('stat, series, breakdown: one event, "name", "name=value" or "name:key=value". A series or breakdown by $platform, $browser or $device_tier can leave it out: then it counts sessions (and players, with player IDs) in each'),
+      metric: external_exports.string().optional().describe(`stat: sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played (the time the game was on screen), players_now (sessions playing in the last two minutes, whatever the range), runs (each run once). Network (multiplayer): ping_p50, ping_p95 (ms), loss_pct, disconnects_per_hour, disconnect_pct (level attempts a disconnect ended). Servers (from the game's servers in server mode): servers_now (running now, with the players connected to them), server_tick_p95, server_crash_free_pct, players_per_server. deaths and errors take per "$hours": deaths per hour played`),
+      event: external_exports.string().optional().describe('stat, series, breakdown, distribution: one event, "name", "name=value" or "name:key=value". A list attribute (a deck, a build) matches when it has the value, and "battle_end:deck=hog_rider+ice_spirit" when it has all of them (any pair or trio). A series or breakdown by $platform, $browser or $device_tier can leave it out: then it counts sessions (and players, with player IDs) in each'),
       sum: external_exports.string().optional().describe(`stat, series, breakdown: add up this numeric attribute instead of counting events, e.g. "amount" of "purchase" for revenue. Money (events with a currency) shows in the game's currency; amounts in another currency are named, not added`),
-      per: external_exports.string().optional().describe('stat: divide by this event to get a percentage (event "buy=done" per "paywall"); or "$players" / "$sessions": the share of them that sent the event (conversion), or with sum, the sum per player or session (revenue per player)'),
-      by: external_exports.string().optional().describe(`series, breakdown: the attribute to split by, e.g. "mode" or "what", or $version / $level, or a split of the sessions that sent the event: $platform (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026), $browser (Chrome, Safari, Firefox, Edge\u2026; a native build is "Godot app", "Unity app" and so on, a web build "Unity web build"), $device_tier (High-end, Mid-range, Low-end GPU, Software rendering: the tiers the Performance view uses, high to low); counts only, no sum, over 31 days or less. With sum and an attribute, event is a name only. A breakdown (by count) can also split by a Steam fact of the sessions that sent the event: $steam_branch, $steam_build, $steam_hardware, $steam_controller, $steam_language, $proton, $big_picture, $family_shared, $timed_trial. versions: $steam_branch or $steam_build compares Steam branches or builds on this page's stats instead of versions (the beta against "public"); needs a game that uses Steamworks`),
-      limit: external_exports.number().int().optional().describe("How many: errors, findings, reports and breakdown rows up to 20, sessions up to 50, series lines up to 8, retention days up to 90 (default 14)"),
+      per: external_exports.string().optional().describe(`stat: divide by this event to get a percentage (event "buy=done" per "paywall"); or "$players" / "$sessions": the share of them that sent the event (conversion), or with sum, the sum per player or session (revenue per player); or "$hours": per hour played (matches per hour, with sum XP or gold per hour). series, breakdown: "$hours", each bucket or row per hour played (by $version or $level each over its own hours, by an attribute every row over the window's)`),
+      rate: external_exports.string().optional().describe(`stat, series, breakdown: the share of the event's events where a flag holds, "won" (a boolean, or a number that is only 1 or 0), or a word outcome holds, "result=win". A breakdown gives each row its rate with a 95% interval (low, high) next to the overall rate: win rate by hero, by heat, of decks with each card (by a list), boons taken when offered. Send outcomes as booleans where you can: a word outcome split by another attribute reads the first 16 of each session's events`),
+      avg: external_exports.string().optional().describe(`stat, series, breakdown: a numeric attribute's mean per event instead of a count, e.g. "duration_s" by mode`),
+      min: external_exports.number().int().optional().describe("breakdown with rate or avg: rows with fewer events are left out and counted in small (default 30 for a rate, 10 for an average)"),
+      expect: external_exports.number().optional().describe("breakdown or stat with rate: the percentage the game intends, such as a gacha's published odds (0.6 for 0.6%). Rows whose interval misses it are marked, and a finding names them"),
+      order: external_exports.enum(["rate", "avg", "count", "value"]).optional().describe("breakdown with rate or avg: rate or avg (default, the highest first), count (most events first) or value (in the values' own order: heat 0, 1, 2)"),
+      of: external_exports.string().optional().describe('distribution (required), stat: the numeric attribute whose spread to show, e.g. "duration_s". A stat with of and quantile shows one percentile: the median match'),
+      quantile: external_exports.number().int().optional().describe("stat with of: the percentile, 1 to 99 (50: the median, 90: 1 in 10 is over it)"),
+      bins: external_exports.number().int().optional().describe("distribution: how many histogram bars, 2 to 40 (default 20). Bars are equal round steps from the 1st to the 99th percentile; under and over count what falls outside"),
+      unit: external_exports.string().optional().describe(`distribution, stat with of: what the numbers are in, shown after them ("s" reads as minutes or hours when large, or the game's own word: "floors")`),
+      by: external_exports.string().optional().describe(`series, breakdown, distribution: the attribute to split by, e.g. "mode" or "what" (a list attribute splits by element: each card of a deck gets a row, and an event counts once under each), or $version / $level / $zone (where the player was in an open world, setZone), or a split of the sessions that sent the event: $platform (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026), $browser (Chrome, Safari, Firefox, Edge\u2026; a native build is "Godot app", "Unity app" and so on, a web build "Unity web build"), $device_tier (High-end, Mid-range, Low-end GPU, Software rendering: the tiers the Performance view uses, high to low), $link (Wi-Fi, Mobile data, Wired), or a session property the game sets with setProperties ($rank, $class, $region: sessions without it are "(none)", 40 values at most); counts only, no sum, over 31 days or less. levels and deaths: an attribute of the level's start ("tier", "party_size", a list such as "build"), a property or a split. net: $version, $level, $zone, a split or a property. servers: "players" (connected, in tenths of capacity), $level or $version. retention: a property ($spender). versions: also a property ($class), its values side by side. With sum and an attribute, event is a name only. A breakdown (by count) can also split by a Steam fact of the sessions that sent the event: $steam_branch, $steam_build, $steam_hardware, $steam_controller, $steam_language, $proton, $big_picture, $family_shared, $timed_trial. versions: $steam_branch or $steam_build compares Steam branches or builds on this page's stats instead of versions (the beta against "public"); needs a game that uses Steamworks`),
+      limit: external_exports.number().int().optional().describe("How many: errors, findings, reports and breakdown rows up to 20, sessions up to 50, series lines up to 8, distribution rows up to 8, retention days up to 90 (default 14)"),
       steps: external_exports.string().optional().describe('funnel: events in order, comma-separated, e.g. "paywall,buy=tapped,buy=done"'),
       label: external_exports.string().optional().describe('levels: what the game calls a level, e.g. "Stop" or "Puzzle"'),
       sent: external_exports.string().optional().describe('sessions: only sessions that sent this event, e.g. "buy=done"'),
       events: external_exports.array(external_exports.string()).optional().describe('live: only these event names or types, e.g. ["buy", "paywall", "error"]'),
-      level: external_exports.string().optional().describe("positions (required): the level id, as the game passes it to levelStart"),
-      show: external_exports.enum(["deaths", "path", "both", "installs", "revenue"]).optional().describe("positions: deaths (default), path (where players went, on a coarser grid) or both. store_revenue by_country: installs (default) or revenue, what its map shows first (people can switch)"),
+      level: external_exports.string().optional().describe("positions (required): the level id, as the game passes it to levelStart. levels and deaths: only this level's rows"),
+      count: external_exports.enum(["runs"]).optional().describe(`levels: "runs" counts each run (setGroup("run")) once at each level it reached, however many sessions it spanned: a roguelite's runs that reach each biome`),
+      show: external_exports.enum(["deaths", "path", "both", "installs", "revenue", "ping", "loss", "disconnects", "ticks", "players", "crashes"]).optional().describe("positions: deaths (default), path (where players went, on a coarser grid) or both. store_revenue by_country: installs (default) or revenue, what its map shows first (people can switch). net: ping (default), loss or disconnects. servers: ticks (default), players or crashes"),
       bin: external_exports.number().positive().optional().describe("positions: a bin's width in world units (default about a hundredth of the level). Fix it when a game draws the panel, so bins don't move as the level fills in")
     }).describe("One panel");
     STORE_PANELS = {
@@ -37562,14 +37617,15 @@ var init_dashboard = __esm({
       title: external_exports.string().optional().describe("The name in the sidebar, in the words the game uses (a view keeps its built-in name without one)"),
       icon: external_exports.enum(["board", "overview", "events", "perf", "errors", "players", "heatmap", "sessions", "versions", "live", "flag", "bolt", "play", "clock", "bug", "money"]).optional(),
       panels: external_exports.array(withStores(panelSchema)).optional().describe("A board: its panels, in order"),
-      view: external_exports.enum(["events", "performance", "errors", "players", "heatmaps", "sessions", "versions", "live", "reports"]).optional().describe("A built-in view instead of panels (reports: the bug reports players sent, with their screenshots)"),
+      view: external_exports.enum(["events", "performance", "errors", "players", "heatmaps", "sessions", "versions", "live", "reports", "servers", "matches"]).optional().describe("A built-in view instead of panels (reports: the bug reports players sent, with their screenshots; servers: the game's dedicated servers in server mode, their ticks by map and players connected, crashes and memory; matches: the range's matches, each opening a match page with every player's ping slot by slot and the server's ticks under them)"),
+      where: external_exports.record(external_exports.string(), external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean(), external_exports.array(external_exports.union([external_exports.string(), external_exports.number(), external_exports.boolean()]))])).optional().describe('A board page only: the session properties its sessions must have, "$<key>" \u2192 a value or a list of up to 20 (at most 4 properties), e.g. { "$rank": ["diamond", "master"] }: every panel on the page reads only those sessions (a "Diamond and up" page)'),
       options: external_exports.object({ events: external_exports.array(external_exports.string()).optional() }).optional().describe("live view: events, only these event names or types")
     }).describe("One page: either panels (a board) or view (a built-in view)");
     define(
       "glitchless_set_dashboard",
       {
         title: "Save dashboard",
-        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map); it can be sent alone. Needs a secret key with the dashboard scope.`,
+        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. For balance and outcomes, a breakdown with rate gives each row its rate and interval next to the overall one (win rate by hero: event "match_end", by "hero", rate "won"); per "$hours" turns counts and sums into rates per hour played (gold per hour); a distribution panel or a stat with of and quantile shows how long matches or runs last; a list attribute (deck, build, boons) splits by element. Split by what the game set for the session with setProperties ($rank, $class, $region), and give a page where to show only some sessions (a page for the high ranks); a levels panel by a levelStart attribute shows clears by tier or difficulty, and count "runs" runs per biome. A multiplayer game gets a Network page (ping_p95 and disconnect_pct stats, net panels by $region or $link), and one whose dedicated servers run the SDK in server mode a Servers page (servers_now, server_tick_p95, a servers panel by players) or the built-in servers view; a game that sets match groups can keep the built-in matches view. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map); it can be sent alone. Needs a secret key with the dashboard scope.`,
         inputSchema: {
           service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
           pages: external_exports.array(pageSchema).optional(),
@@ -37827,6 +37883,144 @@ var init_revenue = __esm({
   }
 });
 
+// src/tools/multiplayer.js
+function stretches(ts, step) {
+  const out = [];
+  for (const t of [...ts].sort((a, b) => a - b)) {
+    const last = out.at(-1);
+    if (last && t - last[1] <= step) last[1] = t;
+    else out.push([t, t]);
+  }
+  return out.map(([a, b]) => `${clock(a)}\u2013${clock(b + step)}`);
+}
+function verdict(m) {
+  const step = m.slot_s || 30;
+  const lobby = new Set(m.lobby_spikes || []);
+  const ticks = (m.server || []).flatMap((s) => s.slots);
+  const budget = (m.server || []).find((s) => s.budget_ms != null)?.budget_ms ?? null;
+  const during = median(ticks.filter((x) => lobby.has(x.t)).map((x) => x.tick_p95));
+  const otherwise = median(ticks.filter((x) => !lobby.has(x.t)).map((x) => x.tick_p95));
+  const alone = m.sessions.map((s) => ({ s, at: s.slots.filter((x) => x.spike && !lobby.has(x.t)).map((x) => x.t) })).filter((x) => x.at.length);
+  const parts = [];
+  if (lobby.size) {
+    parts.push(`The whole lobby lagged at once at ${stretches(lobby, step).join(", ")}: that's the server or its network, not players' connections.`);
+    if (during != null) parts.push(`The server's slowest ticks then: ${during} ms${budget ? ` against a ${budget} ms budget` : ""} (${otherwise ?? "?"} ms the rest of the match).`);
+  } else parts.push("No moment where the whole lobby lagged at once.");
+  if (alone.length) parts.push(`${alone.length} ${alone.length === 1 ? "player" : "players"} lagged on their own (their connection): ${alone.slice(0, 5).map((x) => `${x.s.session_id} at ${stretches(x.at, step).join(", ")}`).join("; ")}.`);
+  if (m.disconnects) parts.push(`${m.disconnects} disconnected (${Object.entries(m.disconnect_reasons || {}).map(([r, n]) => `${n} ${r.replace("_", " ")}`).join(", ")}).`);
+  return parts.join(" ");
+}
+var gameOf, clock, median, netRow;
+var init_multiplayer = __esm({
+  "src/tools/multiplayer.js"() {
+    init_zod();
+    init_context();
+    gameOf = (svc) => svc.endsWith(".server") ? svc.slice(0, -".server".length) : svc;
+    clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+    median = (xs) => {
+      const s = xs.filter((v) => v != null).sort((a, b) => a - b);
+      return s.length ? s[Math.floor(s.length / 2)] : null;
+    };
+    tool(
+      "glitchless_match",
+      "Matches of a multiplayer game, from every side (the game marks a match with setGroup('match', id), the ID its server made; every SDK hashes it the same way, so its players and its server join up). Without id: the window's matches, the most recent first, or the worst by lag (ping) or disconnects (sort), each with its level, players, outcomes, disconnects, ping and lag (the share of connected play over 150 ms), and its server's tick. With id: one match slot by slot (30 seconds) from its start, with a verdict that tells a whole lobby lagging at once (the server or its network) from one player lagging (their connection): each player's ping, frame time, outcome and disconnects, the server's ticks against its budget and the players connected in the same slots, and the match's events. slots: true gives every slot of every player.",
+      {
+        ...common,
+        id: external_exports.string().optional().describe("A match id (h_\u2026 or the game's own), from the list or a finding"),
+        sort: external_exports.enum(["recent", "lag", "disconnects"]).optional().describe("Without id: recent (default), lag (the worst ping p95 first) or disconnects"),
+        limit: external_exports.number().int().min(1).max(200).optional().describe("Without id: how many matches (default 20)"),
+        slots: external_exports.boolean().optional().describe("With id: every 30-second slot of every player and server (long for a big match); by default only the slots that lagged")
+      },
+      async ({ service, hours, id, sort, limit, slots, ...f }) => {
+        const svc = gameOf(await resolveService(service));
+        if (!id) {
+          const d2 = await query("matches", { service: svc, ...filters(f), sort, limit: limit || 20, ...range(hours) });
+          const brief = d2.matches.map((m2, i) => `${i + 1}. ${m2.id}${m2.level ? ` on ${m2.level}` : ""}: ${m2.sessions} players, ${clock(m2.duration_s)}, ping p95 ${m2.ping_p95 ?? "\u2013"} ms${m2.lag_pct != null ? ` (${m2.lag_pct}% of play over 150 ms)` : ""}, ${m2.disconnects} disconnects${m2.server?.tick_p95 != null ? `, server tick p95 ${m2.server.tick_p95} ms` : ""}`).join("\n");
+          return reply(`${d2.total} match(es) in ${svc}${d2.sort !== "recent" ? `, the worst by ${d2.sort} first` : ""}:
+${brief || 'None in this window: the game marks a match with setGroup("match", id).'}`, d2.matches);
+        }
+        const d = await query("matches", { service: svc, ...filters(f), id, ...range(hours) });
+        if (d.error || !d.match) return reply(`No match ${id} in ${svc} in this window (${hours || 24}h): glitchless_match without id lists them`, {});
+        const m = d.match;
+        const lobby = new Set(m.lobby_spikes || []);
+        const players = m.sessions.map(({ slots: list, ...s }) => ({
+          ...s,
+          lagged_alone_at: list.filter((x) => x.spike && !lobby.has(x.t)).map((x) => x.t),
+          frame_p95_worst: Math.max(...list.map((x) => x.frame_p95 ?? 0)) || null,
+          hitches: list.reduce((n, x) => n + (x.hitches || 0), 0),
+          ...slots ? { slots: list } : {}
+        }));
+        const servers = (m.server || []).map((s) => {
+          const usual = median(s.slots.map((x) => x.tick_p95));
+          const over = s.slots.filter((x) => x.tick_p95 != null && (s.budget_ms != null ? x.tick_p95 > s.budget_ms : usual != null && x.tick_p95 > usual * 1.5));
+          return { session_id: s.session_id, budget_ms: s.budget_ms ?? null, tick_p95_usual: usual, players_max: Math.max(0, ...s.slots.map((x) => x.players ?? 0)), slow_slots: over.slice(0, 20), ...slots ? { slots: s.slots } : {} };
+        });
+        const { sessions: _, server: __, events, slots: starts, ...head } = m;
+        return reply(`Match ${m.id} in ${svc}: ${m.sessions.length} players on ${m.level ?? "no level"}, ${clock(m.duration_s)}. ${verdict(m)}`, { ...head, ...slots ? { slots: starts } : {}, players, servers, events: events.slice(0, 80) });
+      }
+    );
+    netRow = (r) => ({ key: r.key ?? r.value, sessions: r.sessions ?? null, ping_p50: r.ping_p50, ping_p95: r.ping_p95, lag_pct: r.lag_pct, loss_pct: r.loss_pct, disconnects: r.disconnects, disconnects_per_hour: r.disconnects_per_hour, disconnect_pct: r.disconnect_pct, disconnect_reasons: r.disconnect_reasons });
+    tool(
+      "glitchless_network",
+      "Network quality of a multiplayer game: ping (median and the slowest 5%), lag (the share of connected play with a round trip over 150 ms), packet loss and jitter, and disconnects (per hour played, by reason, and the share of level attempts a disconnect ended: never counted as fails), overall and by level, version, platform and kind of connection (Wi-Fi, mobile data, wired), and by region when the game sets a region property (or by any property given as by). Also the worst matches by ping (glitchless_match opens one), and the network findings: a whole lobby lagging at once (the server), one kind of connection or region lagging (players' connections, or no server near them), disconnects rising in a release. The SDKs read it from the engine's netcode (Netcode for GameObjects, Mirror, Godot's ENet, Unreal's net driver, WebRTC) or the game's netSample calls.",
+      {
+        ...common,
+        by: external_exports.string().optional().describe('A session property to split by besides the built-in ones, e.g. "region" (the default when the game sets one) or "$play": each of its values (up to 8) read on its own')
+      },
+      async ({ service, hours, by, ...f }) => {
+        const svc = gameOf(await resolveService(service));
+        const ask = { service: svc, ...filters(f), ...range(hours) };
+        const ev = await query("events", ask);
+        const key = by ? by.replace(/^\$/, "") : (ev.properties || []).some((p) => p.key === "region") ? "region" : null;
+        const prop = key && (ev.properties || []).find((p) => p.key === key);
+        const [perf, worst, found] = await Promise.all([query("performance", { ...ask, ...prop && !prop.identifier_like ? { by_prop: key } : {} }), query("matches", { ...ask, sort: "lag", limit: 5 }), query("findings", ask)]);
+        const net2 = perf.network;
+        if (!net2) return reply(`No network data from ${svc} in this window: the SDKs read it from the game's netcode, or the game calls netSample about once a second while connected (the instrument skill says how for each engine)`, {});
+        const byProp = net2.by_prop ? net2.by_prop.rows.map(netRow) : null;
+        const k = net2.kpis;
+        const title = `Network for ${svc} (${hours || 24}h): ping ${k.ping_p50} ms median, ${k.ping_p95} ms for the slowest 5%; ${k.lag_pct ?? 0}% of connected play over 150 ms; ${k.loss_pct ?? 0}% packet loss; ${k.disconnects} disconnects (${k.disconnects_per_hour ?? "\u2013"} per hour played${k.disconnect_pct != null ? `, ${k.disconnect_pct}% of attempts` : ""})`;
+        return reply(title, {
+          kpis: k,
+          by_level: net2.by_level.map(netRow),
+          by_version: net2.by_version.map(netRow),
+          by_platform: net2.by_platform.map(netRow),
+          by_link: net2.by_link.map(netRow),
+          ...byProp ? { [`by_${key}`]: byProp } : key && !prop ? { note: `No session property ${key} in this window (glitchless_events lists the ones the game sets)` } : {},
+          worst_matches: worst.matches,
+          findings: found.findings.filter((x) => x.category === "network")
+        });
+      }
+    );
+    tool(
+      "glitchless_servers",
+      `A multiplayer game's dedicated servers, when they run the Glitchless SDK in server mode (Node glitchless/server, or the Unity, Godot or Unreal server role): servers running now and the players connected to them; tick time against its budget (the slowest 5% of ticks, and the share of windows over budget) by players connected, by map and by version; CPU, memory and networked objects; crashes, each with the matches it ended and the players it dropped; long-running servers whose memory or objects keep climbing; the latest server runs; and the server findings (falling behind when full, a crash that ends matches, a leak). A server's sessions are kept apart from players' under the companion service "<game>.server": every other tool reads them with service "<game>.server" (glitchless_session for one server run, glitchless_get_error for a server crash's stack). Server sessions count as sessions like any other.`,
+      { ...common },
+      async ({ service, hours, ...f }) => {
+        const svc = gameOf(await resolveService(service));
+        const ask = { service: svc, ...filters(f), ...range(hours) };
+        const [d, found] = await Promise.all([query("servers", ask), query("findings", ask)]);
+        const now = d.servers_now != null ? `${d.servers_now} running now with ${d.players_on_servers} players connected` : null;
+        if (!d.kpis) return reply(`${d.why || `No server of ${svc} sent anything in this window.`}${now ? ` (${now})` : ""}`, {});
+        const k = d.kpis;
+        const title = `Servers of ${svc} (${hours || 24}h): ${k.servers} server runs${now ? `, ${now}` : ""}; tick p95 ${k.tick_p95} ms${k.budget_ms ? ` against a ${k.budget_ms} ms budget (in ${k.over_budget_pct}% of 5-second windows, 5% or more of the ticks went over it)` : ""}; ${k.players ?? 0} players per server on average; ${k.crashed} crashed (${k.crash_free_pct}% crash-free). Their sessions: service "${svc}.server"`;
+        return reply(title, {
+          servers_now: d.servers_now ?? null,
+          players_on_servers: d.players_on_servers ?? null,
+          kpis: k,
+          by_players: d.by_players,
+          by_level: d.by_level,
+          by_version: d.by_version,
+          crashes: d.crashes.map((c) => ({ ...slimIssue(c), crashed_servers: c.crashed_servers, matches_ended: c.matches_ended, players_dropped: c.players_dropped, breadcrumbs: c.breadcrumbs?.slice(-6) })),
+          memory: d.memory,
+          climbing: d.climbing,
+          recent_runs: d.sessions.slice(0, 15),
+          findings: found.findings.filter((x) => x.id.startsWith("server-"))
+        });
+      }
+    );
+  }
+});
+
 // src/tools/workspace.js
 var act, signingIn;
 var init_workspace = __esm({
@@ -37938,6 +38132,7 @@ var init_hosted_tools = __esm({
     init_reports();
     init_store_reviews();
     init_revenue();
+    init_multiplayer();
     init_workspace();
   }
 });

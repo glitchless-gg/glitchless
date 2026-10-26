@@ -8,6 +8,9 @@ The browser SDK for [Glitchless](https://github.com/glitchless-gg/glitchless): g
 - **Device and GPU tier, load timing**: time to first frame and time to first input.
 - **Gameplay.** Level funnel, deaths, rage inputs; in `full` privacy mode also death places and 4 Hz position samples (heatmaps, replay).
 - **An in-game overlay.** Toggle it with the `` ` `` key. It works with no backend.
+- **Multiplayer and genre games.** Counters for streams of events (shots, kills, gold), session properties (mode,
+  rank tier, class, region), match, party and run groups, zones, and ping, loss and disconnects. A Node game server
+  reports its own ticks, players and crashes with `glitchless/server`.
 - **Bug reports from players** (opt-in). F8 or a button opens a small form; the note, a screenshot, the level,
   the position and the last events go to the dashboard's Bug Reports and to coding agents.
 - **WebMCP tools** so coding agents can measure, inspect and reproduce problems in the running game.
@@ -40,6 +43,8 @@ const glitchless = Glitchless.init({
   bugReports: null,              // { hotkey: 'F8', onOpen, onClose } (or true): players send bug reports from a form
   datadog: null,                 // { applicationId, clientToken, site, replay: true } → Datadog RUM
   steam: null,                   // an Electron game's steamworks.js client: Steam build, branch and hardware per session
+  properties: null,              // what holds for the session in your game's words: { mode: 'squads', region: 'eu' }
+  hashGroupIds: true,            // match and party IDs are hashed before they're sent; false sends them as they are
 });
 instrumentThree(glitchless, { renderer, scene, camera, THREE });
 ```
@@ -144,10 +149,15 @@ What the adapter adds:
 
 | Call | Use |
 | --- | --- |
-| `glitchless.levelStart(id)` / `glitchless.levelComplete(id, { durationS, score })` / `glitchless.levelFail(id, { cause })` | level funnel, difficulty spikes |
+| `glitchless.levelStart(id, attrs?)` / `glitchless.levelComplete(id, { durationS, score })` / `glitchless.levelFail(id, { cause })` | level funnel, difficulty spikes; `attrs` describe the attempt (`{ tier: 'pit_80', party_size: 3 }`) so clears split by them |
 | `glitchless.levelAbandon(id)` | the player left the level before it ended (back to the menu, a restart): never counted as a fail or a rage quit. Sent by itself when the page goes away mid-level |
 | `glitchless.death({ x, y, z, cause })` | death heatmap (places sent only when positions are on), rage-quit detection |
 | `glitchless.track(name, attrs)` | pickups, power-ups, purchases; also breadcrumbs for errors and hitches |
+| `glitchless.count(name, attrs, n)` | streams: shots, hits, kills, gold, taps. Summed per 5 s window instead of an event each |
+| `glitchless.setProperties({ rank: 'gold' })` | what holds for the session: mode, rank tier, class, region. Every board can split by them |
+| `glitchless.setGroup('match' \| 'party' \| 'run', id)` | which match, party or run the next events belong to; `null` ends it |
+| `glitchless.setZone(name)` | where the player is in an open world (an MMO region, a metroidvania room) |
+| `glitchless.netSample({ rtt_ms, loss_pct, jitter_ms })` / `disconnect({ reason })` / `reconnect()` | ping, loss and dropped connections in a multiplayer game |
 | `glitchless.setPosition(vec3)` (every frame) | movement heatmap and session replay (sampled at 4 Hz, sent only when positions are on) |
 | `glitchless.setContext({ particles, enemies })` (every frame) | numeric gauges correlated with hitches |
 | `glitchless.captureMap(levelId, { axis: 'xy' \| 'xz', bounds: { min: [a, b], max: [a, b] } })` | renders an orthographic thumbnail used as the heatmap background |
@@ -181,6 +191,102 @@ glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' }
 ```
 
 Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details.
+
+### Streams: count, don't track
+
+`track()` is for moments: a match ended, a boss died, a purchase. For things that happen many times a second, use
+`count()`, which adds up in the SDK and sends one total per name and group every 5 s:
+
+```js
+glitchless.count('shot', { weapon: 'ar' });
+glitchless.count('hit', { weapon: 'ar', damage: 23 });      // damage is added up
+glitchless.count('gold', { source: 'loot', amount: 35 });  // gold per hour, by source
+```
+
+Strings and booleans group the counts (at most 4), numbers are added up (at most 4). Boards read a counter by its name
+like any event: kills per hour played, damage by weapon. A `track()` sent more than 20 times a second gets a console
+warning that names `count()`. Counters go only to a Glitchless server that reads them; an older one gets none.
+
+### Who is playing: session properties
+
+```js
+glitchless.setProperties({ rank: 'diamond', class: 'druid', region: 'eu-west', input: 'controller' });
+```
+
+Set them where the game knows them (after sign-in, at the menu, at matchmaking); `null` removes one. Every board can
+then split by `$rank` or show only the high ranks. They describe the session in your game's words, never the person:
+use bands (`level_band: '30-39'`, `trophy_band: '3000-3499'`), not exact numbers. Keys that name a person (`email`,
+`user_id`, `steam_id`, …) and values that look like an email address, a link, a phone number or an ID are dropped,
+with a console warning. At most 12 a session; nothing is kept between sessions.
+
+### Matches, parties, runs and zones
+
+```js
+glitchless.setGroup('match', match.id);            // the ID your game server made for this match
+glitchless.setGroup('party', party.id);
+glitchless.levelStart('rift', { mode: 'ranked', hero: 'ember' });
+// …
+glitchless.setGroup('match', null);
+
+const run = glitchless.setGroup('run');            // a roguelite run across several levels: the SDK makes the ID
+glitchless.setZone('westfall');                    // open worlds: where the player is, until the next call
+```
+
+Every event carries the group while it is set, so the dashboard can line up everyone in one match. Match and party
+IDs are hashed before they are sent (`h_` and 24 hex characters of SHA-1 of `"<service>:<id>"`), the same way in every
+Glitchless SDK and in `glitchless/server`, so a match's players and its server send one ID; `hashGroupIds: false`
+sends them as they are, to match against your server's logs. Never use an account, guild or friends-list ID. A run
+saved with `setGroup('run', savedId)` carries on after a restart in install and full mode only; anonymous mode starts
+a new run.
+
+### Ping, loss and disconnects
+
+A WebSocket has no round trip of its own, so pass the ping your netcode measures, about once a second:
+
+```js
+// Socket.IO: the server answers socket.on('latency', (ack) => ack())
+setInterval(() => {
+  const sent = performance.now();
+  socket.emit('latency', () => glitchless.netSample({ rtt_ms: performance.now() - sent, transport: 'socket.io' }));
+}, 1000);
+socket.on('disconnect', (reason) => {
+  if (reason === 'io client disconnect') return; // the player left: not a disconnect
+  glitchless.disconnect({ reason: reason === 'ping timeout' ? 'timeout' : reason === 'io server disconnect' ? 'kicked' : 'connection_lost' });
+});
+socket.io.on('reconnect', () => glitchless.reconnect());
+```
+
+Reasons are `timeout`, `connection_lost`, `kicked`, `server_closed`, `failed_to_connect` or `other`. A disconnect
+mid-level ends the attempt as an abandon with reason `disconnect`, never a fail; `glitchless.reconnect()` when the
+player gets back in, and they can still finish the level. A WebRTC game hands its peer connection over instead:
+
+```js
+import { instrumentNet } from 'glitchless/net';
+instrumentNet(glitchless, { peer }); // the RTCPeerConnection: round trip, loss, jitter and throughput from getStats()
+```
+
+### Game servers: `glitchless/server`
+
+A Node game server reports its own side: how long its ticks take against the target rate, how many players are
+connected, their round trips as it sees them, its CPU and memory, its errors and crashes. It goes under the game's
+companion service (`my-game.server`), apart from the players' numbers. Node 20+, no dependencies.
+
+```js
+import { GlitchlessServer, instrumentWs } from 'glitchless/server';
+
+const server = GlitchlessServer.init({ service: 'my-game', version: '1.4.0', intake, clientToken, tickHz: 30, region: 'eu-west' });
+instrumentWs(server, wss);                            // players, pings and how connections end
+setInterval(server.measureTick(update), 1000 / 30);  // tick time
+server.setGroup('match', matchId);                    // the same ID you hand the players
+process.on('SIGTERM', async () => { await server.close(); process.exit(0); });
+```
+
+`instrumentSocketIO(server, io)` does the same for Socket.IO (round trips from its heartbeat), and
+`gameServer.define('battle', glitchlessRoom(server, BattleRoom))` for Colyseus: each room is a match, its simulation
+interval the tick. A server hosting several matches at once uses `server.match(id)` handles. An uncaught error is
+reported as a crash and the process still dies as it would; what was queued goes out as it does. It sends nothing to
+a Glitchless server that doesn't read server sessions yet. [SPEC §1](https://github.com/glitchless-gg/glitchless/blob/main/docs/SPEC.md)
+has every call and field.
 
 ### Bug reports
 

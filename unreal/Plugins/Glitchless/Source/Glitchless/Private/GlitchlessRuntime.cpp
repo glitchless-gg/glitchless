@@ -14,9 +14,18 @@
 #include "Blueprint/BlueprintExceptionInfo.h"
 #include "DynamicRHI.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/NetConnection.h"
+#include "Engine/NetDriver.h"
+#include "Engine/NetworkObjectList.h"
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
+#include "GameFramework/GameModeBase.h"
+#include "GameFramework/GameSession.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "GeneralProjectSettings.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMemory.h"
@@ -253,14 +262,69 @@ void FGlitchlessRuntime::Stop(const FString& Reason)
 FGlitchlessRuntime::FGlitchlessRuntime()
 {
 	Core = MakeUnique<Glitchless::FCore>();
-	Glitchless::FCore& C = *Core;
+	// A dedicated server reports as a server: its own session under <service>.server, with its outbox apart from a
+	// game's on the same machine.
+	bDedicated = IsRunningDedicatedServer();
+	if (bDedicated)
+	{
+		Core->Role = Glitchless::ERole::Server;
+		Core->ServerInfo = [this]() { return ServerFacts; };
+	}
+	Configure(*Core, bDedicated ? TEXT("Server") : TEXT(""));
+
+	LogDevice = MakeUnique<FGlitchlessOutputDevice>();
+	GLog->AddOutputDevice(LogDevice.Get());
+
+	FCoreDelegates::OnBeginFrame.AddRaw(this, &FGlitchlessRuntime::OnBeginFrame);
+	FCoreDelegates::OnEnginePreExit.AddRaw(this, &FGlitchlessRuntime::OnEnginePreExit);
+	FCoreDelegates::ApplicationWillEnterBackgroundDelegate.AddRaw(this, &FGlitchlessRuntime::OnEnterBackground);
+	FCoreDelegates::ApplicationHasEnteredForegroundDelegate.AddRaw(this, &FGlitchlessRuntime::OnEnterForeground);
+	EnsureHandle = FCoreDelegates::OnEnsureFailed.AddRaw(this, &FGlitchlessRuntime::OnEnsureFailed);
+	SystemErrorHandle = FCoreDelegates::OnHandleSystemError.AddStatic(&FGlitchlessRuntime::OnSystemError);
+	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(this, &FGlitchlessRuntime::OnPreGarbageCollect);
+	FCoreUObjectDelegates::GetPostGarbageCollect().AddRaw(this, &FGlitchlessRuntime::OnPostGarbageCollect);
+	FCoreUObjectDelegates::PreLoadMap.AddRaw(this, &FGlitchlessRuntime::OnPreLoadMap);
+	FCoreUObjectDelegates::PostLoadMapWithWorld.AddRaw(this, &FGlitchlessRuntime::OnPostLoadMap);
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
+	FCoreUObjectDelegates::OnPackageLoadCompleted.AddRaw(this, &FGlitchlessRuntime::OnPackageLoaded); // only counted: the package is never read
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
+#endif
+	FWorldDelegates::LevelAddedToWorld.AddRaw(this, &FGlitchlessRuntime::OnLevelAdded);
+	FBlueprintCoreDelegates::OnScriptException.AddRaw(this, &FGlitchlessRuntime::OnScriptException);
+
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+	const FPSORuntimeCreationStats Pso = PipelineStateCache::GetPSORuntimeCreationStats();
+	LastPsoHitches = Pso.GraphicsPSOHitches + Pso.ComputePSOHitches;
+#endif
+	LastLoadFlushes = GFlushAsyncLoadingCount + GSyncLoadCount;
+
+	// The editor's Play In Editor is measured from the editor's own tools, not by quitting the editor.
+	if (!GIsEditor)
+	{
+		if (const std::optional<std::string> Seconds = Core->FlagValue("glitchless-measure"))
+		{
+			MeasureSeconds = FCString::Atod(*GlitchlessText::Tchar(*Seconds));
+			MeasureSeconds = MeasureSeconds > 0 ? MeasureSeconds : 5;
+			MeasureWarmup = FMath::Max(0.0, FCString::Atod(*GlitchlessText::Tchar(Core->FlagValue("glitchless-warmup").value_or("0"))));
+		}
+	}
+	RegisterInput();
+	if (!GIsEditor)
+	{
+		InstallSignalHandlers();
+	}
+}
+
+void FGlitchlessRuntime::Configure(Glitchless::FCore& C, const FString& SaveSubdir)
+{
 	C.Clock = []() { return FPlatformTime::Seconds() * 1000.0; };
 	C.UnixNow = []() { return static_cast<int64_t>((FDateTime::UtcNow() - FDateTime(1970, 1, 1)).GetTotalMilliseconds()); };
 	C.Transport = std::make_shared<FGlitchlessHttpTransport>(&Mutex);
 	// Where the platform really writes Saved: on a phone the engine's file layer moves writes into the app's
 	// data container, and a crash writes the outbox with plain C calls that know nothing of that.
 	const FString SavedDir = IFileManager::Get().ConvertToAbsolutePathForExternalAppForWrite(*FPaths::ProjectSavedDir());
-	C.SaveDir = GlitchlessText::Utf8(SavedDir / TEXT("Glitchless"));
+	C.SaveDir = GlitchlessText::Utf8(SaveSubdir.IsEmpty() ? SavedDir / TEXT("Glitchless") : SavedDir / TEXT("Glitchless") / SaveSubdir);
 	C.Files.Read = [](const std::string& Path, std::string& Out) {
 		TArray<uint8> Bytes;
 		if (!FFileHelper::LoadFileToArray(Bytes, *GlitchlessText::Tchar(Path), FILEREAD_Silent))
@@ -315,49 +379,6 @@ FGlitchlessRuntime::FGlitchlessRuntime()
 	C.Scrubber.AddPath(GlitchlessText::Utf8(FPlatformProcess::UserHomeDir()), "home:");
 	C.Scrubber.AddPath(GlitchlessText::Utf8(FPlatformProcess::BaseDir()), "app:");
 #endif
-
-	LogDevice = MakeUnique<FGlitchlessOutputDevice>();
-	GLog->AddOutputDevice(LogDevice.Get());
-
-	FCoreDelegates::OnBeginFrame.AddRaw(this, &FGlitchlessRuntime::OnBeginFrame);
-	FCoreDelegates::OnEnginePreExit.AddRaw(this, &FGlitchlessRuntime::OnEnginePreExit);
-	FCoreDelegates::ApplicationWillEnterBackgroundDelegate.AddRaw(this, &FGlitchlessRuntime::OnEnterBackground);
-	FCoreDelegates::ApplicationHasEnteredForegroundDelegate.AddRaw(this, &FGlitchlessRuntime::OnEnterForeground);
-	EnsureHandle = FCoreDelegates::OnEnsureFailed.AddRaw(this, &FGlitchlessRuntime::OnEnsureFailed);
-	SystemErrorHandle = FCoreDelegates::OnHandleSystemError.AddStatic(&FGlitchlessRuntime::OnSystemError);
-	FCoreUObjectDelegates::GetPreGarbageCollectDelegate().AddRaw(this, &FGlitchlessRuntime::OnPreGarbageCollect);
-	FCoreUObjectDelegates::GetPostGarbageCollect().AddRaw(this, &FGlitchlessRuntime::OnPostGarbageCollect);
-	FCoreUObjectDelegates::PreLoadMap.AddRaw(this, &FGlitchlessRuntime::OnPreLoadMap);
-	FCoreUObjectDelegates::PostLoadMapWithWorld.AddRaw(this, &FGlitchlessRuntime::OnPostLoadMap);
-#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
-	PRAGMA_DISABLE_DEPRECATION_WARNINGS
-	FCoreUObjectDelegates::OnPackageLoadCompleted.AddRaw(this, &FGlitchlessRuntime::OnPackageLoaded); // only counted: the package is never read
-	PRAGMA_ENABLE_DEPRECATION_WARNINGS
-#endif
-	FWorldDelegates::LevelAddedToWorld.AddRaw(this, &FGlitchlessRuntime::OnLevelAdded);
-	FBlueprintCoreDelegates::OnScriptException.AddRaw(this, &FGlitchlessRuntime::OnScriptException);
-
-#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
-	const FPSORuntimeCreationStats Pso = PipelineStateCache::GetPSORuntimeCreationStats();
-	LastPsoHitches = Pso.GraphicsPSOHitches + Pso.ComputePSOHitches;
-#endif
-	LastLoadFlushes = GFlushAsyncLoadingCount + GSyncLoadCount;
-
-	// The editor's Play In Editor is measured from the editor's own tools, not by quitting the editor.
-	if (!GIsEditor)
-	{
-		if (const std::optional<std::string> Seconds = Core->FlagValue("glitchless-measure"))
-		{
-			MeasureSeconds = FCString::Atod(*GlitchlessText::Tchar(*Seconds));
-			MeasureSeconds = MeasureSeconds > 0 ? MeasureSeconds : 5;
-			MeasureWarmup = FMath::Max(0.0, FCString::Atod(*GlitchlessText::Tchar(Core->FlagValue("glitchless-warmup").value_or("0"))));
-		}
-	}
-	RegisterInput();
-	if (!GIsEditor)
-	{
-		InstallSignalHandlers();
-	}
 }
 
 FGlitchlessRuntime::~FGlitchlessRuntime()
@@ -390,6 +411,11 @@ FGlitchlessRuntime::~FGlitchlessRuntime()
 #endif
 	FWorldDelegates::LevelAddedToWorld.RemoveAll(this);
 	FBlueprintCoreDelegates::OnScriptException.RemoveAll(this);
+	if (bNetworkFailuresBound && GEngine)
+	{
+		GEngine->OnNetworkFailure().Remove(NetworkFailureHandle);
+		GEngine->OnTravelFailure().Remove(TravelFailureHandle);
+	}
 	if (FSlateApplication::IsInitialized())
 	{
 		FSlateApplication::Get().OnApplicationActivationStateChanged().Remove(ActivationHandle);
@@ -404,6 +430,11 @@ FGlitchlessRuntime::~FGlitchlessRuntime()
 	{
 		Core->Transport->Abort();
 	}
+	if (ServerCore && ServerCore->Transport)
+	{
+		ServerCore->Transport->Abort();
+	}
+	ServerCore.Reset();
 	Core.Reset();
 }
 
@@ -432,11 +463,24 @@ void FGlitchlessRuntime::Init(const FGlitchlessOptions& Options)
 		O.Enabled = Options.Enabled.GetValue();
 	}
 	O.Debug = Options.bDebug;
+	O.Properties = Glitchless::FValue::Object();
+	for (const TPair<FString, FString>& P : Options.Properties)
+	{
+		O.Properties.Set(GlitchlessText::Utf8(P.Key), GlitchlessText::Utf8(P.Value));
+	}
+	O.HashGroupIds = Options.bHashGroupIds;
+	O.ServerRegion = GlitchlessText::Utf8(Options.ServerRegion);
+	O.ServerSessionPerMatch = Options.bServerSessionPerMatch;
 	LogDevice->Configure(Options.bCaptureLogErrors, Options.bCaptureWarnings);
 	With([&](Glitchless::FCore& C) {
 		if (C.AppVersion.empty())
 		{
 			C.AppVersion = GlitchlessText::Utf8(GetDefault<UGeneralProjectSettings>()->ProjectVersion);
+		}
+		if (!bHaveOptions)
+		{
+			CoreOptions = O;
+			bHaveOptions = true;
 		}
 		C.Init(O);
 		if (C.IsEnabled())
@@ -468,6 +512,11 @@ void FGlitchlessRuntime::Shutdown(const FString& Reason)
 	bShutDown = true;
 	DrainErrors();
 	With([&](Glitchless::FCore& C) { C.Shutdown(GlitchlessText::Utf8(Reason)); });
+	FScopeLock Lock(&Mutex);
+	if (ServerCore)
+	{
+		ServerCore->Shutdown(GlitchlessText::Utf8(Reason));
+	}
 }
 
 void FGlitchlessRuntime::WatchWorld(UWorld* World)
@@ -577,6 +626,12 @@ void FGlitchlessRuntime::OnBeginFrame()
 	const double Dt = (Now - LastFrameAt) * 1000.0;
 	const bool bFirst = LastFrameAt <= 0;
 	LastFrameAt = Now;
+	if (bDedicated)
+	{
+		// A dedicated server sleeps to hold its tick rate (NetServerMaxTickRate), and has no viewport to time its game
+		// thread: its tick is the time between frames less that sleep.
+		Cost.Game = FMath::Max(0.0, Dt - FApp::GetIdleTime() * 1000.0);
+	}
 	if (bFirst)
 	{
 		// Nothing is measured until there is a last frame to time from, and the startup map loaded before that:
@@ -587,8 +642,291 @@ void FGlitchlessRuntime::OnBeginFrame()
 	if (!bFirst && !bShutDown)
 	{
 		With([&](Glitchless::FCore& C) { C.Frame(Dt, Cost); });
+		// A listen server's tick is its host's frame: the game thread's own time in it, or with no renderer to time
+		// that, the frame less the engine's wait for its frame rate cap.
+		WithServer([&](Glitchless::FCore& C) {
+			Glitchless::FFrameCost Tick;
+			Tick.Game = Cost.Game >= 0 ? Cost.Game : FMath::Max(0.0, Dt - FApp::GetIdleTime() * 1000.0);
+			C.Frame(Dt, Tick);
+		});
+	}
+	if (!bShutDown)
+	{
+		BindNetworkFailures();
+		SampleNetwork(Now);
 	}
 	CheckMeasure(Now);
+}
+
+// ───────────────────────────── the network ─────────────────────────────
+
+namespace
+{
+	std::string LinkName()
+	{
+		switch (FPlatformMisc::GetNetworkConnectionType())
+		{
+		case ENetworkConnectionType::WiFi: return "wifi";
+		case ENetworkConnectionType::Cell: return "cellular";
+		case ENetworkConnectionType::Ethernet: return "wired";
+		default: return std::string(); // a desktop OS says nothing here
+		}
+	}
+
+	double Kbps(double BytesPerSecond)
+	{
+		return BytesPerSecond * 8.0 / 1000.0;
+	}
+
+	// A server's traffic: its connections' own counts, kept every second (the net driver's are stats-only).
+	void Traffic(const UNetDriver* Driver, double& InKbps, double& OutKbps)
+	{
+		double In = 0, Out = 0;
+		for (const UNetConnection* Connection : Driver->ClientConnections)
+		{
+			if (Connection)
+			{
+				In += Connection->InBytesPerSecond;
+				Out += Connection->OutBytesPerSecond;
+			}
+		}
+		InKbps = Kbps(In);
+		OutKbps = Kbps(Out);
+	}
+
+	// The tick rate a server aims for, as the engine caps it: NetServerMaxTickRate on a dedicated server (or a listen
+	// server that clamps), unless t.MaxFPS sets another; 0 when nothing caps it.
+	double TargetTickRate(const UNetDriver* Driver, bool bListen)
+	{
+		const float Cap = GEngine ? GEngine->GetMaxTickRate(0.f, false) : 0.f;
+		if (Cap > 0)
+		{
+			return Cap;
+		}
+		return !bListen || Driver->bClampListenServerTickRate ? Driver->GetNetServerMaxTickRate() : 0;
+	}
+
+	std::string FailureReason(ENetworkFailure::Type Failure, const FString& Error, bool bConnected)
+	{
+		// A server that shuts down closes its connections: its clients hear "Host closed the connection." (as a
+		// failure the server sent, then as the connection lost). One that crashed or left the network times out.
+		const bool bClosed = Error.Contains(TEXT("closed the connection")) || Error.Contains(TEXT("HostClosedConnection"));
+		switch (Failure)
+		{
+		case ENetworkFailure::ConnectionTimeout:
+			return "timeout";
+		case ENetworkFailure::ConnectionLost:
+			return bClosed ? "server_closed" : "connection_lost";
+		case ENetworkFailure::FailureReceived:
+			return bClosed ? "server_closed" : "kicked"; // otherwise the server refused, kicked or banned the player
+		case ENetworkFailure::PendingConnectionFailure:
+		case ENetworkFailure::OutdatedClient:
+		case ENetworkFailure::OutdatedServer:
+		case ENetworkFailure::NetChecksumMismatch:
+		case ENetworkFailure::NetDriverCreateFailure:
+		case ENetworkFailure::NetDriverAlreadyExists:
+			return bConnected ? "other" : "failed_to_connect";
+		default:
+			return "other";
+		}
+	}
+}
+
+// GEngine comes after the module loads, so the network's failures are listened to from the first frame.
+void FGlitchlessRuntime::BindNetworkFailures()
+{
+	if (bNetworkFailuresBound || !GEngine || bDedicated)
+	{
+		return;
+	}
+	bNetworkFailuresBound = true;
+	NetworkFailureHandle = GEngine->OnNetworkFailure().AddLambda([this](UWorld* World, UNetDriver* Driver, ENetworkFailure::Type Failure, const FString& Error) {
+		OnNetworkFailure(World, Driver, FailureReason(Failure, Error, bClientConnected));
+	});
+	TravelFailureHandle = GEngine->OnTravelFailure().AddLambda([this](UWorld* World, ETravelFailure::Type Failure, const FString&) {
+		// Joining a server that never answered: a travel that couldn't make its pending game.
+		if (!bClientConnected && (Failure == ETravelFailure::PendingNetGameCreateFailure || Failure == ETravelFailure::ClientTravelFailure))
+		{
+			OnNetworkFailure(World, nullptr, "failed_to_connect");
+		}
+	});
+}
+
+void FGlitchlessRuntime::OnNetworkFailure(UWorld* World, UNetDriver* Driver, const std::string& Reason)
+{
+	// A host's own failures (its listen socket, a client of its own going away) are not this player's disconnect.
+	if (Driver && Driver->GetNetMode() != NM_Client)
+	{
+		return;
+	}
+	if (GIsEditor && World && WatchedWorld.IsValid() && World != WatchedWorld.Get())
+	{
+		return; // Play In Editor: another player's instance
+	}
+	bClientConnected = false;
+	With([&](Glitchless::FCore& C) { C.Disconnect(Reason); });
+}
+
+void FGlitchlessRuntime::SampleNetwork(double Now)
+{
+	if (Now < NextNetworkAt)
+	{
+		return;
+	}
+	NextNetworkAt = Now + 1.0;
+	UWorld* World = WatchedWorld.Get();
+	UNetDriver* Driver = World ? World->GetNetDriver() : nullptr;
+	const ENetMode Mode = World ? World->GetNetMode() : NM_Standalone;
+	if (bDedicated)
+	{
+		if (Driver)
+		{
+			ServerFacts = ServerInfo(World, Driver, false);
+			With([&](Glitchless::FCore& C) { SampleServer(C, World, Driver, false); });
+		}
+		return;
+	}
+	if (Now >= NextLinkAt)
+	{
+		NextLinkAt = Now + 10.0; // a phone asks the OS, which may be slow
+		Link = LinkName();
+	}
+	if (Mode == NM_ListenServer && Driver)
+	{
+		// The host plays at no round trip of its own; its server session has the players' pings.
+		StartListenServer(World);
+		Glitchless::FNetSample S;
+		S.RttMs = 0;
+		S.Host = true;
+		S.Transport = "unreal";
+		S.Link = Link;
+		Traffic(Driver, S.InKbps, S.OutKbps);
+		With([&](Glitchless::FCore& C) { C.NetSample(S); });
+		FScopeLock Lock(&Mutex);
+		if (ServerCore && !ServerCore->IsEnded())
+		{
+			ServerFacts = ServerInfo(World, Driver, true);
+			SampleServer(*ServerCore, World, Driver, true);
+		}
+		return;
+	}
+	{
+		FScopeLock Lock(&Mutex);
+		if (ServerCore && !ServerCore->IsEnded())
+		{
+			ServerCore->EndSession("closed"); // stopped hosting: what is waiting goes, without holding up the game
+		}
+	}
+	UNetConnection* Connection = Mode == NM_Client && Driver ? Driver->ServerConnection.Get() : nullptr;
+	if (Connection && Connection->GetConnectionState() == USOCK_Open)
+	{
+		bClientConnected = true;
+		Glitchless::FNetSample S;
+		S.Transport = "unreal";
+		S.Link = Link;
+		// AvgLag is the round trip, in seconds, averaged over the connection's last stat period (a second).
+		S.RttMs = Connection->AvgLag > 0 ? Connection->AvgLag * 1000.0 : -1;
+		if (S.RttMs < 0)
+		{
+			const APlayerController* Player = World->GetFirstPlayerController();
+			if (Player && Player->PlayerState)
+			{
+				S.RttMs = Player->PlayerState->GetPingInMilliseconds();
+			}
+		}
+		// The worse way of the two: either one losing packets is what the player feels.
+		S.LossPct = FMath::Max(Connection->GetInLossPercentage().GetLossPercentage(), Connection->GetOutLossPercentage().GetLossPercentage()) * 100.0;
+		S.JitterMs = Connection->GetAverageJitterInMS();
+		S.InKbps = Kbps(Connection->InBytesPerSecond);
+		S.OutKbps = Kbps(Connection->OutBytesPerSecond);
+		With([&](Glitchless::FCore& C) { C.NetSample(S); });
+	}
+	else if (bClientConnected)
+	{
+		bClientConnected = false; // left the match without a failure: the normal way
+		With([](Glitchless::FCore& C) { C.NetEnded(); });
+	}
+}
+
+void FGlitchlessRuntime::SampleServer(Glitchless::FCore& C, UWorld* World, UNetDriver* Driver, bool bListen)
+{
+	Glitchless::FServerSample S;
+	S.Players = Driver->ClientConnections.Num();
+	if (bListen)
+	{
+		S.Players += World->GetGameInstance() ? World->GetGameInstance()->GetNumLocalPlayers() : 1;
+	}
+	for (const UNetConnection* Connection : Driver->ClientConnections)
+	{
+		if (Connection && Connection->AvgLag > 0)
+		{
+			S.RttMs.push_back(Connection->AvgLag * 1000.0);
+		}
+	}
+	// A listen server that nothing caps ticks with its host's frames, at the display's rate.
+	const double Target = TargetTickRate(Driver, bListen);
+	S.TickHz = Target > 0 ? Target : 1000.0 / FMath::Max(1.0, Core->GetBudgetMs());
+	if (!Driver->IsUsingIrisReplication())
+	{
+		S.NetObjects = Driver->GetNetworkObjectList().GetActiveObjects().Num();
+	}
+	Traffic(Driver, S.InKbps, S.OutKbps);
+	S.CpuPct = FPlatformTime::GetCPUTime().CPUTimePctRelative; // percent of one core
+	S.MemMb = static_cast<double>(FPlatformMemory::GetStats().UsedPhysical) / (1024.0 * 1024.0);
+	C.ServerSample(S);
+}
+
+// What a server says about itself when its session starts: its tick rate, its players at most, how it runs, and
+// the machine (its OS, cores and memory; never its address or name).
+Glitchless::FValue FGlitchlessRuntime::ServerInfo(UWorld* World, UNetDriver* Driver, bool bListen) const
+{
+	Glitchless::FValue S = Glitchless::FValue::Object();
+	const double Target = Driver ? TargetTickRate(Driver, bListen) : 0;
+	S.Set("tick_hz", Target > 0 ? Glitchless::FValue(static_cast<int64_t>(FMath::RoundToInt(Target))) : Glitchless::FValue());
+	const AGameModeBase* Mode = World ? World->GetAuthGameMode() : nullptr;
+	S.Set("max_players", Mode && Mode->GameSession ? Glitchless::FValue(Mode->GameSession->MaxPlayers) : Glitchless::FValue());
+	S.Set("build", bListen ? "listen" : "dedicated");
+	Glitchless::FValue Host = Glitchless::FValue::Object();
+	Host.Set("os", GlitchlessText::Utf8(GlitchlessDevice::OsName()));
+	Host.Set("cores", FPlatformMisc::NumberOfCoresIncludingHyperthreads());
+	Host.Set("memory_gb", static_cast<int64_t>(FMath::RoundToInt(static_cast<double>(FPlatformMemory::GetConstants().TotalPhysical) / (1024.0 * 1024.0 * 1024.0))));
+	S.Set("host", std::move(Host));
+	return S;
+}
+
+// The game started hosting: a second core gives the listen server a session of its own, in the server role, with
+// the map and the match its host has.
+void FGlitchlessRuntime::StartListenServer(UWorld* World)
+{
+	FScopeLock Lock(&Mutex);
+	if (!bHaveOptions || !Core->IsEnabled())
+	{
+		return;
+	}
+	if (ServerCore)
+	{
+		ServerCore->StartNewSession(); // hosting again
+		return;
+	}
+	ServerFacts = ServerInfo(World, World->GetNetDriver(), true);
+	ServerCore = MakeUnique<Glitchless::FCore>();
+	ServerCore->Role = Glitchless::ERole::Server;
+	ServerCore->ServerInfo = [this]() { return ServerFacts; };
+	Configure(*ServerCore, TEXT("Server"));
+	ServerCore->AppVersion = Core->AppVersion;
+	ServerCore->Init(CoreOptions);
+	if (Core->HasManualLevels() && Core->GetLevel())
+	{
+		ServerCore->LevelStart(*Core->GetLevel());
+	}
+	else
+	{
+		ServerCore->OnMapLoaded(GlitchlessText::Utf8(MapName(World)), WatchedMapHandle);
+	}
+	for (const char* Kind : {"match", "party"})
+	{
+		ServerCore->AdoptGroup(Kind, Core->GetGroup(Kind));
+	}
 }
 
 void FGlitchlessRuntime::OnPreGarbageCollect()
@@ -900,6 +1238,15 @@ void FGlitchlessRuntime::ReportCrashNow(const std::string& Message, const std::s
 #endif
 	R->Core->Log = nullptr;
 	R->Core->ReportCrash("crash", Message, Stack);
+	if (R->ServerCore && !R->ServerCore->IsEnded())
+	{
+		// A listen server's crash ends its match for everyone: its server session says so too.
+#if GLITCHLESS_SIGNALS
+		R->ServerCore->Files = Glitchless::FFileSystem();
+#endif
+		R->ServerCore->Log = nullptr;
+		R->ServerCore->ReportCrash("crash", Message, Stack);
+	}
 	R->Mutex.Unlock();
 }
 

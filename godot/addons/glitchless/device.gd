@@ -45,6 +45,40 @@ static func info(full: bool) -> Dictionary:
 	return d
 
 
+## A dedicated server's own machine, for session_start's server.host (SPEC §5,
+## server mode): its OS, cores and memory, never its address or host name.
+static func server_host() -> Dictionary:
+	var mem := float(OS.get_memory_info().get("physical", -1))
+	return {"os": OS.get_name(), "cores": OS.get_processor_count(), "memory_gb": roundi(mem / 1073741824.0) if mem > 0 else null}
+
+
+## This process's resident memory (mem_mb) and the CPU seconds it has used
+## (cpu_s), for server windows: from /proc/self on Linux, where dedicated
+## servers run. Elsewhere only mem_mb, from the engine's static memory, which
+## debug builds alone count.
+static func process_usage() -> Dictionary:
+	if OS.get_name() == "Linux":
+		return parse_proc(_read_small("/proc/self/status"), _read_small("/proc/self/stat"))
+	var static_mem := OS.get_static_memory_usage()
+	return {"mem_mb": snappedf(static_mem / 1048576.0, 0.1)} if static_mem > 0 else {}
+
+
+## VmRSS from /proc/self/status, and utime plus stime from /proc/self/stat
+## (fields 14 and 15, in clock ticks of 1/100 s), counted after the ")" that
+## ends the process name, since the name itself can hold spaces.
+static func parse_proc(status: String, stat: String) -> Dictionary:
+	var out := {}
+	for line in status.split("\n"):
+		if line.begins_with("VmRSS:"):
+			out.mem_mb = snappedf(float(line.substr(6).strip_edges().split(" ")[0]) / 1024.0, 0.1)
+	var close := stat.rfind(")")
+	if close > 0:
+		var fields := stat.substr(close + 1).strip_edges().split(" ")
+		if fields.size() > 12:
+			out.cpu_s = (float(fields[11]) + float(fields[12])) / 100.0
+	return out
+
+
 static var _facts: Variant = null  # read once a launch
 
 

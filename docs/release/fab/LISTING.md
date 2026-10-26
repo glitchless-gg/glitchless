@@ -29,9 +29,10 @@ Add the plugin, fill in three settings, and every play session reports:
 
 • Stutter, with its cause. Every frame is timed on the game, render and RHI threads and the GPU. Each hitch says what held it up: a pipeline state created on the spot (a PSO), garbage collection, a map load, a streamed level, an asset load, or a long game or render frame.
 • Errors and crashes. UE_LOG errors, ensures with their callstacks, Blueprint runtime errors (Accessed None and the rest) and crashes, which are written down as the game dies and sent the next time it starts. They're grouped into issues, each with what the player did just before.
-• Where players give up. Maps are levels on their own; deaths, fails and quits feed level funnels, death heatmaps and rage-quit detection.
+• Where players give up. Maps are levels on their own; deaths, fails, levels left halfway and quits feed level funnels, death heatmaps and rage-quit detection.
 • Bug reports. Players press F8 (or a button in your menu) to send a note and a screenshot from where they are.
 • Leaks. UObject and actor counts and memory, level by level.
+• Steam and TestFlight. On Steam, each session says its build, branch and hardware (Steam Deck included), so you can compare a beta branch or a Deck against everyone else. On iOS, TestFlight and development installs count as testers, not players, and their purchases stay out of revenue.
 
 Glitchless then ranks what it found. Each finding says what's wrong, how many players it hits and what usually fixes it, in Unreal's terms: turn PSO precaching on and ship a bundled PSO cache; pool actors instead of making a UObject per shot; test a pointer with IsValid(). Your coding agent (Claude Code, Codex, Cursor and others) reads the same findings over MCP, changes the game, and measures the new build with -glitchless-measure.
 
@@ -53,11 +54,13 @@ Fab §1.8.4: every relevant field filled in, and every dependency or prerequisit
 ```text
 Features:
 - Frame times in 5-second windows (p50, p95, p99 and a mergeable sketch) on the game, render and RHI threads and the GPU
-- Hitches with their likely causes: pso_compile, shader_compile (editor), gc, map_load, level_stream, asset_load, script, render, frozen
+- Hitches with their likely causes: pso_compile, shader_compile (editor), gc, map_load, level_stream, asset_load, script, render, gpu_or_os, frozen
 - UE_LOG errors, ensures, Blueprint runtime errors and crashes (written to disk as the game dies, sent on the next launch)
-- Maps as levels, deaths, level complete and fail, custom events (Track), gauges (Set Context), positions for heatmaps
+- Maps as levels, deaths, level complete, fail and abandon, custom events (Track), gauges (Set Context), positions for heatmaps
 - In-game bug reports: a key (F8) or a Blueprint node opens a Slate box with a screenshot and a note
-- An offline outbox, gzip and retries; -glitchless-measure prints frame stats as JSON for agents and CI
+- An offline outbox, gzip and retries, with an ID on every batch so a retried send is stored once; -glitchless-measure prints frame stats as JSON for agents and CI
+- Steam facts per session when the game already uses Steamworks (build, branch, Steam Deck and other hardware, Proton, Big Picture); never a Steam ID
+- iOS: App Store, TestFlight and development installs told apart; testers' sessions and sandbox purchases kept out of players and revenue
 - A Project Settings page, a Blueprint function library, a C++ API and a game instance subsystem
 
 Code Modules:
@@ -75,7 +78,7 @@ Important/Additional Notes:
 - Needs a Glitchless server to send to: the open-source server (Node.js 20 or later, MIT, https://github.com/glitchless-gg/glitchless) or the hosted service at https://glitchless.gg.
 - Network use: HTTPS POST requests (or HTTP to a server on your own machine) of gzipped JSON to the Intake URL you set, every 15 seconds and when the game quits. Nothing is sent until Service and Intake are set. Enabled off, or -glitchless-off on the command line, sends nothing.
 - Privacy: anonymous by default, with no player ID and no device identifier. PRIVACY.md in the plugin lists every field each mode sends.
-- Dependencies: engine modules only (HTTP, ImageWrapper, Slate, RHI and others). No other plugins.
+- Dependencies: engine modules only (HTTP, ImageWrapper, Slate, RHI and others). No other plugins; Steam facts are read only through the Steamworks the game already set up.
 - Third-party code: the natural logarithm from fdlibm 5.3 (Sun Microsystems, freely redistributable, as in V8), so frame-time buckets match the JavaScript SDK exactly.
 ```
 
@@ -109,8 +112,8 @@ and Pricing page).
 | Engine version | **5.8** |
 | Target platforms | **Windows** and **Mac** (see the note under Technical information) |
 | Distribution method | **Engine Plugin** (Fab installs code plugins into `Engine/Plugins/Fab`, §4.3.6.3.a) |
-| Project file link | a direct download of `Glitchless_0.1.0_UE5.8.zip` that needs no sign-in (§4.2.1, and the asset file format page) |
-| Version notes | `0.1.0: first release for Unreal Engine 5.8.` |
+| Project file link | a direct download of `Glitchless_0.3.1_UE5.8.zip` that needs no sign-in (§4.2.1, and the asset file format page) |
+| Version notes | `0.3.1: first Fab release, for Unreal Engine 5.8.` |
 
 ## Third-party software declaration (Fab §4.2.5)
 
@@ -145,6 +148,20 @@ The rest is engine code (HTTP, ImageWrapper, Slate, FCompression for gzip). Ther
 | Support email | `support@glitchless.gg` |
 | Support URL | `https://github.com/glitchless-gg/glitchless/issues` |
 | Documentation URL | `https://github.com/glitchless-gg/glitchless/blob/main/unreal/Plugins/Glitchless/README.md` |
+| Profile photo | `media/profile-photo-500.png` (500 × 500, the logo on full navy) |
+| Cover photo | `media/cover.png` (1920 × 540) |
+
+Bio:
+
+```text
+Glitchless makes observability tools for game developers and their coding agents.
+
+Our plugins time every frame on real players' machines, catch crashes and errors, and show where players quit. Your coding agent (Claude Code, Codex, Cursor and others) reads the same data over MCP, so you can ask it why a level stutters and let it fix the cause.
+
+The Unreal plugin is free C++ source with Blueprint nodes. It works with the hosted service at glitchless.gg or with a server you run yourself from our open-source repo. We also make SDKs for Unity, Godot, Three.js and GameMaker.
+
+Support: support@glitchless.gg · github.com/glitchless-gg/glitchless/issues
+```
 
 ## FabURL (Fab §4.3.6.c)
 
@@ -182,5 +199,5 @@ The images are in [`media/`](media), each 1920 × 1080 PNG. [README.md](README.m
 | Gallery 2 | `media/gallery-02-performance.png` | the Performance page: frame time and hitch causes by level |
 | Gallery 3 | `media/gallery-03-errors.png` | the Errors page: the ensure with its stack and the events before it |
 | Gallery 4 | `media/gallery-04-demo.png` | the demo's gallery level as the fireworks go off |
-| Gallery 5 | `media/gallery-05-settings.png` | the no-code setup in Project Settings, and the Blueprint nodes |
+| Gallery 5 | `media/gallery-05-setup.png` | the no-code setup in Project Settings, and the Blueprint nodes |
 | Gallery 6 | `media/gallery-06-agent.png` | an agent's view: the finding over MCP and `-glitchless-measure` JSON |

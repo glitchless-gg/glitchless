@@ -6,6 +6,7 @@ import { LevelMap } from '../heatmap.jsx';
 import { fmtNum, fmtMs, fmtDuration, fmtTime, timeAgo, frameStatus } from '../format.js';
 import { NoGame } from './Overview.jsx';
 import { CsvButton, sessionsCsv } from '../csv.jsx';
+import { GroupChips, PropChips, countsLine, reasonWords, fmtTick } from '../genre.jsx';
 
 export function Sessions() {
   const f = useFilters();
@@ -93,6 +94,7 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
     // A shared board's sessions come without ids and devices (server/src/board.js).
     ids: all.some((s) => 'session_id' in s),
     devices: all.some((s) => 'browser' in s),
+    props: all.some((s) => s.props && Object.keys(s.props).length),
   };
   const open = has.ids && !f.readOnly;
   const eventNames = [...new Set(all.flatMap((s) => Object.keys(s.events || {})))];
@@ -105,6 +107,7 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
             {has.ids && <th>Player</th>}
             <th>Version</th>
             {has.devices && <th>Device</th>}
+            {has.props && <th>Properties</th>}
             {eventNames.length > 0 && <th>Events</th>}
             {has.levels && <th>Levels</th>}
             <th className="num">Duration</th>
@@ -131,6 +134,11 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
               {has.devices && (
                 <td style={{ fontSize: 12 }}>
                   {[s.browser, s.os, s.gpu].filter(Boolean).join(' · ') || '–'} {s.gpu_tier && <span className="tag">{s.gpu_tier}</span>}
+                </td>
+              )}
+              {has.props && (
+                <td>
+                  <PropChips props={s.props} />
                 </td>
               )}
               {eventNames.length > 0 && (
@@ -175,6 +183,7 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
 function describe(e) {
   switch (e.type) {
     case 'session_start':
+      if (e.server) return ['Server started', [e.server.build, e.server.region, e.server.tick_hz && `${e.server.tick_hz} Hz`, e.device?.os].filter(Boolean).join(' · ')];
       return [`Session started`, `${e.device?.browser ?? ''} ${e.device?.browser_version ?? ''} · ${e.device?.os ?? ''} · ${e.device?.gpu ?? ''} (${e.device?.gpu_tier ?? '?'})`];
     case 'level_start':
       return [`▶ ${e.level} started`, ''];
@@ -193,9 +202,23 @@ function describe(e) {
     case 'load':
       return e.ttff_ms != null ? [`First frame`, `${e.ttff_ms}ms after navigation`] : [`First input`, `${e.ttp_ms}ms`];
     case 'session_end':
-      return [`Session ended`, `${e.reason} after ${fmtDuration(e.duration_s)}`];
+      return [`Session ended`, [e.reason, e.duration_s != null && `after ${fmtDuration(e.duration_s)}`].filter(Boolean).join(' ')];
     case 'bug_report':
       return [`Bug report: ${e.note ? `"${e.note}"` : '(no note)'}`, e.has_screenshot ? 'with a screenshot' : ''];
+    case 'level_abandon':
+      return [`${e.level} abandoned`, e.reason === 'disconnect' ? 'the connection dropped' : e.reason || ''];
+    case 'counts':
+      return [`Counted: ${countsLine(e.counts)}`, `over ${e.duration_s}s${e.dropped ? ` · ${fmtNum(e.dropped)} left out` : ''}`];
+    case 'group':
+      return e.id ? [`Joined a ${e.kind}`, `${e.id}${e.attrs ? ` · ${Object.entries(e.attrs).map(([k, v]) => `${k}=${v}`).join(' ')}` : ''}`] : [`Left the ${e.kind}`, ''];
+    case 'props':
+      return ['Properties set', Object.entries(e.props || {}).map(([k, v]) => `${k}=${v ?? '(cleared)'}`).join(' ')];
+    case 'disconnect':
+      return [`Disconnected: ${reasonWords(e.reason).toLowerCase()}`, [e.connected_s != null && `after ${fmtDuration(e.connected_s)} connected`, e.rtt_p95 != null && `slowest 5% ping ${fmtNum(e.rtt_p95)} ms`, e.loss_pct != null && `${fmtNum(e.loss_pct, 1)}% lost`].filter(Boolean).join(' · ')];
+    case 'reconnect':
+      return ['Reconnected', e.after_s != null ? `after ${fmtDuration(e.after_s)}` : ''];
+    case 'server_window':
+      return [`Ticks: slowest 5% ${fmtTick(e.tick_p95)}`, [e.players != null && `${fmtNum(e.players)} players`, e.late && `${fmtNum(e.late)} late`, e.cpu_pct != null && `CPU ${fmtNum(e.cpu_pct, 0)}%`, e.mem_mb != null && `${fmtNum(e.mem_mb)} MB`].filter(Boolean).join(' · ')];
     default:
       return [e.type, ''];
   }
@@ -208,13 +231,23 @@ function cls(e) {
   if (e.type.startsWith('level')) return 'level';
   if (e.type === 'custom' && e.name === 'annotation') return 'annotation';
   if (e.type === 'bug_report') return 'bug';
+  if (e.type === 'disconnect') return 'hitch';
+  if (e.type === 'group') return 'level';
   return '';
+}
+
+// Events a session can send by the hundred (pickups, counter windows, a server's tick windows): folded away unless asked.
+function noisyKey(e) {
+  if (e.type === 'custom') return e.name;
+  return { counts: 'counters', server_window: 'server windows' }[e.type] ?? null;
 }
 
 export function SessionDetail({ route }) {
   const f = useFilters();
   const id = route.arg;
-  const { data } = useQuery('session', { service: f.service, id, from: Date.now() - 7 * 86400e3 }, { enabled: !!f.service });
+  // A server's session lives under the game's companion service (?service=<game>.server, from the Servers view).
+  const service = route.query.get('service') || f.service;
+  const { data } = useQuery('session', { service, id, from: Date.now() - 7 * 86400e3 }, { enabled: !!service });
   const [t, setT] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
@@ -258,9 +291,12 @@ export function SessionDetail({ route }) {
   const s = data.session;
   // High-frequency custom events (pickups) drown out the story; collapse them unless asked.
   const counts = {};
-  for (const e of data.timeline) if (e.type === 'custom') counts[e.name] = (counts[e.name] || 0) + 1;
+  for (const e of data.timeline) if (noisyKey(e)) counts[noisyKey(e)] = (counts[noisyKey(e)] || 0) + 1;
   const noisy = new Set(Object.entries(counts).filter(([, n]) => n > 12).map(([k]) => k));
-  const timeline = showNoisy ? data.timeline : data.timeline.filter((e) => !(e.type === 'custom' && noisy.has(e.name)));
+  const timeline = showNoisy ? data.timeline : data.timeline.filter((e) => !noisy.has(noisyKey(e)));
+  // A dedicated server (A9): what it said about itself, and its ticks in place of frames.
+  const server = data.timeline.find((e) => e.type === 'session_start')?.server;
+  const ticks = data.timeline.filter((e) => e.type === 'server_window');
   const map = state && data.maps?.[state.level];
   const deathsHere = data.timeline.filter((e) => e.type === 'death' && e.level === state?.level && e.ts <= (t ?? 0));
   const frames = data.frames || [];
@@ -296,12 +332,21 @@ export function SessionDetail({ route }) {
             </div>
             {fmtDuration(s.duration_s)}
           </div>
-          <div>
-            <div className="muted" style={{ fontSize: 11 }}>
-              DEVICE
+          {server ? (
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                SERVER
+              </div>
+              {[server.build, server.region, server.tick_hz && `${server.tick_hz} Hz`, server.max_players && `room for ${server.max_players}`, server.host?.cores && `${server.host.cores} cores`].filter(Boolean).join(' · ')}
             </div>
-            {s.browser} · {s.os} · {s.gpu} <span className="tag">{s.gpu_tier}</span>
-          </div>
+          ) : (
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                DEVICE
+              </div>
+              {[s.browser, s.os, s.gpu].filter(Boolean).join(' · ') || '–'} {s.gpu_tier && <span className="tag">{s.gpu_tier}</span>}
+            </div>
+          )}
           <div>
             <div className="muted" style={{ fontSize: 11 }}>
               VERSION
@@ -309,12 +354,30 @@ export function SessionDetail({ route }) {
             <span className="tag">{s.version}</span> {s.session_type === 'synthetic' && <Status kind="brand">synthetic</Status>}
             {s.session_type === 'tester' && <Status>{s.device?.distribution === 'testflight' ? 'TestFlight tester' : 'tester'}</Status>}
           </div>
-          <div>
-            <div className="muted" style={{ fontSize: 11 }}>
-              P95 FRAME
+          {s.p95 != null && (
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                P95 FRAME
+              </div>
+              <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
             </div>
-            <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
-          </div>
+          )}
+          {s.props && Object.keys(s.props).length > 0 && (
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                PROPERTIES
+              </div>
+              <PropChips props={s.props} />
+            </div>
+          )}
+          {s.groups?.length > 0 && (
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>
+                {s.groups.some((g) => g.kind === 'match') ? 'MATCHES' : 'GROUPS'}
+              </div>
+              <GroupChips groups={s.groups} start={s.start} />
+            </div>
+          )}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
             {s.crashed && <Status kind="alert">crashed</Status>}
             {s.rage_quit && <Status kind="warn">rage quit on {s.rage?.level}</Status>}
@@ -323,6 +386,8 @@ export function SessionDetail({ route }) {
           </div>
         </div>
       </Widget>
+      {/* A server has no player on a map to replay. */}
+      {!(server && !positions.length) && (
       <Widget
         span={8}
         title={`Game replay${state ? ` — ${state.level}` : ''}`}
@@ -352,8 +417,9 @@ export function SessionDetail({ route }) {
           <div className="empty">No position data recorded for this session.</div>
         )}
       </Widget>
+      )}
       <Widget
-        span={4}
+        span={server && !positions.length ? 12 : 4}
         title="Timeline"
         sub="click to seek"
         flush
@@ -392,12 +458,31 @@ export function SessionDetail({ route }) {
                       Open the report →
                     </a>
                   )}
+                  {e.type === 'group' && e.kind === 'match' && e.id && (
+                    <a href={`#/matches/${encodeURIComponent(e.id)}`} onClick={(ev) => ev.stopPropagation()} style={{ fontSize: 11.5 }}>
+                      Open the match →
+                    </a>
+                  )}
                 </span>
               </div>
             );
           })}
         </div>
       </Widget>
+      {ticks.length > 0 && !frames.length ? (
+        <Widget span={12} title="Ticks during this session" sub="the slowest 5% of ticks and the slowest one, per 5s window">
+          <TimeSeries
+            ts={ticks.map((w) => w.ts)}
+            height={180}
+            format={fmtTick}
+            series={[
+              { label: 'slowest 5% tick', values: ticks.map((w) => w.tick_p95), color: 'var(--ink)', width: 2 },
+              { label: 'slowest tick', values: ticks.map((w) => w.tick_max), color: '#ff6b57', dash: [3, 3] },
+            ]}
+            thresholds={server?.tick_hz ? [{ value: 1000 / server.tick_hz, color: '#1fae84', label: 'budget' }] : []}
+          />
+        </Widget>
+      ) : (
       <Widget span={12} title="Frame time during this session" sub="p95 per 5s window, with draw calls">
         <TimeSeries
           ts={frames.map((fr) => fr.ts)}
@@ -412,6 +497,7 @@ export function SessionDetail({ route }) {
           onPick={(i) => !playing && frames[i] && setT(Math.max(t0, Math.min(t1, frames[i].ts)))}
         />
       </Widget>
+      )}
     </div>
   );
 }

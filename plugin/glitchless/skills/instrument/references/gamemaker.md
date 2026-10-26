@@ -6,7 +6,7 @@ sections: the game's own metrics and dashboard, and the report.
 
 
 The Glitchless SDK for GameMaker (`gamemaker/` in the Glitchless repo; `~/.glitchless/gamemaker` if it's cloned
-there) is GML: eight scripts and two objects. Its README (`gamemaker/README.md`) has the whole API; this is the
+there) is GML: nine scripts and two objects. Its README (`gamemaker/README.md`) has the whole API; this is the
 order to wire it in.
 
 ## 1. Read the project
@@ -48,13 +48,49 @@ thing in it, or crashes go unreported.
   own. A game whose levels aren't rooms calls `glitchless_level_start(id)` (the first call turns the rooms off), and
   every game calls `glitchless_level_complete(undefined, score)` and `glitchless_level_fail(undefined, cause)` where
   a level ends, and `glitchless_level_abandon()` where the player leaves one mid-level (the menu, a restart): never a
-  fail. Quitting mid-level sends the abandon by itself.
+  fail. Quitting mid-level sends the abandon by itself. Where an attempt has a difficulty, mode, party size or build,
+  pass it: `glitchless_level_start("nmd_ghoa", { tier: "pit_80", party_size: 3 })` (lists of words are fine).
 - **Deaths:** `glitchless_death(x, y, cause)` where the player dies.
 - **Gauges:** `glitchless_set_context({ enemies: instance_number(obj_enemy), bullets: instance_number(obj_bullet) })`
   in a controller's End Step: whatever is created in bulk. The SDK already sends `instances`, `surfaces`, `ds_maps`,
   `ds_lists` and `buffers`.
 - **Errors the game catches:** `glitchless_error(_e)` in its `catch` blocks.
 - **Quit button:** `glitchless_quit()` in place of `game_end()`, so the last batch goes now, not next launch.
+
+## 4c. Streams, properties, groups and zones
+
+- **Track a moment, count a stream.** Anything that happens many times a minute per player (a shot, a kill, a coin,
+  a tap, XP and gold) is `glitchless_count("kill", { monster: "elite" })` or `glitchless_count("gold", { source:
+  "loot", amount: 35 })`, never `glitchless_track`: counts are added up on the device and go once a window. Words and
+  true/false split the count (at most 4), numbers are added up (at most 4). Outcomes stay `glitchless_track`, once a
+  match or run, with booleans and numbers: `glitchless_track("match_end", { hero: "ember", won: true, duration_s:
+  1930 })`.
+- **Properties** are what holds for the whole session: rank tier, class, region, mode, input, a spender band.
+  Call `glitchless_set_properties({ rank: "diamond", region: "eu-west" })` where the game learns them (after
+  sign-in, at the menu, at matchmaking), or pass `properties` in the options. Bands, not exact numbers
+  (`level_band: "30-39"`); never a name, account or anything the player typed (the SDK drops keys such as `email`
+  and values shaped like an ID). What changes per match (hero, deck, map) goes on events or level attributes.
+- **Groups:** `glitchless_set_group("match", id)` when the game's server hands out a match or lobby ID (shared by
+  everyone in it), `glitchless_set_group("party", id)` while a party lasts, and `glitchless_set_group("match",
+  undefined)` when it ends. IDs are sent hashed. A roguelite calls `glitchless_set_group("run")` at a run's start
+  (it returns the run's ID; save it with the run to resume it with `glitchless_set_group("run", saved_id)`) and
+  `glitchless_set_group("run", undefined)` at its end.
+- **Zones:** in an open world (MMO regions, metroidvania rooms) where levels don't start and end,
+  `glitchless_set_zone(name)` as the player moves between areas. Keep levels for things that end.
+
+## 4d. Multiplayer (GameMaker's `network_*`)
+
+Look for `network_create_socket`, `network_connect`/`network_connect_async`, `network_create_server` and the
+`Async - Networking` events. GameMaker doesn't measure the connection, so:
+
+- On the client, ping the server about once a second with a timestamp it sends straight back, and call
+  `glitchless_net_sample(current_time - sent)` when the answer comes (`loss_pct` and `jitter_ms` too, if the game
+  counts them). The host of a listen server sends none.
+- Call `glitchless_disconnect(reason)` where the game sees the connection go: `failed_to_connect` from a failed
+  `network_type_non_blocking_connect`, `connection_lost` when `network_send_packet` returns below 0, `timeout`
+  after several seconds without an answer, `kicked` or `server_closed` when the server says so. `glitchless_reconnect()`
+  when it gets back in. A level going ends as an abandon with reason `disconnect`.
+- `gamemaker/README.md` ("Multiplayer: ping and disconnects") has a whole client and server example to adapt.
 
 ## 4b. Bug reports from players (ask first)
 

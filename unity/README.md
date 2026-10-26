@@ -6,7 +6,7 @@
   - `make-fixtures.mjs` writes the fixture the EditMode tests check the C# sketch and fingerprints against.
 - [`PUBLISHING.md`](PUBLISHING.md): releasing a version (git tags, OpenUPM, the Asset Store).
 
-This folder is itself a Unity project on the current LTS (Unity 6.3, 6000.3.27f1) that embeds the package; `Assets/Editor/SampleBuilder.cs` imports the sample and builds it.
+This folder is itself a Unity project on the current LTS (Unity 6.3, 6000.3.27f1) that embeds the package; `Assets/Editor/SampleBuilder.cs` imports the sample and builds it. It also has Netcode for GameObjects 2.13 (the SDK itself doesn't depend on it), for the PlayMode test that runs an NGO server and client in one run.
 
 ## Try it
 

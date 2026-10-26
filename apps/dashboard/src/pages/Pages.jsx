@@ -1,6 +1,6 @@
-// The game's pages: rename, reorder, remove, add a board or a built-in view, or edit the whole dashboard as
-// JSON. A coding agent does the same over MCP (glitchless_set_dashboard).
-import { useState } from 'react';
+// The game's pages: rename, reorder, remove, add a board or a built-in view, keep a board to some sessions (its
+// `where`), or edit the whole dashboard as JSON. A coding agent does the same over MCP (glitchless_set_dashboard).
+import { Fragment, useEffect, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { VIEWS, saveDashboard, resetDashboard } from '../dashboard.js';
 import { Widget, Icon } from '../components.jsx';
@@ -71,7 +71,8 @@ export function Pages() {
         <table className="dt pages">
           <tbody>
             {pages.map((p, i) => (
-              <tr key={p.id}>
+              <Fragment key={p.id}>
+              <tr className={p.panels ? 'has-where' : undefined}>
                 <td style={{ width: 28 }}>
                   <Icon name={p.icon || (p.view ? VIEWS[p.view].icon : 'board')} />
                 </td>
@@ -105,6 +106,15 @@ export function Pages() {
                   </button>
                 </td>
               </tr>
+              {p.panels && (
+                <tr className="where-row">
+                  <td />
+                  <td colSpan={3}>
+                    <WhereInput where={p.where} properties={f.properties || []} onChange={(where) => change(p, { where })} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -158,6 +168,50 @@ export function Pages() {
         </Widget>
       )}
       <BrandSettings service={f.service} />
+    </div>
+  );
+}
+
+// A board page that shows only some sessions (A6, SPEC §3b where): one property and the values it must have, such as
+// rank = diamond, master. Empty, the page shows every session.
+function WhereInput({ where, properties, onChange }) {
+  const [first] = Object.entries(where || {});
+  const [key, setKey] = useState(first ? first[0].replace(/^\$/, '') : '');
+  const [values, setValues] = useState(first ? [].concat(first[1]).join(', ') : '');
+  const built = (k, v) => {
+    const list = v.split(',').map((x) => x.trim()).filter(Boolean);
+    return k.trim() && list.length ? { [`$${k.trim()}`]: list } : undefined;
+  };
+  const update = (k, v) => {
+    setKey(k);
+    setValues(v);
+    onChange(built(k, v));
+  };
+  // Changed from outside (Discard, a save, the JSON): show the page's own where again.
+  useEffect(() => {
+    if (JSON.stringify(built(key, values)) === JSON.stringify(where)) return;
+    setKey(first ? first[0].replace(/^\$/, '') : '');
+    setValues(first ? [].concat(first[1]).join(', ') : '');
+  }, [JSON.stringify(where)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const known = properties.find((p) => p.key === key.trim());
+  return (
+    <div className="where-input">
+      <span>only sessions with</span>
+      <input className="input" list="where-keys" value={key} placeholder="property" onChange={(e) => update(e.target.value, values)} aria-label="Property the page keeps to" />
+      <span>=</span>
+      <input className="input" list={known ? `where-values-${known.key}` : undefined} value={values} placeholder="values, comma-separated" onChange={(e) => update(key, e.target.value)} aria-label="Values the property must have" />
+      <datalist id="where-keys">
+        {properties.map((p) => (
+          <option key={p.key} value={p.key} />
+        ))}
+      </datalist>
+      {known && (
+        <datalist id={`where-values-${known.key}`}>
+          {known.values.map((v) => (
+            <option key={v.value} value={v.value} />
+          ))}
+        </datalist>
+      )}
     </div>
   );
 }

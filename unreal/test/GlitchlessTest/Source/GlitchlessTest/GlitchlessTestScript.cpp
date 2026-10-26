@@ -36,7 +36,8 @@ namespace
 void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	if (!FParse::Param(FCommandLine::Get(), TEXT("autoplay")) || FCString::Strifind(FCommandLine::Get(), TEXT("glitchless-measure")))
+	bMultiplayer = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-mp"));
+	if ((!bMultiplayer && !FParse::Param(FCommandLine::Get(), TEXT("autoplay"))) || FCString::Strifind(FCommandLine::Get(), TEXT("glitchless-measure")))
 	{
 		return;
 	}
@@ -44,6 +45,9 @@ void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 	bFatal = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-fatal"));
 	bDialog = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-dialog"));
 	bLeave = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-leave"));
+	bGenre = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-genre"));
+	FParse::Value(FCommandLine::Get(), TEXT("glitchless-test-quit="), QuitAfter);
+	bSolo = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-solo"));
 	StartedAt = FPlatformTime::Seconds();
 	Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UGlitchlessTestScript::Step));
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UGlitchlessTestScript::OnMapLoaded);
@@ -80,6 +84,14 @@ bool UGlitchlessTestScript::Step(float DeltaTime)
 		return true;
 	}
 	Done = Due;
+	if (bMultiplayer)
+	{
+		return StepMultiplayer(World);
+	}
+	if (bGenre)
+	{
+		return StepGenre(World);
+	}
 	if (bDialog)
 	{
 		// The bug report box, driven the way a player would: through Slate's own input.
@@ -208,6 +220,117 @@ bool UGlitchlessTestScript::Step(float DeltaTime)
 		return false;
 	default:
 		break;
+	}
+	return true;
+}
+
+// The genre additions, one second at a time, so unreal/test/e2e.mjs can check what each sends.
+bool UGlitchlessTestScript::StepGenre(UWorld* World)
+{
+	switch (Done)
+	{
+	case 2:
+	{
+		FGlitchless::SetProperty(TEXT("mode"), TEXT("squads"));
+		FGlitchless::SetProperty(TEXT("level_band"), 30);
+		FGlitchless::SetProperty(TEXT("email"), TEXT("someone@example.com")); // dropped: it names who someone is
+		FGlitchless::SetGroup(EGlitchlessGroup::Party, TEXT("party-0001"));
+		FGlitchlessAttributes Attempt;
+		Attempt.Add(TEXT("tier"), TEXT("pit_80"));
+		Attempt.Add(TEXT("party_size"), 3);
+		Attempt.Add(TEXT("build"), TArray<FString>{TEXT("blood_surge"), TEXT("corpse_explosion")});
+		FGlitchless::LevelStart(TEXT("nmd_ghoa"), Attempt);
+		FGlitchless::SetZone(TEXT("crypt"));
+		break;
+	}
+	case 3:
+	{
+		FGlitchlessAttributes Match;
+		Match.Add(TEXT("mode"), TEXT("squads"));
+		FGlitchless::SetGroup(EGlitchlessGroup::Match, TEXT("e2e-match-0001"), Match);
+		for (int32 I = 0; I < 37; I++)
+		{
+			FGlitchless::Count(TEXT("kill"), FGlitchlessAttributes().Add(TEXT("monster"), TEXT("elite")));
+		}
+		FGlitchless::Count(TEXT("gold"), FGlitchlessAttributes().Add(TEXT("source"), TEXT("loot")).Add(TEXT("amount"), 35.0), 3);
+		FGlitchlessAttributes Battle;
+		Battle.Add(TEXT("won"), true);
+		Battle.Add(TEXT("deck"), TArray<FString>{TEXT("hog_rider"), TEXT("fireball")});
+		Battle.Add(TEXT("duration_s"), 184.0);
+		FGlitchless::Track(TEXT("battle_end"), Battle);
+		FGlitchless::NetSample(40, 1, 3);
+		break;
+	}
+	case 4:
+		FGlitchless::NetSample(55, 0, 2);
+		FGlitchless::SetProperty(TEXT("mode"), TEXT("duos"));
+		for (int32 I = 0; I < 30; I++)
+		{
+			FGlitchless::Track(TEXT("shot")); // a stream: a development build says to count it
+		}
+		break;
+	case 5:
+		FGlitchless::Disconnect(TEXT("timeout"));
+		break;
+	case 7:
+		FGlitchless::NetSample(45, 0, 2); // connected again: the level goes on
+		FGlitchless::SetZone(FString());
+		FGlitchless::ClearGroup(EGlitchlessGroup::Match);
+		FGlitchless::SetGroup(EGlitchlessGroup::Run);
+		break;
+	case 8:
+		FGlitchless::LevelComplete(TEXT("nmd_ghoa"), 9100.0);
+		FGlitchless::Flush();
+		FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest genre"));
+		return false;
+	default:
+		break;
+	}
+	return true;
+}
+
+// A part in a multiplayer match on Unreal's own replication: a dedicated server (-server), a listen server (a map
+// opened with ?listen) or a client. Everyone joins the same match ID, which each hashes alike.
+bool UGlitchlessTestScript::StepMultiplayer(UWorld* World)
+{
+	const ENetMode Mode = World ? World->GetNetMode() : NM_Standalone;
+	const bool bServer = Mode == NM_DedicatedServer || Mode == NM_ListenServer;
+	if (!bJoined && (bServer || Mode == NM_Client))
+	{
+		bJoined = true;
+		FGlitchlessAttributes Match;
+		Match.Add(TEXT("mode"), TEXT("squads"));
+		FGlitchless::SetGroup(EGlitchlessGroup::Match, TEXT("mp-match-0001"), Match);
+		FGlitchless::SetProperty(TEXT("mode"), TEXT("squads"));
+		FGlitchless::Track(bServer ? TEXT("match_hosted") : TEXT("match_joined"));
+	}
+	if (bJoined && bServer)
+	{
+		FGlitchless::Count(TEXT("replicated_hit"), FGlitchlessAttributes().Add(TEXT("weapon"), TEXT("ar")).Add(TEXT("damage"), 23.0), 4);
+	}
+	if (bServer && bCrash && Done == 6)
+	{
+		UE_LOG(LogGlitchlessTest, Display, TEXT("Planted server crash"));
+		volatile int32* Nowhere = nullptr;
+		*Nowhere = 1;
+	}
+	// A listen server's host is one of its players.
+	if (PlayersAt < 0 && ((bServer && World->GetNumPlayerControllers() >= (Mode == NM_ListenServer ? 2 : 1)) || Mode == NM_Client))
+	{
+		PlayersAt = Done;
+		UE_LOG(LogGlitchlessTest, Display, TEXT("Multiplayer: %s"), bServer ? TEXT("a client joined") : TEXT("connected"));
+	}
+	if (PlayersAt >= 0 && LostAt < 0 && !bServer && Mode != NM_Client)
+	{
+		LostAt = Done;
+		UE_LOG(LogGlitchlessTest, Display, TEXT("Multiplayer: the connection went"));
+	}
+	const bool bQuit = bServer ? (bSolo ? Done >= QuitAfter : PlayersAt >= 0 && Done >= PlayersAt + QuitAfter) : LostAt >= 0 && Done >= LostAt + 5;
+	if (QuitAfter > 0 && bQuit)
+	{
+		FGlitchless::Flush();
+		FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest multiplayer"));
+		return false;
 	}
 	return true;
 }

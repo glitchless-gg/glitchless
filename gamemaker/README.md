@@ -10,6 +10,8 @@ It reports:
 - **Rooms as levels.** A room that reads as a level (`rm_cave_2`, not `rm_main_menu`) starts that level by itself.
 - **Errors and crashes.** An unhandled exception stops a GameMaker game: Glitchless writes it down as the game dies and sends it on the next launch. Errors the game catches go through `glitchless_error`.
 - **Play events:** the level funnel, deaths, the game's own events and gauges.
+- **Streams, sessions and matches:** counters for events that come by the hundred (kills, gold, taps), properties that describe the session (rank tier, class, region), the match, party or run every event belongs to, and zones in an open world.
+- **Ping and disconnects** in a multiplayer game, from the game's own ping around GameMaker's `network_*` functions.
 - **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 
 It also has an agent flag, `-glitchless-measure=SECONDS`, which prints frame stats as JSON and quits, like the Godot, Unity and Unreal SDKs.
@@ -19,7 +21,7 @@ Anonymous mode, the default, sends nothing that can be tied to a person. [PRIVAC
 ## Install
 
 1. Get the local package, `Glitchless-0.2.0.yymps`: from the [0.2.0 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.2.0), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
-2. In GameMaker: **Tools → Import Local Package**, pick the file, **Add All**, **Import**. It adds a *Glitchless* folder with eight scripts and two objects, `obj_glitchless` and `obj_glitchless_tail`. Don't place the objects in a room: `glitchless_init` makes them.
+2. In GameMaker: **Tools → Import Local Package**, pick the file, **Add All**, **Import**. It adds a *Glitchless* folder with nine scripts and two objects, `obj_glitchless` and `obj_glitchless_tail`. Don't place the objects in a room: `glitchless_init` makes them.
 3. Call `glitchless_init` once, as early as you can: the first room's creation code, or the Create event of your first object.
 4. For a sandboxed macOS build (the Mac App Store): **Game Options → macOS → Allow outgoing network connections**.
 
@@ -30,12 +32,18 @@ The SDK's own names all start with `glitchless_`, `__glitchless_` or `GLITCHLESS
 ```gml
 glitchless_init("caverun", "", "prod", "https://glitchless.example.com"); // "" = GM_version, from Game Options
 
-glitchless_level_start("cave_3");               // only if rooms aren't your levels (see below)
+glitchless_level_start("cave_3", { difficulty: "hard" }); // only if rooms aren't your levels (see below)
 glitchless_level_complete(undefined, score);    // undefined: the current level; duration measured since it started
 glitchless_level_fail(undefined, "lost");          // lost it: died, ran out of time
 glitchless_level_abandon();                     // left it: the menu, a restart. Never a fail
 glitchless_death(x, y, "spikes");               // the place is sent only when positions are on
 glitchless_track("play", "endless");            // one word, a number, or a struct
+glitchless_count("kill", { enemy: "bat" });     // a stream: added up on the device, sent once a window
+glitchless_set_properties({ rank: "gold" });    // the game's words about the session
+glitchless_set_group("match", match_id);        // every event carries the match until it's ended
+glitchless_set_zone("westfall");                // where the player is in an open world
+glitchless_net_sample(ping_ms);                 // the game's own ping to its server, about once a second
+glitchless_disconnect("timeout");               // the connection dropped
 glitchless_set_context({ enemies: instance_number(obj_enemy) }); // in an End Step event
 glitchless_set_position(obj_player.x, obj_player.y); // ignored unless positions are on
 try { load_save(); } catch (_e) { glitchless_error(_e, { slot: 2 }); } // an error the game caught
@@ -50,11 +58,15 @@ glitchless_quit();                              // the Quit button: sends the la
 | function | |
 | --- | --- |
 | `glitchless_init(service, version, env, intake, options)` | who the game is and where to send. Nothing is measured or sent before it |
-| `glitchless_level_start(level)` | closes the current frame window, so a window never spans two levels. The first call turns rooms as levels off |
+| `glitchless_level_start(level, [attrs])` | closes the current frame window, so a window never spans two levels. The first call turns rooms as levels off. `attrs` say what the attempt is ([below](#groups-level-attributes-and-zones)) |
 | `glitchless_level_complete([level], [score], [duration_s])`, `glitchless_level_fail([level], [cause])` | |
 | `glitchless_level_abandon([level])` | the player left the level before it ended (the menu, a restart): never counted as a fail or a rage quit. Quitting mid-level sends one by itself, before the session's end, and a `glitchless_level_fail` or `glitchless_level_abandon` for that level after that (from a Clean Up event, say) is dropped. A room level that ends with its room (back in a menu) closes without one |
 | `glitchless_death(x, y, [cause], [z])` | |
 | `glitchless_track(name, [what])` | |
+| `glitchless_count(name, [what], [n])` | one more (or `n` more) of a stream of events: [Counters](#counters) |
+| `glitchless_set_properties(struct)` | the game's words about the session: [Properties](#properties) |
+| `glitchless_set_group(kind, [id], [attrs])`, `glitchless_set_zone(name)` | [Groups, level attributes and zones](#groups-level-attributes-and-zones) |
+| `glitchless_net_sample(rtt_ms, [loss_pct], [jitter_ms])`, `glitchless_disconnect([reason])`, `glitchless_reconnect()` | [Multiplayer](#multiplayer-ping-and-disconnects) |
 | `glitchless_set_context(struct)` | numbers that describe what is going on: the largest value in each window is sent, and the current ones go with each hitch |
 | `glitchless_set_position(x, y, [z])` | sampled 4 times a second for heatmaps, when positions are on |
 | `glitchless_error(message_or_exception, [attrs])` | |
@@ -86,6 +98,9 @@ glitchless_quit();                              // the Quit button: sends the la
 | `debug` | `false` | log what is sent with `show_debug_message` |
 | `bug_reports` | `false` | `true`, or `{ hotkey: vk_f8, pause: true, screenshot: true, on_open, on_close }`: F8 opens the [bug report form](#bug-reports) |
 | `exception_handler` | none | the game's own unhandled-exception function, called after Glitchless writes the crash down |
+| `properties` | none | a struct of [properties](#properties) the session starts with |
+| `hash_group_ids` | `true` | send match and party IDs hashed; `false` sends them as they are, to match against the game's own server logs |
+| `net_transport` | `"gamemaker"` | the word `net.transport` sends for what the game's ping goes over |
 
 ### Rooms as levels
 
@@ -119,6 +134,135 @@ glitchless_report_bug(note, true, function(_r) { if (_r.sent) show_message("Than
 - **The form** draws over everything in Draw GUI End with GameMaker's built-in font: the screenshot, the note, Send and Cancel. The note is what the player types (`keyboard_string`, which keeps up to 1,024 characters). Enter sends, Esc cancels. The game's `keyboard_string` comes back on close.
 - **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch.
 - **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
+
+### Counters
+
+`glitchless_track` is for moments: a match ending, a purchase, a boss beaten. A stream of events (every shot, kill, coin or tap) sent that way would fill the queue of 2,000 events in a minute, and the oldest events, frame windows included, would be dropped. `glitchless_count` queues nothing: it adds to an entry in the current frame window, and each window that counted anything sends one `counts` event.
+
+```gml
+glitchless_count("kill", { monster: "elite" });            // one more elite killed
+glitchless_count("gold", { source: "loot", amount: 35 });  // amounts are added up: gold by source per hour played
+glitchless_count("tap");
+glitchless_count("shot", { weapon: "ar" }, 3);             // a burst of three
+```
+
+- **Entries.** The words and true/false values in `what` (at most 4, by name) say which entry a call adds to, so `kill` by `monster` is a breakdown on the dashboard. Its numbers (at most 4) are added up as given. `n` adds to the count, up to 1,000,000 a call.
+- **Windows.** The window is the 5 s flush interval, and a level start, a group change or a zone change (once the window has run a second) closes it, so counts keep their level, match and zone.
+- **Limits.** A window holds 64 entries. After that, a new group of a name already counted goes under that name with its words as `(other)`, and a new name is dropped and added to the window's `dropped`.
+- **A debug build** (run from the IDE, or with `-glitchless-debug`) warns once about a name sent with `glitchless_track` more than 20 times a second.
+- **Servers that don't take counters yet.** At launch Glitchless asks the server what it takes (`GET /v1/health`). One that answers without counters gets none, and the debug output says so once. With no answer (offline) counters stay on.
+
+### Properties
+
+Properties describe the session in the game's words, so any board can split by them (`$rank`) and a page can show only some sessions (the high ranks):
+
+```gml
+glitchless_init("caverun", "", "prod", intake, { properties: { mode: "squads", input: "controller" } });
+glitchless_set_properties({ rank: "diamond", region: "eu-west" });   // after sign-in, at matchmaking
+glitchless_set_properties({ level_band: "30-39" });                  // a band, not the exact level
+glitchless_set_properties({ region: undefined });                    // removed
+```
+
+A property is for what holds for the whole session: rank tier, class, region, mode, input, a band. What changes from match to match (the hero, the deck, the map) goes on the events or as level attributes. The ones set before the first batch go with the session's start; later changes go as one `props` event a window, with each key's last value. They go in every privacy mode and are checked first: keys are lower-case words (at most 12 a session); values a word, a whole number or true/false; and keys such as `email` or `user_id`, and values shaped like an email address, a phone number, an ID or a link, are dropped. [PRIVACY.md](PRIVACY.md#properties-the-games-words-about-the-session) has the full rules.
+
+### Groups, level attributes and zones
+
+**Level attributes** say what an attempt is, so a level's clears and fails split by difficulty, mode or party size. The outcome and the deaths in the attempt don't repeat them:
+
+```gml
+glitchless_level_start("nmd_ghoa", { tier: "pit_80", party_size: 3, build: ["blood_surge", "corpse_explosion"] });
+```
+
+**Groups** mark every event from then on as part of a match, a party or a run, so a match can be seen from every player's side (did the whole lobby lag, or one player?):
+
+```gml
+glitchless_set_group("match", match_id, { mode: "squads" }); // an ID the game's server made, shared by everyone in the match
+glitchless_set_group("party", party_id);                     // until the party breaks up
+glitchless_set_group("match", undefined);                    // the match is over
+
+global.run_id = glitchless_set_group("run");                 // a new run: Glitchless makes the ID (r_ and 12 characters)
+glitchless_set_group("run", saved_run_id);                   // a run the game saved, on a later launch
+```
+
+- **IDs** are 8 to 64 letters, digits and `_ . : -`; anything else is dropped. A match or party ID comes from the game's servers, never an account, guild or friends-list ID.
+- **Hashed.** Match and party IDs go as `h_` and 24 hex digits of SHA-1 of the service and the ID, the same for every player in the match. `hash_group_ids: false` sends them as they are.
+- **Runs** resume under a saved ID in install and full mode only. In anonymous mode a saved run gets a new ID (the `group` event says `resumed`), so nothing ties two launches together.
+- **Each change closes the frame window**, so no window spans two matches.
+
+**Zones** are where a player is in an open world (an MMO region, a metroidvania room), apart from levels: a level has a start and an end, a zone doesn't. Every event and frame window carries the zone, so boards split by `$zone`. A change closes the frame window once it has run a second (so a player stepping back and forth over an edge doesn't send a window each time):
+
+```gml
+glitchless_set_zone("westfall");
+glitchless_set_zone("");          // none
+```
+
+### Multiplayer: ping and disconnects
+
+GameMaker's `network_*` functions don't measure the connection, so the game passes its own: a ping to its server about once a second, and a disconnect when it sees one. Each frame window then carries `net` (the round trip's percentiles and sketch, packet loss and jitter), and the dashboard shows ping and disconnects by level, version and region. A disconnect with a level going ends that level as an abandon with reason `disconnect`: never a fail.
+
+```gml
+#macro MSG_PING 1 // the game's own message types
+#macro MSG_PONG 2
+
+// obj_client, Create: connect, and ping once a second
+socket = network_create_socket(network_socket_tcp);
+network_connect_async(socket, server_ip, 6510);
+ping = buffer_create(8, buffer_fixed, 1);
+connected = false;
+
+// obj_client, Async - Networking
+var _type = async_load[? "type"];
+if (_type == network_type_non_blocking_connect) {
+    if (async_load[? "succeeded"]) {
+        connected = true;
+        last_pong = current_time;
+        alarm[0] = 1;
+    } else {
+        glitchless_disconnect("failed_to_connect");
+    }
+} else if (_type == network_type_data) {
+    var _b = async_load[? "buffer"];
+    buffer_seek(_b, buffer_seek_start, 0);
+    if (buffer_read(_b, buffer_u8) == MSG_PONG) {                        // the server sent our ping back
+        last_pong = current_time;
+        glitchless_net_sample(current_time - buffer_read(_b, buffer_u32)); // the round trip, in ms
+    }
+}
+
+// obj_client, Alarm 0: ping, and give up after 10 s without an answer
+if (connected) {
+    buffer_seek(ping, buffer_seek_start, 0);
+    buffer_write(ping, buffer_u8, MSG_PING);
+    buffer_write(ping, buffer_u32, current_time);
+    if (network_send_packet(socket, ping, buffer_tell(ping)) < 0) {
+        connected = false;
+        glitchless_disconnect("connection_lost");
+    } else if (current_time - last_pong > 10000) {
+        connected = false;
+        glitchless_disconnect("timeout");
+    } else {
+        alarm[0] = game_get_speed(gamespeed_fps);
+    }
+}
+
+// the server, Async - Networking, network_type_data: send a ping straight back as a pong
+var _b = async_load[? "buffer"];
+buffer_seek(_b, buffer_seek_start, 0);
+if (buffer_read(_b, buffer_u8) == MSG_PING) {
+    var _sent = buffer_read(_b, buffer_u32);
+    var _pong = buffer_create(5, buffer_fixed, 1);
+    buffer_write(_pong, buffer_u8, MSG_PONG);
+    buffer_write(_pong, buffer_u32, _sent);
+    network_send_packet(async_load[? "id"], _pong, 5);
+    buffer_delete(_pong);
+}
+```
+
+- **Loss and jitter.** `glitchless_net_sample(rtt_ms, loss_pct, jitter_ms)` takes them where the game knows them (a UDP game that numbers its packets can count the missing ones). Without jitter, Glitchless uses how much each round trip differs from the one before.
+- **Reasons:** `timeout`, `connection_lost`, `kicked`, `server_closed`, `failed_to_connect` or `other`. `glitchless_reconnect()` says the player got back in. At most 20 disconnects a session are sent.
+- **Only clients ping.** A player hosting the game has no round trip of their own, so they send no samples. GameMaker can't read throughput or the kind of connection, so `in_kbps`, `out_kbps` and `link` are null. Samples closer than half a second to the last are ignored.
+- **Another library** (Steamworks networking, a WebSocket extension): the same three calls, with `net_transport` naming it.
+- Nothing about the server's address or the player's network is sent: [PRIVACY.md](PRIVACY.md#network-quality).
 
 ### Flags
 
@@ -220,7 +364,7 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 
 From the repo root:
 
-- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`.
+- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`. The genre tests read the batches the GML sends and check them against the design's wire format (`docs/design/genre-coverage.md`): counters and their limits, a server without counters, property checks and `props` events, level attributes, hashed match and party IDs, runs, zones, net samples, disconnects and their abandon.
 - `npm run test:gamemaker` builds the demo with GameMaker's Igor (a VM build for the mac target, in `gamemaker/.build`) and plays it against a local server: see [the demo](#the-demo). First the runner computes the sketch, fingerprints, gzip and JSON numbers of the JavaScript fixture (`-glitchless-selftest`), then come offline and the outbox, full and install mode, measure, the planted crash sent on the next launch, and bug reports from code and the F8 form, 32 checks in all (with batch IDs in the outbox, nothing stored twice, and the load event at the first frame). The bug report's screenshot is saved as `gamemaker/.build/bug-report.png`. Each run starts the runtime's YoYo Runner with its flags on the command line and its output in a `-debugoutput` file, so it opens a game window for a few seconds and needs a logged-in macOS desktop.
 - `npm test` includes `server/test/gamemaker-findings.test.js`: GameMaker sessions get GameMaker's fixes.
 

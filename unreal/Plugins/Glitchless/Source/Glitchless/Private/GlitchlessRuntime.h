@@ -16,6 +16,7 @@ struct FGlitchlessOptions;
 class FGlitchlessInputProcessor;
 class FGlitchlessOutputDevice;
 class ULevel;
+class UNetDriver;
 class UPackage;
 class UWorld;
 
@@ -23,7 +24,13 @@ class UWorld;
  * Feeds Glitchless::FCore from Unreal: frame times and where each frame's time went (the game, render
  * and RHI threads and the GPU), why a long frame was long (pipeline states compiled, garbage collected,
  * a map or streamed level loaded, assets loaded), errors (the log, ensures, Blueprint runtime errors,
- * crashes), maps as levels, input, and the app's lifecycle.
+ * crashes), maps as levels, input, the app's lifecycle, and Unreal's own replication: once a second, a client's
+ * round trip, packet loss, jitter and traffic from its net driver, and its disconnects from OnNetworkFailure.
+ *
+ * On a dedicated server the core runs in the server role: server windows (tick time without the sleep that
+ * holds the server to NetServerMaxTickRate, players connected, traffic, CPU, memory, their pings) in place of
+ * frame windows, filed under the companion service. A listen server is a player (net.host) and, while it
+ * hosts, a second core runs its own server session.
  *
  * A packaged game starts it when the module loads, so the first frames and errors are kept; nothing
  * is sent until Init. In the editor it runs only during Play In Editor.
@@ -57,6 +64,17 @@ public:
 		Fn(*Core);
 	}
 
+	/** Runs Fn on a listen server's own session (role "server") while this game hosts one. */
+	template <typename TFn>
+	void WithServer(TFn&& Fn)
+	{
+		FScopeLock Lock(&Mutex);
+		if (ServerCore && !ServerCore->IsEnded())
+		{
+			Fn(*ServerCore);
+		}
+	}
+
 	void Init(const FGlitchlessOptions& Options);
 	/** Init from Project Settings > Plugins > Glitchless, if a service is set there. */
 	void InitFromSettings();
@@ -76,7 +94,16 @@ public:
 private:
 	FGlitchlessRuntime();
 
+	/** Everything a core takes from Unreal: clocks, files, the transport, device facts. SaveSubdir keeps a server's outbox apart. */
+	void Configure(Glitchless::FCore& C, const FString& SaveSubdir);
 	void OnBeginFrame();
+	/** Once a second: the connection (a client), or the server's state (a dedicated or listen server). */
+	void SampleNetwork(double Now);
+	void SampleServer(Glitchless::FCore& C, UWorld* World, UNetDriver* Driver, bool bListen);
+	Glitchless::FValue ServerInfo(UWorld* World, UNetDriver* Driver, bool bListen) const;
+	void StartListenServer(UWorld* World);
+	void BindNetworkFailures();
+	void OnNetworkFailure(UWorld* World, UNetDriver* Driver, const std::string& Reason);
 	void OnPreGarbageCollect();
 	void OnPostGarbageCollect();
 	void OnPreLoadMap(const FString& MapUrl);
@@ -101,6 +128,8 @@ private:
 	bool IsWatched(const UWorld* World) const;
 
 	TUniquePtr<Glitchless::FCore> Core;
+	/** A listen server's own session, made when the game starts hosting. */
+	TUniquePtr<Glitchless::FCore> ServerCore;
 	FCriticalSection Mutex; // recursive on every platform
 
 	TUniquePtr<FGlitchlessOutputDevice> LogDevice;
@@ -121,6 +150,19 @@ private:
 	uint32 LastPsoHitches = 0;
 	uint32 LastLoadFlushes = 0;
 	int32 LastShaderJobs = -1;
+
+	// The network: Unreal's replication, read once a second.
+	bool bDedicated = false;
+	bool bClientConnected = false;
+	bool bNetworkFailuresBound = false;
+	FDelegateHandle NetworkFailureHandle;
+	FDelegateHandle TravelFailureHandle;
+	double NextNetworkAt = 0;
+	double NextLinkAt = 0;
+	std::string Link;
+	Glitchless::FOptions CoreOptions; // what Init was given, for a listen server's own session
+	bool bHaveOptions = false;
+	Glitchless::FValue ServerFacts; // session_start.server, read on the game thread for a crash to send safely
 
 	TWeakObjectPtr<UWorld> WatchedWorld;
 	int32 WatchedMapHandle = 0;

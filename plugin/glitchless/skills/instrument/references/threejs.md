@@ -44,12 +44,15 @@ No bundler? Use `<script src="{GLITCHLESS_URL}/sdk/glitchless.js"></script>` and
 
 | Game moment | Call |
 | --- | --- |
-| level/stage starts (incl. restarts) | `glitchless.levelStart('level-2')` |
+| level/stage starts (incl. restarts) | `glitchless.levelStart('level-2')`; with what describes the attempt: `levelStart('rift', { mode: 'ranked', hero: 'ember' })` |
 | level beaten | `glitchless.levelComplete('level-2', { durationS, score })` |
 | game over: the player lost the level | `glitchless.levelFail('level-2', { cause })` |
 | the player leaves mid-level (back to the menu, a restart) | `glitchless.levelAbandon('level-2')`: never a fail. Closing the page or app mid-level sends one by itself |
 | player dies | `glitchless.death({ x, y, z, cause: 'fell' })`: short, low-cardinality causes |
 | pickups, power-ups, checkpoints | `glitchless.track('powerup', { kind: 'speed' })` |
+| something that happens many times a second: shots, hits, kills, gold, taps | `glitchless.count('kill', { monster: 'elite' })`, `glitchless.count('gold', { source: 'loot', amount: 35 })`: summed per 5 s window. Track a moment, count a stream |
+| what holds for the session: mode, rank tier, class, server region, input | `glitchless.setProperties({ mode: 'squads', rank: 'gold' })` where the game knows it (after sign-in, at the menu, at matchmaking). Bands, never exact numbers or anything about the person |
+| an open world: the region or room the player is in | `glitchless.setZone('westfall')` on each change (a zone has no start or end; a level does) |
 | a purchase the store confirmed | `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })` |
 | every frame | `glitchless.setPosition(player.position)` |
 | every frame | `glitchless.setContext({ particles, enemies, projectiles })`: counts of anything that scales |
@@ -66,6 +69,64 @@ glitchless.registerTool('mygame_load_level', 'Jump to a level', { type: 'object'
 ```
 
 Good candidates: load level, teleport player, trigger the expensive effect (explosion, power-up), toggle pause.
+
+## 4a. Multiplayer: matches, ping, disconnects and the game's server
+
+Skip this for a single-player game. Find the netcode first (`ws`, Socket.IO, Colyseus, WebRTC, or the game's own) and
+note file:line for: joining a match or lobby and the ID the server gives it, the client's ping (or where one could
+go), the disconnect and reconnect handlers, and the server's tick loop.
+
+On the client:
+
+```js
+glitchless.setGroup('match', match.id);   // the ID the game's server made, shared by everyone in the match
+glitchless.setGroup('party', party.id);   // a party, until it breaks up. Never an account, guild or friends-list ID
+glitchless.setGroup('match', null);       // the match is over
+const run = glitchless.setGroup('run');   // a roguelite run across levels: the SDK makes the ID
+```
+
+Match and party IDs are hashed before they're sent, the same way in every Glitchless SDK and on the server, so the
+match lines up from every side; leave `hashGroupIds` on unless the user wants to match IDs against their server logs.
+
+Ping, about once a second: a WebSocket has no round trip of its own, so time an app-level ping (Socket.IO: an emit
+with an acknowledgement; `ws` or Colyseus: a ping message the server echoes) and pass it:
+
+```js
+glitchless.netSample({ rtt_ms, transport: 'socket.io' });    // loss_pct and jitter_ms too where the netcode knows them
+glitchless.disconnect({ reason: 'timeout' });                // timeout, connection_lost, kicked, server_closed, failed_to_connect, other
+glitchless.reconnect();                                      // back in the same game
+```
+
+Call `disconnect` only when the connection dropped, not when the player chose to leave (Socket.IO's
+`io client disconnect`, a close the game made itself). A disconnect mid-level ends it as an abandon with reason
+`disconnect`, never a fail. A WebRTC game: `import { instrumentNet } from 'glitchless/net'` and
+`instrumentNet(glitchless, { peer })` with its `RTCPeerConnection` does all of this from `getStats()`.
+
+On a Node game server (in the same repo or the user's server project), add `glitchless/server`:
+
+```js
+import { GlitchlessServer, instrumentWs } from 'glitchless/server'; // or instrumentSocketIO, glitchlessRoom
+
+const server = GlitchlessServer.init({
+  service: '<game-id>',                 // the game's own id, not "<game-id>.server": intake files it apart
+  version: GAME_VERSION,
+  intake: process.env.GLITCHLESS_INTAKE ?? 'http://localhost:7777',
+  clientToken: 'gl_pub_dev',            // the game's client token
+  tickHz: 30,                           // the server's target tick rate
+  maxPlayers: 16,
+  region: process.env.REGION,           // in the game's words: 'eu-west'
+  sessionType: isLoadTest ? 'synthetic' : 'user',
+});
+instrumentWs(server, wss);                           // ws: players, pings, how connections end
+// instrumentSocketIO(server, io);                   // Socket.IO
+// gameServer.define('battle', glitchlessRoom(server, BattleRoom)); // Colyseus: each room is a match
+setInterval(server.measureTick(update), 1000 / 30); // the tick loop (Colyseus: done by glitchlessRoom)
+server.setGroup('match', matchId);                   // the same ID the players get; server.match(id) when it hosts several at once
+process.on('SIGTERM', async () => { await server.close(); process.exit(0); });
+```
+
+Uncaught errors are reported as crashes and the process still dies as before. It sends nothing to a Glitchless
+server that doesn't read server sessions yet, so on an old one nothing shows: say so in the report.
 
 ## 4b. Bug reports from players (ask first)
 

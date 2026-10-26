@@ -36,8 +36,9 @@
 import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, meanOf, seconds, FIXED, OTHER } from './rollups.js';
 import { newFacts, addFactsCell } from './facts.js';
 import { MARK } from './session-state.js';
+import { sessionAttempts, attemptValues } from './levels.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, matchAttrs, stepLabel, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -53,6 +54,8 @@ export const CAPS = {
   values: 200, // values per custom event attribute (sessions that sent each)
   gauges: 512, // distinct values of a hitch-context gauge per cell and day
   levelPlayers: [128, 8], // Distinct (k, HyperLogLog p) of players per level
+  levelAttrs: 3, // attributes of a level's starts its funnel is folded by (A7), the first seen each day
+  levelValues: 20, // values of each of them per level and day
   eventPlayers: [128, 8], // …per custom event
   errorSessions: [256, 10], // …sessions per error fingerprint
   errorPlayers: [128, 8], // …players per error fingerprint
@@ -93,7 +96,8 @@ export function foldDay(day, { cells = new Map(), facts = new Map(), sessions = 
     let g = out.groups.get(key);
     if (!g) out.groups.set(key, (g = newGroup(s.env, s.version, caps)));
     addSession(g, s, day, caps, newPlayers);
-    if (Object.keys(s.ev || {}).length) sample.push({ h: hashId(s.session_id), env: s.env ?? null, version: s.version ?? null, o: Object.fromEntries(Object.entries(s.ev).map(([n, v]) => [n, v.o])) });
+    // c: how many of each event the session sent, so its kept occurrences can stand for all of them (occurrences.js).
+    if (Object.keys(s.ev || {}).length) sample.push({ h: hashId(s.session_id), env: s.env ?? null, version: s.version ?? null, o: Object.fromEntries(Object.entries(s.ev).map(([n, v]) => [n, v.o])), c: Object.fromEntries(Object.entries(s.ev).map(([n, v]) => [n, v.n])) });
   }
   for (const g of out.groups.values()) seal(g, caps);
   sample.sort((a, b) => a.h - b.h);
@@ -267,6 +271,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
       if (isNum(d)) {
         l.ds += Math.round(d * FIXED.sec);
         l.dn++;
+        l.dq.add(d);
       }
     } else if (kind === MARK.fail) {
       l.fa++;
@@ -282,6 +287,8 @@ function addSession(g, s, day, caps, newPlayers = null) {
     l.ab += n;
     if (!ended.has(level)) l.lo++;
   }
+  for (const [level, n] of Object.entries(s.dropped || {})) levelRow(g, level, caps).dr += n;
+  foldLevelAttrs(g, s, caps);
   if (s.rage_quit && s.rage?.level) levelRow(g, s.rage.level, caps).rq++;
   if (s.rage_quit) g.rq.push([s.last_ts, { session_id: s.session_id, version: s.version, ts: s.end ?? s.last_ts, ...s.rage }]);
   const summary = sessionSummary(s);
@@ -320,10 +327,69 @@ function gaugeRow(g, key, caps) {
   return x;
 }
 
+// The level funnel by its starts' attributes (A7, levels.js): per level, the first caps.levelAttrs attributes seen
+// (`bk`), and per attribute and value (caps.levelValues of them, the rest under OTHER) the funnel row of the attempts
+// with it (`by`).
+function foldLevelAttrs(g, s, caps) {
+  const keys = new Map();
+  for (const m of s.marks) {
+    if (m.k !== MARK.start || !m.level || !m.a) continue;
+    const l = levelRow(g, m.level, caps);
+    l.bk ||= [];
+    for (const k of Object.keys(m.a)) {
+      if (!l.bk.includes(k)) {
+        if (l.bk.length >= caps.levelAttrs) {
+          g.cut.add('level_attrs');
+          continue;
+        }
+        l.bk.push(k);
+      }
+      if (!keys.has(m.level)) keys.set(m.level, new Set());
+      keys.get(m.level).add(k);
+    }
+  }
+  for (const [level, ks] of keys) {
+    const l = levelRow(g, level, caps);
+    for (const k of ks) {
+      if (!l.bk.includes(k)) continue;
+      const values = ((l.by ||= {})[k] ||= {});
+      for (const r of sessionAttempts(s, attemptValues(k)).values()) {
+        if (r.level !== level) continue;
+        let v = r.value;
+        if (!(v in values) && Object.keys(values).length >= caps.levelValues) {
+          v = OTHER;
+          g.cut.add('level_attrs');
+        }
+        const x = (values[v] ||= levelAttrRow(caps));
+        if (r.started) x.ss++;
+        if (r.completed) x.sc++;
+        for (const f of ['at', 'co', 'fa', 'de', 'ab', 'dr']) x[f] += r[f];
+        if (r.ab && !r.ended) x.lo++;
+        if (r.rq) x.rq++;
+        for (const [, d] of r.durations) {
+          x.ds += Math.round(d * FIXED.sec);
+          x.dn++;
+          x.dq.add(d);
+        }
+        for (const [c, n] of Object.entries(r.causes)) x.ca[c] = (x.ca[c] || 0) + n;
+      }
+    }
+  }
+}
+
+function levelAttrRow(caps) {
+  return { ss: 0, sc: 0, at: 0, co: 0, fa: 0, de: 0, ab: 0, lo: 0, dr: 0, rq: 0, ds: 0, dn: 0, dq: new QMap(caps.quantiles), ca: {} };
+}
+
+const byToJSON = (by) => by && Object.fromEntries(Object.entries(by).map(([k, vs]) => [k, Object.fromEntries(Object.entries(vs).map(([v, r]) => [v, { ...r, dq: r.dq.toJSON() }]))]));
+const byFromJSON = (by, q) => by && Object.fromEntries(Object.entries(by).map(([k, vs]) => [k, Object.fromEntries(Object.entries(vs).map(([v, r]) => [v, { ...r, dq: q(r.dq) }]))]));
+
 function levelRow(g, level, caps) {
   let l = g.lv.get(level);
   // ab: abandons, lo: sessions that only left it (analytics.js funnel(): abandons, abandoned)
-  if (!l) g.lv.set(level, (l = { ss: 0, pl: new Distinct(...caps.levelPlayers), sc: 0, at: 0, co: 0, fa: 0, de: 0, ab: 0, lo: 0, ds: 0, dn: 0, ca: {}, rq: 0 }));
+  // dq: completed attempts' durations, for the clear times' p50 and p90
+  // dr: attempts a disconnect ended (A8)
+  if (!l) g.lv.set(level, (l = { ss: 0, pl: new Distinct(...caps.levelPlayers), sc: 0, at: 0, co: 0, fa: 0, de: 0, ab: 0, lo: 0, dr: 0, ds: 0, dn: 0, dq: new QMap(caps.quantiles), ca: {}, rq: 0 }));
   return l;
 }
 
@@ -374,7 +440,7 @@ function compactFacts(facts, caps) {
   for (const [key, f] of facts) {
     const er = f.er;
     f.er = {};
-    for (const gauges of [f.hg, f.wc, f.wh]) {
+    for (const gauges of [f.hg, f.wc, f.wh, ...Object.values({ kh: f.kh, kc: f.kc }).filter(Boolean)]) {
       for (const [k, counts] of Object.entries(gauges)) {
         if (Object.keys(counts).length <= caps.gauges) continue;
         const m = new QMap(caps.gauges);
@@ -505,7 +571,7 @@ function groupToJSON(g) {
     nodes: qs(g.nodes),
     dev: Object.fromEntries(Object.entries(g.dev).map(([k, map]) => [k, [...map].map(([key, x]) => [key, x.n, cellToJSON(x.cell)])])),
     fwl: [...g.fwl],
-    lv: [...g.lv].map(([level, l]) => [level, { ...l, pl: l.pl.toJSON() }]),
+    lv: [...g.lv].map(([level, l]) => [level, { ...l, pl: l.pl.toJSON(), dq: l.dq.toJSON(), ...(l.by ? { by: byToJSON(l.by) } : {}) }]),
     dc: g.dc,
     rq: g.rq,
     sdk: g.sdk,
@@ -537,7 +603,8 @@ function groupFromJSON(o) {
     nodes: qs(o.nodes),
     dev: { p: new Map(), sb: new Map(), sv: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
-    lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl) }])),
+    // Days stored before clear times were kept have none.
+    lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl), dq: l.dq ? q(l.dq) : q(), ...(l.by ? { by: byFromJSON(l.by, q) } : {}) }])),
     recent: [],
     dx: new Map(o.dx.map(([level, list]) => [level, list.map(([ts, x, y, z, cause, rage]) => [0, { ts, level, cause, x, y, z, rage_quit: !!rage }])])),
     ev: new Map(o.ev.map(([name, s, pl, a]) => [name, { s, pl: Distinct.from(pl), a: new Map(a) }])),
@@ -645,9 +712,20 @@ function mergeGroup(into, g) {
   for (const [level, n] of g.fwl) into.fwl.set(level, (into.fwl.get(level) || 0) + n);
   for (const [level, l] of g.lv) {
     const m = levelRow(into, level, UNCAPPED);
-    for (const k of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ab', 'lo', 'ds', 'dn', 'rq']) m[k] += l[k] ?? 0;
+    for (const k of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ab', 'lo', 'dr', 'ds', 'dn', 'rq']) m[k] += l[k] ?? 0;
     m.pl.merge(l.pl);
+    m.dq.merge(l.dq);
     for (const [c, n] of Object.entries(l.ca)) m.ca[c] = (m.ca[c] || 0) + n;
+    for (const k of l.bk || []) if (!(m.bk ||= []).includes(k)) m.bk.push(k);
+    for (const [k, vs] of Object.entries(l.by || {})) {
+      const into = ((m.by ||= {})[k] ||= {});
+      for (const [v, r] of Object.entries(vs)) {
+        const x = (into[v] ||= levelAttrRow(UNCAPPED));
+        for (const f of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ab', 'lo', 'dr', 'rq', 'ds', 'dn']) x[f] += r[f] ?? 0;
+        x.dq.merge(r.dq);
+        for (const [c, n] of Object.entries(r.ca)) x.ca[c] = (x.ca[c] || 0) + n;
+      }
+    }
   }
   for (const [c, n] of Object.entries(g.dc)) into.dc[c] = (into.dc[c] || 0) + n;
   into.rq.push(...g.rq);
@@ -833,13 +911,58 @@ export function dailyFunnel(ctx) {
       fails: l.fa,
       abandons: l.ab ?? 0,
       abandoned: l.lo ?? 0,
+      disconnects: l.dr ?? 0,
       avg_complete_s: l.dn ? round(l.ds / FIXED.sec / l.dn, 1) : null,
+      ...clearTimes(ctx, l.dq),
       death_causes: l.ca,
       rage_quits: l.rq,
       rage_quit_pct: pct(l.rq, l.ss || 1),
     };
   });
   return rows.sort((a, b) => String(a.level).localeCompare(String(b.level), undefined, { numeric: true }));
+}
+
+// The levels panel by an attribute of the starts (levels.js levelsBy), at day resolution: from the days' rows per
+// attribute and value. An attribute a level's days didn't keep (past its first 3) says so.
+export function dailyLevelsBy(ctx, { by, level = null }) {
+  approximate(ctx, 'level_attrs', ctx.daily.all.cut.has('level_attrs'));
+  const rows = [];
+  let kept = false;
+  for (const [lv, l] of ctx.daily.all.lv) {
+    if (level != null && lv !== level) continue;
+    const vs = l.by?.[by];
+    if (!vs) continue;
+    kept = true;
+    for (const [value, r] of Object.entries(vs)) {
+      rows.push({
+        level: lv,
+        value,
+        sessions: r.ss,
+        players: null,
+        completed: r.sc,
+        completion_pct: pct(r.sc, r.ss || 1),
+        attempts: r.at,
+        deaths: r.de,
+        deaths_per_session: r.ss ? round(r.de / r.ss, 2) : null,
+        fails: r.fa,
+        abandons: r.ab,
+        abandoned: r.lo,
+        disconnects: r.dr,
+        avg_complete_s: r.dn ? round(r.ds / FIXED.sec / r.dn, 1) : null,
+        ...clearTimes(ctx, r.dq),
+        death_causes: r.ca,
+        rage_quits: r.rq,
+        rage_quit_pct: pct(r.rq, r.ss || 1),
+      });
+    }
+  }
+  return { rows: rows.sort((a, b) => String(a.level).localeCompare(String(b.level), undefined, { numeric: true }) || b.sessions - a.sessions || String(a.value).localeCompare(String(b.value), undefined, { numeric: true })), kept };
+}
+
+function clearTimes(ctx, dq) {
+  if (!dq?.size) return { p50_complete_s: null, p90_complete_s: null };
+  approximate(ctx, 'clear_times', dq.approx);
+  return { p50_complete_s: round(dq.quantile(0.5), 1), p90_complete_s: round(dq.quantile(0.9), 1) };
 }
 
 export function dailyPlayers(ctx) {
@@ -942,17 +1065,12 @@ export function dailyEventSessions(ctx, f, out) {
 export function dailyEventFunnel(ctx, steps) {
   const reached = steps.map(() => 0);
   const gaps = steps.map(() => []);
-  const matches = (attrs, st) => {
-    if (st.value == null) return true;
-    if (st.key) return String(attrs?.[st.key]) === st.value;
-    return Object.values(attrs || {}).some((v) => String(v) === st.value);
-  };
   for (const { rate, list } of ctx.daily.samples) {
     approximate(ctx, 'event_funnel', rate < 1);
     for (const s of list) {
       let t = -Infinity;
       for (let i = 0; i < steps.length; i++) {
-        const hit = s.o[steps[i].name]?.find(([ts, attrs]) => ts >= t && matches(attrs, steps[i]));
+        const hit = s.o[steps[i].name]?.find(([ts, attrs]) => ts >= t && matchAttrs(attrs, steps[i]));
         if (!hit) break;
         if (i > 0) gaps[i].push((hit[0] - t) / 1000);
         t = hit[0];
@@ -961,9 +1079,8 @@ export function dailyEventFunnel(ctx, steps) {
     }
   }
   const n = reached.map((r) => Math.round(r));
-  const label = (st) => `${st.name}${st.key ? `:${st.key}` : ''}${st.value != null ? `=${st.value}` : ''}`;
   return steps.map((st, i) => ({
-    step: label(st),
+    step: stepLabel(st),
     sessions: n[i],
     pct_of_first: pct(n[i], n[0] || 1),
     pct_of_previous: i ? pct(n[i], n[i - 1] || 1) : 100,
@@ -983,7 +1100,8 @@ function sentFilter(sent, f) {
   const v = sent?.[f.name];
   if (!v) return false;
   if (f.value == null) return true;
-  return Object.entries(v).some(([k, values]) => (!f.key || k === f.key) && values.includes(f.value));
+  // "Contains all of": each value was sent with that attribute (not always in the same event, at day resolution).
+  return Object.entries(v).some(([k, values]) => (!f.key || k === f.key) && (f.all || [f.value]).every((x) => values.includes(x)));
 }
 
 // Deaths with coordinates (the ones difficulty hotspots use), in time order; one level's or all, each

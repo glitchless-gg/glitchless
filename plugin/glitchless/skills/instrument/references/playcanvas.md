@@ -64,6 +64,10 @@ The same calls as for Three.js, from the scripts that handle them (`levelComplet
 tools, bug reports and source maps work as for Three.js. Vite's dev server runs PlayCanvas's debug build, which turns
 a script off after it throws; the adapter reports those errors too.
 
+Streams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in
+[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,
+and its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).
+
 ## 5. Bots and playtests
 
 As for Phaser ([5](phaser.md#5-bots-and-playtests)). `apps/playcanvas-demo` in the Glitchless repo is a working example.

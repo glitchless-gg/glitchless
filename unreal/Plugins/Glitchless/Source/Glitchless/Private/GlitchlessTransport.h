@@ -11,8 +11,10 @@ class FGlitchlessHttpTransport : public Glitchless::ITransport
 {
 public:
 	explicit FGlitchlessHttpTransport(FCriticalSection* InCoreLock);
+	virtual ~FGlitchlessHttpTransport() override;
 
 	virtual void Send(const std::string& Url, std::vector<uint8_t> Body, const std::string& ContentType, std::function<void(int64_t)> Done) override;
+	virtual void Get(const std::string& Url, std::function<void(int64_t, const std::string&)> Done) override;
 	virtual int64_t SendNow(const std::string& Url, const std::vector<uint8_t>& Body, const std::string& ContentType, int TimeoutMs) override;
 	virtual void Abort() override;
 	virtual bool Wait(int TimeoutMs) override;
@@ -23,4 +25,5 @@ private:
 	FCriticalSection* CoreLock;
 	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Current;
 	TSharedPtr<bool> CurrentAnswered; // set once Current's Done has run
+	TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Health; // the GET, never answered once the core is gone
 };

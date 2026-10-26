@@ -42,10 +42,10 @@ export function instrumentPhaser(gd, { game, Phaser, levels = 'auto', gauges = t
 
   // A level call from the game itself switches scene levels off: the game knows its levels better.
   const levelStart = gd.levelStart.bind(gd);
-  gd.levelStart = (id) => {
+  gd.levelStart = (id, attrs) => {
     manualLevels = true;
     levelScene = null;
-    return levelStart(id);
+    return levelStart(id, attrs);
   };
 
   const levelOf = (scene) => {

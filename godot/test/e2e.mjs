@@ -35,6 +35,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { fingerprint } from '../../packages/sdk/src/fingerprint.js';
 
@@ -123,6 +124,45 @@ async function holdingProxy(target, holdMs) {
   return { port: server.address().port, answers, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
 }
 
+// The intake of a server that takes the genre additions, before the real one does: it keeps every batch as it came,
+// and GET /v1/health lists `features` (none at all, as an older server answers, when features is null).
+async function fakeIntake(features) {
+  const batches = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    if (req.url === '/v1/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(features ? { ok: true, features } : { ok: true }));
+    if (req.method === 'POST' && req.url.startsWith('/v1/intake')) {
+      batches.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      return res.writeHead(202, { 'Content-Type': 'application/json' }).end('{"accepted":1}');
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { port: server.address().port, batches, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+}
+
+// A Godot process to steer while it runs (freeze it with SIGSTOP): its output so far, and a promise of its exit.
+function spawnGodot(args) {
+  const child = spawn(godot, ['--headless', '--max-fps', '60', '--path', PROJECT, ...args]);
+  const p = { child, out: '' };
+  child.stdout.on('data', (d) => (p.out += d));
+  child.stderr.on('data', (d) => (p.out += d));
+  const timer = setTimeout(() => child.kill('SIGKILL'), 90_000);
+  p.done = new Promise((resolve) => child.on('exit', (code) => (clearTimeout(timer), resolve(code))));
+  return p;
+}
+
+async function waitFor(fn, ms = 20_000) {
+  for (const end = Date.now() + ms; Date.now() < end; ) {
+    if (fn()) return;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error('timed out waiting');
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function startServer(port, dataDir) {
   const child = spawn(process.execPath, [path.join(ROOT, 'server/src/local.js')], {
     env: { ...process.env, PORT: String(port), GLITCHLESS_DATA_DIR: dataDir, GLITCHLESS_DATADOG: 'off', GLITCHLESS_API_KEY: '' },
@@ -173,6 +213,12 @@ try {
   const framesUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/frames_test.gd'], { encoding: 'utf8', timeout: 120_000 });
   for (const m of framesUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `frames unit: ${m[2]}`] : ['FAIL', `frames unit: ${m[2]}`]);
   check('frames unit tests ran', () => assert.match(framesUnit.stdout, /frames tests: 0 failed/, framesUnit.stdout + framesUnit.stderr));
+  const genreUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/genre_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of genreUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `genre unit: ${m[2]}`] : ['FAIL', `genre unit: ${m[2]}`]);
+  check('genre unit tests ran to the end, with no script error', () => {
+    assert.match(genreUnit.stdout, /genre tests: 0 failed/, genreUnit.stdout + genreUnit.stderr);
+    assert.doesNotMatch(genreUnit.stdout + genreUnit.stderr, /SCRIPT ERROR/, genreUnit.stdout + genreUnit.stderr);
+  });
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });
@@ -490,6 +536,177 @@ try {
     assert.deepEqual(mine.filter((e) => ['level_abandon', 'level_fail', 'session_end'].includes(e.type)).map((e) => [e.type, e.reason ?? e.cause]), [['level_abandon', 'close'], ['session_end', 'close']], 'the game\'s "left" fail after the end is dropped');
     assert.deepEqual(s.abandoned, ['level_2']);
     assert.equal(s.rage_quit, false);
+  });
+
+  // 12. multiplayer (test/net/net_game.gd): an ENet server started with --server and a client, sending to a fake intake
+  // that takes the genre additions (the real server learns them in its own phase). 2.5 s after the client connects the
+  // server freezes for 3.5 s (SIGSTOP), so the client times out and connects again; 2 s after that the server kicks it
+  // and it connects again; 2 s later it completes its level and leaves, and the server stops. Payloads are checked
+  // against docs/design/genre-coverage.md.
+  const netService = 'glitchless-godot-net';
+  const matchId = 'h_' + crypto.createHash('sha1').update(`${netService}:match-0001-arena`).digest('hex').slice(0, 24);
+  const runNet = async (features, { kickOn, stopAt, leaveOn, freeze }) => {
+    const fake = await fakeIntake(features);
+    const netPort = await freePort();
+    const args = (extra) => ['res://test/net/net_game.tscn', '--', '--glitchless', `--port=${netPort}`, `--intake=http://127.0.0.1:${fake.port}`, ...extra];
+    const srv = spawnGodot(args(['--server', `--kick-on-connect=${kickOn}`, `--stop-at=${stopAt}`]));
+    try {
+      await waitFor(() => srv.out.includes('server listening'));
+      const cli = spawnGodot(args([`--leave-on-connect=${leaveOn}`]));
+      await waitFor(() => cli.out.includes('client: connected (1)'));
+      if (freeze) {
+        await sleep(2500);
+        process.kill(srv.child.pid, 'SIGSTOP');
+        await sleep(3500);
+        process.kill(srv.child.pid, 'SIGCONT');
+      }
+      await Promise.all([srv.done, cli.done]);
+      await sleep(300);
+      return { srv, cli, batches: fake.batches };
+    } finally {
+      srv.child.kill('SIGCONT');
+      await fake.close();
+    }
+  };
+  const net = await runNet(['counts', 'props', 'groups', 'net', 'server_mode'], { kickOn: 2, stopAt: 40, leaveOn: 3, freeze: true });
+  // GLITCHLESS_CAPTURE=<file> keeps what both sides sent, for the server's own tests of each SDK's payloads
+  // (server/test/fixtures/sdk-payloads).
+  if (process.env.GLITCHLESS_CAPTURE) fs.writeFileSync(process.env.GLITCHLESS_CAPTURE, JSON.stringify({ sdk: 'godot', service: netService, captured: new Date().toISOString(), note: 'godot/test/e2e.mjs step 12: an ENet --server and a client (frozen server, kick, leave), as both sides sent them', batches: net.batches }) + '\n');
+  const serverBatches = net.batches.filter((b) => b.role === 'server');
+  const clientBatches = net.batches.filter((b) => b.role !== 'server');
+  const sev = serverBatches.flatMap((b) => b.events);
+  const cev = clientBatches.flatMap((b) => b.events);
+  const ofType = (events, type) => events.filter((e) => e.type === type);
+  const netOut = `\n--- server\n${net.srv.out}\n--- client\n${net.cli.out}`;
+
+  check('server mode: --server sends as the game with role server, and never a player ID', () => {
+    assert.ok(serverBatches.length > 0, `no server batches${netOut}`);
+    for (const b of serverBatches) {
+      assert.equal(b.service, netService);
+      assert.equal(b.player_id, null);
+      assert.match(b.sdk, /^glitchless-godot\//);
+    }
+    assert.equal(new Set(serverBatches.map((b) => b.session_id)).size, 1);
+  });
+  check('server mode: a headless server is a live session, not a bot\'s, and says what it is', () => {
+    const start = ofType(sev, 'session_start')[0];
+    assert.ok(start, 'no session_start');
+    assert.equal(start.session_type, 'user');
+    assert.equal(start.privacy, 'anonymous');
+    assert.equal(start.server.tick_hz, 60);
+    assert.equal(start.server.max_players, 8);
+    assert.equal(start.server.build, 'headless');
+    assert.equal(start.server.region, 'eu-west');
+    assert.ok(start.server.host.os && start.server.host.cores > 0 && start.server.host.memory_gb > 0, JSON.stringify(start.server.host));
+  });
+  check('server mode: server windows, and no frame windows, hitches, loads or positions', () => {
+    for (const t of ['frame_window', 'hitch', 'load', 'pos']) assert.equal(ofType(sev, t).length, 0, `the server sent ${t}`);
+    const windows = ofType(sev, 'server_window');
+    assert.ok(windows.length >= 3, `${windows.length} server windows`);
+    for (const w of windows) {
+      assert.equal(Sketch.from(w.tick).n, w.ticks);
+      assert.ok(w.ticks > 0 && w.tick_p95 >= w.tick_p50 && w.budget_ms > 16 && w.budget_ms < 17, JSON.stringify(w));
+      assert.equal(w.level, 'arena');
+      for (const k of ['tick_hz', 'tick_max', 'late', 'players', 'players_max', 'in_kbps', 'out_kbps', 'cpu_pct', 'mem_mb', 'rtt_p95', 'ctx', 'net_objects']) assert.ok(k in w, k);
+    }
+    assert.ok(windows.some((w) => w.tick_hz > 50), `tick rates ${windows.map((w) => w.tick_hz)}`);
+    assert.ok(windows.some((w) => w.tick_hz < 45), `the frozen window: tick rates ${windows.map((w) => w.tick_hz)}`);
+  });
+  check('server mode: players connected, their round trips, and the bytes sent', () => {
+    const windows = ofType(sev, 'server_window');
+    assert.ok(windows.some((w) => w.players >= 1 && w.players_max >= 1), JSON.stringify(windows.map((w) => w.players)));
+    assert.ok(windows.some((w) => typeof w.rtt_p95 === 'number'), JSON.stringify(windows.map((w) => w.rtt_p95)));
+    assert.ok(windows.some((w) => w.out_kbps > 0 && w.in_kbps > 0), JSON.stringify(windows.map((w) => [w.in_kbps, w.out_kbps])));
+  });
+  check('groups: the server and the client send one hashed ID for their match, and every event carries it', () => {
+    const sg = ofType(sev, 'group');
+    const cg = ofType(cev, 'group');
+    assert.equal(sg[0]?.id, matchId, JSON.stringify(sg));
+    assert.deepEqual(sg[0].attrs, { mode: 'duel', players: 2 });
+    assert.equal(sg.at(-1).id, null, 'the server ends the match');
+    assert.equal(cg[0]?.id, matchId, JSON.stringify(cg));
+    assert.ok(!JSON.stringify(net.batches).includes('match-0001-arena'), 'the raw match ID went out');
+    // Every event from the group on, in the order sent (load is stamped with the first frame, before the match).
+    const after = cev.slice(cev.indexOf(cg[0])).filter((e) => e.type !== 'load');
+    assert.ok(after.length > 10, `${after.length} events after the group`);
+    assert.deepEqual(after.filter((e) => e.match !== matchId).map((e) => e.type), []);
+    assert.ok(ofType(sev, 'server_window').some((w) => w.match === matchId));
+  });
+  check('properties: session_start carries them, a later change is a props event, a person\'s email is dropped', () => {
+    const start = ofType(cev, 'session_start')[0];
+    assert.deepEqual(start.props, { mode: 'duel', input: 'pad', rank: 'gold' });
+    const props = ofType(cev, 'props');
+    assert.deepEqual(props.map((e) => e.props), [{ rank: 'platinum', input: null }]);
+    assert.ok(!JSON.stringify(net.batches).includes('someone@example.com'));
+  });
+  check('levels and zones: level_start carries its attributes, events and windows their zone', () => {
+    const start = ofType(cev, 'level_start')[0];
+    assert.deepEqual(start.attrs, { mode: 'duel', party_size: 1 });
+    const zoned = cev.filter((e) => e.ts > start.ts + 50 && ['frame_window', 'counts', 'disconnect', 'reconnect', 'level_complete'].includes(e.type));
+    assert.ok(zoned.length > 3 && zoned.every((e) => e.zone === 'north_gate'), JSON.stringify(zoned.map((e) => [e.type, e.zone])));
+  });
+  check('counters: one counts event a window, shots counted and gold summed, never a custom event per shot', () => {
+    const counts = ofType(cev, 'counts');
+    assert.ok(counts.length >= 2, `${counts.length} counts events`);
+    let shots = 0;
+    let gold = 0;
+    let goldSum = 0;
+    for (const c of counts) {
+      assert.ok(c.duration_s > 0 && c.dropped === 0 && typeof c.ts === 'number', JSON.stringify(c));
+      for (const e of c.counts) {
+        if (e.name === 'shot') (assert.deepEqual(e.attrs, { weapon: 'bow', hit: true }), (shots += e.n));
+        if (e.name === 'gold') (assert.deepEqual(e.attrs, { source: 'loot' }), (gold += e.n), (goldSum += e.sums.amount));
+        assert.ok(e.first_ts >= c.ts, 'first_ts inside its window');
+      }
+    }
+    assert.ok(shots > 200 && gold === shots && goldSum === gold * 5, `${shots} shots, ${gold} gold, ${goldSum} summed`);
+    assert.equal(cev.filter((e) => e.type === 'custom' && ['shot', 'gold'].includes(e.name)).length, 0);
+    assert.ok(ofType(sev, 'counts').some((c) => c.counts.some((e) => e.name === 'snapshot' && e.n > 0)), 'the server counted its snapshots');
+  });
+  check('network: frame windows carry ENet\'s round trip, loss and bytes while connected', () => {
+    const windows = ofType(cev, 'frame_window').filter((w) => w.net);
+    assert.ok(windows.length >= 2, `${windows.length} windows with net`);
+    for (const w of windows) {
+      const n = w.net;
+      assert.equal(n.transport, 'enet');
+      assert.equal(n.host, false);
+      assert.equal(n.link, null);
+      assert.equal(n.rtt.a, 0.05);
+      assert.equal(Sketch.from(n.rtt).n, n.samples);
+      assert.ok(n.samples > 0 && n.rtt_p50 >= 0 && n.rtt_p95 >= n.rtt_p50 && n.rtt_max >= n.rtt_p95, JSON.stringify(n));
+      for (const k of ['jitter_ms', 'loss_pct', 'in_kbps', 'out_kbps']) assert.equal(typeof n[k], 'number', `${k}: ${JSON.stringify(n)}`);
+    }
+  });
+  check('disconnects: the frozen server is a timeout, the kick a server close, and leaving no disconnect', () => {
+    const d = ofType(cev, 'disconnect');
+    assert.deepEqual(d.map((e) => e.reason), ['timeout', 'server_closed'], `${JSON.stringify(d)}${netOut}`);
+    for (const e of d) assert.ok(e.connected_s > 0 && 'rtt_p95' in e && 'loss_pct' in e, JSON.stringify(e));
+    const r = ofType(cev, 'reconnect');
+    assert.equal(r.length, 2, JSON.stringify(r));
+    assert.ok(r.every((e) => e.after_s > 0 && e.after_s < 10), JSON.stringify(r));
+  });
+  check('disconnects: each drop ends the attempt as an abandon (reason disconnect); playing on, the level completes', () => {
+    const levels = cev.filter((e) => e.type.startsWith('level_')).map((e) => [e.type, e.reason ?? null]);
+    assert.deepEqual(levels, [['level_start', null], ['level_abandon', 'disconnect'], ['level_abandon', 'disconnect'], ['level_complete', null]]);
+  });
+  check('server mode: the server and the client keep their unsent batches apart, and nothing is left unsent', () => {
+    assert.ok(!fs.existsSync(path.join(userDir, 'glitchless/server_outbox.json')), 'server_outbox.json left');
+    assert.ok(!fs.existsSync(outbox), 'outbox.json left');
+  });
+
+  // 13. The same game against a server that predates the additions: its /v1/health lists no features. The dedicated
+  // server sends nothing at all (its sessions would land among players'), the client sends no counters, and both say why.
+  const old = await runNet(null, { kickOn: 0, stopAt: 20, leaveOn: 1, freeze: false });
+  check('older server: a dedicated server sends it nothing, and says so', () => {
+    assert.equal(old.batches.filter((b) => b.role === 'server').length, 0);
+    assert.match(old.srv.out, /doesn't take dedicated servers' sessions yet/);
+    assert.ok(!fs.existsSync(path.join(userDir, 'glitchless/server_outbox.json')), 'server_outbox.json left');
+  });
+  check('older server: a player sends no counters, and says so; everything else goes as before', () => {
+    const events = old.batches.flatMap((b) => b.events);
+    assert.ok(ofType(events, 'session_start').length === 1 && ofType(events, 'frame_window').length > 0);
+    assert.equal(ofType(events, 'counts').length, 0);
+    assert.match(old.cli.out, /doesn't take count\(\) yet/);
   });
 } finally {
   server?.kill();

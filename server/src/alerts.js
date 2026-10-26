@@ -26,6 +26,7 @@ import { seconds } from './rollups.js';
 import { sumsBy } from './sums.js';
 import { reportsOf } from './reports.js';
 import { DEFAULT_PROJECT } from './auth.js';
+import { isCompanion } from './ingest.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -786,7 +787,7 @@ export function watchAlerts({ store, url, format = null, projectId = DEFAULT_PRO
     const t = now();
     const sent = [];
     for (const { service, last_seen } of await store.services(projectId)) {
-      if (last_seen < t - DAY) continue;
+      if (last_seen < t - DAY || isCompanion(service)) continue;
       for (const s of await checkService({ store, state, projectId, service, enabledAt, now: t })) {
         const m = alertMessage(s, { link });
         const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(kind === 'slack' ? slackPayload(m) : discordPayload(m)), signal: AbortSignal.timeout(10_000) });

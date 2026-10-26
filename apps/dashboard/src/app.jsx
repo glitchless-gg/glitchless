@@ -15,6 +15,8 @@ import { Reports } from './pages/Reports.jsx';
 import { Agents } from './pages/Agents.jsx';
 import { Setup } from './pages/Setup.jsx';
 import { Pages } from './pages/Pages.jsx';
+import { Servers } from './pages/Servers.jsx';
+import { Matches } from './pages/Matches.jsx';
 import { VIEWS, EMPTY_PAGES } from './dashboard.js';
 import { Shell, DEFAULT_SHELL } from './shell.js';
 import { THEMES, applyTheme, useThemePref, useTheme } from './theme.js';
@@ -43,7 +45,7 @@ export const NAV = [
 ];
 
 // The page component of each built-in view.
-const VIEW_PAGES = { events: Events, performance: Performance, errors: Errors, players: Players, heatmaps: Heatmaps, sessions: Sessions, versions: Versions, live: LiveTail, reports: Reports };
+const VIEW_PAGES = { events: Events, performance: Performance, errors: Errors, players: Players, heatmaps: Heatmaps, sessions: Sessions, versions: Versions, live: LiveTail, reports: Reports, servers: Servers, matches: Matches };
 const DAY = 86400e3;
 
 export function useHashRoute() {
@@ -60,6 +62,20 @@ export function useHashRoute() {
     return () => window.removeEventListener('hashchange', on);
   }, []);
   return route;
+}
+
+// The property filter (A6): ?prop.rank=diamond,gold before the hash, so it stays as the pages change and a copied
+// link keeps it. { rank: ['diamond', 'gold'] }.
+function readProps() {
+  const out = {};
+  for (const [k, v] of new URLSearchParams(window.location.search)) if (k.startsWith('prop.') && v) out[k.slice(5)] = v.split(',').filter(Boolean);
+  return out;
+}
+
+function writeProps(props) {
+  const q = new URLSearchParams([...new URLSearchParams(window.location.search)].filter(([k]) => !k.startsWith('prop.')));
+  for (const [k, v] of Object.entries(props)) if (v.length) q.set(`prop.${k}`, v.join(','));
+  window.history.replaceState(null, '', `${window.location.pathname}${q.size ? `?${q}` : ''}${window.location.hash}`);
 }
 
 function load(key, fallback) {
@@ -81,6 +97,8 @@ export function App({ shell: custom = {} }) {
   const [env, setEnv] = useState('');
   const [version, setVersion] = useState('');
   const [type, setType] = useState('all');
+  const [props, setPropsState] = useState(readProps);
+  const setProps = (next) => (writeProps(next), setPropsState(next));
   const [live, setLive] = useState(() => load('glitchless.live', '1') === '1');
   // The side navigation folds to a rail of icons, remembered in this browser; on a phone there's no side navigation.
   const [folded, setFolded] = useState(() => load('glitchless.nav', 'open') === 'folded');
@@ -113,6 +131,12 @@ export function App({ shell: custom = {} }) {
     }
     if (!service || !list.find((s) => s.service === service)) setService([...list].sort((a, b) => b.last_seen - a.last_seen)[0].service);
   }, [list, service]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Another game has other properties: its filter goes when the game changes (not when the remembered one loads).
+  const lastService = useRef(service);
+  useEffect(() => {
+    if (lastService.current && service && lastService.current !== service && Object.keys(props).length) setProps({});
+    if (service) lastService.current = service;
+  }, [service]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     try {
       localStorage.setItem('glitchless.range', rangeKey);
@@ -130,7 +154,9 @@ export function App({ shell: custom = {} }) {
 
   // A range past the server's limit (a plan that keeps less) falls back to the longest one it has.
   const range = ranges.find((r) => r.key === rangeKey) || (RANGES.some((r) => r.key === rangeKey) ? ranges.at(-1) : RANGES[3]);
-  useEffect(() => setAnswered({}), [range.key, service, env, version, type]);
+  const propParams = Object.fromEntries(Object.entries(props).map(([k, v]) => [`prop.${k}`, v.join(',')]));
+  const propKey = JSON.stringify(propParams);
+  useEffect(() => setAnswered({}), [range.key, service, env, version, type, propKey]);
   const estimated = [...new Set(Object.values(answered).flatMap((v) => JSON.parse(v)[0]))];
   const notes = [...new Set(Object.values(answered).map((v) => JSON.parse(v)[1]).filter(Boolean))];
   const now = useMemo(() => Math.floor(Date.now() / 5000) * 5000, [tick, rangeKey, live]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,6 +166,9 @@ export function App({ shell: custom = {} }) {
   const week = Math.floor(now / 300e3) * 300e3;
   const dash = useQuery('dashboard', { service, from: week - 7 * DAY, to: week }, { enabled: !!service, refreshMs: 60000 });
   const dashboard = dash.data?.dashboard;
+  // The game's session properties over the same week (A6), for the property filter and the splits by one.
+  const known = useQuery('events', { service, from: week - 7 * DAY, to: week }, { enabled: !!service, refreshMs: 300000 });
+  const properties = (known.data?.properties || []).filter((p) => !p.identifier_like);
   const pages = dashboard?.pages || (service ? [] : EMPTY_PAGES);
   const filters = {
     service,
@@ -149,8 +178,13 @@ export function App({ shell: custom = {} }) {
     to: now,
     rangeKey,
     live,
-    params: { service, env, version, type, from: now - range.ms, to: now },
+    props,
+    setProps,
+    properties,
+    params: { service, env, version, type, from: now - range.ms, to: now, ...propParams },
     go: (path) => (window.location.hash = `#/${path}`),
+    // The page that shows a built-in view (a board may have the view's own id, such as "servers").
+    pageOf: (view) => pages.find((p) => p.view === view)?.id ?? view,
     versions: current?.versions || [],
     dashboard: { spec: dashboard?.spec ?? null, source: dashboard?.source, updated_at: dashboard?.updated_at, updated_by: dashboard?.updated_by, reload: dash.reload },
   };
@@ -164,12 +198,13 @@ export function App({ shell: custom = {} }) {
   const statics = { agents: Agents, setup: Setup };
   // A page of the game's dashboard; else another item; else a built-in view the dashboard leaves out (links
   // such as #/errors/<issue> or #/sessions/<id> still open it); else the first page.
+  const builtIn = (id) => ({ Page: VIEW_PAGES[id], title: VIEWS[id].title, page: { id, view: id } });
   const resolve = (id) => {
     const item = items.find((n) => n.path && n.path === id);
     const p = item?.dash;
     if (p) return p.view ? { Page: VIEW_PAGES[p.view], title: p.title, page: p } : { Page: Board, title: p.title, page: p };
     if (item) return { Page: item.page || statics[item.path], title: item.title };
-    if (VIEW_PAGES[id]) return { Page: VIEW_PAGES[id], title: VIEWS[id].title, page: { id, view: id } };
+    if (VIEW_PAGES[id]) return builtIn(id);
     return null;
   };
   const first = items.find((n) => n.path);
@@ -178,7 +213,11 @@ export function App({ shell: custom = {} }) {
   useEffect(() => {
     if (unknown) dash.reload();
   }, [unknown, route.page]); // eslint-disable-line react-hooks/exhaustive-deps
-  const view = resolve(route.page) || (first ? resolve(first.path) : null);
+  // A link into a built-in view (#/matches/<id>, #/sessions/<id>, #/errors/<issue>) opens that view even when a board
+  // of the game has the same id, under the page that shows the view when there is one.
+  const deep = !!route.arg && !!VIEW_PAGES[route.page] && resolve(route.page)?.page?.view !== route.page;
+  const shows = deep && pages.find((p) => p.view === route.page);
+  const view = (deep ? (shows ? resolve(shows.id) : builtIn(route.page)) : resolve(route.page)) || (first ? resolve(first.path) : null);
   const active = view?.page?.id ?? (items.some((n) => n.path === route.page) ? route.page : first?.path);
   const Page = view?.page?.view === 'sessions' && route.arg ? SessionDetail : view?.Page;
   const loading = (services.loading && !services.data) || (service && !dashboard && dash.loading);
@@ -259,7 +298,7 @@ export function App({ shell: custom = {} }) {
               <div className="crumbs">
                 <BrandLogo brand={brand} />
                 <span className="root">{service || shell.brand.name} /</span>
-                <h1>{Page === SessionDetail ? 'Session Replay' : view?.title}</h1>
+                <h1>{Page === SessionDetail ? 'Session Replay' : view?.page?.view === 'matches' && route.arg ? 'Match' : view?.title}</h1>
               </div>
               <div className="spacer" />
               <div className="tvars">
@@ -282,6 +321,7 @@ export function App({ shell: custom = {} }) {
                     <option value="simulated">simulated</option>
                   </select>
                 </label>
+                <PropFilter list={properties} props={props} onChange={setProps} />
                 <label className="tvar">
                   <span>$version</span>
                   <select value={version} onChange={(e) => setVersion(e.target.value)}>
@@ -327,6 +367,46 @@ export function App({ shell: custom = {} }) {
         </div>
       </Filters.Provider>
     </Shell.Provider>
+  );
+}
+
+// Only sessions with a property's value (A6): a key, then one of its values, from what the game sent over the
+// week. A game that sends no properties shows nothing here.
+function PropFilter({ list, props, onChange }) {
+  const [picked, setPicked] = useState(null);
+  // A key picked without a value yet holds only while this game has it.
+  const key = Object.keys(props)[0] ?? (list.some((p) => p.key === picked) ? picked : null);
+  if (!list.length && !key) return null;
+  const values = list.find((p) => p.key === key)?.values || [];
+  const now = props[key]?.join(',') ?? '';
+  const pickKey = (k) => (setPicked(k || null), onChange({}));
+  return (
+    <>
+      <label className="tvar" title="Only sessions with this property">
+        <span>$property</span>
+        <select value={key ?? ''} onChange={(e) => pickKey(e.target.value)}>
+          <option value="">*</option>
+          {list.map((p) => (
+            <option key={p.key}>{p.key}</option>
+          ))}
+          {key && !list.some((p) => p.key === key) && <option>{key}</option>}
+        </select>
+      </label>
+      {key && (
+        <label className="tvar">
+          <span>${key}</span>
+          <select value={now} onChange={(e) => onChange(e.target.value ? { [key]: e.target.value.split(',') } : {})}>
+            <option value="">*</option>
+            {values.map((v) => (
+              <option key={v.value} value={v.value}>
+                {v.value}
+              </option>
+            ))}
+            {now && !values.some((v) => v.value === now) && <option value={now}>{now.replace(/,/g, ', ')}</option>}
+          </select>
+        </label>
+      )}
+    </>
   );
 }
 

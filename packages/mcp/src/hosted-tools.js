@@ -6,4 +6,5 @@ import './tools/dashboard.js';
 import './tools/reports.js';
 import './tools/store-reviews.js';
 import './tools/revenue.js';
+import './tools/multiplayer.js';
 import './tools/workspace.js';

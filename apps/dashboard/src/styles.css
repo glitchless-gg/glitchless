@@ -180,6 +180,26 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .barrow .bt { height: 14px; background: var(--track); border-radius: 2px; overflow: hidden; display: flex; }
 .barrow .bf { height: 100%; }
 .barrow .bv { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Rates by row (board breakdowns with rate or avg): a bar, its likely range as a whisker, and the line every row is
+   read against. A row whose range misses the line takes the accent (the game's, else blue). */
+.ratebars .rt { position: relative; height: 14px; background: var(--track); border-radius: 2px; }
+.ratebars .rf { position: absolute; left: 0; top: 0; bottom: 0; background: var(--quiet); border-radius: 2px; }
+.ratebars .rt.off .rf { background: var(--accent, #3d8cf5); }
+.ratebars .rw { position: absolute; top: 6px; height: 2px; background: var(--text-2); min-width: 1px; }
+.ratebars .rw::before, .ratebars .rw::after { content: ''; position: absolute; top: -4px; width: 1px; height: 10px; background: var(--text-2); }
+.ratebars .rw::before { left: 0; } .ratebars .rw::after { right: 0; }
+.ratebars .rl { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--ink); }
+.ratebars .bv .muted { font-weight: 500; }
+.ratekey { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 11px; margin-top: 2px; }
+.ratekey .rl-key { display: inline-block; width: 0; height: 12px; border-left: 2px dashed var(--ink); }
+.ratekey .rw-key { display: inline-block; width: 14px; height: 2px; background: var(--text-2); margin-left: 6px; }
+/* A distribution panel's histogram, with its median marked. */
+.dist svg { display: block; width: 100%; height: 140px; }
+.dist .db { fill: var(--ink); opacity: .85; }
+.dist .dm { stroke: var(--accent, #3d8cf5); stroke-width: 2; stroke-dasharray: 4 3; }
+.dist .dx { position: relative; height: 16px; margin: 4px 0 6px; font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dist .dx span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.dist .dx span:first-child { transform: none; } .dist .dx span:last-child { transform: translateX(-100%); }
 
 /* ─── findings ─── */
 .findings { display: flex; flex-direction: column; gap: 8px; }
@@ -256,6 +276,35 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .why { color: var(--muted); font-size: 12.5px; padding: 2px 0 4px; }
 .funnel-input { flex: 1; min-width: 220px; height: 28px; border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 8px; font: 12.5px var(--mono); }
 .dt tr.section td { background: var(--bg); color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; padding-top: 10px; }
+
+/* genre additions (A5 to A9): a page's where, session properties, the match page */
+.page-where { font-size: 12.5px; margin-top: -6px; }
+.where-input { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; font-size: 12px; }
+.where-input .input { width: 0; flex: 1 1 110px; min-width: 72px; max-width: 260px; }
+.dt tr.has-where td { border-bottom: 0; padding-bottom: 2px; }
+.dt tr.where-row td { padding-top: 0; }
+.where-row .where-input { margin-top: 0; }
+.prop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px 22px; }
+.prop-grid > div > b { display: block; margin-bottom: 4px; }
+.kicker { font-size: 11px; }
+.match-head { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; padding-top: 8px; }
+.match-verdict { margin-top: 12px; font-size: 12.5px; line-height: 1.6; }
+.slotwrap { overflow-x: auto; padding: 10px 12px 10px; }
+.slotgrid { display: grid; gap: 2px; align-items: center; width: max-content; }
+.sl-label { position: sticky; left: 0; z-index: 1; background: var(--panel); padding-right: 10px; font-size: 12px; line-height: 1.25; white-space: nowrap; }
+.sl-label .muted { font-size: 11px; }
+.sl-tick { height: 14px; font: 10.5px var(--mono); color: var(--muted); white-space: nowrap; }
+.slotgrid { --lobby: color-mix(in srgb, var(--alert-solid) 40%, transparent); }
+.sl-tick.lobby { background: var(--lobby); border-radius: 2px; }
+.sl { display: inline-block; width: 16px; height: 16px; border-radius: 2px; background: var(--track); }
+.sl.ok { background: var(--ok-solid); } .sl.warn { background: var(--warn-solid); } .sl.alert { background: var(--alert-solid); } .sl.neutral { background: var(--quiet); }
+.sl.server { border-radius: 1px; }
+.sl.spike { box-shadow: inset 0 0 0 2px var(--text); }
+.sl.lobby { box-shadow: 0 0 0 2px var(--lobby); }
+.sl.spike.lobby { box-shadow: inset 0 0 0 2px var(--text), 0 0 0 2px var(--lobby); }
+.slot-legend i.sl.lobby { background: color-mix(in srgb, var(--alert-solid) 40%, transparent); box-shadow: none; }
+.slot-legend { margin-top: 10px; }
+.slot-legend i.sl { width: 12px; height: 12px; margin-right: 5px; }
 
 /* dashboard pages */
 .navitem.quiet { font-size: 12px; font-weight: 400; opacity: .75; }

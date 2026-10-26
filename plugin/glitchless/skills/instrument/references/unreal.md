@@ -76,7 +76,34 @@ turns map levels off.
 | a problem the game noticed | `FGlitchless::Error(TEXT("save failed"))` | Report Error |
 
 Pass Unreal units: the plugin sends positions in metres with y up, like the other SDKs. Every call is safe before
-Init and from any thread. `UE_LOG` errors, ensures, Blueprint runtime errors (Accessed None…) and crashes are
+Init and from any thread.
+
+**Outcomes, decks and streams.** Track a moment, count a stream, and send outcomes as flags so boards can show a win
+rate. `FGlitchlessAttributes` takes words, numbers, flags and lists (in Blueprint: the **Glitchless Attributes**
+struct, or the Add Word, Add Number, Add Flag and Add List nodes):
+
+| What | C++ | Blueprint node |
+| --- | --- | --- |
+| a match, run or battle ends | `FGlitchless::Track(TEXT("match_end"), FGlitchlessAttributes().Add(TEXT("won"), true).Add(TEXT("hero"), Hero).Add(TEXT("items"), Items))` (`Items` a `TArray<FString>`) | Track Event (Attributes) |
+| shots, kills, gold, taps: anything many times a second | `FGlitchless::Count(TEXT("gold"), FGlitchlessAttributes().Add(TEXT("source"), TEXT("loot")).Add(TEXT("amount"), 35.0))`: words and flags (4) say which, numbers (4) are summed, sent once every 5 s | Count Event |
+| what the attempt is | `FGlitchless::LevelStart(TEXT("nmd_ghoa"), FGlitchlessAttributes().Add(TEXT("tier"), TEXT("pit_80")).Add(TEXT("party_size"), 3))` | Level Start's Attributes pin |
+| what holds for the session: mode, rank tier, class, region | `FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"))` (words, whole numbers, flags; a band like `"30-39"`, not an exact level), `ClearProperty` | Set Glitchless Property (and Number, Flag) |
+| a match or party from the game's server | `FGlitchless::SetGroup(EGlitchlessGroup::Match, MatchId)` when it starts, `ClearGroup(EGlitchlessGroup::Match)` when it ends: every event carries the ID, hashed | Set Group, Clear Group |
+| a roguelite run across levels | `FString Run = FGlitchless::SetGroup(EGlitchlessGroup::Run)`; save `Run` to resume it after a restart (Install and Full mode) | Set Group (Run) |
+| where the player is in an open world (a zone, a room) | `FGlitchless::SetZone(TEXT("westfall"))`, empty to leave | Set Zone |
+
+Properties and group IDs are checked: never a name, an account or platform ID, an email or a friends list. Match and
+party IDs must be the ones the game's server made for that match (8 to 64 of `A-Z a-z 0-9 _ . : -`).
+
+**Multiplayer on Unreal's replication needs nothing more.** Once a second a client's frame windows carry its round
+trip, packet loss, jitter and traffic from the net driver, and a lost connection sends a `disconnect` (and abandons
+the level, never a fail). A **dedicated server** reports itself as the game's server (role `server`, filed under
+`<service>.server`): its tick time against `NetServerMaxTickRate`, players, their pings, CPU, memory and crashes. A
+**listen server** is a player (`net.host`) and, while it hosts, a server too. Set `ServerRegion` in the settings (or
+`-glitchless-region=eu-west` on each server's command line) to split ping by region, and `bServerSessionPerMatch` for
+a server that hosts one match at a time. A game on another library (Steam Networking Sockets, EOS) calls
+`FGlitchless::NetSample(RttMs, LossPct)` once a second and `FGlitchless::Disconnect(TEXT("timeout"))` itself. Call
+`SetGroup(Match, …)` on the server and every client with the same ID, so a match reads from every side. `UE_LOG` errors, ensures, Blueprint runtime errors (Accessed None…) and crashes are
 reported without code; a crash is sent the next time the game starts. UObject and actor counts are sent as gauges
 already; add the game's own counts with `SetContext`. To find a Blueprint-only game's moments, add the nodes in the
 Blueprints that handle them (with Unreal MCP, or by asking the user to).

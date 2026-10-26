@@ -160,7 +160,7 @@ test('versions compare revenue per session and player, and conversion', () => {
 test('sums, per and currency are checked before they are saved', () => {
   const bad = (panel, re) => assert.throws(() => validateBoard({ panels: [panel] }), re, JSON.stringify(panel));
   bad({ type: 'stat', metric: 'players', sum: 'amount' }, /sum goes with event/);
-  bad({ type: 'stat', event: 'purchase', sum: 'amount', per: 'paywall' }, /\$players or \$sessions/);
+  bad({ type: 'stat', event: 'purchase', sum: 'amount', per: 'paywall' }, /\$players, \$sessions or \$hours/);
   bad({ type: 'stat', event: 'purchase', sum: '$version' }, /numeric attribute/);
   bad({ type: 'breakdown', event: 'purchase=gems_500', sum: 'amount', by: 'store' }, /event is a name only/);
   bad({ type: 'series', event: 'purchase:store=ios', sum: 'amount', by: 'item' }, /event is a name only/);

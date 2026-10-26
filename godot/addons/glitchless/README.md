@@ -11,6 +11,8 @@ It reports:
 - **Play events:** the level funnel, deaths, game events and gauges.
 - **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed.
 - **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
+- **Multiplayer:** ping, packet loss and disconnects from Godot's own MultiplayerAPI (ENet, and WebSocket for web exports), which match and party each event belongs to, and a dedicated server's tick time and players, kept apart from players' sessions.
+- **Genre numbers:** counters for streams of events (shots, kills, gold), properties that hold for a session (mode, rank tier, class, region), level attributes (difficulty, party size) and zones in an open world.
 
 It also has an agent flag, `--glitchless-measure=SECONDS`, which prints frame stats as JSON and quits. It's the native version of the browser SDK's `glitchless_measure` tool.
 
@@ -47,6 +49,11 @@ Glitchless.error("save slot unreadable", {"slot": 2}) # an error the game caught
 var stats := await Glitchless.measure(5.0)            # what --glitchless-measure prints
 Glitchless.open_bug_report()                          # the bug report form, from a pause menu
 await Glitchless.report_bug(note)                     # or a report from the game's own form
+Glitchless.count("kill", {"monster": "elite"})        # a stream of events: counted, sent once a window
+Glitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for this session
+Glitchless.level_start("pit_80", {"tier": "pit_80", "party_size": 3})  # an attempt with its attributes
+Glitchless.set_group("match", match_id)               # every event until set_group("match", null) carries it
+Glitchless.set_zone("ashen_wastes")                   # where the player is in an open world
 ```
 
 **Leaving a level is not losing it.** Call `level_abandon()` when the player leaves a level before it ends (goes to the menu, restarts it), not `level_fail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background or closes with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session's end, and drops a `level_fail` or `level_abandon` the game sends for that level afterwards (from `_exit_tree`, say). Back from the background in the same session, the level carries on and the server takes the abandon back.
@@ -78,6 +85,13 @@ Purchases have one convention in every Glitchless SDK:
 | `enabled` | off in debug builds | force sending on or off |
 | `debug` | `false` | print each batch |
 | `bug_reports` | `false` | `true`, or `{"hotkey": KEY_F8, "pause": true, "screenshot": true}`: F8 opens the [bug report form](#bug-reports) |
+| `properties` | `{}` | the session's [properties](#properties) from the start, as `set_properties` takes them |
+| `hash_group_ids` | `true` | send [match and party IDs](#matches-parties-and-runs) hashed; `false` sends them as the game's server made them |
+| `network` | `true` | read [ping, packet loss and disconnects](#multiplayer-ping-packet-loss-and-disconnects) from Godot's MultiplayerAPI |
+| `role` | `""` | `"server"` makes this a [dedicated server](#dedicated-servers); `"player"` stops a game's own `--server` flag from meaning one. `""`: a dedicated-server export, `--glitchless-server` or `--server` is a server |
+| `region` | `""` | a server's region, in the game's words (`"eu-west"`) |
+| `max_players` | `0` | the most players a server takes |
+| `session_per_match` | `false` | a server's session lasts one match, for a server that hosts one at a time |
 
 Frame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings.
 
@@ -120,6 +134,95 @@ var result := await Glitchless.report_bug(note)       # the game's own form: {"s
 - **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so.
 - **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
 
+### Counters
+
+`track()` sends one event per call, and the SDK queues at most 2,000 events. A stream (shots, hits, kills, loot, gold, taps) would fill that in a minute and push out the frame windows. Count a stream instead:
+
+```gdscript
+Glitchless.count("kill", {"monster": "elite"})
+Glitchless.count("gold", {"source": "loot", "amount": 35})   # numbers are summed as passed
+Glitchless.count("shot", "bow", 3)                            # one word is "what"; 3 events at once
+```
+
+Nothing is queued per call. Each window (every `flush_interval` seconds, and at each `level_start`, so counts keep their level) adds the calls up per name and per its words and booleans (up to 4), sums its numbers (up to 4), and sends one `counts` event. A window holds 64 entries: past that, a new group of a name already counted goes under `(other)`, and a new name is dropped and counted in `dropped`. Dashboards read a counter by its name like any event (`kill` per hour played, `gold` by `source`, summed by `amount`). A debug build warns once when a name is tracked more than 20 times a second. The rule: track a moment, count a stream.
+
+### Properties
+
+What holds for the session, in the game's words: its mode, the player's rank tier or class, the input they use, the region of the game's servers. Any panel can then split by one (`$rank`), and a dashboard page can show only some sessions.
+
+```gdscript
+Glitchless.init("arena", "", "prod", intake, {"properties": {"mode": "squads"}})
+Glitchless.set_property("rank", "gold")               # after sign-in, at the menu, at matchmaking
+Glitchless.set_properties({"class": "necromancer", "level_band": "30-39"})
+Glitchless.set_property("party", null)                # null removes one
+```
+
+- Keys are 1 to 32 of `a-z`, `0-9` and `_`, starting with a letter, at most 12 a session. Values are a word (trimmed, up to 64 characters), a boolean or a whole number from −1,000,000 to 1,000,000. Fractions are dropped: send a band (`"30-39"`), not an exact level.
+- The built-in splits can't be used as keys (`version`, `level`, `platform`, `zone`, the Steam facts…). Keys that name a person (`name`, `email`, `user_id`, `steam_id`, `age`…) and values shaped like an email, a link, a phone number, a long number or an ID are dropped, with a warning in a debug build. [PRIVACY.md](PRIVACY.md#properties-the-games-words-about-the-session) says why.
+- They go in `session_start` when the first batch goes, and a later change as one `props` event a window with only the keys that changed. A call that changes nothing sends nothing. Nothing is kept on the device: each launch sets them again.
+- What changes from match to match (hero, deck, map) belongs on the events or on `level_start`, not in a property.
+
+### Matches, parties and runs
+
+```gdscript
+Glitchless.set_group("match", match_id, {"mode": "squads", "players": 100})  # the ID the game's server made
+Glitchless.set_group("party", party_id)               # while the party lasts; never a guild or friends list
+var run_id := Glitchless.set_group("run")             # Glitchless makes run IDs: save it with the run
+Glitchless.set_group("run", saved_run_id)             # a run that goes on after a restart
+Glitchless.set_group("match", null)                   # the match ended
+```
+
+Each sends a `group` event, and while it is set every event and window carries `"match": …` (or `party`, `run`), as it carries the level. So everyone in one match can be lined up: the whole lobby lagging at minute 12 is the server; one player lagging is their connection.
+
+- IDs are 8 to 64 of `A-Z`, `a-z`, `0-9` and `_ . : -`. Anything else is dropped.
+- **Match and party IDs go hashed:** `h_` and the first 24 hex characters of SHA-1 over the game's service (lowercased), `:` and the ID, as every Glitchless SDK sends them. Everyone in the match sends the same hash, a server and its clients included, whatever engine each runs, but it can't be looked up in the game's own match logs. `"hash_group_ids": false` sends them as they are, to match them against your own server's logs.
+- **Runs:** in install and full mode a saved run ID resumes the run. In anonymous mode it gets a new ID (with `resumed: true`), so nothing ties two launches together.
+- Groups set before `init()` go out once it is called.
+
+### Level attributes and zones
+
+`level_start(level, attrs)` describes the attempt: `{"tier": "pit_80", "party_size": 3}`, `{"heat": 4, "weapon": "rail"}`. The level funnel can then split clears by difficulty or group size. Attributes follow the rules of `track()`'s.
+
+A **zone** is where the player is in an open world (an MMO region, a metroidvania room), apart from levels, with no start or end. `Glitchless.set_zone("ashen_wastes")` stamps every event and window with it, as the level is, and dashboards split by `$zone`. A window never spans two zones, unless the player crosses back and forth within a second. `set_zone(null)` clears it.
+
+### Multiplayer: ping, packet loss and disconnects
+
+Nothing to set up for a game on Godot's MultiplayerAPI. Once a second while connected, Glitchless reads the tree's `multiplayer.multiplayer_peer`:
+
+| | ENet (`ENetMultiplayerPeer`) | WebSocket (`WebSocketMultiplayerPeer`, web exports) |
+| --- | --- | --- |
+| round trip | `get_peer(1).get_statistic(PEER_ROUND_TRIP_TIME)` | none: pass the game's own ping with `net_sample()` |
+| jitter, packet loss | `PEER_ROUND_TRIP_TIME_VARIANCE`; `PEER_PACKET_LOSS` over `PACKET_LOSS_SCALE` | none |
+| bytes in and out | the ENet host's `pop_statistic` (which resets its counters: a game that reads them itself gets what is left since the last second) | none |
+| disconnects | `peer_disconnected(1)` then `server_disconnected` | the same, with the WebSocket's close code |
+
+Each frame window while connected gains `net`: a 5% sketch of the round trips, their p50, p95 and maximum, jitter, loss, kbps in and out, the transport, and `host: true` on a listen server's host (whose own round trip is zero).
+
+**Disconnects.** A `disconnect` event says why (`timeout`, `connection_lost`, `server_closed`, `failed_to_connect`, `kicked`, `other`), how long the player was connected, and the window's ping and loss. A server that closes the connection sends ENet's goodbye, which arrives with the drop; a connection that timed out brings nothing, so the two are told apart (a kick reads as `server_closed`: say `Glitchless.net_disconnect("kicked")` in your own `server_disconnected` handler and that wins). A player who closes the connection themselves (`multiplayer_peer.close()`) is leaving, not disconnected: Godot sends `server_disconnected` alone then, and Glitchless sends nothing. With a level open, the attempt ends as a `level_abandon` with reason `disconnect`, never a fail, and a fail or abandon the game sends for it afterwards is dropped. Connecting again within 5 minutes is a `reconnect` (`after_s`); a player back in the same level plays on in it. At most 20 disconnects a session.
+
+**Other netcode** (Steam Networking Sockets, Nakama, a WebSocket game's own ping): `Glitchless.net_sample(rtt_ms, loss_pct, jitter_ms)` about once a second while connected, `Glitchless.net_disconnect(reason)` and `Glitchless.net_reconnect()`. (`disconnect` is taken: every Godot object has one, for signals.) `"network": false` turns the reading off.
+
+### Dedicated servers
+
+A Godot dedicated-server export (`OS.has_feature("dedicated_server")`), a run with `--server` or `--glitchless-server`, or `{"role": "server"}` reports as the game's server, under its companion service `<game>.server`, and never as a player's session. A headless server is a live session (`user`), not a bot's; `--autoplay` or `--glitchless-synthetic` marks a load test.
+
+```gdscript
+Glitchless.init("arena", "", "prod", intake, {"region": "eu-west", "max_players": 100})
+Glitchless.level_start("island")                      # the map it hosts
+Glitchless.set_group("match", match_id)               # the same ID its players set
+Glitchless.set_players(n)                             # only for netcode other than the MultiplayerAPI
+```
+
+- Every 5 s a `server_window`: each physics tick's time (from Glitchless's first `_physics_process` to the next tick or the frame's `_process`, so the physics step is in it) against the budget, 1000 / `Engine.physics_ticks_per_second`, the ticks over it (`late`), the tick rate reached, the players connected (`multiplayer.get_peers()`) and their round trips, kbps in and out, and on Linux the process's memory and CPU (percent of one core). No frame windows, hitches, positions or bug reports.
+- `session_start` says the tick rate, `max_players`, the build (`dedicated` or `headless`), `region` and the host's OS, cores and memory. Never its address or host name.
+- Envelopes carry `role: "server"` and no player ID. A server session lasts as long as its process, cut every 6 hours (`session_end` reason `max_duration`), or one match with `"session_per_match": true` (reason `match_end`).
+- A server sends nothing until the Glitchless server says it takes server sessions (`features` in `GET /v1/health`): to an older one it sends nothing at all and says so, so its sessions never land among players'. Unsent batches wait in `user://glitchless/server_outbox.json`, apart from a player build's.
+- `--server` is the flag Godot's docs suggest for starting a game as its server. If your game's `--server` means something else, pass `{"role": "player"}`.
+
+### Older servers
+
+Glitchless asks the server what it takes when `init()` runs (`GET /v1/health`). A server that predates counters gets none (the game is told once, in the log), and one that predates server mode gets nothing from a dedicated server. Properties, groups, level attributes, zones and network fields go to any server: an older one keeps them in the stored events unread.
+
 ### Flags
 
 These go after `--` on the command line, like the games' own debug flags.
@@ -132,6 +235,7 @@ These go after `--` on the command line, like the games' own debug flags.
 | `--glitchless-warmup=SECONDS` | with `--glitchless-measure`: wait this long before measuring |
 | `--glitchless-out=PATH` | with `--glitchless-measure`: write the line to this file too |
 | `--glitchless-synthetic` | mark the session as a bot's (`--autoplay` does too) |
+| `--glitchless-server` | report as the game's [dedicated server](#dedicated-servers) (a bare `--server` does too) |
 | `--glitchless-debug` | print what is sent |
 
 ## For agents: `--glitchless-measure`
@@ -229,12 +333,14 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
   - Deaths sent without a place, as anonymous mode sends them, are left off heatmaps and hotspot findings.
   - The memory-leak finding still reads three.js geometry counts. Godot leaks show through the `orphan_nodes` and `nodes` gauges instead.
   - Fix suggestions in findings are written for three.js.
-- **Web exports** are untested. A web game is better served by the browser SDK.
+- **Web exports** are untested. A web game is better served by the browser SDK. WebSocket disconnects and their close codes were checked in desktop builds, not in a browser.
+- **Network:** Godot can't tell Wi-Fi from mobile data, so `net.link` is null. Only ENet gives a round trip; WebRTC and WebSocket need `net_sample()`.
+- **Dedicated servers:** a server's memory and CPU come from `/proc/self` on Linux; elsewhere memory is the engine's static memory (debug builds only) and CPU is null. `net_objects` is null: Godot doesn't count replicated objects.
 - Sending uses `HTTPRequest` while the game runs and a blocking `HTTPClient` for the last batch, which has no frames left to finish an `HTTPRequest`. A batch the server received just before a close can arrive twice.
 
 ## Tests
 
 From the repo root:
 
-- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names.
+- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, and `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does.
 - `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.

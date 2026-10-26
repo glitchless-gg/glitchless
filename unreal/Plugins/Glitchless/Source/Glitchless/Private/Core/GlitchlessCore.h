@@ -29,6 +29,13 @@ namespace Glitchless
 
 	const char* PrivacyName(EPrivacy Privacy);
 
+	/** Whose session this is: a player's, or a game server's (a dedicated server, or a listen server's own session). */
+	enum class ERole : uint8_t
+	{
+		Player,
+		Server,
+	};
+
 	/** Everything Init() takes. PRIVACY.md says what each setting changes in what is sent. */
 	struct FOptions
 	{
@@ -75,6 +82,46 @@ namespace Glitchless
 		bool SendInDevelopmentBuilds = true;
 		/** Log each batch as it is sent. */
 		bool Debug = false;
+		/** What holds for the session (mode, rank band, region), as SetProperty takes them: an object. */
+		FValue Properties;
+		/** Match and party IDs go hashed (Rules::HashGroupId). Off sends them as the game gave them, to look up in its own server logs. */
+		bool HashGroupIds = true;
+		/** A server's region in the game's own words ("eu-west"); -glitchless-region= sets it too. */
+		std::string ServerRegion;
+		/** A server that hosts one match at a time: a session per match, ended when the match group is cleared. */
+		bool ServerSessionPerMatch = false;
+	};
+
+	/** One network sample: what the connection to the game's server looked like this second. -1 is not known. */
+	struct FNetSample
+	{
+		double RttMs = -1;
+		double LossPct = -1;
+		double JitterMs = -1;
+		double InKbps = -1;
+		double OutKbps = -1;
+		/** The library: "unreal" (its own replication) or "custom" (the game's own calls). */
+		std::string Transport = "custom";
+		/** wifi, cellular, wired, or empty where the device doesn't say. */
+		std::string Link;
+		/** This player hosts a listen server, so their own round trip is zero. */
+		bool Host = false;
+	};
+
+	/** A server's state, sampled about once a second. -1 is not known. */
+	struct FServerSample
+	{
+		int Players = -1;
+		int NetObjects = -1;
+		/** The tick rate the server aims for (Unreal's NetServerMaxTickRate): a tick over 1000 / TickHz ms is late. */
+		double TickHz = -1;
+		double InKbps = -1;
+		double OutKbps = -1;
+		/** Percent of one core. */
+		double CpuPct = -1;
+		double MemMb = -1;
+		/** Each connected player's round trip as the server sees it. */
+		std::vector<double> RttMs;
 	};
 
 	/** What one frame cost, measured by the Unreal side. -1 means not measured on this platform or build. */
@@ -103,6 +150,8 @@ namespace Glitchless
 		virtual ~ITransport() = default;
 		/** Starts a POST; Done(status) comes later on the game thread, with 0 for a network failure. */
 		virtual void Send(const std::string& Url, std::vector<uint8_t> Body, const std::string& ContentType, std::function<void(int64_t)> Done) = 0;
+		/** Starts a GET (the server's /v1/health); Done(status, body) comes later on the game thread. */
+		virtual void Get(const std::string& /*Url*/, std::function<void(int64_t, const std::string&)> Done) { Done(0, ""); }
 		/** Sends and waits at most TimeoutMs, for when the game is closing. Returns the status, or 0. */
 		virtual int64_t SendNow(const std::string& Url, const std::vector<uint8_t>& Body, const std::string& ContentType, int TimeoutMs) = 0;
 		/** Gives up on the request Send started, if it's still going. */
@@ -178,13 +227,18 @@ namespace Glitchless
 		bool IsMobile = false;
 		bool IsHeadless = false;
 		FScrubber Scrubber;
+		/** Set before Init: a server's session sends server windows in place of frame windows, with role "server". */
+		ERole Role = ERole::Player;
+		/** A server's session_start.server: tick_hz, max_players, build ("dedicated", "listen") and host {os, cores, memory_gb}. */
+		std::function<FValue()> ServerInfo;
 
 		// ───────────── the game's calls ─────────────
 
 		/** Says who the game is and where to send. Until this is called nothing is sent, but frame
 		 * times, errors and events are kept, so a game may call it late. Only the first call counts. */
 		void Init(const FOptions& InOptions);
-		void LevelStart(const std::string& LevelId);
+		/** Attrs (an object) describe the attempt: difficulty, party size, the build. */
+		void LevelStart(const std::string& LevelId, FValue Attrs = FValue());
 		void LevelComplete(const std::optional<std::string>& LevelId = std::nullopt, std::optional<double> Score = std::nullopt, std::optional<double> DurationS = std::nullopt);
 		/** The player lost the level (died, ran out of time). Leaving it is LevelAbandon. */
 		void LevelFail(const std::optional<std::string>& LevelId = std::nullopt, const std::string& Cause = "");
@@ -194,6 +248,33 @@ namespace Glitchless
 		/** A death. The place is sent only when positions are on; the death and cause always are. */
 		void Death(std::optional<double> X, std::optional<double> Y, std::optional<double> Z, const std::string& Cause);
 		void Track(const std::string& Name, FValue Attrs = FValue());
+		/** Something that happens too often to send each time (shots, kills, gold): counted on the device and sent
+		 * once a window as a counts event. Its strings and booleans (4 at most) say which count, its numbers (4 at
+		 * most) are summed, and N adds to the count. */
+		void Count(const std::string& Name, const FValue& Attrs = FValue(), int64_t N = 1);
+		/** What holds for the session (mode, rank band, class, region). Null removes it. Checked by Rules: what could
+		 * identify someone is dropped, with one warning in a development build. */
+		void SetProperty(const std::string& Key, const FValue& Value);
+		/** Marks every event with a match, party or run until ClearGroup. Match and party IDs come from the game's
+		 * server and go hashed; an empty run ID starts a new run. Returns the ID that is sent, or "" when it was dropped. */
+		std::string SetGroup(const std::string& Kind, const std::string& Id, FValue Attrs = FValue());
+		void ClearGroup(const std::string& Kind);
+		/** A group as another session already sent it (hashed): a listen server's own session takes its host's match. */
+		void AdoptGroup(const std::string& Kind, const std::string& SentId);
+		/** Where the player is in an open world (a region, a room): stamped on events and windows as the level is.
+		 * Empty leaves the zone. */
+		void SetZone(const std::string& Zone);
+		/** The connection this second. The Unreal side samples its net driver; a game on another library calls it. */
+		void NetSample(const FNetSample& S);
+		/** The connection closed the normal way (the player left the match): no disconnect. */
+		void NetEnded();
+		/** The connection failed: timeout, connection_lost, kicked, server_closed, failed_to_connect or other. Sends
+		 * a disconnect with the last window's numbers, and abandons the level that was open. */
+		void Disconnect(const std::string& Reason);
+		/** Connected again after a disconnect; the next sample does this by itself. */
+		void Reconnect();
+		/** A server's players, traffic, CPU and memory, about once a second. */
+		void ServerSample(const FServerSample& S);
 		void SetContext(const std::string& Key, double Value);
 		void SetPosition(double X, double Y, double Z);
 		/** An error from Unreal's log, or one the game reported (Manual). */
@@ -232,6 +313,10 @@ namespace Glitchless
 		void OnBackground();
 		void OnForeground();
 		void Shutdown(const std::string& Reason);
+		/** Ends the session and sends what is waiting, without waiting on the network: a listen server that stopped hosting. */
+		void EndSession(const std::string& Reason);
+		/** A session again after EndSession, under a new ID. */
+		void StartNewSession();
 		/** Sends what is waiting before the game closes or goes to the background, blocking for at most BudgetMs. */
 		void SendNow(int DeadlineMs);
 
@@ -241,11 +326,20 @@ namespace Glitchless
 		std::optional<std::string> FlagValue(const std::string& Flag) const;
 		std::string LevelForMap(const std::string& MapName) const;
 		bool IsInited() const { return Inited; }
+		bool HasManualLevels() const { return ManualLevels; }
+		bool IsEnded() const { return Ended; }
 		bool IsEnabled() const { return Enabled; }
 		bool IsSampled() const { return Sampled; }
 		const std::string& GetSessionId() const { return SessionId; }
 		const std::string& GetPlayerId() const { return PlayerId; }
 		const std::optional<std::string>& GetLevel() const { return Level; }
+		const std::optional<std::string>& GetZone() const { return Zone; }
+		/** The ID sent for a match, party or run, or "". */
+		std::string GetGroup(const std::string& Kind) const;
+		ERole GetRole() const { return Role; }
+		/** What the server says it takes (GET /v1/health features): counts, props, groups, net, server_mode. */
+		bool HasFeature(const std::string& Name) const;
+		bool FeaturesKnown() const { return FeaturesState == EFeatures::Known; }
 		const std::string& GetService() const { return Service; }
 		const std::string& GetEnv() const { return Env; }
 		const std::string& GetVersion() const { return Version; }
@@ -285,6 +379,33 @@ namespace Glitchless
 			int64_t Calls = 0, CallsMax = 0, Tris = 0, Pso = 0, Shaders = 0, Packages = 0;
 			bool HasPso = false, HasShaders = false, HasPackages = false;
 			FGauges Ctx;
+			// The connection, while there is one (net on the window).
+			bool NetSeen = false, Host = false;
+			FSketch Rtt = FSketch(0.05);
+			int NetSamples = 0, LossN = 0, JitterN = 0, InN = 0, OutN = 0;
+			double RttMax = 0, LossSum = 0, JitterSum = 0, InSum = 0, OutSum = 0;
+			// A server's ticks and state (server_window).
+			int Ticks = 0, Late = 0, PlayersMax = -1, CpuN = 0;
+			FSketch Tick;
+			double TickMax = 0, CpuSum = 0;
+			std::vector<double> PlayerRtt;
+		};
+
+		/** One count in this window: a name and the strings and booleans that say which (counts event). */
+		struct FCountEntry
+		{
+			std::string Key, Name;
+			FValue Attrs;
+			int64_t N = 0;
+			std::vector<std::pair<std::string, double>> Sums;
+			int64_t FirstTs = 0;
+		};
+
+		enum class EFeatures : uint8_t
+		{
+			Unknown,
+			Asking,
+			Known,
 		};
 
 		struct FProbe
@@ -328,7 +449,7 @@ namespace Glitchless
 
 		double Ticks() const { return Clock(); }
 		void Begin();
-		void StartLevel(const std::string& LevelId, bool FromMap);
+		void StartLevel(const std::string& LevelId, bool FromMap, FValue Attrs = FValue());
 		void LeaveLevel();
 		void Abandon(const std::optional<std::string>& LevelId, const std::string& Reason);
 		bool OutcomeSent(const std::optional<std::string>& LevelId) const;
@@ -340,6 +461,20 @@ namespace Glitchless
 		static std::vector<std::string> Causes(double Dt, const FFrameCost& F);
 		FWindow NewWindow() const;
 		void CloseWindow(bool Fresh);
+		void OnServerTick(double WorkMs);
+		FValue ServerWindowEvent(const FWindow& W, double Secs) const;
+		FValue NetJson(const FWindow& W) const;
+		void QueueCounts(const FWindow& W, double Secs);
+		void QueuePropChanges();
+		/** The zone and the groups, on every event while they are set. */
+		void Stamp(FValue& E) const;
+		void AskFeatures();
+		/** A server's batches wait until the Glitchless server says it takes them (server_mode). */
+		bool MaySend() const;
+		void OnHealth(int64_t Status, const std::string& Body);
+		/** One warning a key, in a development build or with Debug on: for what the game sent that was dropped. */
+		void WarnOnce(const std::string& Key, const std::string& Message);
+		void PushGroupEvent(const std::string& Kind, const std::string& Id, FValue Attrs, bool Resumed);
 		FValue Engine0(const char* Key) const;
 		const FValue& SampleEngine();
 		void CheckScreen();
@@ -439,5 +574,34 @@ namespace Glitchless
 		int LevelMapHandle = 0;
 		std::vector<int> Screen, Window;
 		std::shared_ptr<bool> Alive; // the transport's callbacks check it, in case the core is gone
+
+		// Counts, properties, groups and zones (docs/design/genre-coverage.md A5 to A7).
+		std::vector<FCountEntry> Counts;
+		int CountedNames = 0; // entries that count toward the 64 a window
+		int64_t CountsDropped = 0;
+		std::vector<FValue> HeldCounts; // counts events waiting for the server to say it takes them
+		EFeatures FeaturesState = EFeatures::Unknown;
+		std::vector<std::string> Features;
+		std::vector<std::pair<std::string, FValue>> Props; // what holds for the session now
+		std::vector<std::pair<std::string, FValue>> PropChanges; // since the last props event (null: removed)
+		std::vector<std::string> PropKeys; // every key set this session: 12 at most
+		std::vector<std::pair<std::string, std::string>> Groups; // kind, the ID sent
+		std::optional<std::string> Zone;
+		std::map<std::string, bool> Warned;
+		std::map<std::string, std::vector<double>> TrackTimes; // a development build warns of a track() that wants to be a count()
+
+		// The connection (A8).
+		bool NetConnected = false, NetEverConnected = false, NetHost = false;
+		std::string NetTransport, NetLink;
+		double NetConnectedAt = 0, NetLostAt = 0, LastNetSampleAt = -1e18;
+		int Disconnects = 0;
+		FValue LastNet; // the last window's net, for a disconnect that comes before this window has numbers
+		std::optional<std::string> DisconnectedLevel;
+
+		// A server (A9).
+		FServerSample LastServer;
+		double TargetHz = 0;
+		double SessionBeganAt = 0;
+		bool ServerRefused = false;
 	};
 }

@@ -110,6 +110,48 @@ export function shopSessions({ service = 'zoomies', start, spanMs = 3 * 3_600_00
   return out;
 }
 
+// Sessions of a competitive game for the genre panels (SPEC §3b rate, avg, of, per $hours, lists): matches on two
+// arenas, each ending in a match_end with the hero played, whether it was won (a boolean, or 1 and 0 from an Unreal
+// build), the outcome as a word, its length and placement, the deck as a list, and gold by source; gacha pulls with a
+// top-rarity flag; level marks with clear times. Hero `ember` wins more often, and decks with `hog` too. Version 1.1
+// pays three times the loot gold and its matches last 40% longer. Every `longEvery`th session plays more matches than
+// a session keeps the attributes of (EV.occurrences), so answers read from occurrences are estimated.
+export const HEROES = ['ember', 'frost', 'void', 'storm', 'gale', 'rook'];
+export const CARDS = ['hog', 'ice_spirit', 'fireball', 'log', 'cannon', 'musketeer', 'golem', 'skeletons', 'tornado'];
+export function genreSessions({ service = 'arena', start, spanMs = 3 * 3_600_000, sessions = 40, seed = 53, prefix = 'g', matches = [2, 6], longEvery = 0 }) {
+  const rnd = mulberry32(seed);
+  const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+  const out = [];
+  for (let n = 0; n < sessions; n++) {
+    const version = n % 2 ? '1.1' : '1.0';
+    const unreal = n % 7 === 3;
+    const base = { service, env: 'prod', version, session_id: `${prefix}_${n}`, player_id: `${prefix}p_${n % 23}`, sdk: unreal ? 'glitchless-unreal/0.3.0' : 'glitchless-browser/0.4.0', level: null };
+    let ts = start + Math.floor(rnd() * spanMs);
+    const events = [];
+    const push = (e) => events.push({ ...base, ...e, ts: (ts += 1 + Math.floor(rnd() * 3000)) });
+    push({ type: 'session_start', session_type: 'user', device: { os: pick(['Windows', 'macOS', 'iOS']), gpu_tier: pick(['high', 'mid', 'low']), browser: unreal ? 'Unreal' : 'Chrome' } });
+    const count = longEvery && n % longEvery === 0 ? 20 : matches[0] + Math.floor(rnd() * (matches[1] - matches[0] + 1));
+    for (let m = 0; m < count; m++) {
+      const level = pick(['arena', 'arena', 'arena_2']);
+      push({ type: 'level_start', level });
+      const windows = 2 + Math.floor(rnd() * 5);
+      for (let w = 0; w < windows; w++) push({ type: 'frame_window', level, duration_s: 30, frames: 1800, budget_ms: 16.67, ft: { a: 0.02, b: { 140: 1800 }, n: 1800, z: 0, s: 30000, mn: 16, mx: 17 } });
+      const hero = pick(HEROES);
+      const deck = [...CARDS].sort(() => rnd() - 0.5).slice(0, 4);
+      const won = rnd() < (hero === 'ember' ? 0.7 : 0.45) + (deck.includes('hog') ? 0.1 : 0);
+      const duration = Math.round((300 + rnd() * 600) * (version === '1.1' ? 1.4 : 1));
+      push({ type: 'custom', level, name: 'match_end', attrs: { hero, won: unreal ? (won ? 1 : 0) : won, result: won ? 'win' : 'loss', duration_s: duration, placement: 1 + Math.floor(rnd() * 10), deck, mode: pick(['ranked', 'casual']) } });
+      push({ type: 'custom', level, name: 'gold', attrs: { amount: version === '1.1' ? 90 : 30, source: 'loot' } });
+      push({ type: 'custom', level, name: 'gold', attrs: { amount: 20, source: 'quest' } });
+      if (rnd() < 0.5) push({ type: 'custom', level, name: 'pull', attrs: { banner: pick(['summer', 'winter']), top: rnd() < 0.05 } });
+      push(won ? { type: 'level_complete', level, duration_s: Math.round(duration / 10) } : { type: 'level_fail', level, cause: 'defeat' });
+    }
+    if (rnd() < 0.8) push({ type: 'session_end', reason: 'pagehide' });
+    out.push(events);
+  }
+  return out;
+}
+
 // Cut sessions into SDK-sized batches and interleave them, as many clients sending at once would.
 export function shuffledBatches(sessions, seed = 11) {
   const rnd = mulberry32(seed);

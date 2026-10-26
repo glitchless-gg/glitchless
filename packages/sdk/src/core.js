@@ -6,6 +6,10 @@ import { WebMCPBridge } from './webmcp.js';
 import { fingerprint as fingerprintOf } from './fingerprint.js';
 import { BugReportForm, snapshot, sendReport } from './bugreport.js';
 import { readSteam, withSteam, steamVersion } from './steam.js';
+import { Counter } from './counts.js';
+import { MAX_PROPS, propKeyProblem, propValue, gameAttrs } from './props.js';
+import { GROUP_KINDS, validGroupId, hashGroupId, newRunId } from './groups.js';
+import { NetWindow, DISCONNECT_REASONS, readLink } from './net.js';
 
 export const SDK_VERSION = '0.5.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
@@ -20,6 +24,10 @@ const MAX_QUEUE = 2000;
 const MAX_HITCH_EVENTS_PER_WINDOW = 3; // detail events; frame_window.hitches still counts every hitch
 const BEACON_LIMIT = 60_000;
 const MAX_RETRY_EVENTS = MAX_QUEUE / 2; // events in batches waiting to be sent again
+const STREAM_PER_SECOND = 20; // a name tracked more often than this is a stream: count() is for those
+const NET_SAMPLE_GAP_MS = 900; // about one network sample a second
+const MAX_DISCONNECTS = 20; // disconnect events a session
+const MAX_HELD_COUNTS = 120; // counts events waiting to hear whether the server reads them
 
 const DEFAULTS = {
   service: 'unknown-game',
@@ -40,6 +48,8 @@ const DEFAULTS = {
   sessionType: 'user', // 'synthetic' for bots / autoplay, so they can be filtered out of player metrics
   bugReports: null, // { hotkey: 'F8' } (or true): players open a form in the game to send a bug report (see reportBug)
   steam: null, // an Electron game's steamworks.js client (what steamworks.init() returned): Steam facts per session (steam.js)
+  properties: null, // what holds for the session in the game's words ({ mode: 'squads', region: 'eu' }); see setProperties
+  hashGroupIds: true, // match and party IDs are hashed before they are sent (groups.js); false sends them as they are
   debug: false,
 };
 
@@ -106,10 +116,24 @@ export class Glitchless {
     this.frameId = 0;
     this.lastFrameAt = 0;
     this.refreshDeltas = []; // frame times for the refresh-rate guess (frame budget)
+    this.zone = null; // where the player is in an open world (setZone), stamped on events like the level
+    this.groups = {}; // kind → the ID sent: the match, party and run the session's events belong to (setGroup)
+    this.props = {}; // the session's properties now (setProperties)
+    this.sentProps = {}; // what the server has been told: session_start.props, then each props event
+    this.propKeys = new Set(); // every key set this session (at most 12)
+    this.propsChangedAt = 0;
+    this.counter = new Counter(); // count() entries for the current window
+    this.heldCounts = []; // counts events waiting to hear the server reads them (/v1/health features)
+    this.features = null; // what the server says it reads, once /v1/health has answered
+    this.trackRate = new Map(); // name → [second, calls], for the warning that names count()
+    this.warned = new Set();
+    this.net = { connected: false, since: 0, lastSample: 0, transport: null, host: false, last: null, disconnects: 0, disconnectedAt: 0, leftLevel: null };
     this.win = this.newWindow();
     this.datadog = this.opts.datadog ? new DatadogBridge(this.opts) : null;
+    if (this.opts.properties) this.setProperties(this.opts.properties);
 
     if (typeof window === 'undefined') return;
+    this.checkFeatures();
     this.installFrameLoop();
     this.installErrorHandlers();
     this.installLifecycle();
@@ -132,17 +156,31 @@ export class Glitchless {
 
   // ───────────────────────────── game semantic API ─────────────────────────────
 
-  levelStart(levelId) {
-    // Frames, positions and hitches so far belong to the level that is ending: close their window now,
+  // `attrs` describe the attempt in the game's words ({ mode: 'ranked', tier: 'pit_80', party_size: 3 }), with a
+  // custom event's rules (SPEC §2 level_start); the level's outcome and deaths are paired with it on the server.
+  levelStart(levelId, attrs) {
+    // Frames, positions, hitches and counts so far belong to the level that is ending: close their window now,
     // so a short level (a 6 s wave, a quick retry) keeps its own frames instead of handing them to the next.
-    if (this.win.frames || this.posBuffer.length) this.closeWindow();
+    this.closeWindowIfAny();
     this.level = String(levelId);
     this.levelStartedAt = Date.now();
     this.levelOpen = true;
     this.leftLevel = null;
-    this.push({ type: 'level_start' });
+    this.net.leftLevel = null;
+    const a = gameAttrs(attrs);
+    this.push({ type: 'level_start', ...(a ? { attrs: a } : {}) });
     this.remember('level_start');
     this.datadog?.levelStart(this.level);
+  }
+
+  // Where the player is in an open world: an MMO region, a metroidvania room. Unlike a level it has no start or end:
+  // every event and window carries it as `zone` until the next call, and null clears it. A new zone closes the frame
+  // window, as a level start does, so frames and counts keep their zone.
+  setZone(name) {
+    const zone = name == null || name === '' ? null : String(name).slice(0, 64);
+    if (zone === this.zone) return;
+    this.closeWindowIfAny();
+    this.zone = zone;
   }
 
   levelComplete(levelId, { durationS, score } = {}) {
@@ -180,8 +218,9 @@ export class Glitchless {
   }
 
   // A game that ends its level as the page goes (in its own pagehide handler) does it after the SDK's abandon: that
-  // attempt has its outcome.
+  // attempt has its outcome. So does one that ends it in its own disconnect handler, after disconnect().
   outcomeSent(level) {
+    if (!this.net.connected && this.net.leftLevel != null && level === this.net.leftLevel) return true;
     return !!this.ended && this.leftLevel != null && level === this.leftLevel;
   }
 
@@ -198,6 +237,147 @@ export class Glitchless {
     this.push({ type: 'custom', name, attrs });
     this.remember(name);
     this.datadog?.action(name, { ...attrs, level: this.level });
+    this.watchStream(name);
+  }
+
+  // A stream of events (shots, hits, kills, gold, taps): adds to the current window's count for this name and group
+  // instead of queueing an event (counts.js). The string and boolean attributes are the group, numbers are added up
+  // (count('gold', { source: 'loot', amount: 35 })), and `n` adds to the count.
+  count(name, attrs = {}, n = 1) {
+    this.counter.add(name, attrs, n);
+  }
+
+  // What holds for this session, in the game's words: { mode: 'squads', rank: 'gold', region: 'eu' }. null removes a
+  // key. Sent with the session in every privacy mode, so props.js drops keys and values that would say who the
+  // player is, and the SDK keeps nothing between sessions. Changes go out at most once a window (SPEC §2 props).
+  setProperties(values = {}) {
+    let changed = false;
+    for (const [key, value] of Object.entries(values || {})) {
+      const problem = propKeyProblem(key);
+      if (problem) {
+        this.warnOnce(`prop:${key}`, `setProperties: "${key}" was dropped: ${problem}`);
+        continue;
+      }
+      if (value === null || value === undefined) {
+        if (key in this.props) {
+          delete this.props[key];
+          changed = true;
+        }
+        continue;
+      }
+      const v = propValue(value);
+      if (v === undefined) {
+        this.warnOnce(`propvalue:${key}`, `setProperties: the value of "${key}" was dropped: send a short word, a boolean or a whole number, never an ID, an email address, a link or a phone number`);
+        continue;
+      }
+      if (!this.propKeys.has(key) && this.propKeys.size >= MAX_PROPS) {
+        this.warnOnce(`propmax:${key}`, `setProperties: "${key}" was dropped: a session has at most ${MAX_PROPS} properties`);
+        continue;
+      }
+      this.propKeys.add(key);
+      if (this.props[key] !== v) {
+        this.props[key] = v;
+        changed = true;
+      }
+    }
+    if (changed) this.propsChangedAt = Date.now();
+  }
+
+  // Marks the session's next events as one match, party or run (SPEC §2 group). Match and party IDs come from the
+  // game's server, shared by everyone in that match or party (never an account, guild or friends-list ID), and are
+  // hashed before they are sent unless hashGroupIds is false. setGroup('run') makes a run ID; setGroup('run', saved)
+  // carries on a saved run in install and full mode, and starts a new one in anonymous mode, so nothing ties two
+  // launches together (the group event says resumed either way). null ends the group. Returns the ID sent, or null.
+  setGroup(kind, id, attrs) {
+    if (!GROUP_KINDS.includes(kind)) {
+      this.warnOnce(`group:${kind}`, `setGroup: "${kind}" isn't a group: use match, party or run`);
+      return null;
+    }
+    if (id === null) {
+      if (!this.groups[kind]) return null;
+      this.closeWindowIfAny();
+      delete this.groups[kind];
+      this.push({ type: 'group', kind, id: null });
+      return null;
+    }
+    let sent;
+    let resumed = false;
+    if (id === undefined) {
+      if (kind !== 'run') {
+        this.warnOnce(`groupid:${kind}`, `setGroup: a ${kind} needs the ID the game's server made for it`);
+        return null;
+      }
+      sent = newRunId(randomId);
+    } else if (!validGroupId(String(id))) {
+      this.warnOnce(`groupid:${kind}`, `setGroup: "${id}" was dropped: IDs are 8 to 64 characters of A-Z, a-z, 0-9, _ . : -`);
+      return null;
+    } else if (kind === 'run') {
+      resumed = true;
+      sent = this.privacy === 'anonymous' ? newRunId(randomId) : String(id);
+    } else {
+      sent = this.opts.hashGroupIds === false ? String(id) : hashGroupId(this.opts.service, String(id));
+    }
+    this.closeWindowIfAny();
+    this.groups[kind] = sent;
+    const a = gameAttrs(attrs);
+    this.push({ type: 'group', kind, id: sent, ...(a ? { attrs: a } : {}), ...(resumed ? { resumed: true } : {}) });
+    return sent;
+  }
+
+  // One network sample from the game's own netcode, about once a second while connected: { rtt_ms, loss_pct,
+  // jitter_ms }, and where the game knows them in_kbps, out_kbps, transport ('ws', 'socket.io', 'colyseus'…) and
+  // host (true for the player hosting the game). Each frame window then carries `net` (SPEC §2). A WebRTC game can
+  // use instrumentNet() (net.js) instead.
+  netSample(sample = {}) {
+    const now = Date.now();
+    if (!this.net.connected) {
+      this.net.connected = true;
+      this.net.since = now;
+    }
+    this.win.netOn = true;
+    if (sample.transport) this.net.transport = String(sample.transport).slice(0, 32);
+    if (sample.host != null) this.net.host = !!sample.host;
+    if (now - this.net.lastSample < NET_SAMPLE_GAP_MS) return;
+    this.net.lastSample = now;
+    this.win.net.add(sample);
+  }
+
+  // The connection dropped: reason is timeout, connection_lost, kicked, server_closed, failed_to_connect or other.
+  // With a level going, the attempt ends as an abandon with reason 'disconnect', never a fail; reconnect() and playing
+  // on in the same level takes it back.
+  disconnect({ reason = 'other' } = {}) {
+    const now = Date.now();
+    const numbers = this.win.net.samples ? this.win.net.summary() : this.net.last;
+    if (this.net.disconnects < MAX_DISCONNECTS) {
+      this.net.disconnects++;
+      this.push({
+        type: 'disconnect',
+        reason: DISCONNECT_REASONS.has(reason) ? reason : 'other',
+        connected_s: this.net.connected ? round((now - this.net.since) / 1000, 1) : 0,
+        rtt_p95: numbers?.rtt_p95 ?? null,
+        loss_pct: numbers?.loss_pct ?? null,
+      });
+      this.remember('disconnect');
+    }
+    this.net.connected = false;
+    this.net.disconnectedAt = now;
+    if (this.levelOpen && this.level != null) {
+      this.net.leftLevel = this.level;
+      this.abandon(this.level, 'disconnect');
+    }
+  }
+
+  // Back in the game after a disconnect. A level the disconnect abandoned is open again, so the player can finish it.
+  reconnect() {
+    if (this.net.connected || !this.net.disconnectedAt) return;
+    const now = Date.now();
+    this.push({ type: 'reconnect', after_s: round((now - this.net.disconnectedAt) / 1000, 1) });
+    this.remember('reconnect');
+    this.net.connected = true;
+    this.net.since = now;
+    this.win.netOn = true;
+    if (this.net.leftLevel != null && this.net.leftLevel === this.level) this.levelOpen = true;
+    this.net.leftLevel = null;
   }
 
   setPosition(p) {
@@ -316,7 +496,22 @@ export class Glitchless {
       drawCallsMax: 0,
       triangles: 0,
       ctx: {},
+      net: new NetWindow(),
+      netOn: this.net.connected, // connected at some point in the window: it carries `net`
     };
+  }
+
+  // levelStart, setZone and setGroup close the window, so what it holds keeps its level, zone and groups.
+  closeWindowIfAny() {
+    if (this.win.frames || this.posBuffer.length || this.counter.size || this.counter.dropped) this.closeWindow();
+  }
+
+  // The fields every event carries besides `level`: the zone and groups, while they are set.
+  stamps() {
+    const s = {};
+    if (this.zone != null) s.zone = this.zone;
+    for (const kind of GROUP_KINDS) if (this.groups[kind]) s[kind] = this.groups[kind];
+    return s;
   }
 
   installFrameLoop() {
@@ -448,6 +643,7 @@ export class Glitchless {
         type: 'hitch',
         ts: Date.now(),
         level: this.level,
+        ...this.stamps(),
         duration_ms: round(dt, 1),
         frozen: dt > FROZEN_MS,
         draw_calls: r?.calls ?? null,
@@ -648,7 +844,7 @@ export class Glitchless {
   // ───────────────────────────── transport ─────────────────────────────
 
   push(event) {
-    const e = { ts: Date.now(), level: this.level, ...event };
+    const e = { ts: Date.now(), level: this.level, ...this.stamps(), ...event };
     this.queue.push(e);
     if (this.queue.length > MAX_QUEUE) this.queue.splice(0, this.queue.length - MAX_QUEUE);
     if (e.type !== 'map' && e.type !== 'session_end') {
@@ -670,8 +866,9 @@ export class Glitchless {
   }
 
   sessionStartEvent() {
-    const gl = this.render?.gl || null;
     const nav = performance.getEntriesByType?.('navigation')?.[0];
+    // The properties set so far go with the start; later changes go in props events (closeWindow).
+    this.sentProps = { ...this.props };
     return {
       type: 'session_start',
       ts: this.startedAt,
@@ -682,19 +879,38 @@ export class Glitchless {
       device: withSteam(this.privacy === 'full' ? this.device() : anonymizeDevice(this.device()), this.steam),
       page: { url: location.origin + location.pathname, referrer: originOf(document.referrer) },
       nav_ms: nav ? Math.round(nav.domContentLoadedEventEnd) : null,
+      ...(Object.keys(this.sentProps).length ? { props: { ...this.sentProps } } : {}),
     };
+  }
+
+  // The keys that changed since the server last heard, with null for a key removed: one props event a window at most.
+  propsChange() {
+    const at = this.propsChangedAt;
+    if (!this.sessionStartSent || !at) return null;
+    const props = {};
+    for (const [k, v] of Object.entries(this.props)) if (this.sentProps[k] !== v) props[k] = v;
+    for (const k of Object.keys(this.sentProps)) if (!(k in this.props)) props[k] = null;
+    this.propsChangedAt = 0;
+    if (!Object.keys(props).length) return null;
+    this.sentProps = { ...this.props };
+    return { type: 'props', ts: at, props };
   }
 
   closeWindow() {
     const w = this.win;
     this.win = this.newWindow();
+    const stamps = this.stamps();
+    const props = this.propsChange();
+    if (props) this.push(props);
     if (w.frames > 0) {
       const mem = this.render?.memory?.() || {};
       const s = w.sketch;
+      const net = w.netOn ? this.netWindow(w.net) : null;
       this.queue.push({
         type: 'frame_window',
         ts: w.startedAt,
         level: this.level,
+        ...stamps,
         duration_s: round((Date.now() - w.startedAt) / 1000, 2),
         frames: w.frames,
         fps: round(w.frames / ((Date.now() - w.startedAt) / 1000), 1),
@@ -719,16 +935,27 @@ export class Glitchless {
         programs: mem.programs ?? null,
         heap_mb: heapMb(),
         ctx: w.ctx,
+        ...(net ? { net } : {}),
       });
       this.datadog?.frameWindow(this.queue[this.queue.length - 1]);
       this.recentWindows.push({ ts: w.startedAt, level: this.level, fps: round(w.frames / ((Date.now() - w.startedAt) / 1000), 1), p95: round(s.quantile(0.95), 2) });
       if (this.recentWindows.length > 12) this.recentWindows.shift();
     }
+    if (w.net.samples) this.net.last = w.net.summary();
     if (this.posBuffer.length) {
-      this.queue.push({ type: 'pos', ts: this.posBuffer[0][0], level: this.level, pts: this.posBuffer });
+      this.queue.push({ type: 'pos', ts: this.posBuffer[0][0], level: this.level, ...stamps, pts: this.posBuffer });
       this.posBuffer = [];
     }
+    const counted = this.counter.drain();
+    if (counted) {
+      this.queue.push({ type: 'counts', ts: w.startedAt, level: this.level, ...stamps, duration_s: round((Date.now() - w.startedAt) / 1000, 2), dropped: counted.dropped, counts: counted.counts });
+    }
     this.resolveHitches();
+  }
+
+  // A window's network numbers (SPEC §2 frame_window.net): its samples, the library and the kind of connection.
+  netWindow(win) {
+    return { ...win.summary(), transport: this.net.transport, link: readLink(), host: this.net.host };
   }
 
   // Attach likely causes to hitches once LoAF entries for that frame have arrived.
@@ -770,8 +997,9 @@ export class Glitchless {
       this.stats.lastStatus = this.opts.intake ? 'unsampled' : 'offline';
       return;
     }
-    const events = this.queue;
+    const events = this.gateCounts(this.queue);
     this.queue = [];
+    if (!events.length && !this.retries.length) return;
     // Batches that failed go again first, whole and under their own batch_id, so the server stores each once even
     // when an earlier try reached it and only the answer was lost.
     const batches = this.retries;
@@ -829,9 +1057,73 @@ export class Glitchless {
       });
   }
 
+  // Counters go only to a server that reads them (SPEC §2 counts): an older one would drop them and show half the
+  // game's numbers. Until /v1/health has said, they wait; a server without "counts" gets none, and a warning says so.
+  gateCounts(events) {
+    if (this.hasFeature('counts')) {
+      const held = this.heldCounts;
+      this.heldCounts = [];
+      return held.length ? [...held, ...events] : events;
+    }
+    if (!events.some((e) => e.type === 'counts')) return events;
+    if (this.features) {
+      this.warnOnce('counts', 'count(): this Glitchless server does not read counters yet, so they are not sent. Update the server.');
+    } else {
+      this.heldCounts.push(...events.filter((e) => e.type === 'counts'));
+      if (this.heldCounts.length > MAX_HELD_COUNTS) this.heldCounts.splice(0, this.heldCounts.length - MAX_HELD_COUNTS);
+      this.checkFeatures();
+    }
+    return events.filter((e) => e.type !== 'counts');
+  }
+
+  hasFeature(name) {
+    return !!this.features?.has(name);
+  }
+
+  // Asks the server what it reads (GET /v1/health → features): once, and again a minute after a failed try.
+  checkFeatures() {
+    if (this.features || this.featuresAsked > Date.now() - 60_000 || !this.opts.intake || !this.sampled) return;
+    this.featuresAsked = Date.now();
+    this.featuresCheck = Promise.resolve()
+      .then(() => fetch(`${this.opts.intake}/v1/health`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((health) => {
+        if (!health) return;
+        this.features = featureSet(health.features);
+      })
+      .catch(() => {});
+  }
+
+  // Calls a game makes so often that they'd crowd out everything else: warns once, outside prod, naming count().
+  watchStream(name) {
+    if (this.opts.env === 'prod' && !this.opts.debug) return;
+    const second = Math.floor(Date.now() / 1000);
+    const rate = this.trackRate.get(name);
+    if (!rate || rate[0] !== second) {
+      this.trackRate.set(name, [second, 1]);
+      if (this.trackRate.size > 200) this.trackRate.clear();
+      return;
+    }
+    if (++rate[1] > STREAM_PER_SECOND) this.warnOnce(`stream:${name}`, `track('${name}') is called more than ${STREAM_PER_SECOND} times a second. Use glitchless.count('${name}', attrs) for a stream like this: it sends one total a window instead of an event per call.`);
+  }
+
+  // A mistake in the game's calls, said once in the console outside prod (or with debug on).
+  warnOnce(key, message) {
+    if (this.warned.has(key)) return;
+    this.warned.add(key);
+    if (this.opts.env !== 'prod' || this.opts.debug) console.warn('[glitchless]', message);
+  }
+
   log(...args) {
     if (this.opts.debug) console.debug('[glitchless]', ...args);
   }
+}
+
+// /v1/health's features, as a list of names or an object of flags.
+function featureSet(features) {
+  if (Array.isArray(features)) return new Set(features.map(String));
+  if (features && typeof features === 'object') return new Set(Object.keys(features).filter((k) => features[k]));
+  return new Set();
 }
 
 // ───────────────────────────── helpers ─────────────────────────────
@@ -953,7 +1245,7 @@ function basename(url) {
 }
 
 // Chrome: "    at spawnScorePopup (http://host/src/fx.js?t=1:45:12)"  Firefox: "spawnScorePopup@http://host/src/fx.js:45:12"
-function topFrame(stack) {
+export function topFrame(stack) {
   for (const raw of stack.split('\n')) {
     const line = raw.trim();
     let m = line.match(/^at (?:(.+?) \()?(.+?):(\d+):(\d+)\)?$/);

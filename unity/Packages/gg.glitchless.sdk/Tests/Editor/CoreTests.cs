@@ -19,6 +19,13 @@ namespace GlitchlessSdk.Tests
         public bool Hold; // keep the answers back: each request is still going until the test calls its Pending answer
         public readonly List<Action<long>> Pending = new List<Action<long>>();
         public Action<string> BeforeSendNow;
+        // What GET /v1/health answers: this server takes everything, unless a test says otherwise. HealthStatus 0 is offline;
+        // HoldHealth keeps the answer back until the test calls it.
+        public long HealthStatus = 200;
+        public string Health = "{\"ok\":true,\"features\":[\"counts\",\"props\",\"groups\",\"net\",\"server_mode\"]}";
+        public bool HoldHealth;
+        public Action AnswerHealth;
+        public readonly List<string> Gets = new List<string>();
 
         public void Send(string url, byte[] body, string contentType, Action<long> done)
         {
@@ -26,6 +33,13 @@ namespace GlitchlessSdk.Tests
             Sent.Add(Text(body));
             if (Hold) Pending.Add(done);
             else done(Status);
+        }
+
+        public void Get(string url, Action<long, string> done)
+        {
+            Gets.Add(url);
+            if (HoldHealth) AnswerHealth = () => done(HealthStatus, HealthStatus == 200 ? Health : null);
+            else done(HealthStatus, HealthStatus == 200 ? Health : null);
         }
 
         public long SendNow(string url, byte[] body, string contentType, int timeoutMs)

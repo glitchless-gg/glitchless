@@ -13,6 +13,15 @@ FGlitchlessHttpTransport::FGlitchlessHttpTransport(FCriticalSection* InCoreLock)
 {
 }
 
+FGlitchlessHttpTransport::~FGlitchlessHttpTransport()
+{
+	if (Health.IsValid())
+	{
+		Health->OnProcessRequestComplete().Unbind();
+		Health->CancelRequest();
+	}
+}
+
 TSharedRef<IHttpRequest, ESPMode::ThreadSafe> FGlitchlessHttpTransport::Make(const std::string& Url, TArray<uint8>&& Body, const std::string& ContentType, float TimeoutSeconds) const
 {
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
@@ -46,6 +55,30 @@ void FGlitchlessHttpTransport::Send(const std::string& Url, std::vector<uint8_t>
 		CurrentAnswered.Reset();
 		FScopeLock Guard(Lock);
 		Done(0);
+	}
+}
+
+// GET /v1/health, once a session, apart from the one batch in flight. Its answer comes on the game thread too.
+void FGlitchlessHttpTransport::Get(const std::string& Url, std::function<void(int64_t, const std::string&)> Done)
+{
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetURL(GlitchlessText::Tchar(Url));
+	Request->SetVerb(TEXT("GET"));
+	Request->SetTimeout(10.f);
+	FCriticalSection* Lock = CoreLock;
+	Request->OnProcessRequestComplete().BindLambda([Lock, Done](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected) {
+		const bool bOk = bConnected && Response.IsValid();
+		const int64_t Status = bOk ? Response->GetResponseCode() : 0;
+		const std::string Body = bOk ? GlitchlessText::Utf8(Response->GetContentAsString()) : std::string();
+		FScopeLock Guard(Lock);
+		Done(Status, Body);
+	});
+	Health = Request;
+	if (!Request->ProcessRequest())
+	{
+		Request->OnProcessRequestComplete().Unbind();
+		FScopeLock Guard(Lock);
+		Done(0, "");
 	}
 }
 

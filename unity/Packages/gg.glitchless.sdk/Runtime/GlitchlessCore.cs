@@ -29,8 +29,10 @@ namespace GlitchlessSdk
         public int GcCollections;
         public double GcAllocKb;
         public bool SceneChanged;
+        public double Busy; // the frame's work, from its first player loop phase to the end of PostLateUpdate: a server's tick time
+        public int FixedSteps; // FixedUpdate steps in the frame: a server's ticks when it has no netcode
 
-        public static FrameCost Unknown => new FrameCost { Process = -1, Physics = -1, Render = -1, Gpu = -1, Calls = -1, Triangles = -1, SetPass = -1, Batches = -1, ShaderCompiles = -1, ObjectsAdded = -1, GcAllocKb = -1 };
+        public static FrameCost Unknown => new FrameCost { Process = -1, Physics = -1, Render = -1, Gpu = -1, Calls = -1, Triangles = -1, SetPass = -1, Batches = -1, ShaderCompiles = -1, ObjectsAdded = -1, GcAllocKb = -1, Busy = -1, FixedSteps = -1 };
     }
 
     /// <summary>Sends batches. GlitchlessRunner uses UnityWebRequest; tests use a stand-in.</summary>
@@ -38,6 +40,8 @@ namespace GlitchlessSdk
     {
         /// <summary>Starts a POST; done(status) comes later on the main thread, with 0 for a network failure.</summary>
         void Send(string url, byte[] body, string contentType, Action<long> done);
+        /// <summary>Starts a GET (the server's /v1/health, for what it takes); done(status, body) comes later on the main thread.</summary>
+        void Get(string url, Action<long, string> done);
         /// <summary>Sends and waits at most timeoutMs, for when the game is closing. Returns the status, or 0.</summary>
         long SendNow(string url, byte[] body, string contentType, int timeoutMs);
         /// <summary>Gives up on the requests Send started that are still going.</summary>
@@ -77,6 +81,16 @@ namespace GlitchlessSdk
         const int BugRecent = 20; // game events and hitches a bug report carries
         const int BugFrames = 6; // frame windows a bug report carries
         const string IdChars = "abcdefghijklmnopqrstuvwxyz0123456789";
+        const int MaxCounters = 64; // counter entries a window (SPEC §2 counts)
+        const int MaxCountGroup = 4; // string or boolean attributes that make a counter's group
+        const int MaxCountSums = 4; // numbers a counter adds up
+        const long MaxCountPerCall = 1_000_000;
+        const int MaxHeldCounts = 240; // counts events kept while the server hasn't said whether it takes them: 20 minutes
+        const int TrackRateWarning = 20; // track() calls of one name in a second that earn the hint to count() instead
+        const int MaxDisconnects = 20; // disconnect events a session
+        const int MaxClientRtts = 1000; // players' round trips a server window keeps for its p95
+        const long MaxServerSessionMs = 6L * 3600 * 1000; // a server session is cut every 6 hours
+        static readonly string[] DisconnectReasons = { "timeout", "connection_lost", "kicked", "server_closed", "failed_to_connect", "other" };
 
         static readonly Regex NotALevel = new Regex(@"\b(boot|bootstrap|init|startup|preload(er)?|load(er|ing)?|splash|intro|title|menu|main ?menu|ui|hud|overlay|pause[d]?|game ?over|settings|options|credits|leaderboard|shop|empty)\b", RegexOptions.IgnoreCase);
 
@@ -101,7 +115,13 @@ namespace GlitchlessSdk
         public Action<string> Log = s => UnityEngine.Debug.Log(s);
         public string AppVersion = "";
         public bool IsBatchMode, IsDebugBuild, IsMobile, IsWeb;
+        public bool IsServerBuild; // a Dedicated Server build (UNITY_SERVER)
         public Scrubber Scrubber = new Scrubber();
+        public readonly List<INetSource> NetSources = new List<INetSource>(); // the game's netcode (Netcode.Find), read once a second
+        public Func<string> Link = () => null; // wifi, cellular or null (Application.internetReachability)
+        public Func<double> CpuMs = () => -1; // the process's CPU time so far, for a server's cpu_pct
+        public Func<double> FixedHz = () => 50; // FixedUpdate steps a second: a server's tick rate when it has no netcode
+        public Func<Dictionary<string, object>> ServerHost = () => null; // a server's OS, cores and memory (DeviceInfo.ServerHost)
 
         // ───────────────────────────── state ─────────────────────────────
 
@@ -112,6 +132,9 @@ namespace GlitchlessSdk
         public string SessionId { get; private set; }
         public string PlayerId { get; private set; } = "";
         public string Level { get; private set; }
+        public string Zone { get; private set; }
+        /// <summary>This run is a game server (GlitchlessOptions.Role): it reports as the game's companion service.</summary>
+        public bool IsServer { get; private set; }
         public string Service => service;
         public string Env => env;
         public string AppVersionInUse => version;
@@ -162,6 +185,45 @@ namespace GlitchlessSdk
         int levelSceneHandle, levelSceneFrame = -1;
         int[] screen, window;
         readonly System.Random random = new System.Random();
+        readonly HashSet<string> warned = new HashSet<string>();
+
+        // Counters (Count): one entry per name and group in the window, sent as one counts event when it closes. They wait
+        // in heldCounts until the server says it takes them (GET /v1/health), so an older server is never sent half the data.
+        readonly Dictionary<string, Counter> counters = new Dictionary<string, Counter>();
+        readonly List<Counter> counterList = new List<Counter>();
+        long countsDropped;
+        readonly List<Dictionary<string, object>> heldCounts = new List<Dictionary<string, object>>();
+        bool countsOff;
+        readonly Dictionary<string, (double at, int n)> trackRate = new Dictionary<string, (double, int)>();
+        HashSet<string> features; // what the server takes, from /v1/health; null until it answers
+        bool featuresAsked, serverRefused;
+        double featuresRetryAt;
+
+        // Properties: what holds for the session. session_start carries those set before the first batch; later changes
+        // go out as one props event a window, with only the keys that changed.
+        readonly Dictionary<string, object> props = new Dictionary<string, object>();
+        readonly Dictionary<string, object> sentProps = new Dictionary<string, object>();
+        readonly HashSet<string> propKeys = new HashSet<string>(); // keys sent this session, at most 12
+        Dictionary<string, object> pendingProps;
+        long pendingPropsAt;
+
+        // Groups: the match, party and run every event is marked with while they're set.
+        readonly Dictionary<string, string> groups = new Dictionary<string, string>();
+        readonly Dictionary<string, string> groupsBeforeInit = new Dictionary<string, string>(); // raw match and party IDs set before Init, to hash with the service
+        readonly Dictionary<string, Dictionary<string, object>> groupAttrs = new Dictionary<string, Dictionary<string, object>>();
+        readonly Dictionary<string, string> resumedRuns = new Dictionary<string, string>(); // a saved run ID -> this launch's (anonymous mode)
+
+        // The network: samples once a second from the game's netcode, or from NetSample.
+        double nextNetAt, connectedAt, disconnectedAt, manualNetAt, lastRtt = -1;
+        bool netConnected;
+        string netTransport, droppedLevel;
+        int disconnects;
+        NetWindow lastNet;
+
+        // Server mode: the netcode whose ticks count, and what it says.
+        INetSource serverSource;
+        double serverTickHz;
+        int setPlayers = -1, serverMaxPlayers;
 
         // Bid is the batch's own random ID (SPEC §2 batch_id). It goes with every try of the batch and is saved with it,
         // so the server stores a batch once however many times it is sent: after a timeout, a send cut short by going to
@@ -171,6 +233,7 @@ namespace GlitchlessSdk
         {
             public int Id;
             public string Bid, Service, Env, Version, Sid, Pid;
+            public string Role; // "server" in server mode: sent only to a server that has it
             public long Group;
             public List<string> Events;
             public bool Direct; // a bug report on a request of its own
@@ -185,6 +248,31 @@ namespace GlitchlessSdk
             public double Max, Render, Gpu, Process, Physics, AllocKb;
             public long Calls, CallsMax, Tris, SetPass, Batches;
             public readonly Dictionary<string, double> Ctx = new Dictionary<string, double>();
+            public NetWindow Net; // while connected
+            // Server mode.
+            public readonly Sketch Tick = new Sketch();
+            public int Ticks, Late, Players = -1, PlayersMax = -1, NetObjects = -1;
+            public double TickMax, CpuAt = -1;
+            public string TickSource;
+            public readonly List<double> ClientRtts = new List<double>();
+        }
+
+        sealed class NetWindow
+        {
+            public readonly Sketch Rtt = new Sketch(0.05); // the 5% sketch SPEC §2 net.rtt names
+            public double JitterSum, LossSum;
+            public int JitterN, LossN, Samples;
+            public string Transport;
+            public bool Host;
+            public bool? Relay;
+        }
+
+        sealed class Counter
+        {
+            public string Name;
+            public Dictionary<string, object> Attrs;
+            public Dictionary<string, double> Sums;
+            public long N, FirstTs;
         }
 
         sealed class Probe
@@ -238,10 +326,14 @@ namespace GlitchlessSdk
             debug = debug || Options.Debug || HasFlag("--glitchless-debug");
             sandbox = DeviceInfo.IsSandbox(Distribution?.Invoke() ?? "");
             sessionType = SessionTypeFor(Options.SessionType, IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), TestLabSetting, sandbox);
+            IsServer = Options.Role == GlitchlessRole.Server || (Options.Role == GlitchlessRole.Auto && (IsServerBuild || HasFlag("--glitchless-server")));
+            if (IsServer) StartServerMode();
             Enabled = (Options.Enabled ?? !HasFlag("--glitchless-off")) && intake != "";
             Sampled = random.NextDouble() < Options.SampleRate;
             // The first batch goes soon, so a session that crashes early is still seen.
             nextFlushAt = Ticks + Math.Min(2000, Options.FlushIntervalSeconds * 1000);
+            if (Options.Properties != null) SetProperties(Options.Properties);
+            HashGroupsSetBeforeInit();
             if (!Enabled)
             {
                 queue.Clear();
@@ -250,11 +342,27 @@ namespace GlitchlessSdk
             }
             if (SaveDir != null) TryIo(() => Directory.CreateDirectory(SaveDir));
             firstLaunch = NoteLaunch();
-            // Install and full mode share one saved ID (SPEC §4b); anonymous mode deletes one another build left.
-            if (storesId) PlayerId = LoadId(PlayerIdName, "p_");
+            // Install and full mode share one saved ID (SPEC §4b); anonymous mode deletes one another build left. A server
+            // has no player, and leaves the file alone.
+            if (IsServer) PlayerId = "";
+            else if (storesId) PlayerId = LoadId(PlayerIdName, "p_");
             else TryIo(() => DeleteId(PlayerIdName));
             if (SaveDir != null) LoadOutbox();
-            Debug($"on: {service} {version} {env} -> {intake} ({PrivacyName}, {sessionType}{(string.IsNullOrEmpty(Distribution?.Invoke()) ? "" : ", " + Distribution())})");
+            Debug($"on: {service} {version} {env} -> {intake} ({(IsServer ? "server" : PrivacyName)}, {sessionType}{(string.IsNullOrEmpty(Distribution?.Invoke()) ? "" : ", " + Distribution())})");
+            CheckFeatures();
+        }
+
+        // A server measures ticks, not frames: what was kept as frame windows before Init is dropped, and no player's
+        // fields (an ID, positions, rage input) are ever sent. Batch mode is how servers run, so it doesn't make a bot.
+        void StartServerMode()
+        {
+            full = storesId = positionsOn = rageInputOn = false;
+            sessionType = SessionTypeFor(Options.SessionType, HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), null);
+            queue.RemoveAll(e => e["type"] is string t && (t == "frame_window" || t == "hitch" || t == "pos" || t == "load"));
+            pendingHitches.Clear();
+            posBuffer.Clear();
+            loadSent = true;
+            win = NewWindow();
         }
 
         /// <summary>The session's type: what the game set; else synthetic for a bot (batch mode, --autoplay and the flags)
@@ -278,9 +386,11 @@ namespace GlitchlessSdk
             return new Dictionary<string, object>(attrs) { ["sandbox"] = true };
         }
 
-        public void LevelStart(string levelId) => StartLevel(levelId, fromScene: false);
+        /// <param name="attrs">What this attempt is (difficulty, mode, party size, a build as a list), with the rules of
+        /// Track's attributes. Its outcome and deaths don't repeat them: the server pairs each with the attempt it ends.</param>
+        public void LevelStart(string levelId, Dictionary<string, object> attrs = null) => StartLevel(levelId, fromScene: false, attrs);
 
-        void StartLevel(string levelId, bool fromScene)
+        void StartLevel(string levelId, bool fromScene, Dictionary<string, object> attrs = null)
         {
             if (!fromScene) manualLevels = true; // the game knows its levels better than the scene names do
             CloseWindow(false); // so a frame window never spans two levels
@@ -288,7 +398,10 @@ namespace GlitchlessSdk
             levelStartedAt = Ticks;
             levelOpen = true;
             leftLevel = null;
-            Push(Ev("level_start"));
+            droppedLevel = null;
+            var e = Ev("level_start");
+            if (attrs != null && attrs.Count > 0) e["attrs"] = new Dictionary<string, object>(attrs);
+            Push(e);
             Remember("level_start");
         }
 
@@ -372,6 +485,382 @@ namespace GlitchlessSdk
             e["attrs"] = SandboxAttrs(name, attrs ?? new Dictionary<string, object>(), sandbox);
             Push(e);
             Remember(name);
+            if (IsDebugBuild || debug) CheckTrackRate(name);
+        }
+
+        // A stream of track() calls fills the 2,000-event queue within a minute, and the oldest events then go, frame
+        // windows too: a debug build says once which name should be counted instead.
+        void CheckTrackRate(string name)
+        {
+            if (name == null || warned.Contains("track:" + name)) return;
+            var now = Ticks;
+            trackRate.TryGetValue(name, out var r);
+            r = now - r.at >= 1000 ? (now, 1) : (r.at, r.n + 1);
+            trackRate[name] = r;
+            if (r.n > TrackRateWarning) Warn("track:" + name, $"\"{name}\" is tracked more than {TrackRateWarning} times a second. Glitchless.Count(\"{name}\", …) adds a stream up on the device and sends it once a window, instead of an event each time");
+        }
+
+        // ───────────────────────────── counters ─────────────────────────────
+
+        /// <summary>Counts a stream of events (shots, kills, gold picked up) on the device, sent once a window as a counts
+        /// event (SPEC §2). The call's string and boolean attributes, at most 4, make its group; its numbers, at most 4, are
+        /// added up as given; `n` is how many events the call stands for.</summary>
+        public void Count(string name, Dictionary<string, object> attrs = null, long n = 1)
+        {
+            if (string.IsNullOrEmpty(name) || n <= 0 || (Inited && !Enabled)) return;
+            if (countsOff)
+            {
+                Warn("counts", "this Glitchless server doesn't take counters yet, so Glitchless.Count sends nothing to it: update the server");
+                return;
+            }
+            n = Math.Min(n, MaxCountPerCall);
+            Dictionary<string, object> group = null;
+            Dictionary<string, double> sums = null;
+            var key = name;
+            if (attrs != null && attrs.Count > 0)
+            {
+                var keys = new List<string>(attrs.Keys);
+                keys.Sort(StringComparer.Ordinal); // the first 4, in the same order every call, so a group is always one entry
+                var sb = new StringBuilder(name);
+                foreach (var k in keys)
+                {
+                    var v = attrs[k];
+                    if (v is string || v is bool || v is Enum)
+                    {
+                        group = group ?? new Dictionary<string, object>();
+                        if (group.Count >= MaxCountGroup) continue;
+                        var word = v is bool b ? (object)b : Clip(v.ToString(), 64);
+                        group[k] = word;
+                        sb.Append('\n').Append(k).Append('=').Append(word is bool w ? (w ? "true" : "false") : (string)word);
+                    }
+                    else if (v is IConvertible c && GameWords.IsNumber(c))
+                    {
+                        sums = sums ?? new Dictionary<string, double>();
+                        if (sums.Count < MaxCountSums) sums[k] = c.ToDouble(CultureInfo.InvariantCulture);
+                    }
+                }
+                key = sb.ToString();
+            }
+            if (!counters.TryGetValue(key, out var entry))
+            {
+                if (counterList.Count >= MaxCounters)
+                {
+                    // Full: a new group of a name already counted goes under that name with its attributes as (other); a
+                    // new name is dropped, and the window says how many events were.
+                    if (!counterList.Exists(x => x.Name == name))
+                    {
+                        countsDropped += n;
+                        return;
+                    }
+                    key = name + "\n(other)";
+                    if (group != null)
+                        foreach (var k in new List<string>(group.Keys)) group[k] = "(other)";
+                }
+                if (!counters.TryGetValue(key, out entry))
+                {
+                    entry = new Counter { Name = name, Attrs = group ?? new Dictionary<string, object>(), FirstTs = UnixNow() };
+                    counters[key] = entry;
+                    counterList.Add(entry);
+                }
+            }
+            entry.N += n;
+            if (sums == null) return;
+            entry.Sums = entry.Sums ?? new Dictionary<string, double>();
+            foreach (var kv in sums)
+            {
+                if (!entry.Sums.ContainsKey(kv.Key) && entry.Sums.Count >= MaxCountSums) continue;
+                entry.Sums.TryGetValue(kv.Key, out var total);
+                entry.Sums[kv.Key] = total + kv.Value;
+            }
+        }
+
+        // The window's counters, as one counts event.
+        void FlushCounts(Window w, double secs)
+        {
+            if (counterList.Count == 0 && countsDropped == 0) return;
+            var list = new List<object>(counterList.Count);
+            foreach (var c in counterList)
+            {
+                var o = new Dictionary<string, object> { ["name"] = c.Name, ["attrs"] = c.Attrs, ["n"] = c.N };
+                if (c.Sums != null)
+                {
+                    var sums = new Dictionary<string, object>();
+                    foreach (var kv in c.Sums) sums[kv.Key] = Sketch.Round(kv.Value, 4);
+                    o["sums"] = sums;
+                }
+                o["first_ts"] = c.FirstTs;
+                list.Add(o);
+            }
+            var e = new Dictionary<string, object> { ["type"] = "counts", ["ts"] = w.StartedAt, ["level"] = Level, ["duration_s"] = Sketch.Round(secs, 2), ["dropped"] = countsDropped, ["counts"] = list };
+            Stamp(e);
+            counters.Clear();
+            counterList.Clear();
+            countsDropped = 0;
+            if (features == null)
+            {
+                heldCounts.Add(e);
+                if (heldCounts.Count > MaxHeldCounts) heldCounts.RemoveAt(0);
+            }
+            else if (features.Contains("counts")) QueueEvent(e);
+        }
+
+        static string Clip(string s, int max) => s.Length > max ? s.Substring(0, max) : s;
+
+        // ───────────────────────────── what the server takes ─────────────────────────────
+
+        // GET /v1/health lists what this server takes (SPEC §3). Counters and server mode wait for the answer; with no answer
+        // (offline, a 5xx) it is asked again at the next flush.
+        void CheckFeatures()
+        {
+            if (features != null || featuresAsked || !Inited || !Enabled || Transport == null || Ticks < featuresRetryAt) return;
+            featuresAsked = true;
+            Transport.Get(intake + "/v1/health", (status, body) =>
+            {
+                featuresAsked = false;
+                if (status >= 200 && status < 300) OnFeatures(ParseFeatures(body));
+                else featuresRetryAt = Ticks + Options.FlushIntervalSeconds * 1000;
+            });
+        }
+
+        /// <summary>The features a /v1/health answer lists. An older server's answer has none.</summary>
+        internal static HashSet<string> ParseFeatures(string body)
+        {
+            var set = new HashSet<string>();
+            try
+            {
+                if (!(Json.Parse(body ?? "") is Dictionary<string, object> d) || !d.TryGetValue("features", out var f)) return set;
+                if (f is List<object> list)
+                    foreach (var x in list)
+                        if (x is string s) set.Add(s);
+                if (f is Dictionary<string, object> flags) // { "counts": true }, as some servers may write it
+                    foreach (var kv in flags)
+                        if (kv.Value is bool on && on) set.Add(kv.Key);
+            }
+            catch (Exception)
+            {
+            }
+            return set;
+        }
+
+        internal void OnFeatures(HashSet<string> taken)
+        {
+            features = taken;
+            if (taken.Contains("counts"))
+                foreach (var e in heldCounts) QueueEvent(e);
+            else
+            {
+                countsOff = true;
+                if (heldCounts.Count > 0) Warn("counts", "this Glitchless server doesn't take counters yet, so Glitchless.Count sends nothing to it: update the server");
+            }
+            heldCounts.Clear();
+            if (IsServer && !taken.Contains("server_mode"))
+            {
+                // An older server would count a game server's sessions as players': it gets nothing at all.
+                serverRefused = true;
+                queue.Clear();
+                Warn("server", "this Glitchless server has no server mode, so this game server sends it nothing: update the server");
+            }
+            Debug($"the server takes: {string.Join(", ", taken)}");
+        }
+
+        bool ServerReady => features != null && features.Contains("server_mode");
+
+        // ───────────────────────────── properties ─────────────────────────────
+
+        /// <summary>Sets what holds for the session: the mode, the player's rank tier or class, the region of the game's
+        /// servers. null removes one. Dropped, with a warning in a debug build, when it breaks the rules in GameWords.</summary>
+        public void SetProperty(string key, object value)
+        {
+            var why = GameWords.CheckKey(key);
+            if (why != null)
+            {
+                Warn("prop-key:" + key, $"property \"{key}\" dropped: {why}");
+                return;
+            }
+            if (value == null)
+            {
+                if (props.Remove(key)) PropChanged(key, null);
+                return;
+            }
+            var clean = GameWords.CleanValue(value, out why);
+            if (why != null)
+            {
+                Warn("prop-value:" + key, $"property \"{key}\" dropped: {why}");
+                return;
+            }
+            if (props.TryGetValue(key, out var was) && Equals(was, clean)) return;
+            if (!propKeys.Contains(key) && propKeys.Count >= GameWords.MaxProperties)
+            {
+                Warn("prop-many", $"property \"{key}\" dropped: a session has at most {GameWords.MaxProperties}");
+                return;
+            }
+            props[key] = clean;
+            propKeys.Add(key);
+            PropChanged(key, clean);
+        }
+
+        public void SetProperties(Dictionary<string, object> values)
+        {
+            if (values == null) return;
+            foreach (var kv in values) SetProperty(kv.Key, kv.Value);
+        }
+
+        /// <summary>The session's properties now (for tests and the overlay).</summary>
+        public IReadOnlyDictionary<string, object> Properties => props;
+
+        // Before the session's first batch, a change goes in session_start; after it, in the window's props event.
+        void PropChanged(string key, object value)
+        {
+            if (!sessionStartSent) return;
+            pendingProps = pendingProps ?? new Dictionary<string, object>();
+            pendingProps[key] = value;
+            pendingPropsAt = UnixNow();
+        }
+
+        void FlushProps()
+        {
+            if (pendingProps == null) return;
+            var changed = new Dictionary<string, object>();
+            foreach (var kv in pendingProps)
+            {
+                // Changed and changed back within the window: nothing to say.
+                var had = sentProps.TryGetValue(kv.Key, out var was);
+                if (kv.Value == null ? had : !had || !Equals(was, kv.Value)) changed[kv.Key] = kv.Value;
+            }
+            pendingProps = null;
+            if (changed.Count == 0) return;
+            foreach (var kv in changed)
+            {
+                if (kv.Value == null) sentProps.Remove(kv.Key);
+                else sentProps[kv.Key] = kv.Value;
+            }
+            var e = new Dictionary<string, object> { ["type"] = "props", ["ts"] = pendingPropsAt, ["level"] = Level, ["props"] = changed };
+            Stamp(e);
+            QueueEvent(e);
+        }
+
+        // ───────────────────────────── groups and zones ─────────────────────────────
+
+        /// <summary>Marks every event from here on with a match, party or run, until it's set to null. Match and party IDs
+        /// come from the game's servers and are hashed before they're sent (HashGroupIds). A run ID the game saved resumes
+        /// that run in install and full mode; in anonymous mode it gets a new ID, so no ID ties two launches together.
+        /// Returns the run's ID, or the ID passed.</summary>
+        public string SetGroup(string kind, string id, Dictionary<string, object> attrs = null)
+        {
+            if (!GameWords.IsGroupKind(kind))
+            {
+                Warn("group-kind:" + kind, $"group \"{kind}\" dropped: the kinds are match, party and run");
+                return null;
+            }
+            if (id == null)
+            {
+                EndGroup(kind);
+                return null;
+            }
+            if (!GameWords.ValidGroupId(id))
+            {
+                Warn("group-id:" + kind, $"{kind} ID dropped: IDs are 8 to 64 letters, digits and _ . : -");
+                return null;
+            }
+            var resumed = false;
+            string sent;
+            if (kind == "run")
+            {
+                resumed = true;
+                if (!Inited || !storesId)
+                {
+                    if (!resumedRuns.TryGetValue(id, out sent)) resumedRuns[id] = sent = NewId("r_", 12);
+                }
+                else sent = id;
+            }
+            else if (!Inited)
+            {
+                groupsBeforeInit[kind] = id; // hashed once Init says the service
+                sent = id;
+            }
+            else sent = Options.HashGroupIds ? GameWords.HashGroupId(service, id) : id;
+            if (groups.TryGetValue(kind, out var current) && current == sent && attrs == null) return kind == "run" ? sent : id;
+            if (kind == "match" && IsServer && Options.SessionPerMatch && sessionStartSent && Inited && Enabled) CutSession("match_end");
+            CloseWindow(false); // a window belongs to one match, party and run
+            groups[kind] = sent;
+            if (attrs != null) groupAttrs[kind] = new Dictionary<string, object>(attrs);
+            else groupAttrs.Remove(kind);
+            PushGroup(kind, resumed);
+            return kind == "run" ? sent : id;
+        }
+
+        /// <summary>Starts a run with an ID the SDK makes (r_ and 12 characters), and returns it, for the game to save if
+        /// the run can go on after a restart.</summary>
+        public string NewRun(Dictionary<string, object> attrs = null)
+        {
+            var id = NewId("r_", 12);
+            CloseWindow(false);
+            groups["run"] = id;
+            if (attrs != null) groupAttrs["run"] = new Dictionary<string, object>(attrs);
+            else groupAttrs.Remove("run");
+            PushGroup("run", false);
+            return id;
+        }
+
+        void EndGroup(string kind)
+        {
+            groupsBeforeInit.Remove(kind);
+            if (!groups.ContainsKey(kind)) return;
+            CloseWindow(false); // the window so far was the group's
+            groups.Remove(kind);
+            groupAttrs.Remove(kind);
+            var e = Ev("group");
+            e["kind"] = kind;
+            e["id"] = null;
+            Push(e);
+        }
+
+        void PushGroup(string kind, bool resumed)
+        {
+            var e = Ev("group");
+            e["kind"] = kind;
+            e["id"] = groups[kind];
+            if (groupAttrs.TryGetValue(kind, out var a)) e["attrs"] = a;
+            if (resumed) e["resumed"] = true;
+            Push(e);
+        }
+
+        /// <summary>The groups set now, as sent (for tests and the overlay).</summary>
+        public IReadOnlyDictionary<string, string> Groups => groups;
+
+        // A match or party set before Init went into events with its raw ID: hash it now that the service is known.
+        void HashGroupsSetBeforeInit()
+        {
+            if (groupsBeforeInit.Count == 0) return;
+            foreach (var kv in groupsBeforeInit)
+            {
+                var hashed = Options.HashGroupIds ? GameWords.HashGroupId(service, kv.Value) : kv.Value;
+                if (groups.TryGetValue(kv.Key, out var cur) && cur == kv.Value) groups[kv.Key] = hashed;
+                foreach (var e in queue)
+                {
+                    if (e.TryGetValue(kv.Key, out var v) && v as string == kv.Value) e[kv.Key] = hashed;
+                    if (e["type"] as string == "group" && e["kind"] as string == kv.Key && e["id"] as string == kv.Value) e["id"] = hashed;
+                }
+            }
+            groupsBeforeInit.Clear();
+        }
+
+        /// <summary>Where the player is in an open world (an MMO region, a metroidvania room), with no start or end: events
+        /// and windows carry it the way they carry the level, and boards split by $zone. null clears it.</summary>
+        public void SetZone(string zone)
+        {
+            zone = string.IsNullOrEmpty(zone) ? null : Clip(zone, 64);
+            if (zone == Zone) return;
+            CloseWindow(false); // so a window never spans two zones
+            Zone = zone;
+        }
+
+        // Every event but session_start carries the zone and the groups, as it carries the level.
+        void Stamp(Dictionary<string, object> e)
+        {
+            if (Zone != null && !e.ContainsKey("zone")) e["zone"] = Zone;
+            foreach (var kind in GameWords.GroupKinds)
+                if (groups.TryGetValue(kind, out var id) && !e.ContainsKey(kind)) e[kind] = id;
         }
 
         public void SetContext(string key, double value) => Gauge(key, value);
@@ -423,6 +912,12 @@ namespace GlitchlessSdk
         public void Frame(double dtMs, FrameCost cost)
         {
             FrameCount++;
+            if (IsServer)
+            {
+                ServerFrame(dtMs, cost);
+                Tick();
+                return;
+            }
             if (skipNext)
             {
                 skipNext = false; // the gap was a pause or a trip to the background, not a frame
@@ -475,6 +970,12 @@ namespace GlitchlessSdk
                 posBuffer.Add(new object[] { UnixNow(), Sketch.Round(position[0], 2), Sketch.Round(position[1], 2), Sketch.Round(position[2], 2) });
             }
             if (FrameCount % 30 == 0) SampleEngine();
+            if (now >= nextNetAt)
+            {
+                nextNetAt = now + 1000;
+                SampleNet();
+            }
+            if (IsServer && Inited && Enabled && UnixNow() - startedAt >= MaxServerSessionMs) CutSession("max_duration");
             if (now - win.StartedTicks >= Options.WindowSeconds * 1000) CloseWindow(true);
             if (now >= nextFlushAt) Flush(closeWindow: false);
             if (Inited && Enabled && inFlight < 0 && outbox.Count > 0 && now >= retryAt) SendNext();
@@ -583,7 +1084,7 @@ namespace GlitchlessSdk
             if (!hitch) return;
             w.Hitches++;
             Stats.Hitches++;
-            pendingHitches.Add(new Dictionary<string, object>
+            var hitchEvent = new Dictionary<string, object>
             {
                 ["type"] = "hitch",
                 ["ts"] = UnixNow(),
@@ -605,7 +1106,9 @@ namespace GlitchlessSdk
                 ["gc_alloc_kb"] = f.GcAllocKb >= 0 ? (object)Sketch.Round(f.GcAllocKb, 1) : null,
                 ["shader_compiles"] = f.ShaderCompiles >= 0 ? (object)f.ShaderCompiles : null,
                 ["objects_added"] = f.ObjectsAdded >= 0 ? (object)f.ObjectsAdded : null,
-            });
+            };
+            Stamp(hitchEvent);
+            pendingHitches.Add(hitchEvent);
         }
 
         // Likely causes of one long frame, from what that frame measured.
@@ -628,7 +1131,7 @@ namespace GlitchlessSdk
             return c;
         }
 
-        Window NewWindow() => new Window { StartedAt = UnixNow(), StartedTicks = Ticks };
+        Window NewWindow() => new Window { StartedAt = UnixNow(), StartedTicks = Ticks, CpuAt = IsServer ? CpuMs() : -1 };
 
         /// <param name="fresh">Sample the engine counts now. Not when a level starts: whatever the game just
         /// did to load the new level belongs to the new level.</param>
@@ -637,12 +1140,16 @@ namespace GlitchlessSdk
             if (fresh && win.Frames > 0) SampleEngine();
             var w = win;
             win = NewWindow();
-            if (w.Frames > 0)
+            var secs = Math.Max((Ticks - w.StartedTicks) / 1000, 0.001);
+            // Connected all through a window too short for a sample (a level start closed it): it says so, with no numbers.
+            if (w.Net == null && netConnected && !IsServer) w.Net = new NetWindow { Transport = netTransport };
+            if (w.Net != null && w.Net.Samples > 0) lastNet = w.Net;
+            if (IsServer) QueueServerWindow(w, secs);
+            else if (w.Frames > 0)
             {
-                var secs = Math.Max((Ticks - w.StartedTicks) / 1000, 0.001);
                 var n = w.Frames;
                 var s = w.Sketch;
-                QueueEvent(new Dictionary<string, object>
+                var fw = new Dictionary<string, object>
                 {
                     ["type"] = "frame_window",
                     ["ts"] = w.StartedAt,
@@ -685,13 +1192,18 @@ namespace GlitchlessSdk
                     ["screen"] = screen,
                     ["window"] = window,
                     ["ctx"] = new Dictionary<string, double>(w.Ctx),
-                });
+                };
+                if (w.Net != null) fw["net"] = NetJson(w.Net); // windows while not connected have none
+                Stamp(fw);
+                QueueEvent(fw);
                 recentWindows.Add(new Dictionary<string, object> { ["ts"] = w.StartedAt, ["level"] = Level, ["fps"] = Sketch.Round(n / secs, 1), ["p95"] = Round(s.Quantile(0.95), 2) });
                 if (recentWindows.Count > 12) recentWindows.RemoveAt(0);
             }
             if (posBuffer.Count > 0)
             {
-                QueueEvent(new Dictionary<string, object> { ["type"] = "pos", ["ts"] = ((object[])posBuffer[0])[0], ["level"] = Level, ["pts"] = new List<object>(posBuffer) });
+                var pos = new Dictionary<string, object> { ["type"] = "pos", ["ts"] = ((object[])posBuffer[0])[0], ["level"] = Level, ["pts"] = new List<object>(posBuffer) };
+                Stamp(pos);
+                QueueEvent(pos);
                 posBuffer.Clear();
             }
             pendingHitches.Sort((a, b) => ((double)b["duration_ms"]).CompareTo((double)a["duration_ms"]));
@@ -702,6 +1214,8 @@ namespace GlitchlessSdk
             }
             if (recentHitches.Count > BugRecent) recentHitches.RemoveRange(0, recentHitches.Count - BugRecent);
             pendingHitches.Clear();
+            FlushCounts(w, secs);
+            FlushProps();
         }
 
         object Engine0(string key) => engine.TryGetValue(key, out var v) ? v : null;
@@ -759,6 +1273,267 @@ namespace GlitchlessSdk
             var out_ = new List<double>(n);
             for (var i = n; i > 0; i--) out_.Add(ring[(ringIdx - i + RingSize) % RingSize]);
             return out_;
+        }
+
+        // ───────────────────────────── the network ─────────────────────────────
+
+        // Once a second: each netcode library's round trip while connected (SPEC §2 frame_window.net), and on a server its
+        // players, objects and their round trips.
+        void SampleNet()
+        {
+            if (!Options.Netcode || NetSources.Count == 0) return;
+            INetSource server = null;
+            NetState serverState = default;
+            foreach (var s in NetSources)
+            {
+                if (s.Disconnected == null)
+                {
+                    var name = s.Name;
+                    s.Disconnected = reason => NetDisconnect(reason, name);
+                }
+                NetState st;
+                try
+                {
+                    st = s.Sample();
+                }
+                catch (Exception e)
+                {
+                    Debug($"{s.Name}: {e.Message}");
+                    continue;
+                }
+                if (st.Server)
+                {
+                    // A run serving a match with no player of its own, reported as a player (a bot, in batch mode).
+                    if (!IsServer) Warn("server-role", $"this run is a {s.Name} server with no player of its own: give it Role = GlitchlessRole.Server or --glitchless-server, so it reports as a server and not as a player");
+                    if (server == null)
+                    {
+                        server = s;
+                        serverState = st;
+                    }
+                    continue;
+                }
+                if (!st.Connected)
+                {
+                    if (netConnected && netTransport == s.Name) netConnected = false; // shut down by the game itself: no disconnect
+                    continue;
+                }
+                NetConnected(s.Name);
+                AddNetSample(s.Name, st.Host ? -1 : st.RttMs, st.LossPct, st.JitterMs, st.Host, st.Relay);
+            }
+            if (IsServer) SampleServer(server, serverState);
+        }
+
+        /// <summary>A round trip (and, when the game knows them, packet loss and jitter) from the game's own netcode, for
+        /// any library Glitchless doesn't read itself. At most one a second counts.</summary>
+        public void NetSample(double? rttMs, double? lossPct = null, double? jitterMs = null)
+        {
+            var now = Ticks;
+            if (manualNetAt > 0 && now - manualNetAt < 1000) return;
+            manualNetAt = now;
+            NetConnected(netTransport ?? "manual");
+            AddNetSample(netTransport ?? "manual", rttMs ?? -1, lossPct ?? -1, jitterMs ?? -1, false, null);
+        }
+
+        void NetConnected(string transport)
+        {
+            if (netConnected || IsServer) return;
+            netConnected = true;
+            netTransport = transport;
+            connectedAt = Ticks;
+            lastRtt = -1;
+            if (disconnectedAt <= 0) return;
+            var e = Ev("reconnect");
+            e["after_s"] = Sketch.Round((Ticks - disconnectedAt) / 1000, 1);
+            e["transport"] = transport;
+            disconnectedAt = 0;
+            Push(e);
+            Remember("reconnect");
+            // Back in the level the disconnect left: it goes on, and the server takes the abandon back (SPEC §2).
+            if (droppedLevel != null && droppedLevel == Level) levelOpen = true;
+            droppedLevel = null;
+        }
+
+        /// <summary>The game is connected again after a disconnect (NetDisconnect), for a library Glitchless doesn't read.</summary>
+        public void NetReconnect() => NetConnected(netTransport ?? "manual");
+
+        void AddNetSample(string transport, double rtt, double loss, double jitter, bool host, bool? relay)
+        {
+            if (IsServer) return;
+            var n = win.Net = win.Net ?? new NetWindow();
+            n.Samples++;
+            n.Transport = transport;
+            n.Host = host;
+            if (relay.HasValue) n.Relay = relay;
+            if (rtt >= 0)
+            {
+                n.Rtt.Add(rtt);
+                if (jitter < 0 && lastRtt >= 0) jitter = Math.Abs(rtt - lastRtt); // between one second's sample and the next
+                lastRtt = rtt;
+            }
+            if (jitter >= 0)
+            {
+                n.JitterSum += jitter;
+                n.JitterN++;
+            }
+            if (loss >= 0)
+            {
+                n.LossSum += loss;
+                n.LossN++;
+            }
+        }
+
+        /// <summary>The connection to the game's server dropped. `reason` is timeout, connection_lost, kicked, server_closed,
+        /// failed_to_connect or other. With a level going, it ends in a level_abandon with reason disconnect: never a fail.</summary>
+        public void NetDisconnect(string reason, string transport = null)
+        {
+            if (IsServer) return; // a server's players come and go: that's its player count, not a disconnect
+            var e = Ev("disconnect");
+            e["reason"] = Array.IndexOf(DisconnectReasons, reason) >= 0 ? reason : "other";
+            e["connected_s"] = netConnected ? Sketch.Round((Ticks - connectedAt) / 1000, 1) : 0;
+            var recent = win.Net ?? lastNet; // the numbers of the window before it
+            e["rtt_p95"] = recent != null && recent.Rtt.N > 0 ? Round(recent.Rtt.Quantile(0.95), 1) : null;
+            e["loss_pct"] = recent != null && recent.LossN > 0 ? (object)Sketch.Round(recent.LossSum / recent.LossN, 2) : null;
+            e["transport"] = transport ?? netTransport ?? "manual";
+            netConnected = false;
+            disconnectedAt = Ticks;
+            lastRtt = -1;
+            if (disconnects++ < MaxDisconnects) Push(e);
+            Remember("disconnect");
+            if (!levelOpen) return;
+            droppedLevel = Level;
+            Abandon(Level, "disconnect");
+        }
+
+        Dictionary<string, object> NetJson(NetWindow n)
+        {
+            var rtt = n.Rtt.N > 0;
+            var o = new Dictionary<string, object>
+            {
+                ["rtt"] = rtt ? n.Rtt.ToJson() : null,
+                ["rtt_p50"] = rtt ? Round(n.Rtt.Quantile(0.5), 1) : null,
+                ["rtt_p95"] = rtt ? Round(n.Rtt.Quantile(0.95), 1) : null,
+                ["rtt_max"] = rtt ? (object)Sketch.Round(n.Rtt.Max, 1) : null,
+                ["jitter_ms"] = n.JitterN > 0 ? (object)Sketch.Round(n.JitterSum / n.JitterN, 1) : null,
+                ["loss_pct"] = n.LossN > 0 ? (object)Sketch.Round(n.LossSum / n.LossN, 2) : null,
+                ["in_kbps"] = null, // neither NGO nor Mirror counts bytes without their tools packages
+                ["out_kbps"] = null,
+                ["samples"] = n.Samples,
+                ["transport"] = n.Transport,
+                ["link"] = Link?.Invoke(),
+                ["host"] = n.Host,
+            };
+            if (n.Relay.HasValue) o["relay"] = n.Relay.Value;
+            return o;
+        }
+
+        // ───────────────────────────── server mode ─────────────────────────────
+
+        /// <summary>The players connected to this server, when the game counts them itself (it wins over the netcode's count
+        /// from then on).</summary>
+        public void SetPlayers(int players) => setPlayers = Math.Max(0, players);
+
+        // The ticks are NGO's network ticks, or with Mirror, which updates the server every frame, the frame, or with neither,
+        // FixedUpdate's steps. A tick's time is the work of the frame it ran in, without the wait for the next frame, as an
+        // Unreal server's tick is its frame: a frame over the tick's budget is a tick that ran late, and when a server falls
+        // behind and runs two ticks in one long frame, both were late.
+        void ServerFrame(double dt, FrameCost f)
+        {
+            var busy = f.Busy >= 0 ? f.Busy : dt;
+            var ticks = serverSource != null ? serverSource.TakeTicks() : f.FixedSteps;
+            if (ticks < 0) ticks = 1;
+            var w = win;
+            w.Frames++;
+            if (ticks == 0) return;
+            w.Tick.Add(busy, ticks);
+            w.Ticks += ticks;
+            if (busy > 1000 / TargetHz) w.Late += ticks;
+            w.TickMax = Math.Max(w.TickMax, busy);
+        }
+
+        double TargetHz => serverTickHz > 0 ? serverTickHz : Math.Max(1, FixedHz());
+
+        string TickSource => serverSource?.Name ?? "fixed_update";
+
+        void SampleServer(INetSource source, NetState st)
+        {
+            if (source != serverSource)
+            {
+                serverSource?.TakeTicks();
+                source?.TakeTicks(); // ticks before now are the frames' that came before
+                serverSource = source;
+            }
+            serverTickHz = source != null && st.TickHz > 0 ? st.TickHz : 0;
+            if (st.MaxPlayers > 0) serverMaxPlayers = st.MaxPlayers;
+            var w = win;
+            w.TickSource = TickSource;
+            var players = setPlayers >= 0 ? setPlayers : source != null ? st.Players : -1;
+            if (players >= 0)
+            {
+                w.Players = players;
+                w.PlayersMax = Math.Max(w.PlayersMax, players);
+            }
+            if (st.NetObjects >= 0) w.NetObjects = st.NetObjects;
+            if (st.ClientRtts != null)
+                foreach (var r in st.ClientRtts)
+                    if (r >= 0 && w.ClientRtts.Count < MaxClientRtts) w.ClientRtts.Add(r);
+        }
+
+        void QueueServerWindow(Window w, double secs)
+        {
+            if (w.Frames == 0) return;
+            if (w.Players < 0 && setPlayers >= 0) w.Players = w.PlayersMax = setPlayers;
+            var t = w.Tick;
+            var cpu = CpuMs();
+            var e = new Dictionary<string, object>
+            {
+                ["type"] = "server_window",
+                ["ts"] = w.StartedAt,
+                ["level"] = Level,
+                ["duration_s"] = Sketch.Round(secs, 2),
+                ["ticks"] = w.Ticks,
+                ["tick_hz"] = Sketch.Round(w.Ticks / secs, 1), // the rate reached; session_start.server.tick_hz is the target
+                ["tick"] = t.ToJson(),
+                ["tick_p50"] = Round(t.Quantile(0.5), 2),
+                ["tick_p95"] = Round(t.Quantile(0.95), 2),
+                ["tick_max"] = Sketch.Round(w.TickMax, 1),
+                ["late"] = w.Late,
+                ["budget_ms"] = Sketch.Round(1000 / TargetHz, 2),
+                ["tick_source"] = w.TickSource ?? TickSource,
+                ["players"] = w.Players >= 0 ? (object)w.Players : null,
+                ["players_max"] = w.PlayersMax >= 0 ? (object)w.PlayersMax : null,
+                ["net_objects"] = w.NetObjects >= 0 ? (object)w.NetObjects : null,
+                ["in_kbps"] = null,
+                ["out_kbps"] = null,
+                // Of one core, as top shows it: 100 is one core kept busy, more for a server's other threads.
+                ["cpu_pct"] = cpu >= 0 && w.CpuAt >= 0 ? (object)Sketch.Round(Math.Max(0, cpu - w.CpuAt) / (secs * 1000) * 100, 1) : null,
+                ["mem_mb"] = Engine0("system_mb"),
+                ["rtt_p95"] = w.ClientRtts.Count > 0 ? (object)Sketch.Round(Quantile(w.ClientRtts, 0.95), 1) : null,
+                ["ctx"] = new Dictionary<string, double>(w.Ctx),
+            };
+            Stamp(e);
+            QueueEvent(e);
+        }
+
+        Dictionary<string, object> ServerInfo()
+        {
+            var max = Options.MaxPlayers > 0 ? Options.MaxPlayers : serverMaxPlayers;
+            return new Dictionary<string, object>
+            {
+                ["tick_hz"] = Sketch.Round(TargetHz, 1),
+                ["tick_source"] = TickSource,
+                ["max_players"] = max > 0 ? (object)max : null,
+                ["build"] = IsServerBuild ? "dedicated" : "headless",
+                ["region"] = string.IsNullOrEmpty(Options.ServerRegion) ? null : Clip(Options.ServerRegion.Trim(), 64),
+                ["host"] = ServerHost?.Invoke(),
+            };
+        }
+
+        // A server session ends and the next begins, with the same properties and groups: every 6 hours, or at each match
+        // with SessionPerMatch.
+        void CutSession(string reason)
+        {
+            Push(SessionEnd(reason));
+            NewSession();
         }
 
         // ───────────────────────────── measure ─────────────────────────────
@@ -903,8 +1678,22 @@ namespace GlitchlessSdk
             if (Inited && Enabled)
             {
                 Flush();
+                KeepHeldCounts();
                 SendNow(SendDeadlineMs);
             }
+        }
+
+        // The server never said whether it takes counters (offline, say): they go with the batches saved for later, rather
+        // than be lost. An older server drops them.
+        void KeepHeldCounts()
+        {
+            if (features != null || heldCounts.Count == 0) return;
+            foreach (var e in heldCounts) QueueEvent(e);
+            heldCounts.Clear();
+            var closing = shut;
+            shut = true; // add them to the outbox without starting a send: SendNow sends
+            Flush(closeWindow: false);
+            shut = closing;
         }
 
         public void OnForeground()
@@ -938,6 +1727,14 @@ namespace GlitchlessSdk
             recent.Clear();
             history.Clear();
             errorCounts.Clear();
+            // What held for the last session holds for this one: its properties go in the new session_start, and its
+            // groups are said again.
+            pendingProps = null;
+            propKeys.Clear();
+            foreach (var k in props.Keys) propKeys.Add(k);
+            disconnects = 0;
+            foreach (var kind in GameWords.GroupKinds)
+                if (groups.ContainsKey(kind)) PushGroup(kind, false);
         }
 
         public void Shutdown(string reason)
@@ -953,6 +1750,7 @@ namespace GlitchlessSdk
             if (Inited && Enabled)
             {
                 Flush();
+                KeepHeldCounts();
                 SendNow(SendDeadlineMs);
             }
         }
@@ -974,6 +1772,7 @@ namespace GlitchlessSdk
             if (Inited && !Enabled) return;
             if (!e.ContainsKey("ts")) e["ts"] = UnixNow();
             if (!e.ContainsKey("level")) e["level"] = Level;
+            Stamp(e);
             QueueEvent(e);
             if ((string)e["type"] == "session_end") return;
             history.Add(Slim(e));
@@ -1015,7 +1814,7 @@ namespace GlitchlessSdk
         {
             var device = Device(full);
             SteamInfo.AddTo(device, SteamFacts());
-            return new Dictionary<string, object>
+            var e = new Dictionary<string, object>
             {
                 ["type"] = "session_start",
                 ["ts"] = startedAt,
@@ -1026,6 +1825,12 @@ namespace GlitchlessSdk
                 ["page"] = null,
                 ["nav_ms"] = null,
             };
+            // The properties set so far; later changes go out as props events.
+            sentProps.Clear();
+            foreach (var kv in props) sentProps[kv.Key] = kv.Value;
+            if (props.Count > 0) e["props"] = new Dictionary<string, object>(props);
+            if (IsServer) e["server"] = ServerInfo();
+            return e;
         }
 
         /// <summary>The game's Steam facts (SteamInfo), read until Steamworks answers: a game may initialise Steam after
@@ -1145,11 +1950,12 @@ namespace GlitchlessSdk
             nextFlushAt = Ticks + Options.FlushIntervalSeconds * 1000;
             if (closeWindow) CloseWindow(true);
             if (!Inited) return; // kept until Init() says where it goes
-            if (!Enabled)
+            if (!Enabled || serverRefused)
             {
                 queue.Clear();
                 return;
             }
+            CheckFeatures();
             if (!sessionStartSent)
             {
                 queue.Insert(0, SessionStartEvent());
@@ -1201,7 +2007,10 @@ namespace GlitchlessSdk
             }
         }
 
-        Batch NewBatch(List<string> events) => new Batch { Id = nextBatchId++, Bid = NewId("b_", 16), Service = service, Env = env, Version = version, Sid = SessionId, Pid = PlayerId, Group = startedAt, Events = events };
+        Batch NewBatch(List<string> events) => new Batch { Id = nextBatchId++, Bid = NewId("b_", 16), Service = service, Env = env, Version = version, Sid = SessionId, Pid = PlayerId, Role = IsServer ? "server" : null, Group = startedAt, Events = events };
+
+        // A server's batches wait until the server says it has server mode: an older one would count them as players'.
+        bool CanSend(Batch b) => b.Role == null || ServerReady;
 
         string Body(Batch b)
         {
@@ -1218,6 +2027,11 @@ namespace GlitchlessSdk
             Json.Write(sb, string.IsNullOrEmpty(b.Pid) ? null : b.Pid); // the server uses the session ID in its place
             sb.Append(",\"sdk\":\"").Append(Sdk).Append("\",\"batch_id\":");
             Json.Write(sb, b.Bid);
+            if (b.Role != null)
+            {
+                sb.Append(",\"role\":"); // intake files it under the game's companion service, <service>.server
+                Json.Write(sb, b.Role);
+            }
             sb.Append(",\"events\":[");
             for (var i = 0; i < b.Events.Count; i++)
             {
@@ -1253,7 +2067,7 @@ namespace GlitchlessSdk
         void SendNext()
         {
             if (inFlight >= 0 || outbox.Count == 0 || Ticks < retryAt || Transport == null) return;
-            var b = outbox.Find(x => !x.Direct);
+            var b = outbox.Find(x => !x.Direct && CanSend(x));
             if (b == null) return;
             var body = Encode(Body(b));
             Debug($"sending {b.Events.Count} events ({body.Length} bytes)");
@@ -1318,6 +2132,7 @@ namespace GlitchlessSdk
             {
                 var left = (int)(deadline - Ticks);
                 if (left <= 0) break;
+                if (!CanSend(b)) continue; // saved for a launch whose server answers
                 var status = Transport.SendNow(IntakeUrl, Encode(Body(b)), "text/plain", left);
                 if (status >= 200 && status < 300) Stats.Sent += b.Events.Count;
                 else if (status == 0 || status >= 500 || status == 408 || status == 429) break;
@@ -1393,6 +2208,7 @@ namespace GlitchlessSdk
                         saved["sid"] = b.Sid;
                         saved["pid"] = b.Pid;
                     }
+                    if (b.Role != null) saved["role"] = b.Role;
                     batches.Add(saved);
                 }
                 var tmp = OutboxPath + ".tmp";
@@ -1425,7 +2241,7 @@ namespace GlitchlessSdk
                     }
                     long.TryParse(group, NumberStyles.Integer, CultureInfo.InvariantCulture, out var groupId);
                     var bid = Str(saved, "bid", ""); // an outbox an older version saved has none: a new one
-                    outbox.Add(new Batch { Id = nextBatchId++, Bid = bid.StartsWith("b_", StringComparison.Ordinal) ? bid : NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Group = groupId, Events = events });
+                    outbox.Add(new Batch { Id = nextBatchId++, Bid = bid.StartsWith("b_", StringComparison.Ordinal) ? bid : NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Role = saved.TryGetValue("role", out var role) ? role as string : null, Group = groupId, Events = events });
                 }
                 Debug($"{outbox.Count} saved batches from earlier launches");
             });
@@ -1486,6 +2302,12 @@ namespace GlitchlessSdk
         void Debug(string msg)
         {
             if (debug) Log("[glitchless] " + msg);
+        }
+
+        // Something the game asked for was dropped: said once, in a debug build (the Editor included).
+        void Warn(string key, string msg)
+        {
+            if (warned.Add(key) && (IsDebugBuild || debug)) Log("[glitchless] " + msg);
         }
 
         public bool HasFlag(string flag)

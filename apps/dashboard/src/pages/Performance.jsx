@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, QueryValue, TimeSeries, BarList, Histogram, Status, GroupTitle, Segmented } from '../components.jsx';
 import { fmtNum, fmtMs, fmtPct, frameStatus, pctStatus, timeAgo, PALETTE } from '../format.js';
 import { NoGame } from './Overview.jsx';
+import { fmtPing, fmtPerHour, pingKind, reasonWords } from '../genre.jsx';
 
 const CAUSE_LABEL = { script: 'Long script (LoAF)', shader_compile: 'Shader compile', gc: 'GC pause', asset_load: 'Asset loading', texture_upload: 'Texture uploads', geometry_upload: 'Geometry uploads', object_spawn: 'Object spawn', scene_change: 'Scene change', render: 'Long render', frozen: 'Frozen frame', unattributed: 'Unattributed' };
 
@@ -11,7 +12,17 @@ export function Performance({ route }) {
   const f = useFilters();
   const focus = route.query.get('level');
   const [dim, setDim] = useState('gpu_tier');
-  const { data } = useQuery('performance', f.params, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
+  const [where, setWhere] = useState('level');
+  // A split by a session property (A6), from a finding's link (?by_prop=class) or picked below.
+  const [prop, setProp] = useState(() => route.query.get('by_prop') || '');
+  const { data } = useQuery('performance', prop ? { ...f.params, by_prop: prop } : f.params, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
+  // A finding's link to a section (?section=network) scrolls to it once the page has drawn.
+  const section = route.query.get('section');
+  const net = useRef(null);
+  const drawn = !!data;
+  useEffect(() => {
+    if (drawn && section === 'network') net.current?.scrollIntoView({ block: 'start' });
+  }, [drawn, section]);
   if (!f.service) return <NoGame />;
   if (!data) return <div className="loading-bar" />;
   const k = data.kpis;
@@ -40,12 +51,12 @@ export function Performance({ route }) {
         <Histogram edges={data.distribution.edges} counts={data.distribution.counts} budget={budget} />
       </Widget>
 
-      <Widget span={12} title="By level" sub="where the frame budget goes" flush>
+      <Widget span={12} title={where === 'zone' ? 'By zone' : 'By level'} sub="where the frame budget goes" actions={data.by_zone?.length ? <Segmented value={where} onChange={setWhere} options={[{ value: 'level', label: 'Level' }, { value: 'zone', label: 'Zone' }]} /> : null} info={where === 'zone' ? 'A zone is a region inside a level the game names with setZone (a district, a dungeon floor). Frames count under the zone they were drawn in; sessions are left out, since one session crosses many zones.' : null} flush>
         <div className="tablewrap">
           <table className="dt">
             <thead>
               <tr>
-                <th>Level</th>
+                <th>{where === 'zone' ? 'Zone' : 'Level'}</th>
                 <th className="num">Sessions</th>
                 <th className="num">p50</th>
                 <th className="num">p95</th>
@@ -59,8 +70,8 @@ export function Performance({ route }) {
               </tr>
             </thead>
             <tbody>
-              {data.by_level.map((l) => (
-                <tr key={l.key} className={focus === l.key ? 'sel' : ''}>
+              {(where === 'zone' && data.by_zone ? data.by_zone : data.by_level).map((l) => (
+                <tr key={l.key} className={where === 'level' && focus === l.key ? 'sel' : ''}>
                   <td>
                     <b>{l.key}</b>
                   </td>
@@ -90,6 +101,8 @@ export function Performance({ route }) {
           </table>
         </div>
       </Widget>
+
+      {data.network && <Network n={data.network} anchor={net} />}
 
       <GroupTitle>Hitch analysis</GroupTitle>
       <Widget span={4} title="Likely causes" sub="attributed per hitch (frame > 50ms)">
@@ -197,6 +210,141 @@ export function Performance({ route }) {
           ))}
         </div>
       </Widget>
+      {f.properties?.length > 0 && <ByProperty data={data} prop={prop} setProp={setProp} keys={f.properties.map((p) => p.key)} budget={budget} />}
     </div>
+  );
+}
+
+// The game's network (A8; SPEC §3 performance network): ping, lag, loss and disconnects, by level, version, platform
+// and connection, for a game that sends network samples.
+function Network({ n, anchor }) {
+  const [by, setBy] = useState('level');
+  const k = n.kpis;
+  const rows = { level: n.by_level, version: n.by_version, platform: n.by_platform, link: n.by_link }[by] || [];
+  const options = [
+    { value: 'level', label: 'Level' },
+    { value: 'version', label: 'Version' },
+    { value: 'platform', label: 'Platform' },
+    ...(n.by_link?.length ? [{ value: 'link', label: 'Connection' }] : []),
+  ];
+  const reasons = Object.entries(k.disconnect_reasons || {}).sort((a, b) => b[1] - a[1]);
+  const sessions = rows.some((r) => r.sessions != null);
+  return (
+    <>
+      <div ref={anchor} className="s12" style={{ scrollMarginTop: 12 }}>
+        <GroupTitle>Network</GroupTitle>
+      </div>
+      <QueryValue label="Median ping" value={fmtPing(k.ping_p50)} status={pingKind(k.ping_p50)} sub={`slowest 5% ${fmtPing(k.ping_p95)}`} info="Ping is the round trip to the game's server, from the game's own network samples. A host's own round trip (zero) is left out." />
+      <QueryValue label="Play lagging" value={fmtPct(k.lag_pct, 0)} status={pctStatus(k.lag_pct, 5, 15, false)} sub="of connected time over 150 ms" />
+      <QueryValue label="Packets lost" value={fmtPct(k.loss_pct, 2)} status={pctStatus(k.loss_pct, 1, 3, false)} sub={k.jitter_ms != null ? `jitter ${fmtPing(k.jitter_ms)}` : null} />
+      <QueryValue label="Disconnects" value={fmtPerHour(k.disconnects_per_hour)} status={pctStatus(k.disconnects_per_hour, 0.5, 2, false)} sub={`${fmtNum(k.disconnects)} in ${fmtNum(k.hours, 1)} hours played`} />
+      <QueryValue label="Attempts ended by one" value={k.disconnect_pct == null ? '–' : fmtPct(k.disconnect_pct)} status={pctStatus(k.disconnect_pct, 2, 8, false)} sub="level attempts a disconnect cut short" />
+      <QueryValue label="Why they dropped" value={reasons.length ? reasonWords(reasons[0][0]) : 'none'} sub={reasons.length ? reasons.map(([r, c]) => `${fmtNum(c)} ${reasonWords(r).toLowerCase()}`).join(' · ') : 'no disconnects'} />
+      <Widget span={12} title="Network by segment" sub="where ping, loss and disconnects are worst" actions={<Segmented value={by} onChange={setBy} options={options} />} flush>
+        <div className="tablewrap">
+          <table className="dt">
+            <thead>
+              <tr>
+                <th>{options.find((o) => o.value === by)?.label}</th>
+                {sessions && <th className="num">Sessions</th>}
+                <th className="num">Median ping</th>
+                <th className="num">Slowest 5%</th>
+                <th className="num">Lagging</th>
+                <th className="num">Loss</th>
+                <th className="num">Disconnects / h</th>
+                <th className="num">Attempts ended</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}>
+                  <td>
+                    <b>{r.key}</b>
+                  </td>
+                  {sessions && <td className="num">{fmtNum(r.sessions)}</td>}
+                  <td className="num">
+                    <Status kind={pingKind(r.ping_p50)}>{fmtPing(r.ping_p50)}</Status>
+                  </td>
+                  <td className="num">{fmtPing(r.ping_p95)}</td>
+                  <td className="num">{fmtPct(r.lag_pct, 0)}</td>
+                  <td className="num">{fmtPct(r.loss_pct, 2)}</td>
+                  <td className="num" title={Object.entries(r.disconnect_reasons || {}).map(([x, c]) => `${fmtNum(c)} ${reasonWords(x).toLowerCase()}`).join(', ')}>
+                    {fmtPerHour(r.disconnects_per_hour)}
+                  </td>
+                  <td className="num">{r.disconnect_pct == null ? '–' : fmtPct(r.disconnect_pct)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Widget>
+    </>
+  );
+}
+
+// Frame time and crashes by a session property (A6): each value of the picked key (a class, a graphics preset).
+function ByProperty({ data, prop, setProp, keys, budget }) {
+  const rows = data.by_prop?.key === prop ? data.by_prop.rows : null;
+  return (
+    <Widget
+      span={12}
+      title="By property"
+      sub={prop ? `each ${prop}: frame time, hitches and crashes` : 'split frame time by what the game says about each session'}
+      actions={
+        <label className="tvar">
+          <span>$property</span>
+          <select value={prop} onChange={(e) => setProp(e.target.value)}>
+            <option value="">pick one</option>
+            {keys.map((k) => (
+              <option key={k}>{k}</option>
+            ))}
+          </select>
+        </label>
+      }
+      flush={!!rows?.length}
+    >
+      {!prop ? (
+        <div className="muted">Pick a property to see whether one value of it (a class, a graphics preset, a region) plays worse than the rest.</div>
+      ) : !rows ? (
+        <div className="loading-bar" />
+      ) : rows.length ? (
+        <div className="tablewrap">
+          <table className="dt">
+            <thead>
+              <tr>
+                <th>{prop}</th>
+                <th className="num">Sessions</th>
+                <th className="num">p50</th>
+                <th className="num">p95</th>
+                <th className="num">Over budget</th>
+                <th className="num">Hitches/min</th>
+                <th className="num">Without a crash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}>
+                  <td>
+                    <b>{r.key}</b>
+                  </td>
+                  <td className="num">{fmtNum(r.all_sessions ?? r.sessions)}</td>
+                  <td className="num">{fmtMs(r.p50)}</td>
+                  <td className="num">
+                    <Status kind={frameStatus(r.p95, budget)}>{fmtMs(r.p95)}</Status>
+                  </td>
+                  <td className="num">{fmtPct(r.pct_over_budget)}</td>
+                  <td className="num">{fmtNum(r.hitches_per_min, 2)}</td>
+                  <td className="num">
+                    <Status kind={pctStatus(r.crash_free_pct, 99, 95)}>{fmtPct(r.crash_free_pct, 1)}</Status>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="why">No session in this window has {prop}.</div>
+      )}
+    </Widget>
   );
 }

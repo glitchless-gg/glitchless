@@ -29,11 +29,13 @@ export function newFacts(env = null, version = null, level = null) {
     hr: {}, // names in hitches' recent-event lists → number of hitches naming them
     hn: {}, // those names, first seen
     er: {}, // errors by fingerprint (see addError)
+    // kh, kc (only cells with counters have them): counter totals per window, with and without hitches (pairWindow)
   };
 }
 
 // Fold events into minutes: Map<minute ts, Map<cell key, facts>>.
 export function foldFacts(events, minutes = new Map()) {
+  const windows = new Map(); // a session's window start → its frame window's facts cell and hitches, or its counters
   for (const e of events) {
     if (e.type === 'map') continue;
     const m = minuteOf(e.ts);
@@ -44,8 +46,28 @@ export function foldFacts(events, minutes = new Map()) {
     let f = cells.get(key);
     if (!f) cells.set(key, (f = newFacts(e.env ?? null, e.version ?? null, level)));
     addFact(f, e);
+    if (e.type === 'frame_window' || e.type === 'counts') pairWindow(windows, f, e);
   }
   return minutes;
+}
+
+// A window's counter totals next to whether its frames hitched (finding 13: "hitches come in windows with 300 or more
+// kills"), as gauges are read: kh per name in windows with hitches, kc in calm ones, value → windows. A frame window and
+// its counts go in one batch with the same ts (the window's start), so they pair up within a fold.
+function pairWindow(windows, f, e) {
+  const key = `${e.session_id}\n${e.ts}`;
+  const other = windows.get(key);
+  if (!other) return void windows.set(key, e.type === 'frame_window' ? { f, hitched: (e.hitches || 0) > 0 } : { counts: e });
+  windows.delete(key);
+  const [fw, counts] = e.type === 'frame_window' ? [{ f, hitched: (e.hitches || 0) > 0 }, other.counts] : [other, e];
+  if (!fw.f || !counts) return;
+  const totals = new Map();
+  for (const c of counts.counts || []) if (c.n >= 1) totals.set(c.name, (totals.get(c.name) || 0) + c.n);
+  const into = fw.hitched ? (fw.f.kh ??= {}) : (fw.f.kc ??= {});
+  for (const [name, n] of totals) {
+    const counts = (into[name] ||= {});
+    counts[n] = (counts[n] || 0) + 1;
+  }
 }
 
 export function addFact(f, e) {
@@ -111,6 +133,8 @@ export function mergeFacts(into, f) {
   addCounts(into.hr, f.hr);
   addFirstSeen(into.hn, f.hn);
   mergeErrors(into.er, f.er);
+  if (f.kh) addValueMaps((into.kh ??= {}), f.kh);
+  if (f.kc) addValueMaps((into.kc ??= {}), f.kc);
   return into;
 }
 

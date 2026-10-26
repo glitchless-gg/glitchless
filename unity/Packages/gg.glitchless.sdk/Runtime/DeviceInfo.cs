@@ -56,6 +56,30 @@ namespace GlitchlessSdk
             return d;
         }
 
+        /// <summary>The kind of connection, for net.link: wifi or cellular on a phone, cellular wherever the OS says
+        /// so; null where it can't tell (a desktop's local network may be Wi-Fi or a cable) or there is none. Never the
+        /// network's name or address.</summary>
+        public static string Link() => LinkFor(Application.internetReachability, Application.isMobilePlatform);
+
+        public static string LinkFor(NetworkReachability reach, bool mobile)
+        {
+            switch (reach)
+            {
+                case NetworkReachability.ReachableViaCarrierDataNetwork: return "cellular";
+                case NetworkReachability.ReachableViaLocalAreaNetwork: return mobile ? "wifi" : null;
+                default: return null;
+            }
+        }
+
+        /// <summary>A game server's machine, for session_start.server.host: its OS, cores and memory. Never its address or
+        /// host name.</summary>
+        public static Dictionary<string, object> ServerHost() => new Dictionary<string, object>
+        {
+            ["os"] = SystemInfo.operatingSystem,
+            ["cores"] = SystemInfo.processorCount,
+            ["memory_gb"] = SystemInfo.systemMemorySize > 0 ? (object)Mathf.RoundToInt(SystemInfo.systemMemorySize / 1024f) : null,
+        };
+
         public static string OsName()
         {
             switch (Application.platform)

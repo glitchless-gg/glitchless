@@ -10,9 +10,12 @@
 //    reports, measure. They check what the server reads back, through the same /v1/query API the dashboard uses.
 // 5. What the Starlift audit found: a batch sent again stored once (batch_id), an abandon at quit, the load event at
 //    the first frame with first_launch, and gpu_or_os.
+// 6. Genre coverage (docs/design/genre-coverage.md A5 to A8): counters, properties, groups with level attributes and
+//    zones, and network samples, checked against the design's wire format in the batches the GML sends.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -700,4 +703,364 @@ test('a batch sent before the first frame (focus lost as the game opened) does n
   const load = rawEvents().find((e) => e.session_id === sid && e.type === 'load' && e.ttff_ms != null);
   assert.ok(load, types.join(' '));
   assert.equal(load.first_launch, true);
+});
+
+// ───────────────────────────── 6. genre coverage (A5 to A8) ─────────────────────────────
+// The server's side is built apart, so these read what the game sends: every batch, unpacked, on its way to the
+// server (which stores the event types it knows and drops the rest, as an older server does).
+
+const FEATURES = ['counts', 'props', 'groups', 'net'];
+
+// Records each batch the game sends and passes it on to the server. GET /v1/health is answered with `health`: a
+// server that takes counters by default, `{ ok: true }` for one that doesn't yet.
+function recordingFetch({ health = { ok: true, features: FEATURES } } = {}) {
+  const batches = [];
+  const impl = async (url, init) => {
+    if (url.endsWith('/v1/health')) return new Response(JSON.stringify(health), { status: 200 });
+    if (url.includes('/v1/intake')) {
+      const body = Buffer.isBuffer(init.body) && init.body[0] === 0x1f ? zlib.gunzipSync(init.body).toString('utf8') : String(init.body);
+      batches.push(JSON.parse(body));
+    }
+    return fetch(url, init);
+  };
+  const events = (type) => batches.flatMap((b) => b.events.map((e) => ({ ...e, session_id: b.session_id }))).filter((e) => !type || e.type === type);
+  return { impl, batches, events };
+}
+
+async function genreGame({ args = ['-glitchless'], options = {}, health, intake = `http://127.0.0.1:${port}` } = {}) {
+  const rec = recordingFetch({ health });
+  const game = launch({ saveDir: newSave(), args, rooms: ROOMS, fetchImpl: rec.impl });
+  game.state.timer += Math.floor(Math.random() * 1e9); // its own session ID
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', intake, game.struct(options));
+  await game.settle(); // the health check
+  return { game, rec };
+}
+
+// Cuts the window now and waits for the batch to reach the server.
+async function flushNow(game) {
+  game.call('glitchless_flush');
+  await game.settle();
+}
+
+const plainJson = (game, v) => JSON.parse(game.call('json_stringify', v));
+
+test('A5: a stream of events is added up on the device and goes once a window as one counts event', async () => {
+  const { game, rec } = await genreGame();
+  assert.equal(game.g.counts_ok, true, 'the server\'s features say it takes counters');
+  game.call('glitchless_level_start', 'nmd_ghoa');
+  await game.frames(60, (i) => ({
+    during: (g) => {
+      if (i < 37) g.call('glitchless_count', 'kill', g.struct({ monster: 'elite' }));
+      if (i < 52) g.call('glitchless_count', 'gold', g.struct({ source: 'loot', amount: 35 }));
+      if (i === 5) g.call('glitchless_count', 'kill', g.struct({ monster: 'imp' }), 5);
+    },
+  }));
+  await flushNow(game);
+  await game.frames(3, { during: (g) => g.call('glitchless_count', 'kill', g.struct({ monster: 'elite' })) });
+  game.call('glitchless_level_start', 'nmd_two'); // closes the window: those 3 kills keep their level
+  game.call('glitchless_count', 'tap');
+  await game.frames(2);
+  await flushNow(game);
+
+  const counts = rec.events('counts');
+  assert.equal(counts.length, 3, JSON.stringify(counts));
+  const [first, second, third] = counts;
+  assert.equal(first.level, 'nmd_ghoa');
+  assert.equal(first.dropped, 0);
+  assert.equal(typeof first.ts, 'number');
+  assert.ok(first.duration_s > 0.9 && first.duration_s < 1.2, String(first.duration_s));
+  assert.deepEqual(first.counts.map(({ first_ts, ...c }) => c), [
+    { name: 'kill', attrs: { monster: 'elite' }, n: 37 },
+    { name: 'gold', attrs: { source: 'loot' }, n: 52, sums: { amount: 1820 } },
+    { name: 'kill', attrs: { monster: 'imp' }, n: 5 },
+  ]);
+  for (const c of first.counts) assert.ok(c.first_ts >= first.ts && c.first_ts < first.ts + 2000, 'first_ts is within the window');
+  assert.ok(first.counts[2].first_ts > first.counts[0].first_ts, 'the imp entry began 5 frames in');
+  assert.deepEqual([second.level, second.counts.map((c) => [c.name, c.n])], ['nmd_ghoa', [['kill', 3]]]);
+  assert.deepEqual([third.level, third.counts], ['nmd_two', [{ name: 'tap', attrs: {}, n: 1, first_ts: third.counts[0].first_ts }]]);
+  assert.ok(!rec.events('custom').some((e) => e.name === 'kill' || e.name === 'gold'), 'a counter queues no custom events');
+  assert.ok(rec.batches.every((b) => b.events.length < 20), 'the queue stayed small');
+});
+
+test('A5: a counter groups by 4 words and sums 4 numbers; a full window sends new groups as (other) and drops new names', async () => {
+  const game = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS });
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${deadPort}`, game.struct({}));
+  await game.settle(); // offline: what the server takes isn't known, so counters stay on
+  assert.equal(game.g.counts_ok, undefined);
+  const g = game.g;
+  game.call('glitchless_count', 'hit', game.struct({ a: '1', b: '2', c: '3', crit: true, d: '4', e: '5', dmg: 10, w: 1, x: 2, y: 3, z: 4, tags: ['x'] }));
+  game.call('glitchless_count', 'hit', game.struct({ a: '1', b: '2', c: '3', crit: true, dmg: 5, z: 9 }));
+  game.call('glitchless_count', 'tap', undefined, 0); // nothing happened
+  game.call('glitchless_count', 'tap', undefined, 5e6);
+  game.call('glitchless_count', 'word', 'endless');
+  for (let i = 0; game.g.win.count_list.length < 64; i++) game.call('glitchless_count', 'loot', game.struct({ rarity: `r${i}` }));
+  game.call('glitchless_count', 'loot', game.struct({ rarity: 'r0' })); // an entry it has: still counted
+  game.call('glitchless_count', 'loot', game.struct({ rarity: 'legendary' }), 2);
+  game.call('glitchless_count', 'loot', game.struct({ rarity: 'mythic', gold: 7 }));
+  game.call('glitchless_count', 'brand_new', undefined, 7);
+  const e = plainJson(game, game.call('__glitchless_counts_event', g, g.win, 5));
+  assert.equal(e.type, 'counts');
+  assert.equal(e.counts.length, 65, 'the 64 entries and one (other) for loot');
+  assert.deepEqual(e.counts[0].attrs, { a: '1', b: '2', c: '3', crit: true }, 'the first 4 words and flags by name');
+  assert.deepEqual(e.counts[0].sums, { dmg: 15, w: 1, x: 2, y: 3 }, 'the first 4 numbers by name, added up; z was the fifth');
+  assert.equal(e.counts[0].n, 2);
+  assert.deepEqual(e.counts.find((c) => c.name === 'tap').n, 1000000, 'n is at most 1,000,000 a call');
+  assert.deepEqual(e.counts.find((c) => c.name === 'word').attrs, { what: 'endless' }, 'one word is `what`, as with glitchless_track');
+  assert.equal(e.counts.find((c) => c.name === 'loot' && c.attrs.rarity === 'r0').n, 2);
+  assert.deepEqual(e.counts.at(-1), { name: 'loot', attrs: { rarity: '(other)' }, n: 3, sums: { gold: 7 }, first_ts: e.counts.at(-1).first_ts });
+  assert.equal(e.dropped, 7, 'a new name in a full window is dropped and counted');
+});
+
+test('A5: a server without counters gets none, with one warning; a name tracked 20+ times a second earns a warning', async () => {
+  const { game, rec } = await genreGame({ health: { ok: true, store: 'file' } });
+  assert.equal(game.g.counts_ok, false);
+  assert.equal(game.debugMessages.filter((m) => m.includes('does not take counters')).length, 1);
+  game.call('glitchless_count', 'kill');
+  await game.frames(10);
+  await flushNow(game);
+  assert.deepEqual(rec.events('counts'), []);
+
+  // One counted before the server answered is taken back out of the queue.
+  const early = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS, fetchImpl: recordingFetch({ health: { ok: true } }).impl });
+  early.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, early.struct({}));
+  early.call('glitchless_count', 'kill');
+  early.call('__glitchless_close_window', early.g, false);
+  assert.equal(early.g.queue.filter((q) => q.type === 'counts').length, 1);
+  await early.settle();
+  assert.equal(early.g.queue.filter((q) => q.type === 'counts').length, 0);
+
+  const debug = launch({ saveDir: newSave(), args: ['-glitchless', '-glitchless-debug'], rooms: ROOMS });
+  debug.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${deadPort}`, debug.struct({}));
+  for (let i = 0; i < 50; i++) debug.call('glitchless_track', 'shot', 'ar');
+  for (let i = 0; i < 5; i++) debug.call('glitchless_track', 'jump');
+  const warnings = debug.debugMessages.filter((m) => m.includes('glitchless_count('));
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0], /"shot" is tracked more than 20 times a second/);
+  const shipped = launch({ saveDir: newSave(), args: ['-glitchless'], rooms: ROOMS });
+  shipped.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${deadPort}`, shipped.struct({}));
+  for (let i = 0; i < 50; i++) shipped.call('glitchless_track', 'shot');
+  assert.ok(!shipped.debugMessages.some((m) => m.includes('glitchless_count(')), 'a shipped build says nothing');
+});
+
+test('A6: property keys and values are checked before they go', () => {
+  const problem = (k, v) => gml('__glitchless_prop_problem', k, v);
+  for (const [k, v] of [['rank', 'diamond'], ['level_band', '30-39'], ['trophy_band', '3000-3499'], ['arena', 'arena_7'], ['season', 's9'], ['solo', true], ['heat', 8], ['floor', -3], ['cap', 1000000], ['region', 'eu-west'], ['k'.padEnd(32, 'x'), 'necromancer'], ['spender', 'none'], ['realm', undefined]]) {
+    assert.equal(problem(k, v), '', `${k}=${v}`);
+  }
+  for (const [k, v] of [['Rank', 'gold'], ['1st', 'a'], ['rank-tier', 'a'], ['k'.padEnd(33, 'x'), 'a'], ['', 'a'], ['version', '1.2'], ['level', 'x'], ['zone', 'docks'], ['match', 'x'], ['run', 'x'], ['platform', 'pc'], ['steam_branch', 'beta'], ['players', 4], ['email', 'x'], ['user_id', 'x'], ['steam_id', 'x'], ['age', 30], ['city', 'Oslo']]) {
+    assert.notEqual(problem(k, v), '', `key ${k}`);
+  }
+  for (const v of [1.5, 1000001, -2e6, 'ada@example.com', 'https://glitchless.gg', 'www.example.com', '+1 555 123 4567', '(555) 123-4567', '555-123-4567', '5551234', '123e4567-e89b-12d3-a456-426614174000', 'dGhpcyBpcyBhIHRva2Vu1', 'deadbeefdeadbeef', 'eyJhbGciOiJIUzI1NiJ9', '', ['a'], gml('__struct', {})]) {
+    assert.notEqual(problem('rank', v), '', JSON.stringify(v));
+  }
+});
+
+test('A6: properties go with session_start, and later changes as one props event a window with each key\'s last value', async () => {
+  const { game, rec } = await genreGame({ args: ['-glitchless', '-glitchless-debug'], options: { properties: tool.struct({ mode: 'squads' }) } });
+  const set = (o) => game.call('glitchless_set_properties', game.struct(o));
+  set({ rank: 'gold', region: '  eu-west  ', email: 'ada@example.com', level_band: '30-39', guild: 'https://x.example' });
+  await game.frames(130); // the first batch, at 2 s
+  await game.settle();
+  const sid = game.g.session_id;
+  const start = rec.events('session_start').find((e) => e.session_id === sid);
+  assert.equal(start.privacy, 'anonymous', 'properties go in every mode');
+  assert.deepEqual(start.props, { mode: 'squads', rank: 'gold', region: 'eu-west', level_band: '30-39' });
+  assert.deepEqual(rec.events('props'), [], 'what session_start says goes no second time');
+  assert.ok(game.debugMessages.some((m) => /property "email" dropped/.test(m)));
+  assert.ok(game.debugMessages.some((m) => /property "guild" dropped: it looks like a link/.test(m)));
+
+  set({ rank: 'platinum' });
+  await game.frames(5);
+  set({ rank: 'diamond', party_size: 3 });
+  await flushNow(game);
+  set({ region: undefined, mode: 'squads' }); // mode is as it was
+  await flushNow(game);
+  set({ mode: 'squads' }); // nothing changes, nothing goes
+  await flushNow(game);
+  const props = rec.events('props');
+  assert.deepEqual(props.map((e) => e.props), [{ rank: 'diamond', party_size: 3 }, { region: null }]);
+  assert.ok(props.every((e) => typeof e.ts === 'number' && 'level' in e));
+
+  // 12 keys a session: region was removed, and still counts.
+  set(Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`k${i}`, i])));
+  assert.equal(Object.keys(game.g.prop_keys).length, 12);
+  assert.ok(!('k7' in game.g.props) && game.debugMessages.some((m) => /"k7" dropped: a session has at most 12/.test(m)));
+  // and the server takes session_start with its props
+  const stored = rawEvents().find((e) => e.type === 'session_start' && e.session_id === sid);
+  assert.deepEqual(stored.props, start.props);
+});
+
+test('A7: level attributes, match and party groups (hashed), runs and zones are carried by the events after them', async () => {
+  const { game, rec } = await genreGame();
+  const sha = (s) => 'h_' + crypto.createHash('sha1').update(s, 'utf8').digest('hex').slice(0, 24);
+  await game.frames(2); // the first frame is never timed
+  game.call('glitchless_level_start', 'nmd_ghoa', game.struct({ tier: 'pit_80', party_size: 3, build: ['blood_surge', 'corpse_explosion'] }));
+  await game.frames(10, { during: (g) => g.call('glitchless_track', 'before', 'x') });
+  const match = game.call('glitchless_set_group', 'match', 'm-8f2c-4410-aa', game.struct({ mode: 'squads', players: 100 }));
+  assert.equal(match, sha(`${SERVICE}:m-8f2c-4410-aa`), 'SHA-1 of the service and the ID');
+  // The vector every SDK checks, so a match's players and its server hash its ID alike.
+  const zoomies = game.call('__glitchless_copy', game.g);
+  zoomies.service = 'zoomies';
+  assert.equal(game.call('__glitchless_hash_group_id', zoomies, 'm_8f2c91d04ab7'), 'h_d8a6ac978165726ac21a722b');
+  assert.equal(game.call('glitchless_set_group', 'match', 'abc'), '', 'too short: dropped');
+  assert.equal(game.call('glitchless_set_group', 'match', 'has a space in it'), '', 'not in the ID alphabet: dropped');
+  assert.equal(game.call('glitchless_set_group', 'guild', 'guild-00001'), '', 'not a kind');
+  const party = game.call('glitchless_set_group', 'party', 'party_0042_x');
+  await game.frames(60, { // a second: long enough for the zone change after it to close the window
+    during: (g) => {
+      g.call('glitchless_track', 'fight', g.struct({ weapon: 'shotgun', won: true }));
+      g.call('glitchless_count', 'shot');
+    },
+  });
+  game.call('glitchless_set_zone', 'docks');
+  await game.frames(10, { during: (g) => g.call('glitchless_death', 10, 20, 'storm') });
+  game.call('glitchless_set_group', 'match', undefined);
+  game.call('glitchless_set_zone', '');
+  await game.frames(10, { during: (g) => g.call('glitchless_track', 'after') });
+  await flushNow(game);
+
+  const start = rec.events('level_start').find((e) => e.level === 'nmd_ghoa');
+  assert.deepEqual(start.attrs, { tier: 'pit_80', party_size: 3, build: ['blood_surge', 'corpse_explosion'] });
+  const groups = rec.events('group');
+  assert.deepEqual(groups.map(({ kind, id, attrs, resumed }) => ({ kind, id, attrs, resumed })), [
+    { kind: 'match', id: match, attrs: { mode: 'squads', players: 100 }, resumed: undefined },
+    { kind: 'party', id: sha(`${SERVICE}:party_0042_x`), attrs: undefined, resumed: undefined },
+    { kind: 'match', id: null, attrs: undefined, resumed: undefined },
+  ]);
+  assert.equal(party, groups[1].id);
+  const custom = (name) => rec.events('custom').filter((e) => e.name === name);
+  assert.ok(custom('before').every((e) => !('match' in e) && !('party' in e) && !('zone' in e)));
+  assert.ok(custom('fight').every((e) => e.match === match && e.party === party && !('zone' in e)));
+  const death = rec.events('death')[0];
+  assert.deepEqual([death.match, death.party, death.zone, death.level], [match, party, 'docks', 'nmd_ghoa']);
+  assert.ok(custom('after').every((e) => !('match' in e) && e.party === party && !('zone' in e)));
+  assert.equal(rec.events('counts')[0].match, match, 'a counts event carries its window\'s groups');
+  // Each change closed the frame window: no window spans two matches or two zones.
+  const windows = rec.events('frame_window').filter((w) => w.level === 'nmd_ghoa');
+  assert.deepEqual(windows.map((w) => [w.frames, w.match ?? null, w.zone ?? null]), [
+    [10, null, null],
+    [60, match, null],
+    [10, match, 'docks'],
+    [10, null, null],
+  ]);
+  // The server takes them: level_start keeps its attrs, events keep their group fields.
+  const stored = rawEvents().find((e) => e.type === 'level_start' && e.session_id === game.g.session_id);
+  assert.deepEqual(stored.attrs, start.attrs);
+
+  // A developer who wants to match them against their own server logs sends them as they are.
+  const raw = await genreGame({ options: { hash_group_ids: false } });
+  assert.equal(raw.game.call('glitchless_set_group', 'match', 'm-8f2c-4410-aa'), 'm-8f2c-4410-aa');
+
+  // A player stepping back and forth over a zone's edge: a window closes for a change only once it has run a second.
+  const edge = await genreGame();
+  await edge.game.frames(30);
+  await flushNow(edge.game);
+  await edge.game.frames(120, (i) => ({ during: (g) => i % 10 === 0 && g.call('glitchless_set_zone', i % 20 === 0 ? 'docks' : 'town') }));
+  await flushNow(edge.game);
+  const zoned = edge.rec.events('frame_window').filter((w) => w.zone);
+  assert.ok(zoned.length >= 2 && zoned.length <= 3, `${zoned.length} windows for 12 zone changes in 2 s`);
+});
+
+test('A7: a run gets its ID from the SDK, and resumes under a saved one in install and full mode only', async () => {
+  const anon = await genreGame();
+  const run = anon.game.call('glitchless_set_group', 'run');
+  assert.match(run, /^r_[a-z0-9]{12}$/);
+  const swapped = anon.game.call('glitchless_set_group', 'run', 'r_saved00000a');
+  assert.match(swapped, /^r_[a-z0-9]{12}$/);
+  assert.notEqual(swapped, 'r_saved00000a', 'anonymous mode: nothing ties two launches together');
+  anon.game.call('glitchless_track', 'boon_offer', anon.game.struct({ boon: 'zeus_strike', picked: true }));
+  await flushNow(anon.game);
+  assert.deepEqual(anon.rec.events('group').map((e) => [e.kind, e.id, e.resumed ?? false]), [['run', run, false], ['run', swapped, true]]);
+  assert.equal(anon.rec.events('custom').find((e) => e.name === 'boon_offer').run, swapped);
+
+  const install = await genreGame({ args: ['-glitchless', '-glitchless-privacy=install'] });
+  assert.equal(install.game.call('glitchless_set_group', 'run', 'r_saved00000a'), 'r_saved00000a');
+  await flushNow(install.game);
+  assert.equal(install.rec.events('group')[0].resumed, true);
+});
+
+test('A6, A7: a new session in the same launch starts with the properties and groups still set', async () => {
+  const { game, rec } = await genreGame();
+  game.call('glitchless_set_properties', game.struct({ rank: 'gold' }));
+  const match = game.call('glitchless_set_group', 'match', 'match-0001-abcd', game.struct({ mode: 'duo' }));
+  await game.frames(130);
+  await game.settle();
+  const first = game.g.session_id;
+  game.call('__glitchless_new_session', game.g); // back after the background timeout
+  await game.frames(5);
+  await flushNow(game);
+  const second = game.g.session_id;
+  assert.notEqual(first, second);
+  const events = rec.events().filter((e) => e.session_id === second);
+  assert.equal(events[0].type, 'session_start');
+  assert.deepEqual(events[0].props, { rank: 'gold' });
+  assert.deepEqual(events.filter((e) => e.type === 'group').map((e) => [e.kind, e.id, e.attrs]), [['match', match, { mode: 'duo' }]]);
+});
+
+test('A8: net samples become each frame window\'s net; a disconnect sends its numbers and abandons the level', async () => {
+  const { game, rec } = await genreGame();
+  game.call('glitchless_level_start', 'arena_7');
+  await game.frames(30);
+  await flushNow(game); // a window before the first sample: no net
+  const rtts = [40, 45, 50, 55, 60];
+  await game.frames(300, (i) => ({
+    during: (g) => {
+      if (i % 60 === 0) g.call('glitchless_net_sample', rtts[i / 60], 0.5);
+      if (i % 60 === 10) g.call('glitchless_net_sample', 900); // too soon after the last: ignored
+    },
+  }));
+  await flushNow(game);
+  game.call('glitchless_net_sample', 70, undefined, 7); // the game knows its jitter
+  await game.frames(60);
+  game.call('glitchless_disconnect', 'timeout');
+  await game.frames(60);
+  game.call('glitchless_reconnect');
+  await game.frames(10);
+  await flushNow(game);
+
+  const windows = rec.events('frame_window').filter((w) => w.level === 'arena_7');
+  assert.ok(!('net' in windows[0]), 'not connected yet: no net');
+  const net = windows[1].net;
+  const sketch = Sketch.from(net.rtt);
+  assert.equal(net.rtt.a, 0.05);
+  assert.equal(sketch.n, 5);
+  assert.equal(net.samples, 5);
+  assert.equal(net.rtt_p95, Math.round(sketch.quantile(0.95) * 10) / 10);
+  assert.ok(Math.abs(net.rtt_p50 - 50) <= 2.5, String(net.rtt_p50));
+  assert.deepEqual({ ...net, rtt: undefined, rtt_p50: undefined, rtt_p95: undefined }, {
+    rtt: undefined, rtt_p50: undefined, rtt_p95: undefined,
+    rtt_max: 60, jitter_ms: 5, loss_pct: 0.5, in_kbps: null, out_kbps: null, samples: 5, transport: 'gamemaker', link: null, host: false,
+  });
+  assert.deepEqual([windows[2].net.jitter_ms, windows[2].net.loss_pct, windows[2].net.samples], [7, null, 1]);
+  assert.ok(!('net' in windows[3]), 'after the disconnect: no net');
+
+  const after = rec.events().filter((e) => ['disconnect', 'level_abandon', 'reconnect'].includes(e.type));
+  assert.deepEqual(after.map((e) => e.type), ['disconnect', 'level_abandon', 'reconnect']);
+  const [disconnect, abandon, reconnect] = after;
+  assert.equal(disconnect.reason, 'timeout');
+  assert.ok(Math.abs(disconnect.connected_s - 6) < 0.1, `connected since the first sample, 6 s before: ${disconnect.connected_s}`);
+  assert.equal(disconnect.rtt_p95, windows[2].net.rtt_p95);
+  assert.equal(disconnect.loss_pct, null);
+  assert.deepEqual([abandon.level, abandon.reason], ['arena_7', 'disconnect']);
+  assert.ok(Math.abs(reconnect.after_s - 1) < 0.1, String(reconnect.after_s));
+  // The server reads the disconnect's abandon as an abandon: never a fail, never a rage quit.
+  const session = (await sessionsNow()).find((s) => s.session_id === game.g.session_id);
+  assert.deepEqual(session.abandoned, ['arena_7']);
+  assert.equal(session.rage_quit, false);
+});
+
+test('A8: a disconnect before any sample says so; other reasons are "other"; 20 a session', async () => {
+  const { game, rec } = await genreGame();
+  game.call('glitchless_disconnect', 'failed_to_connect');
+  game.call('glitchless_disconnect', 'cable_unplugged');
+  for (let i = 0; i < 25; i++) game.call('glitchless_disconnect');
+  game.call('glitchless_reconnect');
+  game.call('glitchless_reconnect'); // not after a disconnect: nothing
+  await flushNow(game);
+  const disconnects = rec.events('disconnect');
+  assert.equal(disconnects.length, 20);
+  assert.deepEqual({ ...disconnects[0], ts: 0, session_id: 0 }, { type: 'disconnect', ts: 0, session_id: 0, level: null, reason: 'failed_to_connect', connected_s: 0, rtt_p95: null, loss_pct: null });
+  assert.equal(disconnects[1].reason, 'other');
+  assert.equal(rec.events('level_abandon').length, 0, 'no level open, nothing to abandon');
+  assert.equal(rec.events('reconnect').length, 1);
 });

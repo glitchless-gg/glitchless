@@ -30,6 +30,7 @@ public class Glitchless : ModuleRules
 			"HTTP",
 			"ImageWrapper",
 			"InputCore",
+			"NetCore",
 			"RenderCore",
 			"RHI",
 			"Slate",

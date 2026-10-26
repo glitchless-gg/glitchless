@@ -100,10 +100,6 @@ function __glitchless_intake_url(_g) {
 /// is text/plain, as the browser SDK sends it; the server knows gzip by its first two bytes.
 function __glitchless_post(_g, _b) {
     var _json = __glitchless_body(_b);
-    if (_g.headers == -1) {
-        _g.headers = ds_map_create();
-        ds_map_add(_g.headers, "Content-Type", "text/plain");
-    }
     var _body = _json;
     var _buffer = -1;
     if (_g.gzip) {
@@ -111,8 +107,17 @@ function __glitchless_post(_g, _b) {
         if (_buffer != -1) _body = _buffer;
     }
     if (_g.debug) __glitchless_log(_g, "sending " + string(array_length(_b.events)) + " events (" + string(string_byte_length(_json)) + " bytes" + (_buffer != -1 ? ", " + string(buffer_get_size(_buffer)) + " gzipped" : "") + ")");
-    var _id = http_request(__glitchless_intake_url(_g), "POST", _g.headers, _body);
+    var _id = http_request(__glitchless_intake_url(_g), "POST", __glitchless_headers(_g), _body);
     return { id: _id, buffer: _buffer };
+}
+
+/// The one request header map every request uses, made the first time it is needed.
+function __glitchless_headers(_g) {
+    if (_g.headers == -1) {
+        _g.headers = ds_map_create();
+        ds_map_add(_g.headers, "Content-Type", "text/plain");
+    }
+    return _g.headers;
 }
 
 function __glitchless_send_next(_g) {
@@ -137,10 +142,15 @@ function __glitchless_send_next(_g) {
     _g.in_flight_since = current_time;
 }
 
-/// obj_glitchless's Async HTTP event, with async_load's id, status and http_status.
-function __glitchless_on_http(_id, _status, _http_status) {
+/// obj_glitchless's Async HTTP event, with async_load's id, status, http_status and result (the reply's body).
+function __glitchless_on_http(_id, _status, _http_status, _result = "") {
     var _g = __glitchless();
     if (_status == 1) return; // still downloading the reply
+    if (_id == _g.health_id) {
+        _g.health_id = -1;
+        __glitchless_on_features(_g, _status == 0 && _http_status >= 200 && _http_status < 300, _result);
+        return;
+    }
     var _report = _g.report_requests[$ string(_id)];
     if (!is_undefined(_report)) {
         variable_struct_remove(_g.report_requests, string(_id));

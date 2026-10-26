@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+For multiplayer games and genres beyond the single-player level loop. Every new event needs a Glitchless server that knows it: an older one keeps the new fields and drops the new events, and the SDK sends counters and a server's sessions only to a server that says it takes them (`GET /v1/health`).
+
+- `Glitchless.Count(name, what, n)` counts a stream (shots, kills, gold picked up) on the device and sends it as one `counts` event a frame window, instead of an event each time. Words and booleans make its group, numbers are added up. In a debug build, a name tracked more than 20 times a second gets a hint to count it instead.
+- Properties: `Glitchless.SetProperty(key, value)`, `SetProperties(dict)` and `Properties` in the options say what holds for the session (mode, rank tier, class, server region). They go in `session_start` and, when they change, in one `props` event a window, in every privacy mode. Keys and values that would say who the player is are dropped (PRIVACY.md).
+- Groups: `Glitchless.SetGroup("match" | "party", id)`, `SetGroup("run")` and `SetGroup(kind, null)` mark every event and window with the match, party or run. Match and party IDs are hashed with the service as the salt, the same way in every Glitchless SDK (`HashGroupIds = false` sends them as they are). A saved run resumes after a restart only in install and full mode.
+- `Glitchless.LevelStart(level, attrs)`: what kind of attempt a level is (difficulty, party size, a build).
+- `Glitchless.SetZone(name)`: where the player is in an open world, on every event and window.
+- Network quality: with Netcode for GameObjects 2.x (Relay and Lobby included) or Mirror, found at run time with no dependency, frame windows carry `net` (round trip, jitter, whether through Relay, Wi-Fi or mobile data on phones) while connected, and disconnects are `disconnect` events with their reason; a level going ends as an abandon with reason `disconnect`, and a reconnect lets it go on. `Glitchless.NetSample`, `Disconnect` and `Reconnect` for any other library.
+- Server mode: a Dedicated Server build, `--glitchless-server` or `Role = GlitchlessRole.Server` reports as the game's companion service (`role: "server"`) with `server_window` events (tick time, ticks late, tick rate reached, players, networked objects, players' ping, CPU, memory) instead of frame windows, and never as a player. `ServerRegion`, `MaxPlayers`, `SessionPerMatch` and `Glitchless.SetPlayers(n)`.
+- `ITransport` has a `Get` for `/v1/health`: a game with its own transport adds it.
+
 ## 0.4.1
 
 - TestFlight testers are not players. On iOS the SDK tells a TestFlight install from an App Store one, with no native plugin: Apple writes an App Store receipt (`StoreKit/receipt` in the data container) with every App Store install and none with a TestFlight one, and a development build carries `embedded.mobileprovision`. It only checks that the files are there. `session_start.device` says `distribution` (`app_store`, `testflight` or `development`), a TestFlight or development session is `tester` unless `SessionType` is set (findings and share links count `user` sessions only), and `Track()` adds `sandbox: true` to a purchase there (an event named `purchase`, or any with a `currency`), which boards count but never add into revenue.

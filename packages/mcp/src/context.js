@@ -169,11 +169,17 @@ export const common = {
     .enum(['user', 'tester', 'synthetic', 'all'])
     .optional()
     .describe('"user": players only; "tester": people on TestFlight and other test builds only; "synthetic": bots, playtests and store test devices only; "all" or unset: every session. Findings (glitchless_triage, and the overview\'s) read the production sessions of players unless env or session_type is given'),
+  props: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))]))
+    .optional()
+    .describe('Only sessions with these session properties (what the game set with setProperties): { rank: "diamond" }, or a list of values for any of them, { rank: ["diamond", "master"] }; "(none)" keeps the sessions without one. glitchless_events lists the properties and their values. Read from the sessions, so over 31 days or less'),
 };
 
-// The filters every read passes on to the Glitchless API.
-export function filters({ version, steam_branch, env, session_type } = {}) {
-  return { version, steam_branch, env, type: session_type };
+// The filters every read passes on to the Glitchless API: a session property becomes prop.<key>=<value>[,<value>…].
+export function filters({ version, steam_branch, env, session_type, props } = {}) {
+  const out = { version, steam_branch, env, type: session_type };
+  for (const [key, value] of Object.entries(props || {})) out[`prop.${key}`] = (Array.isArray(value) ? value : [value]).map(String).join(',');
+  return out;
 }
 
 // ── the tools ─────────────────────────────────────────────────────
@@ -238,7 +244,8 @@ function instructions(remote) {
       : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
     'Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.',
     'When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.',
-    'For metrics the game defines itself (what it sends with track(): plays, purchases, paywall views and so on) and funnels between them, use glitchless_events.',
+    'For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.',
+    'For a multiplayer game, glitchless_network gives ping, packet loss and disconnects by level, region, platform, kind of connection and version; glitchless_match lists matches or opens one from every side, telling a whole lobby lagging (the server) from one player lagging (their connection); and glitchless_servers reads the game\'s dedicated servers (tick time against its budget by players connected, crashes that ended matches, memory that climbs).',
     'For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version.',
     "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to.",
     "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",

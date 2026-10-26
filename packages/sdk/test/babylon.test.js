@@ -111,7 +111,8 @@ test('the levels option and a manual levelStart take over', () => {
   instrumentBabylon(gd, { engine, scene, levels: () => 'arena' });
   frame(scene);
   assert.equal(gd.level, 'arena');
-  gd.levelStart('arena-wave-3');
+  gd.levelStart('arena-wave-3', { heat: 4 });
+  assert.deepEqual(gd.queue.filter((e) => e.type === 'level_start').at(-1).attrs, { heat: 4 }, 'its attributes pass through');
   scene.dispose();
   const next = world();
   frame(next);

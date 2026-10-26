@@ -6,6 +6,7 @@ Game observability for Unity 6.3 LTS and later. Glitchless records how your game
 - **Errors.** Uncaught exceptions, `Debug.LogError`, assertions and engine errors, through `Application.logMessageReceivedThreaded`, grouped by the same fingerprint the web and Godot SDKs use, with the game events just before each one.
 - **Levels and players.** Scenes are levels on their own. Deaths, level fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection.
 - **Leaks.** Mesh, material, texture and object counts per level load, where a development build has them.
+- **Multiplayer.** Ping, jitter and disconnects from Netcode for GameObjects or Mirror, with nothing to set up; which match, party or run each event belongs to; and a server mode that measures a dedicated server's ticks and players without counting it as a player.
 - **Bug reports from players**, when you turn them on: F8 (or your own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 - **Anonymous by default.** No player ID, no device identifier, coarse device facts only. `Privacy = Privacy.Install` adds a saved random player ID so retention (D1, D7, D30) can be counted, and nothing else. [PRIVACY.md](PRIVACY.md) lists every field.
 
@@ -64,11 +65,16 @@ Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless
 | Game moment | Call |
 | --- | --- |
 | a level starts (a restart counts) | automatic for scenes, or `Glitchless.LevelStart("level-2")` |
+| a level starts, and what kind of attempt it is | `Glitchless.LevelStart("nmd_ghoa", new Dictionary<string, object> { ["tier"] = "pit_80", ["party_size"] = 3 })` |
 | a level is beaten | `Glitchless.LevelComplete("level-2", score: 1200)` |
 | the player loses it: runs out of lives or time | `Glitchless.LevelFail("level-2", "fell")` |
 | the player leaves it: goes to the menu, restarts | `Glitchless.LevelAbandon("level-2")`, never a fail |
 | the player dies | `Glitchless.Death(player.position, "spikes")`: short, low-cardinality causes |
 | pickups, purchases, checkpoints | `Glitchless.Track("powerup", "magnet")` |
+| shots, hits, kills, gold picked up: anything that happens many times a second | `Glitchless.Count("kill", "elite")`, `Glitchless.Count("gold", new Dictionary<string, object> { ["source"] = "loot", ["amount"] = 35 })` |
+| what holds for this session: mode, rank tier, class, server region | `Glitchless.SetProperty("rank", "diamond")` |
+| a match, party or run starts | `Glitchless.SetGroup("match", lobby.Id)`, `Glitchless.SetGroup("run")`; `null` ends it |
+| the player moves to another part of an open world | `Glitchless.SetZone("westfall")` |
 | counts of anything that scales, every frame | `Glitchless.SetContext("enemies", enemies.Count)` |
 | the player's place, every frame | `Glitchless.SetPosition(player.position)` (sent only when positions are on) |
 | an exception you caught | `Glitchless.Error(e)` |
@@ -80,6 +86,14 @@ Use the game's own words for names, causes and levels, never anything a player t
 
 **Your own metrics.** `Track` takes any event: `Glitchless.Track("open", "full")`, `Glitchless.Track("play", "endless")`, or a `Dictionary<string, object>` of attributes. One word becomes the attribute `what`. The dashboard's Events page counts each event over time, breaks it down by attribute and builds funnels between events (`paywall` → `buy=done`), and the game's own dashboard, whose pages your coding agent designs with `glitchless_set_dashboard`, shows the ones that matter. Attributes are strings, numbers or booleans, at most 12 per event.
 
+**Track a moment, count a stream.** `Track` sends an event each time, and the SDK keeps at most 2,000 waiting: a `Track` for every bullet fills that in a minute, and then the oldest events go, frame windows too. `Count` adds a stream up on the device instead and sends it once every 5 seconds: `Glitchless.Count("shot", "rifle")`, `Glitchless.Count("xp", new Dictionary<string, object> { ["source"] = "quest", ["amount"] = 1200 })`. Its words and booleans (at most 4) say which group a count goes in, its numbers (at most 4) are added up, and `n` says how many events one call stands for. Boards read a counter like any event: kills per hour played, damage by weapon. In the Editor and development builds, the console says when one name is tracked more than 20 times a second. A window holds 64 groups; past that, new groups of a name already counted go under `(other)`. Counters need a Glitchless server that takes them: against an older one the SDK sends none and says so once.
+
+**Properties** say what holds for the whole session, in the game's words: `Glitchless.SetProperty("rank", "diamond")`, `SetProperties(…)`, or `Properties` in the options for what's known at start. Every board panel can then split or filter by them (`$rank`), so a page can show only the high ranks. Send them where the game knows them: after sign-in, at the menu, at matchmaking. A value is a word (up to 64 characters), a boolean or a whole number; send bands (`"30-39"`) rather than exact levels, and `null` removes one. They are never about who the player is: keys such as `email`, `user_id` or `steam_id`, and values that look like an email address, a phone number, an ID or a link, are dropped, with a warning in the Editor. At most 12 a session. What changes from match to match (the hero, the deck, the map) belongs on `LevelStart` or the event instead.
+
+**Level attributes** say what kind of attempt a level is: `Glitchless.LevelStart("deadmines", new Dictionary<string, object> { ["difficulty"] = "heroic", ["party_size"] = 5 })`. The levels panel then shows clears and wipes by difficulty or group size. The outcome (`LevelComplete`, `LevelFail`) doesn't repeat them.
+
+**Zones** are where the player is in an open world, an MMO region or a metroidvania room, which never ends in a win or a fail: `Glitchless.SetZone("westfall")`. Events and frame windows carry the zone as they carry the level, and boards split by `$zone`. Levels (a dungeon, a match) can still start and end inside a zone.
+
 **Purchases** have one convention in every Glitchless SDK: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` (with Unity IAP, `product.metadata.localizedPrice` as a `double` and `isoCurrencyCode`). Send it when the store confirms the purchase, with `amount` a number in the currency's units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game's one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS is a free sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. On Android, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat's `isSandbox`).
 
 **Scenes as levels.** When a scene becomes the active one, it's a level and `level_start` is sent, unless its name reads as a menu, loader, overlay or end screen: `Boot`, `Bootstrap`, `Init`, `Preloader`, `Loading`, `Splash`, `Title`, `MainMenu`, `UI`, `HUD`, `Pause`, `GameOver`, `Settings`, `Credits`, `Shop`, `Empty` and the like (the words are matched after splitting camelCase). The level ends when its scene unloads. A menu made active on top doesn't end it. `SceneManager.LoadScene` of the same scene is a restart. Change it with:
@@ -87,6 +101,42 @@ Use the game's own words for names, causes and levels, never anything a player t
 - `LevelForScene = name => name.StartsWith("World") ? name : null` to choose yourself;
 - `SceneLevels = false` to turn it off;
 - any `Glitchless.LevelStart()` call, which turns scene levels off for the rest of the session. Use this when one scene plays many levels.
+
+## Multiplayer
+
+**Matches, parties and runs.** `Glitchless.SetGroup("match", id)` marks every event and frame window from then on with the match, so Glitchless can compare everyone who played it: a whole lobby lagging at minute 12 points at the server, one player lagging at their connection. The ID comes from your game's servers and is the same for everyone in the match: a Lobby or Multiplayer Services session ID works (`session.Id`). `SetGroup("party", id)` does the same for a party, never a guild or a friends list. `SetGroup("match", null)` ends it. Match and party IDs are hashed before they are sent (`h_` and 24 hex characters, with your service name as the salt, the same in every Glitchless SDK); `HashGroupIds = false` sends them as they are, to match them against your own server logs. For a roguelite, `var run = Glitchless.SetGroup("run")` starts a run and returns its ID; save it and pass it back (`SetGroup("run", saved)`) to carry a run across a restart. That works in install and full mode; in anonymous mode a passed run ID becomes a new one, so nothing ties two launches together.
+
+**Ping and disconnects.** With [Netcode for GameObjects](https://docs-multiplayer.unity3d.com/netcode/current/about/) 2.x (Relay and Lobby included) or [Mirror](https://mirror-networking.com), every frame window while connected carries the round trip to the server, sampled once a second, its jitter, and whether the connection goes through Unity Relay (NGO). There is nothing to set up and no dependency: the SDK finds the library at run time, as it finds Steamworks. On a phone, `link` says Wi-Fi or mobile data. A host of a listen server has no round trip of its own and says `host: true`.
+
+A dropped connection is a `disconnect` event with why (`timeout`, `connection_lost`, `kicked`, `server_closed`, `failed_to_connect` or `other`), how long it was connected and the ping just before. A level going ends as an abandon with the reason `disconnect`, never a fail, so walls aren't blamed for a bad connection; when the player reconnects and plays on, the level carries on. Leaving on purpose (`NetworkManager.Shutdown()`, Mirror's `StopClient()`) is not a disconnect.
+
+Another library (Steam Networking Sockets, Photon, Fish-Net, Epic Online Services, your own): send what it knows yourself.
+
+```csharp
+Glitchless.NetSample(rttMs: ping, lossPct: loss);   // once a second; loss and jitter where you have them
+Glitchless.Disconnect("timeout");                  // when the connection drops
+Glitchless.Reconnect();                            // when it's back
+```
+
+With NGO or Mirror, `NetSample(null, lossPct)` adds packet loss, which neither reports. `Netcode = false` in the options stops the SDK reading them.
+
+**Server mode.** A dedicated server built with the **Dedicated Server** build target, a player run with `--glitchless-server`, or `Role = GlitchlessRole.Server` in the options reports as a server, never as a player. It sends to your game's companion service, `my-game.server`, so no player number counts it. Every 5 seconds it sends a server window: its tick time against its budget, the tick rate it reached, ticks that ran late, players connected, networked objects, the players' ping as it sees them, CPU and memory. Ticks are NGO's network ticks (its `TickRate`), Mirror's server updates (one a frame), or `FixedUpdate`'s steps on a server with neither; a tick's time is the work of the frame it ran in, not the wait for the next. Players come from NGO's or Mirror's connections, or `Glitchless.SetPlayers(n)`. Errors, events, levels (the map) and groups (the match) go as from a player.
+
+```csharp
+Glitchless.Init(new GlitchlessOptions
+{
+    Service = "my-game",                 // the game's own name: the server reports as my-game.server
+    Intake = "https://api.glitchless.gg",
+    ClientToken = "gl_pub_…",
+    ServerRegion = "eu-west",            // in your own words, never an address
+    MaxPlayers = 16,
+    SessionPerMatch = true,              // a server that hosts one match at a time: one session per match
+});
+```
+
+Batch mode doesn't make a server's session a bot's (`--glitchless-synthetic` does, for a load test). A server sends nothing about players but their count and ping, and nothing about itself but its OS, cores, memory and the region you name. It sends nothing at all until the Glitchless server says it has server mode, so its sessions can't land among your players' on an older server. A session lasts as long as the process, cut every 6 hours.
+
+**Code stripping.** As for Steam: at Low or higher Managed Stripping Level, keep what the SDK reads by reflection with a `link.xml` (`Unity.Netcode.Runtime` for NGO's `NetworkManager`, `NetworkConfig`, `NetworkTickSystem`, `NetworkSpawnManager` and `Transports.UTP.UnityTransport`; `Mirror` for `NetworkClient`, `NetworkServer`, `NetworkTime` and `NetworkManager`).
 
 ## Bug reports
 
@@ -162,7 +212,7 @@ The counts come from Unity's profiler counters (`ProfilerRecorder`), which Unity
 
 ## Sending
 
-Events are summed up per 5-second frame window and sent every 15 seconds (the first batch after 2), gzipped, with `UnityWebRequest`. A batch that fails is retried with backoff (5 s, doubling to 5 minutes). Batches that couldn't be sent are saved in `Application.persistentDataPath/glitchless/` and sent on a later launch; in anonymous mode they're saved without the session or player ID. Each batch keeps its own random `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back (a timeout, or a send cut short by going to the background or quitting).
+Events are summed up per 5-second frame window and sent every 15 seconds (the first batch after 2), gzipped, with `UnityWebRequest`. A batch that fails is retried with backoff (5 s, doubling to 5 minutes). Batches that couldn't be sent are saved in `Application.persistentDataPath/glitchless/` and sent on a later launch; in anonymous mode they're saved without the session or player ID. Each batch keeps its own random `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back (a timeout, or a send cut short by going to the background or quitting). At `Init` the SDK asks the server what it takes (`GET /v1/health`), so it never sends counters or a server's sessions to a server that would drop them or count them wrong.
 
 When a phone app goes to the background the session ends and the last batch is sent at once, waiting at most 1.5 s, because iOS and Android often stop a backgrounded app without warning. Back within 5 minutes, the session carries on; later, it's a new session. Quitting sends the last batch the same way.
 
@@ -179,6 +229,7 @@ Run a built player with `--glitchless-measure=SECONDS` and it prints one line of
 | `--glitchless-out=PATH` | with measure: write the JSON to a file too |
 | `--glitchless-intake=URL` | send to this server instead |
 | `--glitchless-synthetic` | mark the session as a bot's (`--autoplay` and batch mode do too) |
+| `--glitchless-server` | run as a game server ([server mode](#multiplayer)) |
 | `--glitchless-off` | send nothing |
 | `--glitchless-debug` | log each batch as it is sent |
 
@@ -190,4 +241,4 @@ In the Editor, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))` does t
 
 ## Tests
 
-The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking) and PlayMode tests (the runner, and the bug report form pausing the game). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.
+The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking; counters, properties, groups, zones, ping and disconnects, Mirror through stand-ins, and server mode) and PlayMode tests (the runner, the bug report form pausing the game, and a real Netcode for GameObjects server and client in one run, which compiles only where NGO 2.x is installed). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.

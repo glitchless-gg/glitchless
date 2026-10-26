@@ -46,6 +46,8 @@
     "./phaser": "./src/phaser.js",
     "./babylon": "./src/babylon.js",
     "./playcanvas": "./src/playcanvas.js",
+    "./net": "./src/net.js",
+    "./server": "./src/server.js",
     "./sketch": "./src/sketch.js"
   },
   "files": [
@@ -61,6 +63,7 @@
   "devDependencies": {
     "@babylonjs/core": "~9.30.0",
     "esbuild": "^0.28.2",
-    "playcanvas": "~2.23.2"
+    "playcanvas": "~2.23.2",
+    "ws": "^8.22.0"
   }
 }

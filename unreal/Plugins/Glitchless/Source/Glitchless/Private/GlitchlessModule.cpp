@@ -9,15 +9,16 @@ DEFINE_LOG_CATEGORY(LogGlitchless);
 
 /**
  * A packaged game (or -game) starts capturing as soon as the module loads, so the first frames and
- * errors are kept until Init says where to send them. The editor starts only in Play In Editor (see
- * UGlitchlessSubsystem); cooks, commandlets and dedicated servers never start.
+ * errors are kept until Init says where to send them. A dedicated server starts too, as a server: its own
+ * session, with its ticks and players (FGlitchlessRuntime). The editor starts only in Play In Editor (see
+ * UGlitchlessSubsystem); cooks and commandlets never start.
  */
 class FGlitchlessModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override
 	{
-		if (!GIsEditor && !IsRunningCommandlet() && !IsRunningDedicatedServer())
+		if (!GIsEditor && !IsRunningCommandlet())
 		{
 			FGlitchlessRuntime::Start();
 		}

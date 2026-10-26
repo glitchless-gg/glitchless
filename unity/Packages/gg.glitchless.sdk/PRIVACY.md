@@ -1,6 +1,6 @@
 # What Glitchless for Unity sends
 
-This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/SteamInfo.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
+This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/SteamInfo.cs`, `Runtime/GameWords.cs`, `Runtime/Netcode.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -30,27 +30,33 @@ No mode reads or sends:
 - the advertising ID, Apple's identifier for vendors, or Android's ID
 - a name, email, account, or anything the player types (except a bug report's note, below)
 - contacts, location, locale, time zone, or the network address
+- the address or host name of the game's servers or of other players, the internet provider, or the Wi-Fi network's name
 
 The Glitchless server does not read or store the address a request came from. The host it runs on may log it, so check that host's logging settings.
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.4.1`) and `batch_id` (random, made for each batch and sent again with its retries).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.4.1`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
 
-Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null).
+Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game sets them, events and windows also carry `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` ([Groups](#groups)).
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session) set so far) | the first batch of a session |
 | `session_end` | `reason` (`background`, `quit`, `measure`), `duration_s` | going to the background on a phone, quitting |
-| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, update/physics/render/GPU ms, draw calls, SetPass calls, batches, triangles, GC collections, GC heap and system memory MB; in development builds also mesh, material, texture, object and GameObject counts and allocation per frame; `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each at its highest in the window; the counts outside `ctx` are their value as the window closed) | every 5 s |
+| `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, update/physics/render/GPU ms, draw calls, SetPass calls, batches, triangles, GC collections, GC heap and system memory MB; in development builds also mesh, material, texture, object and GameObject counts and allocation per frame; `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each at its highest in the window; the counts outside `ctx` are their value as the window closed); `net` while connected to a game server ([Network quality](#network-quality)) | every 5 s |
 | `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK times in the game), the same timings and counts for that one frame, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
 | `load` | when the first frame was drawn, `ttff_ms` (app start to first frame), `first_launch` (whether this is the first launch of this game version on the device), `ttp_ms` (to first touch or key) | once |
 | `error` | `kind`, `message`, `stack` (function names, script file paths inside the project, lines), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `Glitchless.Error`), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session |
-| `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a scene that is a level becomes active | the game calls them, or a scene loads |
-| `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`) when Glitchless sends it | the game calls it, or the game goes to the background (phones) or quits mid-level |
+| `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a scene that is a level becomes active, and `attrs` (what kind of attempt: difficulty, party size, a build) when the game passes them | the game calls them, or a scene loads |
+| `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`, `disconnect`) when Glitchless sends it | the game calls it, or the game goes to the background (phones), quits or loses its connection mid-level |
 | `death` | `cause`; **full** or `Positions`: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `Track()`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
+| `counts` | the window's `duration_s`, `dropped`, and per name and group: `name`, `attrs` (up to 4 of the game's words and booleans), `n` (how many), `sums` (up to 4 of the game's numbers, added up), `first_ts` | every 5 s while the game counts something with `Glitchless.Count()` |
+| `props` | `props`: the properties that changed, with `null` for one removed | at most once every 5 s, when the game changes one |
+| `group` | `kind` (`match`, `party` or `run`), `id` (hashed for a match or party; `null` when it ends), `attrs` (the game's words about it), `resumed` | the game calls `Glitchless.SetGroup()` |
+| `disconnect` | `reason` (`timeout`, `connection_lost`, `kicked`, `server_closed`, `failed_to_connect`, `other`), `connected_s`, `rtt_p95` and `loss_pct` just before, `transport` (`ngo`, `mirror`, `manual`) | the connection to the game's server drops, at most 20 a session |
+| `reconnect` | `after_s`, `transport` | connected again |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key name or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or `Positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
 | `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the screen as Unity drew it), `device` (the same fields as `session_start`, in the same mode), `recent` (the last 20 game events and hitches: when, which, and the few fields above that say what happened), `frames` (fps and p95 of the last frame windows); **full** or `Positions`: `x`, `y`, `z` | the player sends one from the form, or the game calls `Glitchless.ReportBug()`. Off unless the game turns it on |
@@ -74,7 +80,39 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 **Error text.** Unity's messages come from the engine and the game's code, not from the player. Paths on the device are cut down before sending, in every mode: `persistentDataPath`, `temporaryCachePath`, `streamingAssetsPath` and `dataPath` become `persistent:`, `cache:`, `streaming:` and `data:`; `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` lose the name; iOS container IDs (made per install) become `<id>`. If the game puts anything of the player's into an exception message, a `Debug.LogError` or `Glitchless.Error()` attributes, it is sent. Don't.
 
-**Game words.** `Track()` names and attributes, level names, scene names (sent as level names), death causes and gauges are whatever the game passes. Use the game's own words, never anything typed by or particular to the player.
+**Game words.** `Track()` and `Count()` names and attributes, level names and attributes, zone names, scene names (sent as level names), death causes, gauges and properties are whatever the game passes. Use the game's own words, never anything typed by or particular to the player. A list attribute (a deck, a build) holds the game's words too: never a list of people, such as party members' names or friends.
+
+## Properties: the game's words about the session
+
+A game can describe the session with `Glitchless.SetProperty()` (or `Properties` in the options), for example its mode, the player's rank tier or class, or the region of the game's servers. Properties go with the session in every mode, in `session_start` and, when one changes, a `props` event. They are checked before they are sent (`Runtime/GameWords.cs`), and intake checks them again:
+
+- keys are short lowercase words, at most 12 a session; keys that would name a person or an account (`name`, `username`, `email`, `phone`, `user_id`, `account_id`, `player_id`, `steam_id`, `epic_id`, `psn_id`, `xbox_id`, `ip`, `address`, `device_id`, `idfa`, `gaid`, `ad_id`, `location`, `lat`, `lon`, `city`, `birthday`, `age`, `gender` and the like) are dropped;
+- values are a word of up to 64 characters, a boolean or a whole number up to a million; fractions are dropped, so a game sends bands (`30-39`), not exact numbers;
+- values that look like an email address, a link, a phone number or any run of 7 digits, a UUID, or a long run of hex or random-looking letters and digits (an ID or a token) are dropped.
+
+A property is not a player ID: in anonymous mode nothing ties one session's properties to another session, and the SDK keeps none on the device.
+
+## Groups
+
+A game can mark the events of one match, party or run with an ID (`Glitchless.SetGroup()`). Match and party IDs are made by the game's servers for that match or party and shared by the players in it. They are never a player's account, guild or friends-list ID. They say that some sessions played together, not who played. The SDK sends them hashed (`h_` and 24 characters of SHA-1 over the game's name and the ID), so they can't be looked up in the game's own match logs without hashing those the same way; a game can turn that off (`HashGroupIds = false`) to match them against its own server logs. Run IDs are made by the SDK and kept in memory. In anonymous mode, a run that goes on after the game restarts gets a new ID, so no ID ties two launches together; in install and full mode a run ID the game saved is sent again.
+
+## Network quality
+
+When the game uses Netcode for GameObjects or Mirror (or sends its own numbers with `Glitchless.NetSample()`), each frame window while connected carries `net`, in every mode, like frame times: it describes the connection, not the person.
+
+| field | what |
+| --- | --- |
+| `rtt`, `rtt_p50`, `rtt_p95`, `rtt_max` | the time a message took to reach the game's server and come back, sampled once a second |
+| `jitter_ms`, `loss_pct` | how much that time varied, and the packets lost where the game knows it |
+| `samples`, `transport` | how many samples, and the library (`ngo`, `mirror`, `manual`) |
+| `link` | `wifi` or `cellular` on a phone, from `Application.internetReachability`; null where the device can't tell. The kind of connection only |
+| `host`, `relay` | whether this player hosts the match, and whether the connection goes through Unity Relay |
+
+Never sent: the IP address of this device, the game's servers or other players, a server's host name, the internet provider, the Wi-Fi network's name, or where the player is.
+
+## Server mode
+
+A game's dedicated server (a Dedicated Server build, `--glitchless-server`, or `Role = GlitchlessRole.Server`) sends as a server, under the game's companion service, and never as a player. It sends nothing about players: no player IDs, account IDs, names, chat or IP addresses. `players` is a count, and `rtt_p95` the players' round trips as the server measured them, as one number. About itself it sends `server_window` every 5 s (tick times, ticks late, the tick rate reached, players connected, networked objects, CPU and memory) and, in `session_start`, its OS, core count, memory, the most players it takes and its region in the game's own words, never its IP address or host name. A server has no player ID in any mode.
 
 ## Steam facts
 
@@ -142,6 +180,15 @@ If the game ships on Steam and uses Steamworks, add:
 > **Steam**
 > On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
 
+If the game sets properties, add:
+
+> The reports also say what you were doing in the game in the game's own terms, such as the mode, your rank tier or class, and the server region you play on. They never say who you are.
+
+If the game plays online, add:
+
+> **Online play**
+> For online matches, the reports also say how quickly the game's messages reached our servers and came back, whether the connection dropped and why, whether you were on Wi-Fi or mobile data, and which match or party the report came from (as a scrambled number shared by the players in it, not linked to any account). They never include your IP address or where you are.
+
 If the game turns bug reports on, add:
 
 > **Bug reports**
@@ -153,8 +200,8 @@ If the game turns bug reports on, add:
 
 | Apple's type | from | anonymous mode | install mode | full mode |
 | --- | --- | --- | --- | --- |
-| Usage Data → Product Interaction | levels, deaths, `Track()` events | collected | collected | collected |
-| Diagnostics → Performance Data | frame times, hitches, load times | collected | collected | collected |
+| Usage Data → Product Interaction | levels, deaths, `Track()` and `Count()` events, properties, matches and parties | collected | collected | collected |
+| Diagnostics → Performance Data | frame times, hitches, load times, network round trips and disconnects | collected | collected | collected |
 | Diagnostics → Crash Data | uncaught exceptions | collected | collected | collected |
 | Diagnostics → Other Diagnostic Data | errors, device tier, screen, engine counts | collected | collected | collected |
 | Identifiers → Device ID | the random player ID | not collected | collected | collected |
@@ -175,4 +222,4 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 
 ## When this file must change
 
-Read it again when any of these change: the events or fields in `GlitchlessCore.cs`, what the bug report form sends (`BugReports.cs`), the device fields in `DeviceInfo.cs`, the Steam facts in `SteamInfo.cs`, the counters in `GlitchlessRunner.cs`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.
+Read it again when any of these change: the events or fields in `GlitchlessCore.cs`, the property and group checks in `GameWords.cs`, what `Netcode.cs` reads, what the bug report form sends (`BugReports.cs`), the device fields in `DeviceInfo.cs`, the Steam facts in `SteamInfo.cs`, the counters in `GlitchlessRunner.cs`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.

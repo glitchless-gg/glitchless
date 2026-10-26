@@ -1,5 +1,6 @@
 // Copyright (c) 2026 The Glitchless authors. MIT License: see LICENSE.
 #include "GlitchlessCore.h"
+#include "GlitchlessRules.h"
 #include "GlitchlessSteam.h"
 
 #include <algorithm>
@@ -24,6 +25,16 @@ namespace Glitchless
 		constexpr size_t BatchBytes = 60000;
 		constexpr int MaxOutboxEvents = 4000;
 		constexpr int64_t MaxOutboxAgeMs = 6LL * 86400 * 1000; // the server files anything over 7 days old under "now"
+		constexpr int MaxCountEntries = 64; // names and groups counted in a window
+		constexpr size_t MaxCountGroup = 4; // strings and booleans that say which count
+		constexpr size_t MaxCountSums = 4; // numbers summed
+		constexpr int64_t MaxCountN = 1000000;
+		constexpr size_t MaxHeldCounts = 240; // counts events waiting for the server's answer: 20 minutes of windows
+		constexpr size_t MaxProperties = 12;
+		constexpr int MaxDisconnects = 20; // a session
+		constexpr double NetSampleGapMs = 900; // one sample a second
+		constexpr double ServerSessionMs = 6.0 * 3600 * 1000; // a server's session is cut every 6 hours
+		constexpr int TrackWarnPerSecond = 20;
 		constexpr const char* IdChars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 		double Round(double V, int Digits) { return FSketch::Round(V, Digits); }
@@ -51,6 +62,33 @@ namespace Glitchless
 				O.Set(G.first, G.second);
 			}
 			return O;
+		}
+
+		void AddTo(std::vector<std::pair<std::string, double>>& Sums, const std::string& Key, double V)
+		{
+			for (auto& S : Sums)
+			{
+				if (S.first == Key)
+				{
+					S.second += V;
+					return;
+				}
+			}
+			Sums.emplace_back(Key, V);
+		}
+
+		// Sets a key in a list of pairs, keeping its place, or adds it at the end.
+		void SetIn(std::vector<std::pair<std::string, FValue>>& List, const std::string& Key, const FValue& V)
+		{
+			for (auto& P : List)
+			{
+				if (P.first == Key)
+				{
+					P.second = V;
+					return;
+				}
+			}
+			List.emplace_back(Key, V);
 		}
 
 		void MaxGauge(std::vector<std::pair<std::string, double>>& Gauges, const std::string& Key, double V)
@@ -167,17 +205,36 @@ namespace Glitchless
 		{
 			Intake.pop_back();
 		}
-		Detailed = Options.Privacy == EPrivacy::Full;
-		StoresId = Options.Privacy != EPrivacy::Anonymous;
-		PositionsOn = Options.Positions.value_or(Detailed);
-		RageInputOn = Options.RageInput.value_or(!IsMobile);
+		const bool Server = Role == ERole::Server;
+		Detailed = Options.Privacy == EPrivacy::Full && !Server;
+		StoresId = Options.Privacy != EPrivacy::Anonymous && !Server; // a server's session has no player
+		PositionsOn = Options.Positions.value_or(Detailed) && !Server;
+		RageInputOn = Options.RageInput.value_or(!IsMobile) && !Server;
 		MapLevels = Options.MapLevels;
 		DebugOn = DebugOn || Options.Debug || HasFlag("glitchless-debug");
-		const std::string Where = Distribution ? Distribution() : std::string();
+		const std::string Where = Server || !Distribution ? std::string() : Distribution();
 		Sandbox = DeviceFacts::IsSandbox(Where);
+		// Each server's own command line says where it runs; the project's settings are every server's.
+		if (const std::optional<std::string> Region = FlagValue("glitchless-region"))
+		{
+			Options.ServerRegion = *Region;
+		}
+		if (Options.Properties.IsObject())
+		{
+			for (size_t I = 0; I < Options.Properties.Size(); I++)
+			{
+				SetProperty(Options.Properties.GetKeys()[I], Options.Properties.ValueAt(I));
+			}
+		}
+		SessionBeganAt = Ticks();
 		if (!Options.SessionType.empty())
 		{
 			SessionType = Options.SessionType;
+		}
+		else if (Server)
+		{
+			// A server runs headless: a live one is "user", a load test or a bot match "synthetic".
+			SessionType = HasFlag("autoplay") || HasFlag("glitchless-synthetic") ? "synthetic" : "user";
 		}
 		else if (IsHeadless || HasFlag("autoplay") || HasFlag("glitchless-synthetic") || HasFlag("glitchless-measure"))
 		{
@@ -216,15 +273,16 @@ namespace Glitchless
 			}
 			LoadOutbox();
 		}
-		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + (Where.empty() ? "" : ", " + Where) + ")");
+		AskFeatures();
+		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + (Server ? ", server" : "") + (Where.empty() ? "" : ", " + Where) + ")");
 	}
 
-	void FCore::LevelStart(const std::string& LevelId)
+	void FCore::LevelStart(const std::string& LevelId, FValue Attrs)
 	{
-		StartLevel(LevelId, false);
+		StartLevel(LevelId, false, std::move(Attrs));
 	}
 
-	void FCore::StartLevel(const std::string& LevelId, bool FromMap)
+	void FCore::StartLevel(const std::string& LevelId, bool FromMap, FValue Attrs)
 	{
 		if (!FromMap)
 		{
@@ -233,9 +291,15 @@ namespace Glitchless
 		CloseWindow(false); // so a frame window never spans two levels
 		Level = LevelId;
 		LevelStartedAt = Ticks();
-		LevelOpen = true;
+		LevelOpen = Role == ERole::Player; // a server's level is the map it hosts: never left or abandoned
 		LeftLevel.reset();
-		Push(Ev("level_start"));
+		DisconnectedLevel.reset();
+		FValue E = Ev("level_start");
+		if (Attrs.IsObject() && Attrs.Size() > 0)
+		{
+			E.Set("attrs", std::move(Attrs));
+		}
+		Push(std::move(E));
 		Remember("level_start");
 	}
 
@@ -341,6 +405,460 @@ namespace Glitchless
 		E.Set("attrs", std::move(Attrs));
 		Push(std::move(E));
 		Remember(Name);
+		// A stream of events (every shot, every coin) fills the 2,000-event queue in a minute, and frame windows go
+		// with the oldest: a development build says so once, naming Count.
+		if (IsDevelopmentBuild && !Warned.count("track:" + Name))
+		{
+			std::vector<double>& Times = TrackTimes[Name];
+			const double Now = Ticks();
+			Times.erase(std::remove_if(Times.begin(), Times.end(), [Now](double T) { return Now - T >= 1000; }), Times.end());
+			Times.push_back(Now);
+			if (Times.size() > static_cast<size_t>(TrackWarnPerSecond))
+			{
+				WarnOnce("track:" + Name, "Track(\"" + Name + "\") ran more than 20 times in a second: use Count(\"" + Name + "\") for a stream of events, so it doesn't push frame windows out of the queue");
+				TrackTimes.erase(Name);
+			}
+		}
+	}
+
+	void FCore::Count(const std::string& Name, const FValue& Attrs, int64_t N)
+	{
+		if (Name.empty() || N <= 0 || (Inited && !Enabled))
+		{
+			return;
+		}
+		Begin();
+		N = std::min(N, MaxCountN);
+		// The strings and booleans say which count; the numbers are summed. A list says nothing here.
+		FValue Group = FValue::Object();
+		std::vector<std::pair<std::string, double>> Numbers;
+		if (Attrs.IsObject())
+		{
+			for (size_t I = 0; I < Attrs.Size(); I++)
+			{
+				const std::string& K = Attrs.GetKeys()[I];
+				const FValue& V = Attrs.ValueAt(I);
+				if (V.IsString() && Group.Size() < MaxCountGroup)
+				{
+					Group.Set(K, Text::Truncate(V.AsString(), 64));
+				}
+				else if (V.GetType() == FValue::EType::Bool && Group.Size() < MaxCountGroup)
+				{
+					Group.Set(K, V);
+				}
+				else if (V.IsNumber() && Numbers.size() < MaxCountSums && Json::IsFinite(V.AsNumber()))
+				{
+					Numbers.emplace_back(K, V.AsNumber());
+				}
+			}
+		}
+		auto Find = [this](const std::string& Key) {
+			return std::find_if(Counts.begin(), Counts.end(), [&Key](const FCountEntry& C) { return C.Key == Key; });
+		};
+		std::string Key = Name + '\x1f' + Group.Serialize();
+		auto It = Find(Key);
+		if (It == Counts.end() && CountedNames >= MaxCountEntries)
+		{
+			// The window is full. A name already counted goes under (other); a new name is dropped and counted as such.
+			const bool Known = std::any_of(Counts.begin(), Counts.end(), [&Name](const FCountEntry& C) { return C.Name == Name; });
+			if (!Known)
+			{
+				CountsDropped += N;
+				return;
+			}
+			FValue Other = FValue::Object();
+			for (const std::string& K : Group.GetKeys())
+			{
+				Other.Set(K, "(other)");
+			}
+			Group = std::move(Other);
+			Key = Name + '\x1f' + Group.Serialize();
+			It = Find(Key);
+			if (It == Counts.end())
+			{
+				Counts.push_back(FCountEntry{Key, Name, Group, 0, {}, UnixNow()});
+				It = Counts.end() - 1;
+			}
+		}
+		else if (It == Counts.end())
+		{
+			Counts.push_back(FCountEntry{Key, Name, Group, 0, {}, UnixNow()});
+			It = Counts.end() - 1;
+			CountedNames++;
+		}
+		It->N += N;
+		for (const auto& Num : Numbers)
+		{
+			AddTo(It->Sums, Num.first, Num.second); // each call's numbers as given, whatever its N
+		}
+	}
+
+	void FCore::SetProperty(const std::string& Key, const FValue& Value)
+	{
+		const std::string Problem = Rules::PropertyKeyProblem(Key);
+		if (!Problem.empty())
+		{
+			WarnOnce("prop:" + Key, "SetProperty(\"" + Key + "\") was dropped: " + Problem);
+			return;
+		}
+		auto Current = std::find_if(Props.begin(), Props.end(), [&Key](const std::pair<std::string, FValue>& P) { return P.first == Key; });
+		FValue Clean;
+		if (!Value.IsNull())
+		{
+			std::string Why;
+			if (!Rules::PropertyValue(Value, Clean, Why))
+			{
+				WarnOnce("prop:" + Key, "SetProperty(\"" + Key + "\") was dropped: " + Why);
+				return;
+			}
+		}
+		if (Value.IsNull() ? Current == Props.end() : Current != Props.end() && Current->second == Clean)
+		{
+			return; // nothing changed
+		}
+		if (std::find(PropKeys.begin(), PropKeys.end(), Key) == PropKeys.end())
+		{
+			if (PropKeys.size() >= MaxProperties)
+			{
+				WarnOnce("prop:" + Key, "SetProperty(\"" + Key + "\") was dropped: a session has at most 12 properties");
+				return;
+			}
+			PropKeys.push_back(Key);
+		}
+		if (Value.IsNull())
+		{
+			Props.erase(Current);
+		}
+		else if (Current != Props.end())
+		{
+			Current->second = Clean;
+		}
+		else
+		{
+			Props.emplace_back(Key, Clean);
+		}
+		SetIn(PropChanges, Key, Clean); // null when removed
+	}
+
+	std::string FCore::SetGroup(const std::string& Kind, const std::string& InId, FValue Attrs)
+	{
+		if (Kind != "match" && Kind != "party" && Kind != "run")
+		{
+			WarnOnce("group:" + Kind, "SetGroup(\"" + Kind + "\") was dropped: a group is a match, a party or a run");
+			return "";
+		}
+		std::string Id = InId;
+		bool Resumed = false;
+		if (Kind == "run")
+		{
+			// The SDK makes run IDs. One the game saved resumes its run after a restart, except in anonymous mode,
+			// where nothing may tie two launches together: the run goes on under a new ID.
+			Resumed = !Id.empty();
+			if (Id.empty() || !StoresId)
+			{
+				Id = NewId("r_", 12);
+			}
+			else if (!Rules::IsGroupId(Id))
+			{
+				WarnOnce("group:run", "SetGroup(\"run\") was given an ID that isn't 8 to 64 of A-Z a-z 0-9 _ . : -: a new run starts");
+				Id = NewId("r_", 12);
+			}
+		}
+		else
+		{
+			if (!Rules::IsGroupId(Id))
+			{
+				WarnOnce("group:" + Kind, "SetGroup(\"" + Kind + "\") was dropped: IDs are 8 to 64 of A-Z a-z 0-9 _ . : -");
+				return "";
+			}
+			if (Options.HashGroupIds)
+			{
+				Id = Rules::HashGroupId(Service, Id);
+			}
+		}
+		auto It = std::find_if(Groups.begin(), Groups.end(), [&Kind](const std::pair<std::string, std::string>& G) { return G.first == Kind; });
+		if (It != Groups.end() && It->second == Id && !Resumed)
+		{
+			return Id; // the same match again
+		}
+		CloseWindow(false); // a window never spans two matches, so a match's frames and counts are all its own
+		It = std::find_if(Groups.begin(), Groups.end(), [&Kind](const std::pair<std::string, std::string>& G) { return G.first == Kind; });
+		if (It != Groups.end())
+		{
+			It->second = Id;
+		}
+		else
+		{
+			Groups.emplace_back(Kind, Id);
+		}
+		PushGroupEvent(Kind, Id, std::move(Attrs), Resumed);
+		return Id;
+	}
+
+	void FCore::ClearGroup(const std::string& Kind)
+	{
+		auto It = std::find_if(Groups.begin(), Groups.end(), [&Kind](const std::pair<std::string, std::string>& G) { return G.first == Kind; });
+		if (It == Groups.end())
+		{
+			return;
+		}
+		CloseWindow(false);
+		Groups.erase(std::find_if(Groups.begin(), Groups.end(), [&Kind](const std::pair<std::string, std::string>& G) { return G.first == Kind; }));
+		PushGroupEvent(Kind, "", FValue(), false);
+		// A server that hosts one match at a time can have a session per match.
+		if (Role == ERole::Server && Kind == "match" && Options.ServerSessionPerMatch && Inited && Enabled && !Ended)
+		{
+			Push(SessionEnd("match_end"));
+			NewSession();
+		}
+	}
+
+	void FCore::AdoptGroup(const std::string& Kind, const std::string& SentId)
+	{
+		if (SentId.empty() || GetGroup(Kind) == SentId)
+		{
+			return;
+		}
+		CloseWindow(false);
+		auto It = std::find_if(Groups.begin(), Groups.end(), [&Kind](const std::pair<std::string, std::string>& G) { return G.first == Kind; });
+		if (It != Groups.end())
+		{
+			It->second = SentId;
+		}
+		else
+		{
+			Groups.emplace_back(Kind, SentId);
+		}
+		PushGroupEvent(Kind, SentId, FValue(), false);
+	}
+
+	void FCore::PushGroupEvent(const std::string& Kind, const std::string& Id, FValue Attrs, bool Resumed)
+	{
+		FValue E = Ev("group");
+		E.Set("kind", Kind);
+		E.Set("id", Id.empty() ? FValue() : FValue(Id));
+		if (Attrs.IsObject() && Attrs.Size() > 0)
+		{
+			E.Set("attrs", std::move(Attrs));
+		}
+		if (Resumed)
+		{
+			E.Set("resumed", true);
+		}
+		Push(std::move(E));
+		Remember(Id.empty() ? Kind + "_end" : Kind);
+	}
+
+	std::string FCore::GetGroup(const std::string& Kind) const
+	{
+		for (const auto& G : Groups)
+		{
+			if (G.first == Kind)
+			{
+				return G.second;
+			}
+		}
+		return "";
+	}
+
+	void FCore::SetZone(const std::string& InZone)
+	{
+		const std::string Name = Text::Truncate(Text::Trim(InZone), 64);
+		const std::optional<std::string> Next = Name.empty() ? std::nullopt : std::optional<std::string>(Name);
+		if (Next == Zone)
+		{
+			return;
+		}
+		CloseWindow(false); // a window never spans two zones, as it never spans two levels
+		Zone = Next;
+	}
+
+	// ───────────────────────────── the connection ─────────────────────────────
+
+	void FCore::NetSample(const FNetSample& S)
+	{
+		if (Role == ERole::Server)
+		{
+			return; // a server's players' connections are in its server windows
+		}
+		Begin();
+		const double Now = Ticks();
+		if (!NetConnected)
+		{
+			if (NetLostAt > 0)
+			{
+				Reconnect();
+			}
+			else
+			{
+				NetConnected = true;
+				NetConnectedAt = Now;
+			}
+		}
+		NetEverConnected = true;
+		Win.NetSeen = true;
+		if (!S.Transport.empty())
+		{
+			NetTransport = S.Transport;
+		}
+		NetLink = S.Link;
+		NetHost = S.Host;
+		Win.Host = Win.Host || S.Host;
+		if (Now - LastNetSampleAt < NetSampleGapMs)
+		{
+			return;
+		}
+		LastNetSampleAt = Now;
+		if (S.RttMs >= 0)
+		{
+			Win.NetSamples++;
+			Win.Rtt.Add(S.RttMs);
+			Win.RttMax = std::max(Win.RttMax, S.RttMs);
+		}
+		auto Add = [](double V, double& Sum, int& N) {
+			if (V >= 0 && Json::IsFinite(V))
+			{
+				Sum += V;
+				N++;
+			}
+		};
+		Add(S.LossPct, Win.LossSum, Win.LossN);
+		Add(S.JitterMs, Win.JitterSum, Win.JitterN);
+		Add(S.InKbps, Win.InSum, Win.InN);
+		Add(S.OutKbps, Win.OutSum, Win.OutN);
+	}
+
+	void FCore::NetEnded()
+	{
+		if (!NetConnected)
+		{
+			return; // ended by a disconnect already: a reconnect still says so
+		}
+		NetConnected = false;
+		NetLostAt = 0;
+		DisconnectedLevel.reset();
+	}
+
+	void FCore::Disconnect(const std::string& InReason)
+	{
+		if (Role == ERole::Server)
+		{
+			return;
+		}
+		Begin();
+		const double Now = Ticks();
+		if (!NetConnected && NetLostAt > 0 && Now - NetLostAt < 5000)
+		{
+			return; // the same failure, reported twice (a network failure, then the travel that follows it)
+		}
+		static const char* const Reasons[] = {"timeout", "connection_lost", "kicked", "server_closed", "failed_to_connect", "other"};
+		std::string Reason = "other";
+		for (const char* R : Reasons)
+		{
+			if (InReason == R)
+			{
+				Reason = R;
+			}
+		}
+		const bool WasConnected = NetConnected;
+		NetConnected = false;
+		NetLostAt = Now;
+		if (Disconnects < MaxDisconnects)
+		{
+			Disconnects++;
+			// The numbers of the window it happened in, or of the last one when this one has none yet.
+			const FValue Numbers = Win.NetSamples > 0 ? NetJson(Win) : LastNet;
+			auto Number = [&Numbers](const char* Key) {
+				const FValue* V = Numbers.IsObject() ? Numbers.Find(Key) : nullptr;
+				return V ? *V : FValue();
+			};
+			FValue E = Ev("disconnect");
+			E.Set("reason", Reason);
+			E.Set("connected_s", WasConnected ? Round((Now - NetConnectedAt) / 1000, 1) : 0.0);
+			E.Set("rtt_p95", Number("rtt_p95"));
+			E.Set("loss_pct", Number("loss_pct"));
+			Push(std::move(E));
+			Remember("disconnect:" + Reason);
+		}
+		// The attempt ends with the connection: an abandon, never a fail. Coming back to the same level takes it back.
+		if (LevelOpen)
+		{
+			DisconnectedLevel = Level;
+			Abandon(Level, "disconnect");
+		}
+	}
+
+	void FCore::Reconnect()
+	{
+		if (Role == ERole::Server || NetConnected)
+		{
+			return;
+		}
+		Begin();
+		const double Now = Ticks();
+		NetConnected = true;
+		NetConnectedAt = Now;
+		if (NetLostAt > 0)
+		{
+			FValue E = Ev("reconnect");
+			E.Set("after_s", Round((Now - NetLostAt) / 1000, 1));
+			Push(std::move(E));
+			Remember("reconnect");
+		}
+		NetLostAt = 0;
+		if (DisconnectedLevel && DisconnectedLevel == Level)
+		{
+			LevelOpen = true;
+		}
+		DisconnectedLevel.reset();
+	}
+
+	// ───────────────────────────── a server ─────────────────────────────
+
+	void FCore::ServerSample(const FServerSample& S)
+	{
+		Begin();
+		LastServer = S;
+		if (S.TickHz > 0)
+		{
+			TargetHz = S.TickHz;
+		}
+		Win.PlayersMax = std::max(Win.PlayersMax, S.Players);
+		if (S.CpuPct >= 0)
+		{
+			Win.CpuSum += S.CpuPct;
+			Win.CpuN++;
+		}
+		if (S.InKbps >= 0)
+		{
+			Win.InSum += S.InKbps;
+			Win.InN++;
+		}
+		if (S.OutKbps >= 0)
+		{
+			Win.OutSum += S.OutKbps;
+			Win.OutN++;
+		}
+		for (double Rtt : S.RttMs)
+		{
+			if (Rtt >= 0 && Win.PlayerRtt.size() < 20000)
+			{
+				Win.PlayerRtt.push_back(Rtt);
+			}
+		}
+	}
+
+	// A server's tick: the work it did, without the sleep that holds it to its tick rate.
+	void FCore::OnServerTick(double WorkMs)
+	{
+		Win.Ticks++;
+		Win.Tick.Add(std::max(0.0, WorkMs));
+		Win.TickMax = std::max(Win.TickMax, WorkMs);
+		const double Budget = 1000.0 / (TargetHz > 0 ? TargetHz : 30);
+		if (WorkMs > Budget)
+		{
+			Win.Late++;
+		}
 	}
 
 	void FCore::SetContext(const std::string& Key, double Value)
@@ -404,6 +922,13 @@ namespace Glitchless
 	{
 		Begin();
 		FrameCount++;
+		if (Role == ERole::Server)
+		{
+			// A server's tick is timed by its work (Game), not by the gap between ticks, which holds a sleep.
+			OnServerTick(Measured.Game >= 0 ? Measured.Game : DtMs);
+			Tick();
+			return;
+		}
 		// The new map's first draws (pipeline states compiled, textures streamed in) are its load as much as the
 		// frame that loaded it: their hitches say map_load, so they stay out of play's.
 		FFrameCost Cost = Measured;
@@ -509,6 +1034,12 @@ namespace Glitchless
 		if (Now - Win.StartedTicks >= Options.WindowSeconds * 1000)
 		{
 			CloseWindow(true);
+		}
+		// A server's session lasts as long as its process, cut every 6 hours so a day's numbers come in.
+		if (Role == ERole::Server && Inited && Enabled && !Ended && Now - SessionBeganAt >= ServerSessionMs)
+		{
+			Push(SessionEnd("max_duration"));
+			NewSession();
 		}
 		if (Now >= NextFlushAt)
 		{
@@ -762,6 +1293,7 @@ namespace Glitchless
 		E.Set("pso_compiles", FValue::OrNull(F.PsoCompiles));
 		E.Set("shader_compiles", FValue::OrNull(F.ShaderCompiles));
 		E.Set("packages_loaded", FValue::OrNull(F.PackagesLoaded));
+		Stamp(E);
 		FValue Slim = FValue::Object();
 		Slim.Set("ts", U.Ts);
 		Slim.Set("type", "hitch");
@@ -818,6 +1350,8 @@ namespace Glitchless
 		FWindow W;
 		W.StartedAt = UnixNow();
 		W.StartedTicks = Ticks();
+		W.NetSeen = NetConnected; // connected as it starts: it carries net, numbers or not
+		W.Host = NetConnected && NetHost;
 		return W;
 	}
 
@@ -832,9 +1366,18 @@ namespace Glitchless
 		}
 		FWindow W = std::move(Win);
 		Win = NewWindow();
-		if (W.Frames > 0)
+		const double Secs = std::max((Ticks() - W.StartedTicks) / 1000, 0.001);
+		if (Role == ERole::Server)
 		{
-			const double Secs = std::max((Ticks() - W.StartedTicks) / 1000, 0.001);
+			if (W.Ticks > 0)
+			{
+				FValue E = ServerWindowEvent(W, Secs);
+				Stamp(E);
+				QueueEvent(std::move(E));
+			}
+		}
+		else if (W.Frames > 0)
+		{
 			const int N = W.Frames;
 			const FSketch& S = W.Sketch;
 			auto Avg = [](double Sum, int Frames) { return Frames > 0 ? FValue(Round(Sum / Frames, 2)) : FValue(); };
@@ -882,6 +1425,16 @@ namespace Glitchless
 			E.Set("screen", Ints(Screen));
 			E.Set("window", Ints(Window));
 			E.Set("ctx", GaugesJson(W.Ctx));
+			if (W.NetSeen)
+			{
+				FValue Net = NetJson(W);
+				if (W.NetSamples > 0)
+				{
+					LastNet = Net;
+				}
+				E.Set("net", std::move(Net));
+			}
+			Stamp(E);
 			FValue Summary = FValue::Object();
 			Summary.Set("ts", W.StartedAt);
 			Summary.Set("level", Level ? FValue(*Level) : FValue());
@@ -907,8 +1460,11 @@ namespace Glitchless
 			}
 			E.Set("pts", std::move(Pts));
 			PosBuffer.clear();
+			Stamp(E);
 			QueueEvent(std::move(E));
 		}
+		QueueCounts(W, Secs);
+		QueuePropChanges();
 		std::stable_sort(PendingHitches.begin(), PendingHitches.end(), [](const FValue& A, const FValue& B) {
 			return A.Find("duration_ms")->AsNumber() > B.Find("duration_ms")->AsNumber();
 		});
@@ -917,6 +1473,140 @@ namespace Glitchless
 			QueueEvent(std::move(PendingHitches[I]));
 		}
 		PendingHitches.clear();
+	}
+
+	// The window's counts, as one counts event: kept back until the server says it takes them (GET /v1/health).
+	void FCore::QueueCounts(const FWindow& W, double Secs)
+	{
+		if (Counts.empty() && CountsDropped == 0)
+		{
+			return;
+		}
+		FValue List = FValue::Array();
+		for (FCountEntry& C : Counts)
+		{
+			FValue Item = FValue::Object();
+			Item.Set("name", C.Name);
+			Item.Set("attrs", std::move(C.Attrs));
+			Item.Set("n", C.N);
+			if (!C.Sums.empty())
+			{
+				Item.Set("sums", GaugesJson(C.Sums));
+			}
+			Item.Set("first_ts", C.FirstTs);
+			List.Push(std::move(Item));
+		}
+		FValue E = FValue::Object();
+		E.Set("type", "counts");
+		E.Set("ts", W.StartedAt);
+		E.Set("level", Level ? FValue(*Level) : FValue());
+		E.Set("duration_s", Round(Secs, 2));
+		E.Set("dropped", CountsDropped);
+		E.Set("counts", std::move(List));
+		Stamp(E);
+		Counts.clear();
+		CountedNames = 0;
+		CountsDropped = 0;
+		if (FeaturesState != EFeatures::Known)
+		{
+			HeldCounts.push_back(std::move(E));
+			if (HeldCounts.size() > MaxHeldCounts)
+			{
+				HeldCounts.erase(HeldCounts.begin());
+			}
+		}
+		else if (HasFeature("counts"))
+		{
+			QueueEvent(std::move(E));
+		}
+		else
+		{
+			WarnOnce("counts", "this Glitchless server doesn't take counts yet: Count() sends nothing until it is updated");
+		}
+	}
+
+	// At most one props event a window, with each key's last value (null: removed). Before the session's first batch
+	// the properties go in its session_start instead.
+	void FCore::QueuePropChanges()
+	{
+		if (PropChanges.empty() || !SessionStartSent)
+		{
+			return;
+		}
+		FValue Changed = FValue::Object();
+		for (auto& C : PropChanges)
+		{
+			Changed.Set(C.first, std::move(C.second));
+		}
+		PropChanges.clear();
+		FValue E = Ev("props");
+		E.Set("props", std::move(Changed));
+		Push(std::move(E));
+	}
+
+	FValue FCore::NetJson(const FWindow& W) const
+	{
+		const bool Any = W.NetSamples > 0;
+		auto Avg = [](double Sum, int N, int Digits) { return N > 0 ? FValue(Round(Sum / N, Digits)) : FValue(); };
+		FValue N = FValue::Object();
+		N.Set("rtt", Any ? W.Rtt.ToJson() : FValue());
+		N.Set("rtt_p50", Any ? Round(W.Rtt.Quantile(0.5), 1) : FValue());
+		N.Set("rtt_p95", Any ? Round(W.Rtt.Quantile(0.95), 1) : FValue());
+		N.Set("rtt_max", Any ? FValue(Round(W.RttMax, 1)) : FValue());
+		N.Set("jitter_ms", Avg(W.JitterSum, W.JitterN, 1));
+		N.Set("loss_pct", Avg(W.LossSum, W.LossN, 2));
+		N.Set("in_kbps", Avg(W.InSum, W.InN, 1));
+		N.Set("out_kbps", Avg(W.OutSum, W.OutN, 1));
+		N.Set("samples", W.NetSamples);
+		N.Set("transport", NetTransport.empty() ? FValue() : FValue(NetTransport));
+		N.Set("link", NetLink.empty() ? FValue() : FValue(NetLink));
+		N.Set("host", W.Host);
+		return N;
+	}
+
+	FValue FCore::ServerWindowEvent(const FWindow& W, double Secs) const
+	{
+		// A window with no sample in it (the last one, cut short as the server quits) has the last sample's numbers.
+		auto Avg = [](double Sum, int N, int Digits, double Last) { return N > 0 ? FValue(Round(Sum / N, Digits)) : Last >= 0 ? FValue(Round(Last, Digits)) : FValue(); };
+		const std::vector<double>& Pings = W.PlayerRtt.empty() ? LastServer.RttMs : W.PlayerRtt;
+		auto Known = [](int V) { return V >= 0 ? FValue(V) : FValue(); };
+		FValue E = FValue::Object();
+		E.Set("type", "server_window");
+		E.Set("ts", W.StartedAt);
+		E.Set("level", Level ? FValue(*Level) : FValue());
+		E.Set("duration_s", Round(Secs, 2));
+		E.Set("ticks", W.Ticks);
+		E.Set("tick_hz", Round(W.Ticks / Secs, 1));
+		E.Set("tick", W.Tick.ToJson());
+		E.Set("tick_p50", Round(W.Tick.Quantile(0.5), 2));
+		E.Set("tick_p95", Round(W.Tick.Quantile(0.95), 2));
+		E.Set("tick_max", Round(W.TickMax, 1));
+		E.Set("late", W.Late);
+		E.Set("players", Known(LastServer.Players));
+		E.Set("players_max", Known(std::max(W.PlayersMax, LastServer.Players)));
+		E.Set("net_objects", Known(LastServer.NetObjects));
+		E.Set("in_kbps", Avg(W.InSum, W.InN, 1, LastServer.InKbps));
+		E.Set("out_kbps", Avg(W.OutSum, W.OutN, 1, LastServer.OutKbps));
+		E.Set("cpu_pct", Avg(W.CpuSum, W.CpuN, 1, LastServer.CpuPct));
+		E.Set("mem_mb", LastServer.MemMb >= 0 ? FValue(Round(LastServer.MemMb, 1)) : FValue());
+		E.Set("rtt_p95", Pings.empty() ? FValue() : FValue(Round(Quantile(Pings, 0.95), 1)));
+		E.Set("ctx", GaugesJson(W.Ctx));
+		return E;
+	}
+
+	void FCore::Stamp(FValue& E) const
+	{
+		if (Zone && !E.Has("zone"))
+		{
+			E.Set("zone", *Zone);
+		}
+		for (const auto& G : Groups)
+		{
+			if (!E.Has(G.first))
+			{
+				E.Set(G.first, G.second);
+			}
+		}
 	}
 
 	FValue FCore::Engine0(const char* Key) const
@@ -1263,6 +1953,7 @@ namespace Glitchless
 		{
 			E.Set("device", DeviceInfo);
 		}
+		Stamp(E);
 		return E;
 	}
 
@@ -1299,7 +1990,22 @@ namespace Glitchless
 		L.Set("env", Env);
 		L.Set("intake", Intake);
 		L.Set("session_id", SessionId);
+		L.Set("role", Role == ERole::Server ? "server" : "player");
 		L.Set("level", Level ? FValue(*Level) : FValue());
+		L.Set("zone", Zone ? FValue(*Zone) : FValue());
+		FValue G = FValue::Object();
+		for (const auto& Group : Groups)
+		{
+			G.Set(Group.first, Group.second);
+		}
+		L.Set("groups", std::move(G));
+		FValue P = FValue::Object();
+		for (const auto& Prop : Props)
+		{
+			P.Set(Prop.first, Prop.second);
+		}
+		L.Set("properties", std::move(P));
+		L.Set("features", FeaturesState == EFeatures::Known ? FValue::Strings(Features) : FValue());
 		L.Set("frame_budget_ms", Round(BudgetMs, 2));
 		FValue S = FValue::Object();
 		S.Set("sent", Stats.Sent);
@@ -1455,9 +2161,23 @@ namespace Glitchless
 		Flush();
 		SessionId = NewId("s_", 16);
 		StartedAt = UnixNow();
+		SessionBeganAt = Ticks();
 		SessionStartSent = false;
 		Recent.clear();
 		ErrorCounts.clear();
+		Disconnects = 0;
+		// The properties and groups still set go on into the new session, in memory only: its session_start carries
+		// the properties, and each group is said again.
+		PropChanges.clear();
+		PropKeys.clear();
+		for (const auto& P : Props)
+		{
+			PropKeys.push_back(P.first);
+		}
+		for (const auto& G : Groups)
+		{
+			PushGroupEvent(G.first, G.second, FValue(), false);
+		}
 	}
 
 	void FCore::Shutdown(const std::string& Reason)
@@ -1492,6 +2212,28 @@ namespace Glitchless
 		}
 	}
 
+	void FCore::EndSession(const std::string& Reason)
+	{
+		if (!Inited || !Enabled || Ended)
+		{
+			return;
+		}
+		EndLevel(Reason);
+		Ended = true;
+		Push(SessionEnd(Reason));
+		Flush();
+	}
+
+	void FCore::StartNewSession()
+	{
+		if (!Ended)
+		{
+			return;
+		}
+		Ended = false;
+		NewSession();
+	}
+
 	FValue FCore::SessionEnd(const std::string& Reason)
 	{
 		Begin();
@@ -1524,6 +2266,7 @@ namespace Glitchless
 		{
 			E.Set("level", Level ? FValue(*Level) : FValue());
 		}
+		Stamp(E);
 		RememberEvent(E);
 		QueueEvent(std::move(E));
 	}
@@ -1628,10 +2371,47 @@ namespace Glitchless
 		E.Set("session_type", SessionType);
 		E.Set("privacy", PrivacyName(Options.Privacy));
 		FValue Dev = DeviceInfo.IsObject() ? DeviceInfo : FValue::Object();
-		Steam::AddTo(Dev, ReadSteam());
+		if (Role == ERole::Server)
+		{
+			// A server's own facts are in server.host: its device says only what runs it.
+			FValue Slim = FValue::Object();
+			for (const char* K : {"browser", "browser_version", "os"})
+			{
+				if (const FValue* V = Dev.Find(K))
+				{
+					Slim.Set(K, *V);
+				}
+			}
+			Dev = std::move(Slim);
+		}
+		else
+		{
+			Steam::AddTo(Dev, ReadSteam());
+		}
 		E.Set("device", Dev);
 		E.Set("page", FValue());
 		E.Set("nav_ms", FValue());
+		if (Role == ERole::Server)
+		{
+			FValue Server = ServerInfo ? ServerInfo() : FValue::Object();
+			if (!Server.IsObject())
+			{
+				Server = FValue::Object();
+			}
+			Server.Set("region", Options.ServerRegion.empty() ? FValue() : FValue(Text::Truncate(Options.ServerRegion, 64)));
+			E.Set("server", std::move(Server));
+		}
+		if (!Props.empty())
+		{
+			FValue P = FValue::Object();
+			for (const auto& Prop : Props)
+			{
+				P.Set(Prop.first, Prop.second);
+			}
+			E.Set("props", std::move(P));
+		}
+		PropChanges.clear(); // what changed before this goes in it
+		Stamp(E);
 		return E;
 	}
 
@@ -1671,10 +2451,125 @@ namespace Glitchless
 			Queue.clear();
 			return;
 		}
+		if (FeaturesState == EFeatures::Unknown)
+		{
+			AskFeatures(); // no answer yet (offline, or the server was down): ask again
+		}
 		Batch();
 		if (!Shut)
 		{
 			SendNext(); // while closing, SendNow() sends instead
+		}
+	}
+
+	// What the Glitchless server takes, from GET /v1/health's features: counts (A5) and server_mode (A9) need it.
+	void FCore::AskFeatures()
+	{
+		if (!Inited || !Enabled || !Transport || Intake.empty() || FeaturesState != EFeatures::Unknown)
+		{
+			return;
+		}
+		FeaturesState = EFeatures::Asking;
+		std::weak_ptr<bool> Token = Alive;
+		Transport->Get(Intake + "/v1/health", [this, Token](int64_t Status, const std::string& Body) {
+			if (const std::shared_ptr<bool> Live = Token.lock())
+			{
+				if (*Live)
+				{
+					OnHealth(Status, Body);
+				}
+			}
+		});
+	}
+
+	void FCore::OnHealth(int64_t Status, const std::string& Body)
+	{
+		FValue Health;
+		if (Status < 200 || Status >= 300 || !FValue::Parse(Body, Health) || !Health.IsObject())
+		{
+			FeaturesState = EFeatures::Unknown; // asked again at the next flush
+			return;
+		}
+		FeaturesState = EFeatures::Known;
+		Features.clear();
+		// An array of names; an object of booleans reads the same. A server without the field is an older one.
+		if (const FValue* F = Health.Find("features"))
+		{
+			if (F->IsArray())
+			{
+				for (const FValue& Name : F->GetItems())
+				{
+					if (Name.IsString())
+					{
+						Features.push_back(Name.AsString());
+					}
+				}
+			}
+			else if (F->IsObject())
+			{
+				for (size_t I = 0; I < F->Size(); I++)
+				{
+					if (F->ValueAt(I).AsBool())
+					{
+						Features.push_back(F->GetKeys()[I]);
+					}
+				}
+			}
+		}
+		Debug("the server takes: " + [this]() {
+			std::string L;
+			for (const std::string& F : Features)
+			{
+				L += (L.empty() ? "" : ", ") + F;
+			}
+			return L.empty() ? std::string("nothing new") : L;
+		}());
+		if (HasFeature("counts"))
+		{
+			for (FValue& E : HeldCounts)
+			{
+				QueueEvent(std::move(E));
+			}
+		}
+		else if (!HeldCounts.empty())
+		{
+			WarnOnce("counts", "this Glitchless server doesn't take counts yet: Count() sends nothing until it is updated");
+		}
+		HeldCounts.clear();
+		if (Role == ERole::Server && !HasFeature("server_mode"))
+		{
+			// An older server would file a server's sessions among the players': send nothing at all.
+			ServerRefused = true;
+			WarnOnce("server_mode", "this Glitchless server doesn't take a game server's sessions yet: nothing is sent from this server");
+			Enabled = false;
+			Queue.clear();
+			Outbox.clear();
+			RemoveFile(OutboxPath());
+			return;
+		}
+		SendNext();
+	}
+
+	bool FCore::HasFeature(const std::string& Name) const
+	{
+		return std::find(Features.begin(), Features.end(), Name) != Features.end();
+	}
+
+	bool FCore::MaySend() const
+	{
+		return Role == ERole::Player || HasFeature("server_mode");
+	}
+
+	void FCore::WarnOnce(const std::string& Key, const std::string& Message)
+	{
+		if (Warned[Key])
+		{
+			return;
+		}
+		Warned[Key] = true;
+		if (Log && (IsDevelopmentBuild || DebugOn || Key == "counts" || Key == "server_mode"))
+		{
+			Log("[glitchless] " + Message);
 		}
 	}
 
@@ -1783,6 +2678,10 @@ namespace Glitchless
 		}
 		S += ",\"sdk\":\"";
 		S += Sdk;
+		if (Role == ERole::Server)
+		{
+			S += "\",\"role\":\"server"; // intake files it under the game's companion service, <service>.server
+		}
 		S += "\",\"batch_id\":";
 		Json::WriteString(S, B.Bid);
 		S += ",\"events\":[";
@@ -1820,7 +2719,7 @@ namespace Glitchless
 
 	void FCore::SendNext()
 	{
-		if (Draining || InFlight >= 0 || Outbox.empty() || Ticks() < RetryAt || !Transport)
+		if (Draining || InFlight >= 0 || Outbox.empty() || Ticks() < RetryAt || !Transport || !MaySend())
 		{
 			return;
 		}
@@ -1885,9 +2784,9 @@ namespace Glitchless
 
 	void FCore::SendNow(int DeadlineMs)
 	{
-		if (Outbox.empty() || !Sampled || !Transport)
+		if (Outbox.empty() || !Sampled || !Transport || !MaySend())
 		{
-			return;
+			return; // a server's batches wait in the outbox until the Glitchless server says it takes them
 		}
 		const double Deadline = Ticks() + DeadlineMs;
 		Draining = true;

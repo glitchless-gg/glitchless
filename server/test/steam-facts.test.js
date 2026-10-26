@@ -139,8 +139,8 @@ test('boards split breakdowns by a Steam fact and compare branches, and say what
 
   assert.throws(() => validateBoard({ panels: [{ type: 'series', event: 'play', by: '$steam_branch' }] }), (e) => e instanceof BoardError && /breakdown/.test(e.message));
   assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', sum: 'amount', by: '$steam_branch' }] }), /sum can't be split/);
-  assert.throws(() => validateBoard({ panels: [{ type: 'versions', by: '$os' }] }), /Steam fact/);
-  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'play', by: '$os' }] }), /\$steam_branch/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'versions', by: '$email' }] }), /Steam fact/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'play', by: '$email' }] }), /\$steam_branch/);
 });
 
 test('day rollups keep Steam branches and builds for performance over long ranges', () => {
@@ -186,7 +186,7 @@ for (const [kind, make] of Object.entries(STORES)) {
       const vs = await get(`/v1/query/versions?${range}&by=steam_branch`);
       assert.equal(vs.by, 'steam_branch');
       assert.deepStrictEqual(vs.versions.map((v) => [v.version, v.sessions]), [['public', 5], ['beta', 5]]);
-      assert.deepStrictEqual((await get(`/v1/query/versions?${range}&by=os`)).versions.map((v) => v.version), ['steam-2001', 'steam-2002', '1.0.0'], 'by is a Steam fact or nothing');
+      assert.deepStrictEqual((await get(`/v1/query/versions?${range}&by=email`)).versions.map((v) => v.version), ['steam-2001', 'steam-2002', '1.0.0'], 'by is a Steam fact, a property, or nothing');
     } finally {
       server.close();
       await closeStore?.();

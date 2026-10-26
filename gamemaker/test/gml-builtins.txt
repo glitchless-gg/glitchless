@@ -5,7 +5,9 @@
 GM_build_type
 GM_runtime_version
 GM_version
+abs
 all
+argument_count
 application_surface
 application_surface_is_enabled
 array_copy
@@ -116,6 +118,7 @@ instance_number
 irandom
 irandom_range
 is_array
+is_bool
 is_int64
 is_numeric
 is_real

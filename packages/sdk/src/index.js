@@ -3,4 +3,5 @@ export { instrumentThree, inspectScene } from './three.js';
 export { instrumentPhaser, inspectPhaser } from './phaser.js';
 export { instrumentBabylon, inspectBabylon } from './babylon.js';
 export { instrumentPlayCanvas, inspectPlayCanvas } from './playcanvas.js';
+export { instrumentNet } from './net.js';
 export { Sketch } from './sketch.js';

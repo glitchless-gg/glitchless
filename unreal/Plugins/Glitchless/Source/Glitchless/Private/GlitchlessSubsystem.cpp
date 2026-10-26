@@ -4,13 +4,14 @@
 #include "Glitchless.h"
 #include "GlitchlessRuntime.h"
 
+#include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "Misc/CoreMisc.h"
 
 bool UGlitchlessSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
-	return !IsRunningDedicatedServer() && !IsRunningCommandlet();
+	return !IsRunningCommandlet();
 }
 
 void UGlitchlessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -19,6 +20,12 @@ void UGlitchlessSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	DialogHandle = FGlitchless::OnBugReportDialog().AddWeakLambda(this, [this](bool bOpen) { OnBugReportDialog.Broadcast(bOpen); });
 	if (GIsEditor)
 	{
+		// Play In Editor with a dedicated server in the editor's process: the players' instances are the ones measured.
+		const FWorldContext* Context = GetGameInstance()->GetWorldContext();
+		if (Context && Context->RunAsDedicated)
+		{
+			return;
+		}
 		// Play In Editor: the first instance owns the capture; more players' instances leave it alone.
 		if (FGlitchlessRuntime::Get())
 		{

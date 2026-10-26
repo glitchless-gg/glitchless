@@ -23,6 +23,8 @@
     "error-tracking",
     "analytics",
     "telemetry",
+    "multiplayer",
+    "netcode",
     "mcp"
   ],
   "author": {

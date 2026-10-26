@@ -11,6 +11,15 @@ extends Node
 ##   Glitchless.death(pos.x, pos.y, "meteor")
 ##   Glitchless.set_context({"blocks": blocks.size()})
 ##   Glitchless.report_bug(note)  # or bug_reports in init options: F8 opens a form
+##   Glitchless.count("kill", {"monster": "elite"})  # a stream of events: counted, sent once a window
+##   Glitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for this session
+##   Glitchless.set_group("match", match_id)  # every event until set_group("match", null) carries it
+##   Glitchless.set_zone("ashen_wastes")  # where the player is in an open world
+##
+## Multiplayer games built on Godot's MultiplayerAPI (ENet, or WebSocket in a
+## web export) also send ping, packet loss and disconnects. A dedicated server
+## (a dedicated-server export, or --server) reports as the game's server, with
+## its tick time and players, and never as a player's session.
 ##
 ## Frame times are measured from the start of the game; events wait in memory
 ## until init() says where to send them. Every few seconds they go out as one
@@ -30,6 +39,7 @@ extends Node
 ##   --glitchless-warmup=SECONDS   with --glitchless-measure: wait this long before measuring
 ##   --glitchless-out=PATH         with --glitchless-measure: write the JSON to this file too
 ##   --glitchless-synthetic        mark the session as a bot's (--autoplay does too)
+##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
 const SDK_VERSION := "0.4.1"
@@ -40,6 +50,8 @@ const ErrorLogger := preload("logger.gd")
 const Device := preload("device.gd")
 const SteamInfo := preload("steam.gd")
 const BugReport := preload("bug_report.gd")
+const Properties := preload("properties.gd")
+const NetInfo := preload("net.gd")
 
 const HITCH_MS := 50.0  # one frame over 50 ms is a stutter a player sees
 const JANK_MS := 33.4  # two missed 60 Hz frames
@@ -62,7 +74,20 @@ const SAVE_DIR := "user://glitchless"
 const OUTBOX_PATH := "user://glitchless/outbox.json"
 const PLAYER_PATH := "user://glitchless/player_id"  # install and full mode
 const LAUNCHED_PATH := "user://glitchless/launched"  # the game version that last ran here (first_launch)
+const SERVER_OUTBOX_PATH := "user://glitchless/server_outbox.json"  # a dedicated server's, apart from a player build's
 const ID_CHARS := "abcdefghijklmnopqrstuvwxyz0123456789"
+const MAX_COUNTS := 64  # count() entries a window
+const MAX_COUNT_GROUP := 4  # words and booleans that split a counter
+const MAX_COUNT_SUMS := 4  # numbers a counter adds up
+const MAX_COUNT_N := 1000000
+const STREAM_PER_S := 20  # a name tracked more often than this a second is a stream: count() it
+const GROUP_KINDS: Array[String] = ["match", "party", "run"]
+const NET_ALPHA := 0.05  # the round-trip sketch's accuracy (frame times use 2%)
+const NET_SAMPLE_MS := 1000
+const MAX_DISCONNECTS := 20  # disconnect events a session
+const RECONNECT_S := 300.0  # connecting again within this long after a disconnect is a reconnect
+const DISCONNECT_REASONS: Array[String] = ["timeout", "connection_lost", "kicked", "server_closed", "failed_to_connect", "other"]
+const SERVER_SESSION_MS := 6 * 3600 * 1000  # a server session is cut every 6 hours
 const PIPELINE_MONITORS: Array[int] = [
 	Performance.PIPELINE_COMPILATIONS_CANVAS,
 	Performance.PIPELINE_COMPILATIONS_MESH,
@@ -89,6 +114,15 @@ const DEFAULTS := {
 	"debug": false,
 	# true, or {"hotkey": KEY_F8, "pause": true, "screenshot": true}: players send bug reports from a form in the game
 	"bug_reports": false,
+	"properties": {},  # what holds for this session, in the game's words ({"mode": "squads"}): set_properties
+	"hash_group_ids": true,  # match and party IDs go hashed with the service; false sends them as the game made them
+	"network": true,  # ping, packet loss and disconnects from Godot's MultiplayerAPI (ENet, WebSocket)
+	# "server" for a dedicated server, "player" for a game's own --server flag that means something else;
+	# "": a dedicated-server export, --glitchless-server or --server is a server
+	"role": "",
+	"region": "",  # server mode: where this server runs, in the game's words ("eu-west")
+	"max_players": 0,  # server mode: the most players it takes
+	"session_per_match": false,  # server mode: a session per match, for a server that hosts one at a time
 }
 
 ## The bug report form opened or closed. The game is paused meanwhile unless
@@ -101,6 +135,8 @@ var player_id := ""  ## stays empty in anonymous mode
 var enabled := false  ## whether anything is sent; decided by init()
 var sampled := true
 var level: Variant = null
+var zone: Variant = null  ## where the player is in an open world: set_zone()
+var role := "player"  ## "server" on a dedicated server; decided by init()
 var stats := {"sent": 0, "failed": 0, "errors": 0, "hitches": 0, "deaths": 0, "last_status": "idle"}
 
 var _opts := DEFAULTS.duplicate()
@@ -177,6 +213,36 @@ var _recent_windows: Array[Dictionary] = []  # {ts, level, fps, p95} of the last
 var _bug_opts := {}  # bug_reports from init options; empty while they're off
 var _bug_hotkey := KEY_NONE
 var _bug_form: BugReport
+var _warned := {}  # what has been warned about, once each
+var _stream := {}  # track() name -> [second, calls in it], debug builds only
+var _features: Variant = null  # what the server takes, from GET /v1/health; null until it answers
+var _asking_features := false
+var _props := {}  # the session's properties, checked (properties.gd)
+var _props_sent := {}  # what the server has: session_start's props and every props event since
+var _groups := {}  # kind -> the ID every event carries
+var _early_groups: Array = []  # set_group calls before init(): the service salts the hash
+var _players_set := -1  # set_players(); -1: from the MultiplayerAPI
+
+# The network (net.gd), sampled once a second while connected.
+var _mp: MultiplayerAPI  # the one whose signals are connected
+var _next_net := 0
+var _net_up := false
+var _net_up_at := 0  # ticks ms the connection to the server came up
+var _net_down_at := 0  # ticks ms of the first disconnect not yet followed by a reconnect
+var _net_goodbye := false  # data came with the server's drop: it closed the connection, it didn't time out
+var _net_transport := ""
+var _net_ws: Object  # a WebSocket client's peer, for its close code
+var _net_dead_peer := 0  # the peer a disconnect was recorded for, while it still says connected
+var _net_server_left := false  # peer_disconnected(1) came: the server went, the game didn't leave
+var _net_pending: Variant = null  # a disconnect the signals saw, recorded at the end of the frame
+var _net_disconnects := 0
+var _net_left_level: Variant = null  # the level abandoned for a disconnect
+var _net_last := {}  # the last window's rtt_p95 and loss_pct, for a disconnect
+
+# A dedicated server's ticks: from Glitchless's first _physics_process to the
+# next one, or to the frame's _process, so the physics step is in it too.
+var _tick_at := 0
+var _cpu_s := -1.0
 
 # What the frame that just ended cost, read at the start of the next one.
 var _f_calls := 0
@@ -273,10 +339,12 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_env = env if env != "" else "prod"
 	var flag_intake := _flag_value("--glitchless-intake")
 	_intake = (flag_intake if flag_intake != "" else intake).trim_suffix("/")
-	_privacy = str(_opts.privacy) if str(_opts.privacy) in ["install", "full"] else "anonymous"
+	role = _decide_role()
+	# A server sends nothing about players: no player ID, no positions, no device detail.
+	_privacy = str(_opts.privacy) if str(_opts.privacy) in ["install", "full"] and role != "server" else "anonymous"
 	_full = _privacy == "full"
-	_positions = _full if _opts.positions == null else bool(_opts.positions)
-	_rage_input = not OS.has_feature("mobile") if _opts.rage_input == null else bool(_opts.rage_input)
+	_positions = (_full if _opts.positions == null else bool(_opts.positions)) and role != "server"
+	_rage_input = (not OS.has_feature("mobile") if _opts.rage_input == null else bool(_opts.rage_input)) and role != "server"
 	_engine_gauges = bool(_opts.engine_gauges)
 	_debug = _debug or bool(_opts.debug)
 	_logger.capture_warnings = bool(_opts.capture_warnings)
@@ -284,9 +352,11 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_sandbox = Device.is_sandbox(Device.distribution())
 	if str(_opts.session_type) != "":
 		_session_type = str(_opts.session_type)
-	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or DisplayServer.get_name() == "headless" or Device.test_lab():
-		_session_type = "synthetic"  # a bot, a measure run, or Google Play's pre-launch test phones
-	elif _sandbox:
+	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or Device.test_lab():
+		_session_type = "synthetic"  # a bot, a measure run (or a server's load test), or Google Play's pre-launch test phones
+	elif DisplayServer.get_name() == "headless" and role != "server":
+		_session_type = "synthetic"  # a bot without a screen; a dedicated server runs headless and is live
+	elif _sandbox and role != "server":
 		_session_type = "tester"  # a person on a TestFlight or development build, not a player from the App Store
 	if _opts.enabled != null:
 		enabled = bool(_opts.enabled)
@@ -295,7 +365,7 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	enabled = enabled and _intake != ""
 	sampled = randf() < float(_opts.sample_rate)
 	var bug: Variant = _opts.bug_reports
-	if bug is Dictionary or (bug is bool and bug):
+	if role != "server" and (bug is Dictionary or (bug is bool and bug)):
 		_bug_opts = {"hotkey": KEY_F8, "pause": true, "screenshot": true}
 		if bug is Dictionary:
 			_bug_opts.merge(bug, true)
@@ -303,18 +373,33 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	session_id = _new_id("s_", 16)  # held in memory only; anonymous mode never writes it down
 	# The first batch goes soon, so a session that crashes early is still seen.
 	_next_flush = Time.get_ticks_msec() + int(minf(2.0, float(_opts.flush_interval)) * 1000.0)
+	if _opts.properties is Dictionary:
+		set_properties(_opts.properties)
+	for g: Array in _early_groups:
+		if g[3]:
+			_apply_group(g[0], g[1], g[2], false)  # a run made before init()
+		else:
+			set_group(g[0], g[1], g[2])
+	_early_groups.clear()
 	if not enabled:
 		_queue.clear()
 		_log("off (debug build without --glitchless, or no intake)")
 		return
+	if role == "server":
+		# Frames timed before init() are a player's numbers: a server sends its ticks instead.
+		_queue = _queue.filter(func(e: Dictionary) -> bool: return not e.type in ["frame_window", "hitch", "pos", "load"])
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	_first_launch = _note_launch()
-	if _privacy != "anonymous":
-		player_id = _load_player_id()  # install and full mode share it (SPEC §4b)
-	elif FileAccess.file_exists(PLAYER_PATH):
-		DirAccess.remove_absolute(PLAYER_PATH)  # left by an install- or full-mode build: anonymous mode keeps no ID
+	if role != "server":
+		_first_launch = _note_launch()
+		if _privacy != "anonymous":
+			player_id = _load_player_id()  # install and full mode share it (SPEC §4b)
+		elif FileAccess.file_exists(PLAYER_PATH):
+			DirAccess.remove_absolute(PLAYER_PATH)  # left by an install- or full-mode build: anonymous mode keeps no ID
 	_load_outbox()
-	_log("on: %s %s %s -> %s (%s, %s%s)" % [_service, _version, _env, _intake, _privacy, _session_type, ", " + Device.distribution() if Device.distribution() != "" else ""])
+	_ask_features()
+	if bool(_opts.network):
+		_watch(get_tree().get_multiplayer())
+	_log("on: %s %s %s -> %s (%s, %s, %s%s)" % [_service, _version, _env, _intake, role, _privacy, _session_type, ", " + Device.distribution() if Device.distribution() != "" else ""])
 
 
 ## Forgets the player ID kept on the device (install and full mode), for a
@@ -325,13 +410,19 @@ func reset_install_id() -> void:
 		DirAccess.remove_absolute(PLAYER_PATH)
 
 
-func level_start(level_id: Variant) -> void:
+## attrs describe this attempt in the game's words, as a track() event's do:
+## {"tier": "pit_80", "party_size": 3}. The level funnel splits by them.
+func level_start(level_id: Variant, attrs: Dictionary = {}) -> void:
 	_close_window(false)  # so a frame window never spans two levels
 	level = str(level_id)
 	_level_started = Time.get_ticks_msec()
 	_level_open = true
 	_left_level = null
-	_push({"type": "level_start"})
+	_net_left_level = null
+	var e := {"type": "level_start"}
+	if not attrs.is_empty():
+		e.attrs = attrs
+	_push(e)
 	_remember("level_start")
 
 
@@ -373,9 +464,10 @@ func _abandon(lvl: Variant, reason: String) -> void:
 
 
 # A game often ends its level as it closes (in _exit_tree, say), after the session
-# ended and Glitchless already sent the abandon: that attempt has its outcome.
+# ended and Glitchless already sent the abandon: that attempt has its outcome. So
+# has one a disconnect ended, until the player reconnects and plays on in it.
 func _outcome_sent(lvl: Variant) -> bool:
-	return _ended and _left_level != null and lvl == _left_level
+	return (_ended and _left_level != null and lvl == _left_level) or (_net_left_level != null and lvl == _net_left_level)
 
 
 ## A death at a place in the game world. The place is sent only when positions
@@ -402,6 +494,250 @@ func track(event: String, what: Variant = null) -> void:
 		attrs = {"what": what}
 	_push({"type": "custom", "name": event, "attrs": sandbox_attrs(event, attrs, _sandbox)})
 	_remember(event)
+	if OS.is_debug_build():
+		_check_stream(event)
+
+
+## A stream of events, too many to track() one by one: shots, hits, kills, gold
+## picked up. Nothing is queued per call: each window (flush_interval seconds,
+## and up to each level_start) adds them up per name and per its words and
+## booleans (up to 4), with its numbers (up to 4) summed as they are passed, and
+## sends one "counts" event. Track a moment, count a stream:
+##   Glitchless.count("kill", {"monster": "elite"})
+##   Glitchless.count("gold", {"source": "loot", "amount": 35})
+##   Glitchless.count("shot", "bow", 3)  # one word is the attribute "what"; n events at once
+func count(event: String, what: Variant = null, n: int = 1) -> void:
+	if (_inited and not enabled) or event == "" or n < 1:
+		return
+	var attrs := {}
+	if what is Dictionary:
+		attrs = what
+	elif what != null:
+		attrs = {"what": what}
+	var group := {}
+	var sums := {}
+	for k: Variant in attrs:
+		var v: Variant = attrs[k]
+		if v is bool:
+			if group.size() < MAX_COUNT_GROUP:
+				group[str(k)] = v
+		elif v is String or v is StringName:
+			if group.size() < MAX_COUNT_GROUP:
+				group[str(k)] = str(v).substr(0, 64)
+		elif v is int or v is float:
+			if sums.size() < MAX_COUNT_SUMS:
+				sums[str(k)] = v
+	var counts: Dictionary = _win.counts
+	var key := _count_key(event, group)
+	if not counts.has(key) and counts.size() >= MAX_COUNTS:
+		# A full window: a new group of a name already counted goes under (other); a new name is dropped.
+		if not counts.values().any(func(c: Dictionary) -> bool: return c.name == event):
+			_win.dropped += mini(n, MAX_COUNT_N)
+			return
+		for k: String in group:
+			group[k] = "(other)"
+		key = _count_key(event, group)
+	var c: Dictionary = counts.get(key, {})
+	if c.is_empty():
+		c = {"name": event, "attrs": group, "n": 0, "first_ts": _now()}
+		counts[key] = c
+	c.n = int(c.n) + mini(n, MAX_COUNT_N)
+	if not sums.is_empty():
+		var s: Dictionary = c.get_or_add("sums", {})
+		for k: String in sums:
+			if s.has(k) or s.size() < MAX_COUNT_SUMS:
+				s[k] = s.get(k, 0) + sums[k]
+
+
+static func _count_key(event: String, group: Dictionary) -> String:
+	var keys := group.keys()
+	keys.sort()
+	var out := event
+	for k: String in keys:
+		out += "\u001f%s=%d:%s" % [k, typeof(group[k]), group[k]]
+	return out
+
+
+# A debug build says once when a name is tracked over 20 times a second: each
+# track() is an event in a queue of 2,000, which a stream would fill in a minute.
+func _check_stream(event: String) -> void:
+	if _warned.has("stream:" + event):
+		return
+	var second := floori(Time.get_ticks_msec() / 1000.0)
+	var r: Array = _stream.get(event, [second, 0])
+	if r[0] != second:
+		r = [second, 0]
+	r[1] += 1
+	_stream[event] = r
+	if r[1] > STREAM_PER_S:
+		_warn("stream:" + event, "\"%s\" was tracked over %d times in a second. Use Glitchless.count(\"%s\", ...) for a stream of events: it sends one count a window instead of an event each time." % [event, STREAM_PER_S, event])
+
+
+## What holds for this session, in the game's words: its mode, the player's
+## rank tier or class, the region of the game's servers. Any dashboard panel
+## can then split by it ($rank) and a page can show only some of it. Set what
+## the game knows as soon as it knows it (after sign-in, at the menu, at
+## matchmaking); null removes one. Values are a word (up to 64 characters), a
+## boolean or a whole number: send bands ("30-39"), not exact levels. Keys that
+## name a person and values shaped like an email, a link, a phone number or an
+## ID are dropped (properties.gd), with a warning in a debug build. Nothing is
+## kept on the device: each launch sets them again.
+func set_property(key: String, value: Variant) -> void:
+	set_properties({key: value})
+
+
+func set_properties(props: Dictionary) -> void:
+	for k: Variant in props:
+		var key := str(k)
+		if props[k] == null:
+			_props.erase(key)
+			continue
+		var c := Properties.check(key, props[k])
+		if c.has("why"):
+			_warn("prop:" + key, "the property \"%s\" was dropped: %s." % [key, c.why])
+		elif not _props.has(key) and _props.size() >= Properties.MAX_KEYS:
+			_warn("props:max", "a session takes at most %d properties: \"%s\" was dropped." % [Properties.MAX_KEYS, key])
+		else:
+			_props[key] = c.value
+
+
+## Marks every event from now on as part of one match, party or run, until the
+## same kind is set again or set to null:
+##   Glitchless.set_group("match", match_id, {"mode": "squads"})  # an ID the game's server made for the match
+##   Glitchless.set_group("party", party_id)  # never a guild, clan or friends list
+##   var run_id := Glitchless.set_group("run")  # Glitchless makes run IDs
+##   Glitchless.set_group("match", null)  # it ended
+## IDs are 8 to 64 of A-Z, a-z, 0-9 and _ . : -. Match and party IDs are sent
+## hashed with the game's service, so they can't be looked up in the game's own
+## logs, and everyone in one match still shares one (hash_group_ids: false
+## sends them as they are). A run ID passed back resumes a run the game saved
+## (install and full mode; anonymous mode gives it a new ID). Returns the ID sent.
+func set_group(kind: String, id: Variant = "", attrs: Dictionary = {}) -> String:
+	if not kind in GROUP_KINDS:
+		_warn("group:" + kind, "set_group takes \"match\", \"party\" or \"run\", not \"%s\"." % kind)
+		return ""
+	if kind == "run" and id is String and id == "":
+		var made := _new_id("r_", 12)
+		if _inited:
+			_apply_group(kind, made, attrs, false)
+		else:
+			_early_groups.append([kind, made, attrs, true])
+		return made
+	if not _inited:
+		# The hash needs the service and a resumed run the privacy mode: both come with init().
+		_early_groups.append([kind, id, attrs, false])
+		return str(id) if kind == "run" and id != null else ""
+	if id == null:
+		if not _groups.has(kind):
+			return ""
+		_close_window(false)
+		_groups.erase(kind)
+		_push({"type": "group", "kind": kind, "id": null})
+		if kind == "match" and role == "server" and bool(_opts.session_per_match):
+			_end_server_session("match_end")
+		return ""
+	var given := str(id)
+	if not is_group_id(given):
+		_warn("group-id:" + kind, "a %s ID is 8 to 64 of A-Z, a-z, 0-9 and _ . : - (\"%s\" was dropped)." % [kind, given.substr(0, 80)])
+		return ""
+	if kind == "run":
+		# A run the game saved and resumes. In anonymous mode nothing may tie two launches together.
+		return _apply_group(kind, given if _privacy != "anonymous" else _new_id("r_", 12), attrs, true)
+	return _apply_group(kind, hash_group_id(_service, given) if bool(_opts.hash_group_ids) else given, attrs, false)
+
+
+func _apply_group(kind: String, sent: String, attrs: Dictionary, resumed: bool) -> String:
+	if _groups.get(kind) == sent and attrs.is_empty():
+		return sent
+	_close_window(false)  # a window belongs to one match
+	_groups[kind] = sent
+	var e := {"type": "group", "kind": kind, "id": sent}
+	if not attrs.is_empty():
+		e.attrs = attrs
+	if resumed:
+		e.resumed = true
+	_push(e)
+	_remember("group:" + kind)
+	return sent
+
+
+static func is_group_id(id: String) -> bool:
+	return RegEx.create_from_string("^[A-Za-z0-9_.:-]{8,64}$").search(id) != null
+
+
+## The match or party ID as sent: h_ and the first 24 hex characters of SHA-1
+## over the game's service (lowercased), ":" and the ID. Every Glitchless SDK
+## hashes it the same way (SHA-1: GameMaker has no SHA-256), so a server and its
+## players, on any engine, send one ID for one match.
+static func hash_group_id(service: String, id: String) -> String:
+	return "h_" + (service.to_lower() + ":" + id).sha1_text().substr(0, 24)
+
+
+## Where the player is in an open world (an MMO region, a metroidvania room),
+## apart from levels: a zone has no start or end. Every event and window carries
+## it as it carries the level, and dashboards split by $zone. null clears it.
+func set_zone(zone_name: Variant) -> void:
+	var z: Variant = str(zone_name).strip_edges().substr(0, 64) if zone_name != null else null
+	if z == "":
+		z = null
+	if z == zone:
+		return
+	# A window never spans two zones, unless the player crosses back and forth within a second.
+	if Time.get_ticks_msec() - int(_win.started_ms) >= 1000:
+		_close_window(false)
+	zone = z
+
+
+## A round trip for a game whose netcode Glitchless can't read itself (a
+## WebSocket game's own ping, Steam Networking Sockets, Nakama...): call it
+## about once a second while connected. loss_pct and jitter_ms are optional.
+func net_sample(rtt_ms: float, loss_pct: Variant = null, jitter_ms: Variant = null) -> void:
+	if not _net_up:
+		_net_connected(_net_transport if _net_transport != "" else "custom")
+	_net_add(maxf(rtt_ms, 0.0), loss_pct, jitter_ms, [null, null], _net_transport, false)
+
+
+## The connection to the game's server dropped, for netcode Glitchless can't
+## read, or to say why when it can ("kicked"): timeout, connection_lost, kicked,
+## server_closed, failed_to_connect or other. With a level open, that attempt
+## ends as an abandon with reason "disconnect" (never a fail). (Object already
+## has a disconnect(), for signals.)
+func net_disconnect(reason: String = "other") -> void:
+	_net_pending = null
+	if not reason in DISCONNECT_REASONS:
+		reason = "other"
+	var now := Time.get_ticks_msec()
+	var was_up := _net_up
+	_net_up = false
+	if _mp != null and NetInfo.connected(_mp.multiplayer_peer):
+		_net_dead_peer = _mp.multiplayer_peer.get_instance_id()  # still says connected for a moment
+	if _net_down_at == 0:
+		_net_down_at = now
+	if _net_disconnects < MAX_DISCONNECTS:
+		_net_disconnects += 1
+		var last := _net_summary()
+		_push({
+			"type": "disconnect",
+			"reason": reason,
+			"connected_s": snappedf((now - _net_up_at) / 1000.0, 0.1) if was_up and _net_up_at > 0 else 0.0,
+			"rtt_p95": last.get("rtt_p95"),
+			"loss_pct": last.get("loss_pct"),
+		})
+		_remember("disconnect:" + reason)
+	if _level_open:
+		_net_left_level = level
+		_abandon(level, "disconnect")
+
+
+## Connected again after net_disconnect(), for netcode Glitchless can't read.
+func net_reconnect() -> void:
+	_net_connected(_net_transport if _net_transport != "" else "custom")
+
+
+## The players connected to this server, for netcode other than Godot's
+## MultiplayerAPI (which Glitchless counts itself). -1 goes back to counting.
+func set_players(n: int) -> void:
+	_players_set = n
 
 
 ## A purchase (an event named purchase, or any with a currency) made in a
@@ -498,7 +834,7 @@ func flush() -> void:
 	if not _session_start_sent:
 		_queue.push_front(_session_start_event())
 		_session_start_sent = true
-		if _first_frame_ms > 0 and not _load_sent:
+		if _first_frame_ms > 0 and not _load_sent and role != "server":
 			_load_sent = true
 			_queue.append({"type": "load", "ts": _first_frame_at, "level": level, "ttff_ms": _first_frame_ms, "assets": null, "first_launch": _first_launch})
 	if not sampled:
@@ -521,6 +857,9 @@ func _process(_delta: float) -> void:
 	# would hide the very stutters this is here to find.
 	var now := Time.get_ticks_usec()
 	_head_us = now
+	if _tick_at > 0:
+		_end_tick(now)  # this frame's last physics tick, its physics step included
+		_tick_at = 0
 	_frame_id += 1
 	_read_last_frame()
 	if _last_us > 0 and _untimed == 0:
@@ -536,6 +875,11 @@ func _process(_delta: float) -> void:
 	if _frame_id % 30 == 0:
 		_sample_engine()
 		_check_screen()
+	if ms >= _next_net and _inited and enabled and bool(_opts.network):
+		_next_net = ms + NET_SAMPLE_MS
+		_sample_net()
+	if role == "server" and _inited and enabled and _now() - _started_at >= SERVER_SESSION_MS:
+		_end_server_session("max_duration")
 	if ms >= _next_flush:
 		flush()
 	if _inited and enabled and _in_flight < 0 and not _outbox.is_empty() and ms >= _retry_at:
@@ -544,6 +888,22 @@ func _process(_delta: float) -> void:
 
 func _physics_process(_delta: float) -> void:
 	_physics_head_us = Time.get_ticks_usec()
+	if _tick_at > 0:
+		_end_tick(_physics_head_us)  # the tick before this one ran in the same frame
+	_tick_at = _physics_head_us
+
+
+# One physics tick, timed against Engine.physics_ticks_per_second: what a
+# dedicated server's numbers are (server_window). Player builds count them too,
+# but send frame windows instead.
+func _end_tick(now_us: int) -> void:
+	var ms := (now_us - _tick_at) / 1000.0
+	var w := _win
+	w.ticks += 1
+	w.tick_sketch.add(ms)
+	w.tick_max = maxf(w.tick_max, ms)
+	if ms > 1000.0 / maxf(Engine.physics_ticks_per_second, 1.0):
+		w.late += 1
 
 
 func _on_tail_process() -> void:
@@ -680,7 +1040,7 @@ func _on_frame(f: Dictionary) -> void:
 	if hitch:
 		w.hitches += 1
 		stats.hitches += 1
-		_pending_hitches.append({
+		_pending_hitches.append(_stamp({
 			"type": "hitch",
 			"ts": _now(),
 			"level": level,
@@ -699,7 +1059,7 @@ func _on_frame(f: Dictionary) -> void:
 			"gpu_ms": snappedf(f.gpu, 0.1) if f.gpu > 0.0 else null,
 			"pipeline_compiles": f.pipelines,
 			"nodes_added": f.nodes_added,
-		})
+		}))
 
 
 # Likely causes of one long frame, from what that frame measured.
@@ -733,6 +1093,10 @@ func _new_window() -> Dictionary:
 		"started_at": _now(), "started_ms": Time.get_ticks_msec(), "frames": 0, "sketch": Sketch.new(), "max": 0.0,
 		"slow": 0, "jank": 0, "hitches": 0, "frozen": 0, "calls": 0, "calls_max": 0, "tris": 0,
 		"render": 0.0, "gpu": 0.0, "process": 0.0, "physics": 0.0, "ctx": {},
+		"counts": {}, "dropped": 0,  # count(): name and group -> entry
+		"net": {},  # the connection's samples (_net_add); empty while not connected
+		"ticks": 0, "tick_sketch": Sketch.new(), "tick_max": 0.0, "late": 0,  # physics ticks (server_window)
+		"players_max": 0, "peer_rtts": [], "srv_in": null, "srv_out": null,
 	}
 
 
@@ -743,11 +1107,18 @@ func _close_window(fresh: bool = true) -> void:
 		_sample_engine()
 	var w := _win
 	_win = _new_window()
-	if w.frames > 0:
-		var secs := maxf((Time.get_ticks_msec() - w.started_ms) / 1000.0, 0.001)
+	var secs := maxf((Time.get_ticks_msec() - w.started_ms) / 1000.0, 0.001)
+	var net: Variant = _net_json(w.net, secs)
+	if role == "server":
+		# A dedicated server's windows are its ticks; its frames, hitches and positions aren't sent.
+		if w.ticks > 0:
+			_queue_event(_stamp(_server_window(w, secs)))
+		_pending_hitches.clear()
+		_pos_buffer = []
+	elif w.frames > 0:
 		var n: int = w.frames
 		var s: Sketch = w.sketch
-		_queue_event({
+		var fw := {
 			"type": "frame_window",
 			"ts": w.started_at,
 			"level": level,
@@ -785,12 +1156,15 @@ func _close_window(fresh: bool = true) -> void:
 			"screen": _screen,
 			"window": _window,
 			"ctx": w.ctx,
-		})
+		}
+		if net != null:
+			fw.net = net  # only while connected
+		_queue_event(_stamp(fw))
 		_recent_windows.append({"ts": w.started_at, "level": level, "fps": snappedf(n / secs, 0.1), "p95": _round(s.quantile(0.95), 0.01)})
 		if _recent_windows.size() > 12:
 			_recent_windows.pop_front()
 	if not _pos_buffer.is_empty():
-		_queue_event({"type": "pos", "ts": _pos_buffer[0][0], "level": level, "pts": _pos_buffer})
+		_queue_event(_stamp({"type": "pos", "ts": _pos_buffer[0][0], "level": level, "pts": _pos_buffer}))
 		_pos_buffer = []
 	_pending_hitches.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.duration_ms > b.duration_ms)
 	for h in _pending_hitches.slice(0, MAX_HITCH_EVENTS_PER_WINDOW):
@@ -799,6 +1173,105 @@ func _close_window(fresh: bool = true) -> void:
 	if _recent_hitches.size() > BUG_RECENT:
 		_recent_hitches = _recent_hitches.slice(_recent_hitches.size() - BUG_RECENT)
 	_pending_hitches.clear()
+	_close_counts(w, secs)
+	_send_props_change()
+
+
+# The window's count() entries as one event (SPEC §2 counts). A server without
+# counters would drop it, so then nothing is sent and the game is told once.
+func _close_counts(w: Dictionary, secs: float) -> void:
+	if w.counts.is_empty() and w.dropped == 0:
+		return
+	if _lacks("counts"):
+		_warn("feature:counts", "this Glitchless server doesn't take count() yet, so counters aren't sent. Update the server.", false)
+		return
+	_queue_event(_stamp({
+		"type": "counts", "ts": w.started_at, "level": level, "duration_s": snappedf(secs, 0.01), "dropped": w.dropped,
+		"counts": w.counts.values(),
+	}))
+
+
+# Properties that changed since session_start or the last props event: one
+# event a window at most, with each key's last value and null for one removed.
+func _send_props_change() -> void:
+	if not _session_start_sent:
+		return  # session_start carries them
+	var diff := {}
+	for k: String in _props:
+		if not _props_sent.has(k) or typeof(_props_sent[k]) != typeof(_props[k]) or _props_sent[k] != _props[k]:
+			diff[k] = _props[k]
+	for k: String in _props_sent:
+		if not _props.has(k):
+			diff[k] = null
+	if diff.is_empty():
+		return
+	_props_sent = _props.duplicate()
+	_push({"type": "props", "props": diff})
+
+
+# SPEC §2 server_window: the ticks against their budget (1000 / the physics tick
+# rate), the players connected and the rate the server reached.
+func _server_window(w: Dictionary, secs: float) -> Dictionary:
+	var s: Sketch = w.tick_sketch
+	var players := _players()
+	var usage := Device.process_usage()
+	var cpu: Variant = null
+	if usage.has("cpu_s"):
+		if _cpu_s >= 0.0:
+			cpu = snappedf((usage.cpu_s - _cpu_s) / secs * 100.0, 0.1)  # of one core, as the other SDKs count it
+		_cpu_s = usage.cpu_s
+	var rtts: Array[float] = []
+	rtts.assign(w.peer_rtts)
+	return {
+		"type": "server_window",
+		"ts": w.started_at,
+		"level": level,
+		"duration_s": snappedf(secs, 0.01),
+		"ticks": w.ticks,
+		"tick_hz": snappedf(w.ticks / secs, 0.1),
+		"budget_ms": snappedf(1000.0 / maxf(Engine.physics_ticks_per_second, 1.0), 0.01),
+		"tick": s.to_json(),
+		"tick_p50": _round(s.quantile(0.5), 0.01),
+		"tick_p95": _round(s.quantile(0.95), 0.01),
+		"tick_max": snappedf(w.tick_max, 0.01),
+		"late": w.late,
+		"players": players,
+		"players_max": maxi(w.players_max, players),
+		"net_objects": null,
+		"in_kbps": _kbps(w.srv_in, secs),
+		"out_kbps": _kbps(w.srv_out, secs),
+		"cpu_pct": cpu,
+		"mem_mb": usage.get("mem_mb"),
+		"rtt_p95": _round(_quantile(rtts, 0.95), 0.1) if not rtts.is_empty() else null,
+		"ctx": w.ctx,
+	}
+
+
+# A window's network samples as frame_window.net, or null when it was never connected.
+func _net_json(n: Dictionary, secs: float) -> Variant:
+	if n.is_empty():
+		return null
+	var s: Sketch = n.sketch
+	var out := {
+		"rtt": s.to_json() if s.n > 0 else null,
+		"rtt_p50": _round(s.quantile(0.5), 0.1),
+		"rtt_p95": _round(s.quantile(0.95), 0.1),
+		"rtt_max": snappedf(s.max_v, 0.1) if s.n > 0 else null,
+		"jitter_ms": snappedf(n.jitter / n.jitter_n, 0.1) if n.jitter_n > 0 else null,
+		"loss_pct": snappedf(n.loss / n.loss_n, 0.01) if n.loss_n > 0 else null,
+		"in_kbps": _kbps(n.rx, secs),
+		"out_kbps": _kbps(n.tx, secs),
+		"samples": s.n,
+		"transport": n.transport,
+		"link": null,  # Godot can't tell Wi-Fi from mobile data
+		"host": n.host,
+	}
+	_net_last = {"rtt_p95": out.rtt_p95, "loss_pct": out.loss_pct}
+	return out
+
+
+static func _kbps(bytes: Variant, secs: float) -> Variant:
+	return snappedf(float(bytes) * 8.0 / 1000.0 / secs, 0.1) if bytes != null else null
 
 
 # Engine counts: objects, nodes and orphan nodes (nodes out of the tree that
@@ -859,6 +1332,177 @@ func _last_frames(count: int) -> Array[float]:
 func _set_measure_render(on: bool) -> void:
 	_measure_render = on
 	RenderingServer.viewport_set_measure_render_time(_vp, on)
+
+
+# ───────────────────────────── network ─────────────────────────────
+
+# Once a second: the MultiplayerAPI's peer (net.gd). A client samples its round
+# trip to the server, a listen server's host says it hosts, and a dedicated
+# server counts its players and their round trips.
+func _sample_net() -> void:
+	var mp := get_tree().get_multiplayer()
+	if mp != _mp:
+		_watch(mp)
+	var peer: MultiplayerPeer = mp.multiplayer_peer if mp != null else null
+	if not NetInfo.connected(peer):
+		return
+	var t := NetInfo.transport(peer)
+	var bytes := NetInfo.take_bytes(peer)
+	if role == "server":
+		_win.players_max = maxi(_win.players_max, _players())
+		_win.peer_rtts.append_array(NetInfo.peer_rtts(peer, mp.get_peers()))
+		if bytes[0] != null:
+			_win.srv_out = int(_win.srv_out if _win.srv_out != null else 0) + int(bytes[0])
+			_win.srv_in = int(_win.srv_in if _win.srv_in != null else 0) + int(bytes[1])
+		return
+	if mp.is_server():
+		_net_add(0.0, 0.0, 0.0, bytes, t, true)  # a listen server's host: no round trip of its own
+		return
+	if peer.get_instance_id() == _net_dead_peer:
+		return  # a disconnect the game reported, before the transport noticed
+	if not _net_up:
+		_net_connected(t)  # connected before Glitchless was watching
+	_net_ws = NetInfo.websocket(peer)
+	var s := NetInfo.client_sample(peer)
+	_net_add(s.rtt, s.loss_pct, s.jitter, bytes, t, false)
+
+
+func _watch(mp: MultiplayerAPI) -> void:
+	_mp = mp
+	if mp == null:
+		return
+	for s: Array in [
+		["connected_to_server", _on_net_connected], ["connection_failed", _on_net_failed],
+		["server_disconnected", _on_net_server_gone], ["peer_disconnected", _on_net_peer_gone],
+	]:
+		if not mp.is_connected(s[0], s[1]):
+			mp.connect(s[0], s[1])
+
+
+func _net_add(rtt: Variant, loss: Variant, jitter: Variant, bytes: Array, t: String, host: bool) -> void:
+	var n: Dictionary = _win.net
+	if n.is_empty():
+		n.merge({"sketch": Sketch.new(NET_ALPHA), "loss": 0.0, "loss_n": 0, "jitter": 0.0, "jitter_n": 0, "rx": null, "tx": null})
+	if rtt != null:
+		(n.sketch as Sketch).add(float(rtt))
+	if loss != null:
+		n.loss += float(loss)
+		n.loss_n += 1
+	if jitter != null:
+		n.jitter += float(jitter)
+		n.jitter_n += 1
+	if bytes[0] != null:
+		n.tx = int(n.tx if n.tx != null else 0) + int(bytes[0])
+		n.rx = int(n.rx if n.rx != null else 0) + int(bytes[1])
+	n.transport = t
+	n.host = host
+
+
+# The round trip and loss a disconnect carries: this window's so far, else the last one's.
+func _net_summary() -> Dictionary:
+	var n: Dictionary = _win.net
+	if not n.is_empty() and (n.sketch as Sketch).n > 0:
+		return {"rtt_p95": _round((n.sketch as Sketch).quantile(0.95), 0.1), "loss_pct": snappedf(n.loss / n.loss_n, 0.01) if n.loss_n > 0 else null}
+	return _net_last
+
+
+func _on_net_connected() -> void:
+	if _mp != null:
+		_net_connected(NetInfo.transport(_mp.multiplayer_peer))
+
+
+# Connected to the game's server. Within RECONNECT_S of a disconnect it is a
+# reconnect, and a player back in the level they dropped out of plays on in it:
+# the server takes the abandon back once anything else happens on it (SPEC §2).
+func _net_connected(t: String) -> void:
+	_net_dead_peer = 0
+	if _net_up:
+		return
+	var now := Time.get_ticks_msec()
+	_net_up = true
+	_net_up_at = now
+	_net_transport = t
+	if _net_down_at > 0:
+		var after := (now - _net_down_at) / 1000.0
+		_net_down_at = 0
+		if after <= RECONNECT_S:
+			_push({"type": "reconnect", "after_s": snappedf(after, 0.1)})
+			_remember("reconnect")
+			if _net_left_level != null and _net_left_level == level:
+				_level_open = true
+	_net_left_level = null
+
+
+# The server went (peer 1 disconnected). Read now, while the ENet host still
+# counts it, whether anything came since the last sample: a server that closes
+# the connection sends a goodbye that arrives with the drop, and one that went
+# quiet long enough to time out (ENet's least is a second) sent nothing since.
+func _on_net_peer_gone(id: int) -> void:
+	if id != NetInfo.TARGET_SERVER or _mp == null or _mp.is_server() or not _net_up:
+		return
+	_net_server_left = true
+	var bytes := NetInfo.take_bytes(_mp.multiplayer_peer)
+	_net_goodbye = bytes[1] != null and bytes[1] > 0
+
+
+func _on_net_server_gone() -> void:
+	if not _net_up:
+		return  # already recorded by net_disconnect(), or never connected
+	if not _net_server_left:
+		# No peer_disconnected for the server first: the game closed the connection itself. Leaving is no disconnect.
+		_net_up = false
+		_net_down_at = 0
+		return
+	_net_server_left = false
+	_net_pending = ""
+	_net_record.call_deferred()
+
+
+func _on_net_failed() -> void:
+	_net_pending = "failed_to_connect"
+	_net_record.call_deferred()
+
+
+# At the end of the frame, after the game's own handlers of the same signal, so
+# a game that says why itself (net_disconnect("kicked")) is heard instead.
+func _net_record() -> void:
+	if _net_pending == null:
+		return
+	var reason: String = _net_pending
+	if reason == "":
+		var code: int = int(_net_ws.call("get_close_code")) if _net_ws != null else -1
+		reason = NetInfo.lost_reason(_net_transport, _net_goodbye, code)
+		_log("%s lost (%s at the drop, close code %d): %s" % [_net_transport, "data" if _net_goodbye else "nothing", code, reason])
+	net_disconnect(reason)
+
+
+func _players() -> int:
+	if _players_set >= 0:
+		return _players_set
+	if _mp != null and NetInfo.connected(_mp.multiplayer_peer) and _mp.is_server():
+		return _mp.get_peers().size()
+	return 0
+
+
+# A dedicated server, unless the game says otherwise: Godot's dedicated-server
+# export, --glitchless-server, or a bare --server (Godot's docs suggest that flag
+# for starting a game as its server).
+func _decide_role() -> String:
+	var r := str(_opts.role)
+	if r == "server" or r == "player":
+		return r
+	if OS.has_feature("dedicated_server") or _has_flag("--glitchless-server") or "--server" in _args():
+		return "server"
+	return "player"
+
+
+# A server session lasts as long as its process, cut every 6 hours, or one
+# match with session_per_match.
+func _end_server_session(reason: String) -> void:
+	if not (_inited and enabled):
+		return
+	_push({"type": "session_end", "reason": reason, "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
+	_new_session()
 
 
 # ───────────────────────────── measure ─────────────────────────────
@@ -1098,6 +1742,10 @@ func _new_session() -> void:
 	_recent.clear()
 	_history.clear()
 	_error_counts.clear()
+	_net_disconnects = 0
+	_props_sent = {}  # the new session_start carries the properties that still hold
+	for kind: String in _groups:  # and the groups still going
+		_push({"type": "group", "kind": kind, "id": _groups[kind]})
 
 
 # The session ends with a level still going: the player left it (SPEC §2 level_abandon).
@@ -1159,7 +1807,7 @@ func _push(e: Dictionary) -> void:
 		e.ts = _now()
 	if not e.has("level"):
 		e.level = level
-	_queue_event(e)
+	_queue_event(_stamp(e))
 	if e.type != "session_end":
 		_history.append(_slim(e))
 		if _history.size() > BUG_RECENT:
@@ -1170,6 +1818,28 @@ func _queue_event(e: Dictionary) -> void:
 	_queue.append(e)
 	if _queue.size() > MAX_QUEUE:
 		_queue = _queue.slice(_queue.size() - MAX_QUEUE)
+
+
+# The zone and the groups go on every event and window, as the level does.
+func _stamp(e: Dictionary) -> Dictionary:
+	if zone != null and not e.has("zone"):
+		e.zone = zone
+	for kind: String in _groups:
+		if not e.has(kind):
+			e[kind] = _groups[kind]
+	return e
+
+
+# Once each: a game's mistake in a debug build, or (debug_only false) what the
+# developer of any build must hear, such as a server too old for what is sent.
+func _warn(key: String, msg: String, debug_only: bool = true) -> void:
+	if _warned.has(key) or (debug_only and not OS.is_debug_build()):
+		return
+	_warned[key] = true
+	if OS.is_debug_build():
+		push_warning("Glitchless: " + msg)  # raised in the addon, so never reported back as an error
+	else:
+		printerr("Glitchless: " + msg)
 
 
 func _remember(event_name: String) -> void:
@@ -1197,7 +1867,7 @@ func _recent_names(count: int) -> Array[String]:
 func _session_start_event() -> Dictionary:
 	var device := Device.info(_full)
 	SteamInfo.add_to(device, _steam_facts())
-	return {
+	var e := {
 		"type": "session_start",
 		"ts": _started_at,
 		"level": null,
@@ -1207,6 +1877,19 @@ func _session_start_event() -> Dictionary:
 		"page": null,
 		"nav_ms": null,
 	}
+	_props_sent = _props.duplicate()
+	if not _props.is_empty():
+		e.props = _props.duplicate()
+	if role == "server":
+		var region := str(_opts.region).strip_edges().substr(0, 64)
+		e.server = {
+			"tick_hz": Engine.physics_ticks_per_second,
+			"max_players": int(_opts.max_players) if int(_opts.max_players) > 0 else null,
+			"build": "dedicated" if OS.has_feature("dedicated_server") else "headless" if DisplayServer.get_name() == "headless" else null,
+			"region": region if region != "" and Properties.shape(region) == "" else null,
+			"host": Device.server_host(),
+		}
+	return e
 
 
 ## The game's Steam facts (steam.gd), read until GodotSteam answers: a game may
@@ -1278,8 +1961,9 @@ func _send_report(snap: Dictionary, note: String) -> Dictionary:
 	e.recent = snap.recent
 	e.frames = snap.frames
 	e.device = Device.info(_full)
+	_stamp(e)
 	_remember("bug_report")
-	if not _inited or not enabled:
+	if not _inited or not enabled or role == "server":
 		return {"sent": false, "reason": "offline"}
 	flush()  # the session's own events first, so the report's session is there when someone opens it
 	var b := _batch([e])
@@ -1370,7 +2054,7 @@ func _batch(events: Array[Dictionary]) -> Dictionary:
 
 
 func _body(b: Dictionary) -> String:
-	return JSON.stringify({
+	var body := {
 		"service": b.service,
 		"env": b.env,
 		"version": b.version,
@@ -1379,7 +2063,60 @@ func _body(b: Dictionary) -> String:
 		"sdk": SDK,
 		"batch_id": b.bid,
 		"events": b.events,
-	})
+	}
+	if role == "server":
+		body.role = "server"  # intake files it under the game's companion service, <service>.server
+	return JSON.stringify(body)
+
+
+# What the server takes (GET /v1/health "features"). An older one drops counts,
+# and must never get a dedicated server's sessions, which would land among
+# players'. Asked when init() runs, and again until it answers.
+func _ask_features() -> void:
+	if _asking_features or _intake == "" or not is_inside_tree():
+		return
+	_asking_features = true
+	var http := HTTPRequest.new()
+	http.timeout = 10.0
+	add_child(http)
+	var answer: Array = []
+	if http.request(_intake + "/v1/health") == OK:
+		answer = await http.request_completed
+	http.queue_free()
+	_asking_features = false
+	if answer.is_empty() or answer[0] != HTTPRequest.RESULT_SUCCESS or answer[1] != 200:
+		return
+	var data: Variant = JSON.parse_string((answer[3] as PackedByteArray).get_string_from_utf8())
+	var list: Variant = data.get("features") if data is Dictionary else null
+	var features := {}
+	if list is Array:
+		for f: Variant in list:
+			features[str(f)] = true
+	elif list is Dictionary:
+		for k: Variant in list:
+			if list[k]:
+				features[str(k)] = true
+	_features = features
+	_log("the server takes: %s" % ", ".join(features.keys()))
+	if role == "server" and not features.has("server_mode"):
+		_warn("feature:server_mode", "this Glitchless server doesn't take dedicated servers' sessions yet, so this server sends nothing. Update the server.", false)
+		enabled = false
+		_queue.clear()
+		_outbox.clear()
+		if FileAccess.file_exists(_outbox_path()):
+			DirAccess.remove_absolute(_outbox_path())
+	elif role == "server":
+		_retry_at = 0
+		_send_next()
+
+
+func _lacks(feature: String) -> bool:
+	return _features != null and not _features.has(feature)
+
+
+# A dedicated server sends nothing until the server says it takes server sessions.
+func _may_send() -> bool:
+	return role != "server" or (_features != null and _features.has("server_mode"))
 
 
 func _intake_url() -> String:
@@ -1388,6 +2125,11 @@ func _intake_url() -> String:
 
 func _send_next() -> void:
 	if _in_flight >= 0 or _outbox.is_empty() or Time.get_ticks_msec() < _retry_at:
+		return
+	if not _may_send():
+		if _features == null and not _asking_features:
+			_retry_at = Time.get_ticks_msec() + 15000  # ask again in a while
+			_ask_features()
 		return
 	var b: Dictionary = {}
 	for x: Dictionary in _outbox:
@@ -1415,6 +2157,8 @@ func _on_sent(result: int, code: int, _headers: PackedStringArray, _body_bytes: 
 		stats.sent += n
 		stats.last_status = "ok"
 		_backoff = 0.0
+		if _features == null:
+			_ask_features()  # the server is reachable now
 	elif result == HTTPRequest.RESULT_SUCCESS and code >= 400 and code < 500 and code != 408 and code != 429:
 		stats.failed += n  # the server turned it away; sending it again would only fail again
 		stats.last_status = "rejected %d" % code
@@ -1446,7 +2190,7 @@ func _outbox_index(id: int) -> int:
 # blocking for at most budget_ms. HTTPRequest cannot: it needs frames, and
 # there are no more. Whatever is not sent stays saved for the next launch.
 func _send_now(budget_ms: int) -> void:
-	if _outbox.is_empty() or not sampled or OS.has_feature("web"):
+	if _outbox.is_empty() or not sampled or OS.has_feature("web") or not _may_send():
 		return
 	if _in_flight >= 0:
 		_http.cancel_request()  # it needs frames to finish; send it here instead
@@ -1529,22 +2273,28 @@ func _save_outbox() -> void:
 			saved.pid = b.pid
 		out.append(saved)
 	if out.is_empty():
-		if FileAccess.file_exists(OUTBOX_PATH):
-			DirAccess.remove_absolute(OUTBOX_PATH)
+		if FileAccess.file_exists(_outbox_path()):
+			DirAccess.remove_absolute(_outbox_path())
 		return
-	var tmp := OUTBOX_PATH + ".tmp"
+	var tmp := _outbox_path() + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return
 	f.store_string(JSON.stringify({"v": 1, "batches": out}))
 	f.close()
-	DirAccess.rename_absolute(tmp, OUTBOX_PATH)
+	DirAccess.rename_absolute(tmp, _outbox_path())
+
+
+# A dedicated server keeps its own, so a player build of the same project on the
+# same machine never sends a server's batches as a player's (or the other way).
+func _outbox_path() -> String:
+	return SERVER_OUTBOX_PATH if role == "server" else OUTBOX_PATH
 
 
 func _load_outbox() -> void:
-	if not FileAccess.file_exists(OUTBOX_PATH):
+	if not FileAccess.file_exists(_outbox_path()):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(OUTBOX_PATH))
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(_outbox_path()))
 	if not data is Dictionary or not data.get("batches") is Array:
 		return
 	var oldest := _now() - MAX_OUTBOX_AGE_MS

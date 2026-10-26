@@ -15,7 +15,7 @@ person approves a code in the dashboard) or reads a key from the environment, so
 pasted snippet.
 
 <!-- prompt:start -->
-Add Glitchless to this game. Glitchless shows how the game runs and plays for real players: stutters and what causes them, crashes and errors, the game's own moments (modes, rounds, levels, purchases), where players get stuck or quit, who comes back, and bug reports players send. Its MCP server lets you, the coding agent, read that data, fix what players hit and check that the fix worked.
+Add Glitchless to this game. Glitchless shows how the game runs and plays for real players: stutters and what causes them, crashes and errors, the game's own moments (modes, rounds, levels, purchases), where players get stuck or quit, who comes back, lag and dropped players in an online game, and bug reports players send. Its MCP server lets you, the coding agent, read that data, fix what players hit and check that the fix worked.
 
 1. Get the Glitchless agent kit, outside this project so it never gets committed:
    git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
@@ -30,6 +30,8 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
    If the game already reports its own analytics or counters, list them for me and send the same moments to Glitchless with track(), under the same names. Remove the old reporting only when I say so.
    If the game sells anything, send each purchase as track('purchase', { amount, currency, item }), so the dashboard can show revenue and conversion.
    Ask me whether players should be able to send bug reports from inside the game (a hotkey or a button, with a note and a screenshot). If yes, turn them on as the skill describes; the note is whatever the player types, so it needs a line in the privacy policy too.
+   If players differ in ways worth comparing (rank, class, region, mode, a graphics preset), set those as session properties as the skill describes: bands and the game's own words, never a name or an ID. They're sent in every privacy mode, so they need a line in the privacy policy.
+   For a multiplayer game, also send its matches, ping and disconnects as the skill describes: the Unity, Godot and Unreal SDKs read their netcode by themselves, and a web or GameMaker game passes its ping. If it has dedicated or authoritative servers (a Node server on ws, Socket.IO or Colyseus, or a Unity, Godot or Unreal dedicated-server build), run the SDK in server mode there too, so the servers' tick time, players and crashes show next to the players'. Server mode sends nothing about players.
    For a web game with a production build (Vite or another bundler), also add the source map upload the skill describes (glitchless-sourcemaps), so errors from the minified build show the real file and line. It uploads with a secret key that can upload source maps, read from GLITCHLESS_API_KEY at build time; ask me for one. Skip this while the game sends to a local server.
 
 3. Add two MCP servers to your own MCP settings, in whatever way your tool adds them. For example, `claude mcp add` in Claude Code, ~/.codex/config.toml in Codex, or .cursor/mcp.json in Cursor.
@@ -44,7 +46,7 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
 
 6. Give the game its own dashboard: follow ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my players (where they get stuck, which modes they play, whether they come back, what they buy), add the events that answer it, then save pages that fit this game with the glitchless_set_dashboard tool (with game set to this game's name if you're signed in to a workspace).
 
-7. Tell me what you changed, file by file, the events you track, and anything you weren't sure about. If I use Glitchless Cloud, also tell me I can turn on alerts (Discord, Slack or email) in Settings → Alerts, and that you can make a read-only link to any board with glitchless_share_board, for a dev log or a "Live stats" button. On my own server, alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
+7. Tell me what you changed, file by file, the events you track, the properties you set, and anything you weren't sure about. If I use Glitchless Cloud, also tell me I can turn on alerts (Discord, Slack or email) in Settings → Alerts, and that you can make a read-only link to any board with glitchless_share_board, for a dev log or a "Live stats" button. On my own server, alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
 <!-- prompt:end -->
 
 ## Notes for whoever maintains this

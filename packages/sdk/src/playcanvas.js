@@ -38,10 +38,10 @@ export function instrumentPlayCanvas(gd, { app, pc, levels = 'auto', gauges = tr
   // A level call from the game itself switches scene levels off: the game knows its levels better. The frames that
   // build and first draw the level are its load, not play.
   const levelStart = gd.levelStart.bind(gd);
-  gd.levelStart = (id) => {
+  gd.levelStart = (id, attrs) => {
     manualLevels = true;
     frame.sceneChanged = sceneChanged = true;
-    return levelStart(id);
+    return levelStart(id, attrs);
   };
 
   const levelOf = (name) => {

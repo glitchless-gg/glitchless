@@ -91,6 +91,18 @@ public:
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
 	bool bPauseForBugReport = true;
 
+	/** Send match and party IDs hashed (SHA-1 with the service as the salt), so they can't be looked up as they are. Off sends them as your server made them, to match them against its logs. */
+	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
+	bool bHashGroupIds = true;
+
+	/** A dedicated server's region in your own words (eu-west), for boards that split ping and ticks by region. -glitchless-region= sets it for one server. */
+	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
+	FString ServerRegion;
+
+	/** A dedicated server that hosts one match at a time: a session per match, ended when Clear Group (Match) is called. Off: a session lasts as long as the server, cut every 6 hours. */
+	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
+	bool bServerSessionPerMatch = false;
+
 	/** Log each batch as it is sent (LogGlitchless). -glitchless-debug does the same for one run. */
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless|Advanced", AdvancedDisplay)
 	bool bDebug = false;

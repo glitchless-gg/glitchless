@@ -1,7 +1,19 @@
 using System;
+using System.Collections.Generic;
 
 namespace GlitchlessSdk
 {
+    public enum GlitchlessRole
+    {
+        /// <summary>The default: a Dedicated Server build (UNITY_SERVER) or a player run with --glitchless-server is a
+        /// server, anything else a player.</summary>
+        Auto = 0,
+        Player = 1,
+        /// <summary>A game server: it reports as the game's companion service, `&lt;game&gt;.server`, with its tick time and
+        /// players connected, and never counts as a player (SPEC §5b).</summary>
+        Server = 2,
+    }
+
     public enum Privacy
     {
         /// <summary>The default: no player ID, coarse device facts, no positions unless Positions is set.</summary>
@@ -61,6 +73,27 @@ namespace GlitchlessSdk
         /// <summary>Players send bug reports from a form in the game: new BugReportOptions() adds a hotkey (F8) that
         /// opens it. Null: no hotkey (Glitchless.ReportBug() and Glitchless.OpenBugReport() still work).</summary>
         public BugReportOptions BugReports;
+        /// <summary>What holds for the session, in the game's words: the mode, the player's rank tier or class, the
+        /// region of the game's servers. Sent with the session in every mode; Glitchless.SetProperties changes them
+        /// later. Keys like email or user_id and values that look like an ID, an email address or a link are dropped
+        /// (PRIVACY.md, Properties).</summary>
+        public Dictionary<string, object> Properties;
+        /// <summary>Match and party IDs (Glitchless.SetGroup) are hashed with the service as the salt before they are
+        /// sent, so they can't be looked up in the game's own match logs. False sends them as they are, to match them
+        /// against your own server's logs.</summary>
+        public bool HashGroupIds = true;
+        /// <summary>Read round trips and disconnects from the game's netcode (Netcode for GameObjects, Mirror), found
+        /// at run time.</summary>
+        public bool Netcode = true;
+        /// <summary>Player or server. Auto: a Dedicated Server build or --glitchless-server is a server.</summary>
+        public GlitchlessRole Role = GlitchlessRole.Auto;
+        /// <summary>Server mode: where the server runs, in the game's own words ("eu-west"). Never its address.</summary>
+        public string ServerRegion = "";
+        /// <summary>Server mode: the most players a server takes. 0: Mirror's maxConnections when the game uses Mirror.</summary>
+        public int MaxPlayers;
+        /// <summary>Server mode: each match (Glitchless.SetGroup("match", id)) starts a session of its own, for a server
+        /// that hosts one match at a time. Otherwise a server session lasts as long as the process, cut every 6 hours.</summary>
+        public bool SessionPerMatch;
     }
 
     /// <summary>Somewhere to keep the player ID by name ("player_id"), for a platform without a folder of its own: the

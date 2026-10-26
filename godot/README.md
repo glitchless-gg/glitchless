@@ -3,7 +3,7 @@
 - [`addons/glitchless`](addons/glitchless): the SDK. Copy this folder into a game. Read its [README](addons/glitchless/README.md), what it sends in [PRIVACY.md](addons/glitchless/PRIVACY.md), and how to move over from `Metrics.count` in [PORTING.md](addons/glitchless/PORTING.md).
 - [`demo`](demo): a tiny game with planted problems, so Glitchless has something to find: a `push_error` with a device path, a stutter, an orphan-node leak and a script error. It takes `--autoplay --seed=N` like Linebreakers and Starlift do.
 - [`test`](test):
-  - `e2e.mjs` plays the demo against a fresh local Glitchless server and checks the results through `/v1/query`.
+  - `e2e.mjs` plays the demo against a fresh local Glitchless server and checks the results through `/v1/query`, then plays `net/net_game.tscn`, a small ENet game, as a dedicated server (`--server`) and a client against a fake intake, for counters, properties, groups, zones, network quality, disconnects and server mode.
   - `sketch_fixture.gd` writes the fixture behind `server/test/godot.test.js`.
 
 This folder is itself a Godot 4.7 project (Mobile renderer).

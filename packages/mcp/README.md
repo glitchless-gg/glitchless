@@ -97,9 +97,9 @@ above go in its environment.
 | `glitchless_overview` | Headline numbers: sessions, players, crash-free sessions, frame time against the budget, rage quits |
 | `glitchless_performance` | Frame time per level, with draw calls, geometry counts and game gauges |
 | `glitchless_get_error` | One error issue, with its stack and the gameplay before it |
-| `glitchless_player_funnel` | Per level: starts, completions, deaths and their causes, rage quits |
+| `glitchless_player_funnel` | Per level: starts, completions, deaths and their causes, disconnects, rage quits; split by what describes the attempt (tier, party size, class), runs per level, and retention |
 | `glitchless_death_hotspots` | Where players die on a level, clustered in world coordinates |
-| `glitchless_events` | The game's own events (whatever it sends with `track`): counts, attribute breakdowns and funnels |
+| `glitchless_events` | The game's own events (whatever it sends with `track`, and the streams it counts with `count`): counts, attribute breakdowns, rates, distributions and funnels, and the session properties it sets |
 | `glitchless_dashboard` | The game's dashboard: its pages, and one board's panels with their numbers |
 | `glitchless_set_dashboard` | Save the game's pages: boards of panels in its own words, and the built-in views it keeps. Needs a key with the dashboard scope |
 | `glitchless_compare_versions` | Two or more versions side by side, in the game's own stats first, to confirm a fix with real players |
@@ -108,11 +108,14 @@ above go in its environment.
 | `glitchless_store_reviews` | For a game connected to a store (Glitchless Cloud: Steam, Google Play, the App Store): what players wrote there, by store, build or version, sentiment, topic (stutter, lag, fps, freeze, crash), device and, on Steam, Steam Deck, each build with the frame-time p95 and crash-free sessions measured on it |
 | `glitchless_store_vitals` | What Google Play (slow rendering, crash and ANR rates, the slowest devices and GPUs) or the App Store (hang rate, launch time, animation hitches, hang signatures) measured of each version, next to what Glitchless measured, and where the two disagree |
 | `glitchless_revenue` | For a game connected to RevenueCat or to its own Stripe account (Glitchless Cloud; `source` picks one, else both): its real revenue by day and revenue per player measured. RevenueCat's (production purchases only): installs (new customers) and active users, MRR, active subscriptions and trials, and revenue by version where RevenueCat splits it. Stripe's: refunds, disputes, fees and net, new paying customers, revenue by product, and by version and platform for purchases the game tied to a session. All next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to |
+| `glitchless_match` | A multiplayer game's matches (the worst by lag or disconnects on request), or one match from every side, 30 seconds at a time: each player's ping, frame time and outcome, the server's ticks, and whether the whole lobby lagged at once (the server) or one player did (their connection) |
+| `glitchless_network` | Ping, lag (play over 150 ms), packet loss and disconnects by level, version, platform, kind of connection and region, with the worst matches and the network findings |
+| `glitchless_servers` | A game's dedicated servers in server mode: servers running now and their players, tick time against its budget by players connected, map and version, crashes with the matches they ended, and memory that climbs. Every other tool reads them with service `<game>.server` |
 | `glitchless_playtest` | Autoplay bots play the game and compare with a saved baseline ([glitchless-playtest](https://www.npmjs.com/package/glitchless-playtest); needs Playwright in the game project) |
 | `glitchless_deck_send` | Build the game, send it to the paired Steam Deck, add it to the Deck's library and optionally start it ([glitchless-deck](https://www.npmjs.com/package/glitchless-deck); pair once with `npx glitchless-deck pair`) |
 | `glitchless_deck_measure` | Measure a Unity, Godot or Unreal build on the Steam Deck and compare it with a saved run |
 
-The reads take `hours`, `version`, `env` (e.g. `prod`) and `session_type` (`user` for players only, `tester` for people on TestFlight and other test builds, `synthetic` for bots, playtests and store test devices, `all`). Unless `env` or `session_type` is given, findings read the production sessions of players and say so; the other numbers count every session in the window.
+The reads take `hours`, `version`, `env` (e.g. `prod`), `session_type` (`user` for players only, `tester` for people on TestFlight and other test builds, `synthetic` for bots, playtests and store test devices, `all`) and `props`, the session properties the game sets (`{ rank: "diamond" }`, or a list of values). Unless `env` or `session_type` is given, findings read the production sessions of players and say so; the other numbers count every session in the window.
 
 To let the agent drive the running game as well (measure frame times, inspect the scene, load a
 level), add the WebMCP server beside this one: `npx -y @jason.today/webmcp@latest --mcp`.

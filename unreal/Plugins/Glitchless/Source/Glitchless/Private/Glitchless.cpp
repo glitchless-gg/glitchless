@@ -1,6 +1,7 @@
 // Copyright (c) 2026 The Glitchless authors. MIT License: see LICENSE.
 #include "Glitchless.h"
 
+#include "GlitchlessAttributesJson.h"
 #include "GlitchlessBugReport.h"
 #include "GlitchlessRuntime.h"
 #include "GlitchlessStrings.h"
@@ -16,6 +17,33 @@ namespace
 		{
 			Runtime->With(Fn);
 		}
+	}
+
+	// The player's session, and a listen server's own session too: the map it hosts and its match are both's.
+	template <typename TFn>
+	void WithHost(TFn&& Fn)
+	{
+		if (FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get())
+		{
+			Runtime->With(Fn);
+			Runtime->WithServer(Fn);
+		}
+	}
+
+	const char* GroupKind(EGlitchlessGroup Kind)
+	{
+		switch (Kind)
+		{
+		case EGlitchlessGroup::Party: return "party";
+		case EGlitchlessGroup::Run: return "run";
+		default: return "match";
+		}
+	}
+
+	void SetPropertyValue(const FString& Key, const FValue& Value)
+	{
+		const std::string K = GlitchlessText::Utf8(Key);
+		WithCore([&](Glitchless::FCore& C) { C.SetProperty(K, Value); });
 	}
 
 	// Unreal's centimetres with Z up, to the metres with y up that every other SDK sends, so heatmaps,
@@ -56,6 +84,9 @@ FGlitchlessOptions FGlitchlessOptions::FromSettings(const UGlitchlessSettings& S
 		O.Enabled = false;
 	}
 	O.bDebug = Settings.bDebug;
+	O.bHashGroupIds = Settings.bHashGroupIds;
+	O.ServerRegion = Settings.ServerRegion;
+	O.bServerSessionPerMatch = Settings.bServerSessionPerMatch;
 	return O;
 }
 
@@ -83,8 +114,14 @@ void FGlitchless::Init(const FString& Service, const FString& Intake, const FStr
 
 void FGlitchless::LevelStart(const FString& Level)
 {
+	LevelStart(Level, FGlitchlessAttributes());
+}
+
+void FGlitchless::LevelStart(const FString& Level, const FGlitchlessAttributes& Attributes)
+{
 	const std::string L = GlitchlessText::Utf8(Level);
-	WithCore([&](Glitchless::FCore& C) { C.LevelStart(L); });
+	const FValue Attrs = GlitchlessAttributesJson::Of(Attributes);
+	WithHost([&](Glitchless::FCore& C) { C.LevelStart(L, Attrs); });
 }
 
 void FGlitchless::LevelComplete(const FString& Level, TOptional<double> Score, TOptional<double> DurationSeconds)
@@ -156,6 +193,120 @@ void FGlitchless::Track(const FString& Name, const TMap<FString, FString>& Attri
 	WithCore([&](Glitchless::FCore& C) { C.Track(N, Attrs); });
 }
 
+void FGlitchless::Track(const FString& Name, const FGlitchlessAttributes& Attributes)
+{
+	const std::string N = GlitchlessText::Utf8(Name);
+	const FValue Attrs = GlitchlessAttributesJson::Of(Attributes);
+	WithCore([&](Glitchless::FCore& C) { C.Track(N, Attrs); });
+}
+
+void FGlitchless::Count(const FString& Name, const FGlitchlessAttributes& Attributes, int32 N)
+{
+	const std::string Counted = GlitchlessText::Utf8(Name);
+	const FValue Attrs = GlitchlessAttributesJson::Of(Attributes);
+	WithCore([&](Glitchless::FCore& C) { C.Count(Counted, Attrs, N); });
+}
+
+void FGlitchless::SetProperty(const FString& Key, const FString& Value)
+{
+	SetPropertyValue(Key, FValue(GlitchlessText::Utf8(Value)));
+}
+
+void FGlitchless::SetProperty(const FString& Key, const TCHAR* Value)
+{
+	SetProperty(Key, FString(Value));
+}
+
+void FGlitchless::SetProperty(const FString& Key, int32 Value)
+{
+	SetPropertyValue(Key, FValue(static_cast<int64_t>(Value)));
+}
+
+void FGlitchless::SetProperty(const FString& Key, int64 Value)
+{
+	SetPropertyValue(Key, FValue(static_cast<int64_t>(Value)));
+}
+
+void FGlitchless::SetProperty(const FString& Key, double Value)
+{
+	SetPropertyValue(Key, FValue(Value));
+}
+
+void FGlitchless::SetProperty(const FString& Key, bool Value)
+{
+	SetPropertyValue(Key, FValue(Value));
+}
+
+void FGlitchless::ClearProperty(const FString& Key)
+{
+	SetPropertyValue(Key, FValue());
+}
+
+FString FGlitchless::SetGroup(EGlitchlessGroup Kind, const FString& Id, const FGlitchlessAttributes& Attributes)
+{
+	const std::string K = GroupKind(Kind);
+	const std::string I = GlitchlessText::Utf8(Id);
+	const FValue Attrs = GlitchlessAttributesJson::Of(Attributes);
+	FString Sent;
+	if (FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get())
+	{
+		Runtime->With([&](Glitchless::FCore& C) { Sent = GlitchlessText::Tchar(C.SetGroup(K, I, Attrs)); });
+		if (Kind != EGlitchlessGroup::Run)
+		{
+			Runtime->WithServer([&](Glitchless::FCore& C) { C.SetGroup(K, I, Attrs); }); // hashed alike: the same service
+		}
+	}
+	return Sent;
+}
+
+void FGlitchless::ClearGroup(EGlitchlessGroup Kind)
+{
+	const std::string K = GroupKind(Kind);
+	if (FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get())
+	{
+		Runtime->With([&](Glitchless::FCore& C) { C.ClearGroup(K); });
+		if (Kind != EGlitchlessGroup::Run)
+		{
+			Runtime->WithServer([&](Glitchless::FCore& C) { C.ClearGroup(K); });
+		}
+	}
+}
+
+FString FGlitchless::GetGroup(EGlitchlessGroup Kind)
+{
+	const std::string K = GroupKind(Kind);
+	FString Id;
+	WithCore([&](Glitchless::FCore& C) { Id = GlitchlessText::Tchar(C.GetGroup(K)); });
+	return Id;
+}
+
+void FGlitchless::SetZone(const FString& Zone)
+{
+	const std::string Z = GlitchlessText::Utf8(Zone);
+	WithCore([&](Glitchless::FCore& C) { C.SetZone(Z); });
+}
+
+void FGlitchless::NetSample(float RttMs, float LossPct, float JitterMs)
+{
+	Glitchless::FNetSample S;
+	S.RttMs = RttMs;
+	S.LossPct = LossPct;
+	S.JitterMs = JitterMs;
+	S.Transport = "custom";
+	WithCore([&](Glitchless::FCore& C) { C.NetSample(S); });
+}
+
+void FGlitchless::Disconnect(const FString& Reason)
+{
+	const std::string R = GlitchlessText::Utf8(Reason);
+	WithCore([&](Glitchless::FCore& C) { C.Disconnect(R); });
+}
+
+void FGlitchless::Reconnect()
+{
+	WithCore([](Glitchless::FCore& C) { C.Reconnect(); });
+}
+
 void FGlitchless::SetContext(const FString& Key, double Value)
 {
 	const std::string K = GlitchlessText::Utf8(Key);
@@ -210,7 +361,7 @@ void FGlitchless::Measure(float Seconds, TFunction<void(const FString& Json)> Do
 
 void FGlitchless::Flush()
 {
-	WithCore([](Glitchless::FCore& C) { C.Flush(); });
+	WithHost([](Glitchless::FCore& C) { C.Flush(); });
 }
 
 bool FGlitchless::IsEnabled()

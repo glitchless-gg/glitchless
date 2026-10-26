@@ -122,6 +122,8 @@ test('editor scenes become levels; menus and overlays do not', () => {
   assert.equal(gd.level, null, 'back to the menu: no level');
   const starts = gd.queue.filter((e) => e.type === 'level_start').map((e) => e.level);
   assert.deepEqual(starts, ['Level1', 'Level1']);
+  gd.levelStart('wave-2', { heat: 2 }); // the game's own call takes over, with its attributes
+  assert.deepEqual(gd.queue.filter((e) => e.type === 'level_start').at(-1).attrs, { heat: 2 });
   // The frame after a load pays for what it shows; it is closed (and read for a hitch) when the next one starts.
   tick();
   tick();

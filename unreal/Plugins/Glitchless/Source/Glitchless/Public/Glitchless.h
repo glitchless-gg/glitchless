@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GlitchlessAttributes.h"
 #include "GlitchlessSettings.h"
 
 GLITCHLESS_API DECLARE_LOG_CATEGORY_EXTERN(LogGlitchless, Log, All);
@@ -30,6 +31,14 @@ struct GLITCHLESS_API FGlitchlessOptions
 	/** Unset: on whenever there is an intake. */
 	TOptional<bool> Enabled;
 	bool bDebug = false;
+	/** What holds for the session from the start (mode, region): as SetProperty takes them, and checked the same way. */
+	TMap<FString, FString> Properties;
+	/** Match and party IDs go hashed with the service as the salt. Off sends them as they are, to look them up in your server's logs. */
+	bool bHashGroupIds = true;
+	/** A dedicated server's region in the game's own words ("eu-west"); -glitchless-region= sets it too. */
+	FString ServerRegion;
+	/** A dedicated server that hosts one match at a time: a session per match, ended when the match group is cleared. */
+	bool bServerSessionPerMatch = false;
 
 	static FGlitchlessOptions FromSettings(const UGlitchlessSettings& Settings);
 };
@@ -43,11 +52,16 @@ struct GLITCHLESS_API FGlitchlessOptions
  *   FGlitchless::LevelAbandon();  // the player went to the menu or restarted mid-level: not a fail
  *   FGlitchless::Death(Character->GetActorLocation(), TEXT("fell"));
  *   FGlitchless::Track(TEXT("powerup"), TEXT("magnet"));
+ *   FGlitchless::Count(TEXT("kill"), FGlitchlessAttributes().Add(TEXT("monster"), TEXT("elite")));  // a stream, counted on the device
+ *   FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"));  // what holds for the session
+ *   FGlitchless::SetGroup(EGlitchlessGroup::Match, MatchId);  // every event marked with the match, hashed
  *   FGlitchless::SetContext(TEXT("enemies"), Enemies.Num());
  *
  * Maps are levels on their own. Every call is safe before Init and from any thread, and does nothing
  * in the editor outside Play In Editor. Positions are taken in Unreal units (centimetres, Z up) and
- * sent as the other SDKs send them: metres with y up.
+ * sent as the other SDKs send them: metres with y up. Unreal's own replication is read by itself: ping,
+ * packet loss and disconnects on clients, and on a dedicated server, its own session (role "server",
+ * filed under <service>.server) with its tick time, players and crashes.
  */
 class GLITCHLESS_API FGlitchless
 {
@@ -60,6 +74,8 @@ public:
 
 	/** A level starts (a restart counts too). Calling this turns automatic map levels off. */
 	static void LevelStart(const FString& Level);
+	/** With what the attempt is: difficulty, party size, the build (a list). Boards can split clears by any of them. */
+	static void LevelStart(const FString& Level, const FGlitchlessAttributes& Attributes);
 	/** Empty Level: the current one. Unset Duration: the time since its LevelStart. */
 	static void LevelComplete(const FString& Level = FString(), TOptional<double> Score = {}, TOptional<double> DurationSeconds = {});
 	/** The player lost the level. Cause is a short word: "fell", "timeout". Leaving it is LevelAbandon. */
@@ -78,6 +94,46 @@ public:
 	static void Track(const FString& Name, const FString& What);
 	static void Track(const FString& Name, double What);
 	static void Track(const FString& Name, const TMap<FString, FString>& Attributes, const TMap<FString, double>& Numbers = TMap<FString, double>());
+	/** A game event with words, numbers, flags and lists: send an outcome as a flag (won = true) and a deck as a list. */
+	static void Track(const FString& Name, const FGlitchlessAttributes& Attributes);
+
+	/** Something that happens too often to send each time: shots, kills, gold, taps. Counted on the device and sent
+	 * once every 5 seconds, so it never crowds out the frame windows. Words and flags (4 at most) say which count;
+	 * numbers (4 at most, such as an amount) are summed; N adds to the count. Track a moment, count a stream. */
+	static void Count(const FString& Name, const FGlitchlessAttributes& Attributes = FGlitchlessAttributes(), int32 N = 1);
+
+	/** What holds for this session, in the game's words: the mode, a rank tier, the class, the server region. Boards
+	 * can split any number by it. Keys are lowercase words ("rank", "level_band"); values a word, a whole number or
+	 * a flag. Never who the player is: keys such as email or user_id, and values that look like an email address, a
+	 * phone number, a link or an ID, are dropped. 12 a session. */
+	static void SetProperty(const FString& Key, const FString& Value);
+	static void SetProperty(const FString& Key, const TCHAR* Value);
+	static void SetProperty(const FString& Key, int32 Value);
+	static void SetProperty(const FString& Key, int64 Value);
+	/** A whole number: send a band ("30-39") rather than an exact level. Fractions are dropped. */
+	static void SetProperty(const FString& Key, double Value);
+	static void SetProperty(const FString& Key, bool Value);
+	static void ClearProperty(const FString& Key);
+
+	/** Marks every event (and frame window) with a match, party or run until ClearGroup, so a match can be read from
+	 * every side. Match and party IDs come from your game's server, shared by everyone in it; they are sent hashed
+	 * unless bHashGroupIds is off. A run's ID is the plugin's: leave Id empty for a new run, or pass the one you saved
+	 * to go on with it (in Install and Full mode; Anonymous mode starts a new one). Returns the ID that is sent. */
+	static FString SetGroup(EGlitchlessGroup Kind, const FString& Id = FString(), const FGlitchlessAttributes& Attributes = FGlitchlessAttributes());
+	static void ClearGroup(EGlitchlessGroup Kind);
+	/** The ID sent for the group, or empty. */
+	static FString GetGroup(EGlitchlessGroup Kind);
+
+	/** Where the player is in an open world (an MMO region, a metroidvania room), which has no start or end as a level
+	 * has: every event and frame window is marked with it, as with the level. Empty leaves the zone. */
+	static void SetZone(const FString& Zone);
+
+	/** For a game on another network library (Steam Networking Sockets, EOS): the connection this second. Unreal's
+	 * own replication is read without these. Less than 0 is not known. */
+	static void NetSample(float RttMs, float LossPct = -1, float JitterMs = -1);
+	/** The connection failed: timeout, connection_lost, kicked, server_closed, failed_to_connect or other. */
+	static void Disconnect(const FString& Reason);
+	static void Reconnect();
 
 	/** A number that describes what is going on (enemies, particles, projectiles). The largest value in each
 	 * frame window is sent, and the current ones go with each hitch, so the findings can say what was high

@@ -20,7 +20,7 @@ const SDK_VERSION = /#macro GLITCHLESS_VERSION "([^"]+)"/.exec(fs.readFileSync(p
 
 const SDK = {
   folder: 'Glitchless',
-  scripts: ['Glitchless', '__glitchless_core', '__glitchless_send', '__glitchless_sketch', '__glitchless_text', '__glitchless_device', '__glitchless_bug_report', '__glitchless_engine'],
+  scripts: ['Glitchless', '__glitchless_core', '__glitchless_send', '__glitchless_sketch', '__glitchless_text', '__glitchless_device', '__glitchless_bug_report', '__glitchless_play', '__glitchless_engine'],
   objects: { obj_glitchless: { persistent: true }, obj_glitchless_tail: { persistent: true } },
 };
 const DEMO = {

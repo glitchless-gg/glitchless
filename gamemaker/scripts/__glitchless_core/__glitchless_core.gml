@@ -48,6 +48,9 @@ function __glitchless_defaults() {
         // true, or {hotkey: vk_f8, pause: true, screenshot: true, on_open, on_close}: players send bug reports from a form in the game
         bug_reports: false,
         exception_handler: undefined, // the game's own unhandled-exception handler, called after Glitchless writes the crash down
+        properties: undefined, // a struct of the game's words about the session ({ mode: "squads" }): glitchless_set_properties
+        hash_group_ids: true, // send match and party IDs hashed (with the service as the salt); false sends them as they are
+        net_transport: "gamemaker", // what glitchless_net_sample's round trips come over: GameMaker's network_* functions
     };
 }
 
@@ -158,7 +161,26 @@ function __glitchless_new_state() {
         gc_frame: -1,
         texture_groups: [],
         texture_status: {},
-        f: undefined
+        f: undefined,
+        warned: {}, // what __glitchless_warn has said once
+        // counters, properties, groups, zones and the network (__glitchless_play)
+        counts_ok: undefined, // whether the server takes `counts` (GET /v1/health's features); undefined: not known
+        health_id: -1,
+        track_rate: {},
+        props: {},
+        props_sent: {}, // what the server has: session_start.props, then each props event
+        prop_keys: {}, // the keys this session has had, for its 12
+        props_at: 0,
+        groups: {}, // kind -> the ID sent
+        group_attrs: {},
+        zone: undefined,
+        net_connected: false,
+        net_since: 0,
+        net_last_sample: 0,
+        net_last_rtt: undefined,
+        net_last: undefined, // the last window's net, for a disconnect that comes after it
+        net_down_at: 0,
+        disconnects: 0
     };
     _g.win = __glitchless_new_window(_g);
     return _g;
@@ -216,6 +238,7 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
     _g.session_id = __glitchless_new_id("s_", 16); // anonymous mode keeps it in memory only
     _g.next_flush = current_time + min(2, _o.flush_interval) * 1000; // the first batch goes soon, so a session that crashes early is still seen
     exception_unhandled_handler(__glitchless_on_exception);
+    if (is_struct(_o.properties)) __glitchless_set_properties(_o.properties);
     __glitchless_sample_engine(_g, true); // where memory and the counts start
     __glitchless_start_clock(_g);
     __glitchless_check_room(_g); // init may come after the first room started
@@ -242,10 +265,13 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
         file_delete("glitchless/player_id"); // left by an install- or full-mode build: anonymous mode keeps no ID
     }
     __glitchless_load_outbox(_g);
+    __glitchless_ask_features(_g);
     __glitchless_log(_g, "on: " + _g.service + " " + _g.version + " " + _g.env + " -> " + _g.intake + " (" + _g.privacy + ", " + _g.session_type + (_g.gzip ? ", gzip" : "") + ")");
 }
 
-function __glitchless_level_start(_level, _manual) {
+/// `_attrs`: what this attempt is (a difficulty, a mode, a party size), a struct like a custom event's attributes.
+/// Rooms that start levels by themselves send none.
+function __glitchless_level_start(_level, _manual, _attrs = undefined) {
     var _g = __glitchless();
     if (_manual) _g.manual_levels = true;
     __glitchless_close_window(_g, false); // so a frame window never spans two levels
@@ -253,7 +279,9 @@ function __glitchless_level_start(_level, _manual) {
     _g.level_started = current_time;
     _g.level_open = true;
     _g.left_level = undefined;
-    __glitchless_push(_g, { type: "level_start" });
+    var _e = { type: "level_start" };
+    if (is_struct(_attrs) && variable_struct_names_count(_attrs) > 0) _e.attrs = _attrs;
+    __glitchless_push(_g, _e);
     __glitchless_remember(_g, "level_start");
 }
 
@@ -332,6 +360,7 @@ function __glitchless_track(_name, _what) {
     }
     __glitchless_push(_g, { type: "custom", name: string(_name), attrs: _attrs });
     __glitchless_remember(_g, string(_name));
+    __glitchless_check_track_rate(_g, string(_name));
 }
 
 function __glitchless_set_context(_gauges) {
@@ -602,7 +631,7 @@ function __glitchless_on_frame(_g, _f) {
     if (_hitch) {
         _w.hitches += 1;
         _g.stats.hitches += 1;
-        array_push(_g.pending_hitches, {
+        array_push(_g.pending_hitches, __glitchless_stamp(_g, {
             type: "hitch",
             ts: __glitchless_now(_g),
             level: _g.level,
@@ -621,7 +650,7 @@ function __glitchless_on_frame(_g, _f) {
             gc_collected: _f.gc_collected,
             instances_added: _f.instances_added,
             texture_loads: _f.texture_loads
-        });
+        }));
     }
 }
 
@@ -660,7 +689,12 @@ function __glitchless_new_window(_g) {
         gc_ms: 0,
         gc_collections: 0,
         texture_loads: 0,
-        ctx: {}
+        ctx: {},
+        counts: {}, // glitchless_count's entries by name and group (__glitchless_play)
+        count_list: [],
+        count_names: {},
+        dropped: 0,
+        net: undefined // glitchless_net_sample's round trips
     };
 }
 
@@ -671,12 +705,19 @@ function __glitchless_close_window(_g, _fresh) {
     var _w = _g.win;
     _g.win = __glitchless_new_window(_g);
     __glitchless_update_budget(_g);
+    var _secs = max((current_time - _w.started_ms) / 1000, 0.001);
+    // Properties the game changed since the server last heard: once the session's start has them.
+    if (_g.session_start_sent) {
+        var _props = __glitchless_props_event(_g);
+        if (!is_undefined(_props)) __glitchless_push(_g, _props);
+    }
+    var _net = is_undefined(_w.net) ? undefined : __glitchless_net_json(_g, _w.net);
+    if (!is_undefined(_net)) _g.net_last = _net;
     if (_w.frames > 0) {
-        var _secs = max((current_time - _w.started_ms) / 1000, 0.001);
         var _n = _w.frames;
         var _s = _w.sketch;
         var _e = _g.engine;
-        __glitchless_queue_event(_g, {
+        var _fw = {
             type: "frame_window",
             ts: _w.started_at,
             level: _g.level,
@@ -716,12 +757,16 @@ function __glitchless_close_window(_g, _fresh) {
             screen: _g.screen,
             window: _g.window,
             ctx: _w.ctx
-        });
+        };
+        if (!is_undefined(_net)) _fw.net = _net; // only while connected
+        __glitchless_queue_event(_g, __glitchless_stamp(_g, _fw));
         array_push(_g.recent_windows, { ts: _w.started_at, level: _g.level, fps: __glitchless_round(_n / _secs, 0.1), p95: __glitchless_round(__glitchless_sketch_quantile(_s, 0.95), 0.01) });
         if (array_length(_g.recent_windows) > 12) array_delete(_g.recent_windows, 0, 1);
     }
+    var _counts = __glitchless_counts_event(_g, _w, _secs);
+    if (!is_undefined(_counts)) __glitchless_queue_event(_g, __glitchless_stamp(_g, _counts));
     if (array_length(_g.pos_buffer) > 0) {
-        __glitchless_queue_event(_g, { type: "pos", ts: _g.pos_buffer[0][0], level: _g.level, pts: _g.pos_buffer });
+        __glitchless_queue_event(_g, __glitchless_stamp(_g, { type: "pos", ts: _g.pos_buffer[0][0], level: _g.level, pts: _g.pos_buffer }));
         _g.pos_buffer = [];
     }
     array_sort(_g.pending_hitches, function(_a, _b) { return _b.duration_ms - _a.duration_ms; });
@@ -1068,6 +1113,12 @@ function __glitchless_new_session(_g) {
     _g.recent = [];
     _g.history = [];
     _g.error_counts = {};
+    // The properties and groups still set go on into the new session (from memory: nothing is on the device).
+    _g.prop_keys = {};
+    var _keys = variable_struct_get_names(_g.props);
+    for (var _i = 0; _i < array_length(_keys); _i++) _g.prop_keys[$ _keys[_i]] = true;
+    _g.disconnects = 0;
+    __glitchless_resend_groups(_g);
 }
 
 function __glitchless_shutdown(_g, _reason) {
@@ -1135,7 +1186,7 @@ function __glitchless_check_input(_g) {
 function __glitchless_push(_g, _e) {
     if (_g.inited && !_g.enabled) return;
     if (is_undefined(_e[$ "ts"])) _e.ts = __glitchless_now(_g);
-    if (!variable_struct_exists(_e, "level")) _e.level = _g.level;
+    __glitchless_stamp(_g, _e);
     __glitchless_queue_event(_g, _e);
     if (_e.type != "session_end") {
         array_push(_g.history, __glitchless_slim(_e));
@@ -1169,8 +1220,9 @@ function __glitchless_recent_names(_g, _count) {
     return _out;
 }
 
+/// The session's start, with the properties set by now (later changes go as props events).
 function __glitchless_session_start_event(_g) {
-    return {
+    var _e = {
         type: "session_start",
         ts: _g.started_at,
         level: undefined,
@@ -1180,6 +1232,9 @@ function __glitchless_session_start_event(_g) {
         page: undefined,
         nav_ms: undefined
     };
+    _g.props_sent = __glitchless_copy(_g.props);
+    if (variable_struct_names_count(_g.props) > 0) _e.props = __glitchless_copy(_g.props);
+    return _e;
 }
 
 /// A game event as a bug report lists it: when, what, and the few fields that say what happened.

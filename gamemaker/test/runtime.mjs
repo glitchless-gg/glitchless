@@ -1,5 +1,5 @@
 // A pretend GameMaker for the SDK's GML (gml.mjs translates it): the built-in functions the SDK calls, a save area
-// in a temp folder, http_request over fetch, and a frame loop the tests drive. Each `launch()` is one run of a game:
+// in a temp folder, http_request over fetch (with the reply's body as async_load's result), and a frame loop the tests drive. Each `launch()` is one run of a game:
 // fresh GML state, the same save area, so an outbox written by one launch is read by the next.
 //
 //   const game = launch({ saveDir, args: ['-glitchless'] });
@@ -15,7 +15,7 @@ import { translate } from './gml.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Everything but __glitchless_engine.gml, which only runs in GameMaker; the tests stand in for it below.
-export const SDK_SCRIPTS = ['__glitchless_text', '__glitchless_sketch', '__glitchless_device', '__glitchless_core', '__glitchless_send', '__glitchless_bug_report', 'Glitchless'];
+export const SDK_SCRIPTS = ['__glitchless_text', '__glitchless_sketch', '__glitchless_device', '__glitchless_core', '__glitchless_send', '__glitchless_bug_report', '__glitchless_play', 'Glitchless'];
 
 const translated = new Map();
 function script(name) {
@@ -311,10 +311,10 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
       const id = state.nextHttp++;
       const h = Object.fromEntries(Object.keys(headers).map((k) => [k, headers[k]]));
       const data = typeof body === 'string' ? body : Buffer.from(buf(body).bytes.subarray(0, buf(body).pos));
-      const entry = { id, done: false, status: -1, http: 0, body: data };
-      entry.promise = fetchImpl(url, { method, headers: h, body: data })
+      const entry = { id, done: false, status: -1, http: 0, body: data, url, method, result: undefined };
+      entry.promise = fetchImpl(url, { method, headers: h, body: method === 'GET' ? undefined : data })
         .then(async (r) => {
-          await r.text();
+          entry.result = await r.text();
           entry.status = 0;
           entry.http = r.status;
         })
@@ -493,7 +493,7 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
     async deliver() {
       const done = state.pending.filter((p) => p.done);
       state.pending = state.pending.filter((p) => !p.done);
-      for (const p of done) ctx.__glitchless_on_http(p.id, p.status, p.http);
+      for (const p of done) ctx.__glitchless_on_http(p.id, p.status, p.http, p.result);
     },
     // Waits for every request in flight, delivering replies, for at most `ms` of real time.
     async settle(ms = 3000) {

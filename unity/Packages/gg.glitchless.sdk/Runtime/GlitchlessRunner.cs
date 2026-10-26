@@ -35,6 +35,7 @@ namespace GlitchlessSdk
     ///   --glitchless-warmup=SECONDS   with --glitchless-measure: wait this long first
     ///   --glitchless-out=PATH         with --glitchless-measure: write the JSON to this file too
     ///   --glitchless-synthetic        mark the session as a bot's (--autoplay and batch mode do too)
+    ///   --glitchless-server           run as a game server (a Dedicated Server build does by itself)
     ///   --glitchless-off              send nothing
     ///   --glitchless-debug            log each batch as it is sent
     /// </summary>
@@ -53,7 +54,8 @@ namespace GlitchlessSdk
         static readonly long TicksPerMs = Stopwatch.Frequency / 1000;
         static double NowMs => (double)Stopwatch.GetTimestamp() / TicksPerMs;
 
-        double fixedStart, fixedMs, updateStart, updateMs, renderStart, renderMs;
+        double fixedStart, fixedMs, updateStart, updateMs, renderStart, renderMs, renderEnd, frameBegan, busyMs = -1;
+        int fixedSteps;
         bool hooksRan;
         int accountedFrame = -1, lastGc;
         long lastGameObjects = -1;
@@ -128,7 +130,15 @@ namespace GlitchlessSdk
                 IsDebugBuild = UnityEngine.Debug.isDebugBuild,
                 IsMobile = Application.isMobilePlatform,
                 IsWeb = web,
+#if UNITY_SERVER
+                IsServerBuild = true,
+#endif
+                Link = DeviceInfo.Link,
+                CpuMs = CpuMs,
+                FixedHz = () => Time.fixedDeltaTime > 0 ? 1 / Time.fixedDeltaTime : 50,
+                ServerHost = DeviceInfo.ServerHost,
             };
+            Core.NetSources.AddRange(Netcode.Find());
             Core.Scrubber.AddPath(Application.persistentDataPath, "persistent:");
             Core.Scrubber.AddPath(Application.temporaryCachePath, "cache:");
             Core.Scrubber.AddPath(Application.streamingAssetsPath, "streaming:");
@@ -183,7 +193,13 @@ namespace GlitchlessSdk
 
         // The player loop calls these (see PlayerLoopHooks). Each frame's time is split the way the
         // Godot SDK splits it: physics, the game's update code, and the main thread's share of rendering.
-        internal static void FixedStart() { if (instance) instance.fixedStart = NowMs; }
+        internal static void FixedStart()
+        {
+            if (!instance) return;
+            instance.fixedStart = NowMs;
+            instance.fixedSteps++;
+        }
+
         internal static void FixedEnd() { if (instance) instance.fixedMs += NowMs - instance.fixedStart; }
         internal static void UpdateStart() { if (instance) instance.updateStart = NowMs; }
         internal static void UpdateEnd() { if (instance) instance.updateMs = NowMs - instance.updateStart; }
@@ -191,13 +207,22 @@ namespace GlitchlessSdk
         internal static void RenderEnd()
         {
             if (!instance) return;
-            instance.renderMs = NowMs - instance.renderStart;
+            instance.renderEnd = NowMs;
+            instance.renderMs = instance.renderEnd - instance.renderStart;
             instance.hooksRan = true;
         }
 
         // Runs first thing each frame, before physics: everything measured since the last call belongs to
-        // the frame Time.unscaledDeltaTime just timed.
-        internal static void FrameStart() { if (instance) instance.Account(); }
+        // the frame Time.unscaledDeltaTime just timed. The wait for the next frame (vsync, a target frame rate) comes
+        // before it, so the last frame's work is from its start to the end of its PostLateUpdate: a server's tick time.
+        internal static void FrameStart()
+        {
+            if (!instance) return;
+            var now = NowMs;
+            instance.busyMs = instance.frameBegan > 0 && instance.renderEnd > instance.frameBegan ? instance.renderEnd - instance.frameBegan : -1;
+            instance.frameBegan = now;
+            instance.Account();
+        }
 
         void Account()
         {
@@ -209,7 +234,10 @@ namespace GlitchlessSdk
                 cost.Process = updateMs;
                 cost.Physics = fixedMs;
                 cost.Render = renderMs;
+                cost.Busy = busyMs;
+                cost.FixedSteps = fixedSteps;
             }
+            fixedSteps = 0;
             if (drawCalls.Valid) cost.Calls = drawCalls.LastValue;
             if (triangles.Valid) cost.Triangles = triangles.LastValue;
             if (setPass.Valid) cost.SetPass = setPass.LastValue;
@@ -323,6 +351,19 @@ namespace GlitchlessSdk
                 foreach (var h in handles) available.Add(ProfilerRecorderHandle.GetDescription(h).Name);
             }
             return available.Contains(name);
+        }
+
+        // The process's CPU time, for a server's cpu_pct. -1 where the runtime can't say.
+        static double CpuMs()
+        {
+            try
+            {
+                using (var p = Process.GetCurrentProcess()) return p.TotalProcessorTime.TotalMilliseconds;
+            }
+            catch (Exception)
+            {
+                return -1;
+            }
         }
 
         Dictionary<string, object> SampleEngine()
@@ -617,6 +658,19 @@ namespace GlitchlessSdk
                 live.Remove(req);
                 req.Dispose();
                 done(status);
+            };
+        }
+
+        public void Get(string url, Action<long, string> done)
+        {
+            var req = UnityWebRequest.Get(url);
+            req.timeout = 10;
+            req.SendWebRequest().completed += _ =>
+            {
+                var status = Status(req);
+                var text = status >= 200 && status < 300 ? req.downloadHandler.text : null;
+                req.Dispose();
+                done(status, text);
             };
         }
 

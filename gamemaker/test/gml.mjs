@@ -8,6 +8,7 @@
 //   - s[$ key], m[? key]          -> lenient reads and writes (a missing field is undefined)
 //   - s.name on a missing field   -> throws, as it stops a GameMaker game ("variable not set before reading it")
 //   - struct literals             -> structs with that check
+//   - argument_count              -> arguments.length (the arguments the caller passed, an explicit undefined too)
 // Anything with `with`, `self`, `other`, `new`, `static`, `repeat`, `div`, `mod`, template strings, $ hex numbers or
 // JavaScript's ===, =>, let, const is refused. __glitchless_engine.gml (surfaces, drawing, `with (all)`) is never
 // translated: the tests stand in for it.
@@ -131,6 +132,7 @@ export function translate(src, file = 'gml') {
       continue;
     }
     let v = tk.v;
+    if (tk.t === 'id' && v === 'argument_count') v = 'arguments.length';
     if (tk.t === 'p') {
       if (v === '==') v = '===';
       else if (v === '!=') v = '!==';

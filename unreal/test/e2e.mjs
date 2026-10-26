@@ -15,6 +15,8 @@
 //   2d. leave     a level left twice: the game goes to the background mid-level (failing the level as "left" there),
 //                 comes back and quits mid-level, while the first batch's answer is held back, so going to the
 //                 background gives that batch up and it is sent again: the server stores it once, by its batch_id
+//   2e. genre     properties, groups, a level with attributes, a zone, counts, flags and lists, and a connection
+//                 that drops and comes back (the recorder's health answer lists the features a newer server has)
 //   3. measure    -glitchless-measure prints frame stats as one line of JSON and quits
 // Last, nothing the server stored over all these runs is stored twice.
 import { spawn, spawnSync } from 'node:child_process';
@@ -23,7 +25,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { ROOT, SDK, WINDOWS, checkAutoplay, checkDialog, checkMeasureLine, checkSentOnce, checker, events, freePort, packageGame, query, requireEngine, startRecorder, startServer } from './harness.mjs';
+import { ROOT, SDK, WINDOWS, checkAutoplay, checkDialog, checkGenre, checkMeasureLine, checkSentOnce, checker, events, freePort, packageGame, query, requireEngine, startRecorder, startServer } from './harness.mjs';
 
 const PLATFORM = WINDOWS ? 'Win64' : 'Mac';
 // The staged build: on a Mac, -archive copies the .app without its content (UE 5.8), so it is run where it was staged.
@@ -247,6 +249,12 @@ try {
     assert.deepEqual(leaveSession.abandoned, ['arena-1']);
     assert.equal(leaveSession.rage_quit, false);
   });
+
+  // 2e. the genre additions
+  console.log('2e. properties, groups, counts, zones and a dropped connection…');
+  const beforeGenre = batches.length;
+  const genre = await play(exe, ['-autoplay', '-glitchless-test-genre', intake], 'genre');
+  checkGenre(check, events(batches.slice(beforeGenre)), genre.stdout);
 
   // 3. measure
   console.log('3. measure…');

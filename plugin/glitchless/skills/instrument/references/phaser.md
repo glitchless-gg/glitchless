@@ -62,6 +62,10 @@ Register WebMCP tools as for Three.js (`glitchless.registerTool`). Bug reports w
 (`bugReports` in init, [step 4b](threejs.md#4b-bug-reports-from-players-ask-first)): the form's screenshot is the Phaser canvas.
 So do source maps for the production build ([step 4c](threejs.md#4c-readable-errors-from-the-production-build-source-maps)).
 
+Streams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in
+[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,
+and its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).
+
 ## 5. Bots and playtests
 
 If the game has (or can get) an autoplay bot, make it read `?autoplay=1&seed=N&skill=0..1&level=N`, mark its
