@@ -42,7 +42,7 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.5.0"
+const SDK_VERSION := "0.5.1"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -352,7 +352,7 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_sandbox = Device.is_sandbox(Device.distribution())
 	if str(_opts.session_type) != "":
 		_session_type = str(_opts.session_type)
-	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or Device.test_lab():
+	elif _has_flag("--autoplay") or _has_flag("--glitchless-synthetic") or _has_flag("--glitchless-measure") or Device.store_test_device():
 		_session_type = "synthetic"  # a bot, a measure run (or a server's load test), or Google Play's pre-launch test phones
 	elif DisplayServer.get_name() == "headless" and role != "server":
 		_session_type = "synthetic"  # a bot without a screen; a dedicated server runs headless and is live

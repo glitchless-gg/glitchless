@@ -20,7 +20,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 
 `positions: true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
-Every mode reads one Android system setting, `firebase.test.lab`: Google Play's pre-launch report sets it on Google's test phones, and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. The setting itself is not sent.
+On Android, every mode reads two things that tell Google Play's pre-launch test phones: the system setting `firebase.test.lab`, which Firebase Test Lab sets to `true`, and the GPU's name, which on those phones is a software renderer (SwiftShader); no phone a player holds draws in software. A session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. Neither is sent: the setting never, the GPU's name only in full mode, as `gpu`.
 
 On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
 

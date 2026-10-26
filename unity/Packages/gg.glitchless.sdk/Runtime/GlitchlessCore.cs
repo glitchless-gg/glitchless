@@ -61,7 +61,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.5.0";
+        public const string SdkVersion = "0.5.1";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -366,8 +366,8 @@ namespace GlitchlessSdk
         }
 
         /// <summary>The session's type: what the game set; else synthetic for a bot (batch mode, --autoplay and the flags)
-        /// or a Firebase Test Lab device, whose firebase.test.lab setting is "true" (Google Play's pre-launch report plays
-        /// every new build on them); else tester for a TestFlight or development install on iOS (`sandbox`); else user.
+        /// or one of Google Play's pre-launch test phones (DeviceInfo.IsStoreTestDevice: the firebase.test.lab setting, or a
+        /// GPU that draws in software); else tester for a TestFlight or development install on iOS (`sandbox`); else user.
         /// The setting is read only when nothing else decides.</summary>
         internal static string SessionTypeFor(string set, bool bot, Func<string> testLabSetting, bool sandbox = false)
         {

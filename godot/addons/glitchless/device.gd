@@ -199,19 +199,30 @@ static func refresh_rate() -> Variant:
 	return roundi(hz) if hz > 0 else null
 
 
-## Firebase Test Lab, where Google Play's pre-launch report runs each new build
-## on Google's own phones, sets the system setting firebase.test.lab to "true".
-## Those runs are bots, so their sessions are synthetic. Read through the
-## AndroidRuntime singleton (Godot 4.4 and later), so no Android plugin is needed;
-## the value is only read here, never sent.
-static func test_lab() -> bool:
-	return is_test_lab(_test_lab_setting())
+## Google Play's pre-launch report runs each new build on Google's own phones.
+## Those runs are bots, so their sessions are synthetic. Two things tell them:
+## Firebase Test Lab's system setting firebase.test.lab is "true", or the GPU
+## draws in software. Google names the setting for pre-launch runs, but
+## Starlift's (1.1.1, October 2026) came without it, though reading it works:
+## they were virtual phones with no Vulkan, drawing through SwiftShader. No phone
+## a player holds draws in software; an emulator on the computer's GPU does not
+## count. The setting is only read here, never sent.
+static func store_test_device() -> bool:
+	if OS.get_name() != "Android":
+		return false
+	return is_store_test_device("Android", _test_lab_setting(), RenderingServer.get_video_adapter_name())
+
+
+static func is_store_test_device(os_name: String, setting: Variant, adapter: String) -> bool:
+	return os_name == "Android" and (is_test_lab(setting) or gpu_tier(adapter) == "software")
 
 
 static func is_test_lab(setting: Variant) -> bool:
 	return setting != null and str(setting).strip_edges() == "true"
 
 
+## Read through the AndroidRuntime singleton (Godot 4.4 and later), so no Android
+## plugin is needed.
 static func _test_lab_setting() -> Variant:
 	if OS.get_name() != "Android" or not Engine.has_singleton("AndroidRuntime"):
 		return null

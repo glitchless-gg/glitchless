@@ -24,7 +24,7 @@
 //  11. close     the window closes mid-level: Glitchless records the abandon before the session's end, and drops
 //                the "left" fail the game sends as it tears the level down
 // It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys), test/device_test.gd
-// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Firebase Test Lab's setting),
+// (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Google Play's pre-launch phones),
 // test/frames_test.gd (the refresh rate read off the fast frames; hitch causes) and test/steam_test.gd (Steam facts
 // from a fake GodotSteam).
 import { spawn, spawnSync } from 'node:child_process';
@@ -303,7 +303,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.5.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.5.1'));
   });
   check('load: stamped when the first frame was drawn, not when the first batch went', () => {
     for (const s of sessions) {
@@ -441,7 +441,7 @@ try {
     assert.ok(opened, 'no report from code');
     assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
     assert.ok(opened.screenshot.length <= 200_000);
-    assert.equal(opened.sdk, 'glitchless-godot/0.5.0');
+    assert.equal(opened.sdk, 'glitchless-godot/0.5.1');
     assert.equal(opened.level, 'level_1');
     assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
     assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');

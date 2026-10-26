@@ -23,7 +23,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.5.0"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.5.1"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
@@ -58,7 +58,7 @@ Glitchless starts itself before the first scene loads, so frame times and errors
 
 The Editor and development builds send too, with `Env` set to `dev` unless you set it, so you can check data arrives from Play mode. Release builds default to `prod`.
 
-Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the Firebase Test Lab devices Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts. Nor are testers: a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart, with no native plugin) is marked `tester`, which findings and share links leave out too.
+Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the test phones Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, or a GPU that draws in software such as SwiftShader; read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts. Nor are testers: a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart, with no native plugin) is marked `tester`, which findings and share links leave out too.
 
 ## Tell it about your game
 

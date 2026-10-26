@@ -19,6 +19,7 @@ import { matchList, matchDetail } from './matches.js';
 import { serversView } from './servers.js';
 import { storeReviews, storeVitals } from './reviews.js';
 import { revenueQuery } from './revenue.js';
+import { markTestLab } from './test-lab.js';
 import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
 
 const MAX_BODY = 1_000_000;
@@ -72,7 +73,7 @@ const MIME = {
 // so a big map gets a clear 413 rather than the host's own error).
 // stores: { read(projectId, service, { from, to, recordsFrom }) } → the game's store data by store ({ steam: … },
 // reviews.js), or null when it is connected to none; a host without stores leaves it out.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null }) {
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -118,7 +119,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // answered as taken, and nothing in it is stored, counted or forwarded twice (SPEC §2 batch_id).
         const batch = payload.batch && store.claimBatch ? { service: payload.envelope.service, id: payload.batch } : null;
         if (batch && !(await store.claimBatch(writer.projectId, batch.service, batch.id))) return json(res, 202, { accepted: 0, duplicate: true });
-        const parsed = normalize(payload);
+        // Google's pre-launch test phones are bots whatever the SDK says (test-lab.js); the address isn't kept.
+        const parsed = markTestLab(normalize(payload), clientAddress(req));
         const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
         const events = admitted.events;
         if (events.length) {

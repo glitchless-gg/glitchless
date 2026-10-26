@@ -76,7 +76,7 @@ Purchases have one convention in every Glitchless SDK:
 | `client_token` | `"gl_pub_dev"` | the server's `GLITCHLESS_CLIENT_TOKENS` |
 | `sample_rate` | `1.0` | the share of sessions that send |
 | `flush_interval` | `5.0` | seconds between batches; the first goes 2 s after `init` |
-| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on Firebase Test Lab, where Google Play's pre-launch report runs a new build on Google's phones (the Android setting `firebase.test.lab`). `"tester"` is automatic on a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart), and keeps testers out of the players' numbers |
+| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on the phones Google Play's pre-launch report runs a new build on (the Android setting `firebase.test.lab`, or a GPU that draws in software, as theirs do). `"tester"` is automatic on a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart), and keeps testers out of the players' numbers |
 | `session_timeout` | `300.0` | seconds in the background after which coming back starts a new session |
 | `engine_gauges` | `true` | put `nodes`, `orphan_nodes` and `objects` in `ctx` |
 | `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |

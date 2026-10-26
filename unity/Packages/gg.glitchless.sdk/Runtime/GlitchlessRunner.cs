@@ -123,7 +123,8 @@ namespace GlitchlessSdk
                 ScreenSize = DeviceInfo.ScreenSize,
                 WindowSize = DeviceInfo.WindowSize,
                 ScreenHz = () => Screen.currentResolution.refreshRateRatio.value,
-                TestLabSetting = DeviceInfo.FirebaseTestLab,
+                // Read only when nothing else decides the session's type (SessionTypeFor).
+                TestLabSetting = () => DeviceInfo.IsStoreTestDevice(Application.platform == RuntimePlatform.Android, DeviceInfo.FirebaseTestLab(), SystemInfo.graphicsDeviceName) ? "true" : null,
                 Distribution = () => DeviceInfo.Distribution,
                 AppVersion = Application.version,
                 IsBatchMode = Application.isBatchMode,

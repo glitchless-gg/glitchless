@@ -20,7 +20,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 
 `Positions = true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
-On Android, every mode reads one system setting, `firebase.test.lab`: Google Play's pre-launch report sets it on Google's test phones (Firebase Test Lab), and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. It is read on the device, only to mark the session, and the setting itself is not sent.
+On Android, every mode reads one system setting, `firebase.test.lab`, and the GPU's name: Google Play's pre-launch report runs on Google's test phones, which set that setting or draw in software (SwiftShader), and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. Both are read on the device, only to mark the session; the setting is not sent, and the GPU's name is sent only in full mode, as before.
 
 On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
 
@@ -36,7 +36,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.5.0`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.5.1`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game sets them, events and windows also carry `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` ([Groups](#groups)).
 

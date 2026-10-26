@@ -1,6 +1,6 @@
 extends SceneTree
 ## Steam Deck detection (device.gd is_steam_deck) from what a Deck, a desktop
-## and a Deck-like PC show, without a Deck, Firebase Test Lab's setting, and
+## and a Deck-like PC show, without a Deck, Google Play's pre-launch phones, and
 ## where an iOS build was installed from (TestFlight or the App Store).
 ## test/e2e.mjs runs it.
 ##   godot --headless --path godot --script res://test/device_test.gd
@@ -29,7 +29,13 @@ func _init() -> void:
 	_check("a desktop stays what it is", not Device.is_steam_os({"os_release": UBUNTU}))
 	_check("Firebase Test Lab: the setting says \"true\"", Device.is_test_lab("true") and Device.is_test_lab("true\n"))
 	_check("Firebase Test Lab: anything else, or no setting, is not it", not Device.is_test_lab(null) and not Device.is_test_lab("") and not Device.is_test_lab("false") and not Device.is_test_lab("1"))
-	_check("Firebase Test Lab: not on this machine, and reading it never fails off Android", not Device.test_lab())
+	_check("a pre-launch phone that sets the setting", Device.is_store_test_device("Android", "true", "Adreno (TM) 610"))
+	_check("a pre-launch phone without it, drawing in software (Starlift 1.1.1's)", Device.is_store_test_device("Android", null, "Android Emulator OpenGL ES Translator (Google SwiftShader)") and Device.is_store_test_device("Android", null, "Google SwiftShader"))
+	_check("SwiftShader behind ANGLE, or its Vulkan, is software too", Device.is_store_test_device("Android", null, "Android Emulator OpenGL ES Translator (ANGLE (Google, Vulkan 1.2.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0))") and Device.is_store_test_device("Android", "", "SwiftShader Device (Subzero)"))
+	_check("a player's phone is not one", not Device.is_store_test_device("Android", null, "Mali-G57 MC2") and not Device.is_store_test_device("Android", "false", "Adreno (TM) 740") and not Device.is_store_test_device("Android", null, ""))
+	_check("an emulator on the computer's GPU is not one", not Device.is_store_test_device("Android", null, "Android Emulator OpenGL ES Translator (Apple M3 Max)"))
+	_check("a desktop drawing in software is a player with a poor driver, not one", not Device.is_store_test_device("Linux", null, "llvmpipe (LLVM 15.0.7, 256 bits)") and not Device.is_store_test_device("Windows", "true", "Microsoft Basic Render Driver"))
+	_check("not on this machine, and reading it never fails off Android", not Device.store_test_device())
 	var phone := "/private/var/mobile/Containers/Data/Application/BE5EB9FD-3704-488D-96E8-ADB805300ED7"
 	_check("iOS: an App Store receipt is the App Store", Device.ios_distribution({"home": phone, "receipt": true}) == "app_store")
 	_check("iOS: no receipt on an iPhone is TestFlight (Apple writes one with every App Store install)", Device.ios_distribution({"home": phone}) == "testflight" and Device.ios_distribution({"home": phone.trim_prefix("/private")}) == "testflight")

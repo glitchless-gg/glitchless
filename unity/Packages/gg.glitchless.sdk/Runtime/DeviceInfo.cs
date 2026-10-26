@@ -250,6 +250,13 @@ namespace GlitchlessSdk
             }
         }
 
+        /// <summary>Google Play's pre-launch report plays each new build on Google's own phones, which are bots: an Android
+        /// device is one when its firebase.test.lab setting is "true", or when its GPU draws in software. Google names the
+        /// setting for pre-launch runs, but its virtual phones (no Vulkan, SwiftShader's OpenGL) came without it in October
+        /// 2026. No phone a player holds draws in software, and an emulator on the computer's GPU doesn't count.</summary>
+        public static bool IsStoreTestDevice(bool android, string testLabSetting, string gpuName)
+            => android && (testLabSetting == "true" || GpuTier(gpuName) == "software");
+
         /// <summary>Android's firebase.test.lab system setting: "true" on the Firebase Test Lab devices Google Play's
         /// pre-launch report plays every new build on, so their sessions can be marked synthetic. Read on the device and
         /// never sent. Null anywhere else, and if reading it fails.</summary>

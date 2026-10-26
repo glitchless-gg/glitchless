@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Google Play's pre-launch test phones are `synthetic` again. They no longer set Android's `firebase.test.lab` setting (Starlift's pre-launch runs in October 2026 came without it): they are virtual phones that draw in software, so an Android device whose GPU is a software renderer (SwiftShader, llvmpipe) is a test phone too (`DeviceInfo.IsStoreTestDevice`). No phone a player holds draws in software. Nothing new is sent.
+
 ## 0.5.0
 
 For multiplayer games and genres beyond the single-player level loop. Every new event needs a Glitchless server that knows it: an older one keeps the new fields and drops the new events, and the SDK sends counters and a server's sessions only to a server that says it takes them (`GET /v1/health`).

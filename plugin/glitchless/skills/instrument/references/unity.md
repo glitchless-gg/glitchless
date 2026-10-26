@@ -22,7 +22,7 @@ Add one line to `dependencies` in `Packages/manifest.json`:
 "gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"
 ```
 
-Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.5.0`.
+Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.5.1`.
 
 ## 3. Initialize, without touching a scene file
 

@@ -598,6 +598,14 @@ namespace GlitchlessSdk.Tests
             Assert.AreEqual("user", GlitchlessCore.SessionTypeFor("user", false, () => "true"), "a type the game set wins");
             Assert.AreEqual("synthetic", GlitchlessCore.SessionTypeFor(null, true, () => throw new Exception("not read when a bot flag decides")));
             Assert.IsNull(DeviceInfo.FirebaseTestLab(), "nothing to read in the Editor, and nothing thrown");
+            // Google's pre-launch phones don't set the setting: a software GPU on Android tells them too.
+            Assert.IsTrue(DeviceInfo.IsStoreTestDevice(true, null, "Google SwiftShader"), "a pre-launch virtual phone");
+            Assert.IsTrue(DeviceInfo.IsStoreTestDevice(true, null, "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"));
+            Assert.IsTrue(DeviceInfo.IsStoreTestDevice(true, "true", "Adreno (TM) 610"), "the setting alone");
+            Assert.IsFalse(DeviceInfo.IsStoreTestDevice(true, null, "Adreno (TM) 610"), "a player's phone");
+            Assert.IsFalse(DeviceInfo.IsStoreTestDevice(true, null, "Mali-G57 MC2"));
+            Assert.IsFalse(DeviceInfo.IsStoreTestDevice(false, null, "llvmpipe (LLVM 15.0.7, 256 bits)"), "a desktop drawing in software isn't a store test device");
+            Assert.IsFalse(DeviceInfo.IsStoreTestDevice(true, null, null));
 
             var core = NewCore();
             core.TestLabSetting = () => "true";
