@@ -20,16 +20,22 @@ like a key), then zips the files into `dist/chatgpt-plugin/` at the repo root
 
 ## Before it's ready
 
-Two values only the owner can give are marked `OWNER-TODO` in `submission.json`. While either is there, the zip is named
-`glitchless-1.0.0-DRAFT.zip` and the build lists what's missing:
+One value only the owner can give is still marked `OWNER-TODO` in `submission.json`, and while it's there the zip is
+named `glitchless-1.0.0-DRAFT.zip` and the build lists it:
 
-- `developerName`: the verified developer or business name (the portal replaces it with the verified identity,
-  but the package must carry one). `plugins/glitchless/plugin.json` says "Glitchless" for local installs.
-- `review.demo_recording_url`: a video a reviewer can open, showing the main use cases: connecting, approving in
-  Glitchless, then the five test-case prompts.
+- `review.demo_recording_url`: a video a reviewer can open that shows the main use cases in ChatGPT and Codex.
+  [demo-video.md](demo-video.md) is the shot list.
+
+`developerName` is the owner's own name, Banjo Obayomi: the listing goes out under the owner's individual
+verification for now (a "Glitchless" name needs a verified business). The portal shows the verified identity's name
+either way; `plugins/glitchless/plugin.json` says "Glitchless" for local installs.
 
 Also decide `publication.countries` (left out: no restriction) and check the test cases against the seeded review
-workspace; their expected answers describe that data.
+workspace; their expected answers describe that data, and version 1.0.0's sessions leave its 7-day window about five
+days after a seed.
+
+If the portal refuses the zip over `$schema` (one developer reported that for `mcp.json` in October 2026, though
+OpenAI's own examples carry it), delete that line from the zip's `mcp.json` and upload again.
 
 ## What goes in the portal, not the package
 
