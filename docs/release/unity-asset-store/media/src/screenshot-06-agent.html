@@ -1,0 +1,37 @@
+<!doctype html>
+<!-- Asset Store screenshot, 1920 x 1080: what a coding agent gets. Made by ../make-agent-page.mjs from the Fetch!
+     runs' findings.json and measure.json; edit that script, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>.cards { grid-template-rows: auto 1fr; } pre { font-size: 12px; }</style>
+</head>
+<body>
+  <h1>Your coding agent <em>reads it too</em></h1>
+  <div class="sub">The Fetch! sample's findings over MCP, and a build measuring itself: the numbers to beat after a fix.</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card">
+      <h2>glitchless_triage · fetch-unity</h2>
+<pre>1. <span class="w">[HIGH]</span> KeyNotFoundException: The given key 'frisbee' was not present in the dictionary.
+2. <span class="k">[MEDIUM]</span> Mesh leak in 1.0.0: +47 meshes per level load
+3. <span class="k">[MEDIUM]</span> Difficulty spike on level-2 at x≈34.7: 67% of the level's deaths
+4. <span class="k">[MEDIUM]</span> Difficulty spike on level-3 at x≈7.7: 60% of the level's deaths
+
+<span class="c">KeyNotFoundException: The given key 'frisbee' was not present in the dictionary.:</span>
+Start at GlitchlessSamples.Fetch.FetchGame.CatchToy (FetchGame.cs:385). The error fires during play, so look for a reference that is missing or already destroyed (a GetComponent() or Find() that returned null, an inspector field left empty, an object Destroy()ed earlier: a MissingReferenceException) or a dictionary or array loo…</pre>
+    </div>
+    <div class="card">
+      <h2>Fetch --autoplay --glitchless-warmup=2 --glitchless-measure=12</h2>
+<pre><span class="c">{"glitchless_measure": {</span>
+"frame_ms": {"p50": 8.17, "p95": 9.21, "worst": 40.7},
+"fps": 119.1, "pct_frames_over_budget": 0.3,
+"hitches": []
+<span class="c">}}</span></pre>
+    </div>
+  </div>
+</body>
+</html>

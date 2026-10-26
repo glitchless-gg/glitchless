@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Asset Store screenshot, 1920 x 1080: setting it up. The fields and calls are the package's own
+     (Runtime/GlitchlessBootstrap.cs, Runtime/Glitchless.cs). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>.cards { grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr; } .wide { grid-column: 1 / 3; }</style>
+</head>
+<body>
+  <h1>One component, <em>no code</em> to start</h1>
+  <div class="sub">Add Glitchless Bootstrap to your first scene. Then name what matters from C#.</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card">
+      <h2>Glitchless Bootstrap (component)</h2>
+<pre><span class="k">Service</span>        my-game
+<span class="k">Intake</span>         https://api.glitchless.gg
+<span class="k">Client Token</span>   gl_pub_…
+<span class="k">Full Privacy</span>   <span class="c">off: anonymous by default</span>
+<span class="k">Positions</span>      <span class="c">on: death heatmaps</span>
+<span class="k">Scene Levels</span>   <span class="c">on: each scene is a level</span></pre>
+    </div>
+    <div class="card">
+      <h2>What it catches on its own</h2>
+      <table>
+        <tr><td>Frame time</td><td>your Update, physics, render, GPU</td></tr>
+        <tr><td>Hitch causes</td><td>GC, shader compiles, scene loads, new objects</td></tr>
+        <tr><td>Errors</td><td>exceptions, LogError, assertions</td></tr>
+        <tr><td>Multiplayer</td><td>Netcode for GameObjects, Mirror</td></tr>
+        <tr><td>Leaks</td><td>meshes, materials, textures, objects</td></tr>
+      </table>
+    </div>
+    <div class="card wide">
+      <h2>Tell it about your game, from C#</h2>
+      <table>
+        <tr><td>Levels and deaths</td><td><code>Glitchless.LevelComplete(score: 1200); Glitchless.Death(transform.position, "lava");</code></td></tr>
+        <tr><td>Events and counters</td><td><code>Glitchless.Track("powerup", "magnet"); Glitchless.Count("shot", "rifle");</code></td></tr>
+        <tr><td>Who is playing</td><td><code>Glitchless.SetProperty("mode", "ranked");</code></td></tr>
+        <tr><td>Bug reports</td><td><code>Glitchless.OpenBugReport();</code> <span class="c">or F8</span></td></tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

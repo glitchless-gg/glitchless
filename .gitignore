@@ -27,3 +27,6 @@ unity/Assets/Samples/
 unity/Assets/Samples.meta
 unity/*.csproj
 unity/*.sln
+
+# Release kits: dashboard captures behind the store images are made again (each kit's README says how)
+docs/release/*/media/captures/
