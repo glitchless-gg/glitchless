@@ -291,8 +291,10 @@ clone, as the README shows: `agy plugin install` takes a folder or a repo whose 
 
 - **Meta Muse:** https://platform.muse.ai → Submit a connector (a Meta sign-in): the hosted MCP endpoint and OAuth.
   Meta reviews it (function, security, legal, an end-to-end test) and admits connectors in waves.
-- **Glama's hosted connectors** (https://glama.ai/mcp/connectors): the hosted URL; it lists remote servers with
-  OAuth.
+- **Glama's hosted connectors** (https://glama.ai/mcp/connectors): mostly copied from the official MCP Registry's
+  entries that carry a hosted URL (`remotes`), which `packages/mcp/server.json` has from glitchless-mcp 0.10.2, so
+  VS Code and other registry readers offer the hosted server too. Glama's form (Add Server → Hosted endpoint) adds it
+  by hand as well: it's reviewed, then Glama emails how to set up the health checks that put a connector in search.
 - **Smithery:** not an option. It stopped taking new servers and updates in October 2026 (its form answers 403) and
   shuts down accounts, its API and its hosted URLs on 31 October 2026 (https://smithery.ai/future). What's left is a
   directory, now run by Arcade.dev, of servers it curates.

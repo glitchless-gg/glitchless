@@ -4,17 +4,26 @@
   "title": "Glitchless",
   "description": "Game observability for coding agents: stutters, crashes, custom metrics, dashboards, playtest bots",
   "websiteUrl": "https://www.glitchless.gg",
+  "icons": [
+    {
+      "src": "https://app.glitchless.gg/brand/glitchless-icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
   "repository": {
     "url": "https://github.com/glitchless-gg/glitchless",
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.10.1",
+  "version": "0.10.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "glitchless-mcp",
-      "version": "0.10.1",
+      "version": "0.10.2",
       "transport": {
         "type": "stdio"
       },
@@ -39,6 +48,12 @@
           "isRequired": false
         }
       ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.glitchless.gg/mcp"
     }
   ]
 }
