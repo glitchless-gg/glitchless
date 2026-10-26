@@ -8,21 +8,21 @@ Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.5
 
 | field | value |
 | --- | --- |
-| Publisher name | **Glitchless** (it must match `author.name` in the package; `asset-store.mjs --publisher` sets it) |
+| Publisher name | **Glitchless** (a UPM product's `author.name` must match it; `asset-store.mjs --publisher` sets it) |
 | Website | https://www.glitchless.gg |
 | Support email | support@glitchless.gg |
 | Support page | https://www.glitchless.gg/support.html |
-| UPM namespace | `gg.glitchless`, verified through glitchless.gg's DNS (STEPS.md step 4) |
+| UPM namespace | Only for a UPM product: `gg.glitchless`, verified through glitchless.gg's DNS (STEPS.md, "Later") |
 
 ## Product
 
 | field | value |
 | --- | --- |
 | Product name | **Glitchless Game Observability** |
-| Package structure | Single package; technical name `gg.glitchless.sdk` (the folder and `package.json` both say it) |
+| Package | A classic package, uploaded from `Assets/Glitchless` (`asset-store.mjs --classic`). As a UPM product: single package, technical name `gg.glitchless.sdk` |
 | Category | **Tools → Integration** (an SDK for a service). If the picker has no Integration, **Tools → Utilities** |
 | Price | **Free** |
-| Unity versions | **6000.3** (Unity 6.3 LTS) and later. Tested on 6000.3.27f1 |
+| Unity versions | **6000.3** (Unity 6.3 LTS) and later. Uploaded from and tested on 6000.3.27f1 |
 | Render pipelines | **Built-in, URP and HDRP**: the SDK draws nothing but its optional IMGUI bug-report form |
 | Platforms | All: pure C# on Unity's own modules, with no native plugins |
 | Release notes | `0.5.1: first Asset Store release.` |
@@ -65,13 +65,14 @@ This package uses no third-party components.
 
 ```text
 - Unity 6000.3 (6.3 LTS) or later. Built-in, URP and HDRP.
-- Dependencies: Unity's own modules only (UnityWebRequest, IMGUI, ImageConversion, ScreenCapture).
+- Imports into Assets/Glitchless, with the Fetch! sample game in Assets/Glitchless/Samples/Fetch.
+- Dependencies: Unity's own modules only (UnityWebRequest, IMGUI, ImageConversion, ScreenCapture, and Physics for the sample), which every new project has.
 - Optional, found at runtime by reflection so the package depends on none of them: Netcode for GameObjects, Mirror, Steamworks.NET or Facepunch.Steamworks. With the Input System, the bug-report key uses it.
 - Sends JSON (gzipped, except in WebGL) to the server you choose, every 15 seconds; batches wait on the device while offline and go on a later launch.
 - Anonymous, install-ID and full privacy modes; PRIVACY.md lists every field each one sends.
 - Starts itself before the first scene so the first frames are kept, but sends nothing until Glitchless.Init(). Define GLITCHLESS_DISABLE to turn the automatic start off.
 - Code in the GlitchlessSdk namespace, in one assembly (GlitchlessSdk.asmdef). No Editor code, no native plugins, no executables.
-- Documentation: README.md, PRIVACY.md and CHANGELOG.md in the package.
+- Documentation: README.md, PRIVACY.md and CHANGELOG.md in Assets/Glitchless.
 ```
 
 ## Keywords
@@ -93,8 +94,8 @@ and this field lists each component; `asset-store.mjs` refuses a `ThirdParty` fo
 
 ## Licence (1.2.c)
 
-The Asset Store copy is sold under the **Asset Store EULA**: `asset-store.mjs` leaves out `LICENSE.md` and points
-`licensesUrl` at https://unity.com/legal/as-terms. The same code stays MIT on GitHub; the copyright holder can offer
+The Asset Store copy is sold under the **Asset Store EULA**: `asset-store.mjs` leaves out `LICENSE.md` (and for a UPM
+product points `licensesUrl` at https://unity.com/legal/as-terms). The same code stays MIT on GitHub; the copyright holder can offer
 both. Publishing it under MIT on the store instead would need Unity's written agreement first.
 
 ## Media
