@@ -291,8 +291,11 @@ clone, as the README shows: `agy plugin install` takes a folder or a repo whose 
 
 - **Meta Muse:** https://platform.muse.ai → Submit a connector (a Meta sign-in): the hosted MCP endpoint and OAuth.
   Meta reviews it (function, security, legal, an end-to-end test) and admits connectors in waves.
-- **Smithery** and **Glama's hosted connectors** (https://glama.ai/mcp/connectors): the hosted URL; both list remote
-  servers with OAuth.
+- **Glama's hosted connectors** (https://glama.ai/mcp/connectors): the hosted URL; it lists remote servers with
+  OAuth.
+- **Smithery:** not an option. It stopped taking new servers and updates in October 2026 (its form answers 403) and
+  shuts down accounts, its API and its hosted URLs on 31 October 2026 (https://smithery.ai/future). What's left is a
+  directory, now run by Arcade.dev, of servers it curates.
 - **Gemini app:** Google adds connectors itself; there's no form.
 
 ## Reviewer instructions
