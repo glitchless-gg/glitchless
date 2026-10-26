@@ -1314,11 +1314,20 @@ from inside a chat.
 | --- | --- | --- |
 | `GET /v1/agent/whoami` | The key's workspace, role, scopes and games | read |
 | `GET /v1/agent/games` | Every game: id, name, client token, the services reporting to it | read |
-| `POST /v1/agent/games` | `{ name }` → the new game, its client token and the intake URL | manage |
+| `POST /v1/agent/games` | `{ name }` → the new game, its client token and the intake URL; `{ demo: true }` → the demo game (below) | manage |
 | `GET /v1/agent/games/{game}` | One game | read |
 | `GET /v1/agent/games/{game}/shares` | Its share links | manage |
 | `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, from?, to? }` → the link (shown once) | manage |
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
+
+**The demo game** is Zoomies (demo), a week of Zoomies' sample play (about 180 sessions, with the planted level-2
+hitch and velocity error, and Zoomies' dashboard), so someone who connects an app before they have a game can try every
+tool on something real. A workspace has one; it takes no room from the plan's games, its sessions aren't the plan's,
+and games list it with `demo: true`. On the lake its data is readable about five minutes after it's made. In a
+workspace with no games, `glitchless_list_games` says how to make one (with the demo game when the key may `manage`,
+otherwise where in the dashboard and how to connect again with that scope), and a game that hasn't sent data gets a
+`next_step`: its client token, the intake and the setup steps (`docs/agent-setup-prompt.md`). The approval page
+(`#/connect`) asks for the first game, or offers the demo game, when the workspace has none.
 
 Every other `/v1/` route (queries, `/v1/dashboard`, source maps) takes the same key with the game named in
 `x-glitchless-project` (or `?project=`). `/v1/agent/` reads no cookies and sends no CORS headers: it's for programs,

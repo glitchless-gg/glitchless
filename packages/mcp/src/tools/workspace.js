@@ -48,12 +48,17 @@ act(
 
 act(
   'glitchless_create_game',
-  "Create a game in the signed-in workspace. Returns its client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game.",
-  { name: z.string().describe("The game's name, as players know it") },
-  async ({ name }) => {
-    const made = await agent('POST', '/games', { name });
+  "Create a game in the signed-in workspace. Returns its client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games.",
+  {
+    name: z.string().optional().describe("The game's name, as players know it (not needed with demo)"),
+    demo: z.boolean().optional().describe('Make the demo game, with a week of sample play'),
+  },
+  async ({ name, demo }) => {
+    if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
+    const made = await agent('POST', '/games', demo ? { demo: true } : { name });
     await workspaceGames(true);
     await projectFor(made.game.id);
+    if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
     return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
   },
 );

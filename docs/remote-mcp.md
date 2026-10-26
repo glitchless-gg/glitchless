@@ -50,6 +50,11 @@ address approving sends you back to. Names that pass for something else (a well-
 that app, or a web address other than its own) aren't accepted. An app that only sends you back to your own computer
 (`localhost`, as Claude Code and VS Code do) keeps whatever name it gives: nothing it gets can leave that computer.
 
+If the workspace has no games yet, the page asks for your first one: name it, or take the demo game (Zoomies with a
+week of sample play, which takes no room from your plan), so the app has something to read straight away. The app can
+then add Glitchless to your game with the game's client token and the
+[setup steps](https://github.com/glitchless-gg/glitchless/blob/main/docs/agent-setup-prompt.md).
+
 It acts as you, with your role in the workspace (a Viewer's connection can only read, and a Viewer can have 5 at once),
 and it never deletes data or changes billing or people. The connection shows under the app's name in Agents & MCP and
 in Settings → Keys & access, with when it was last used; Disconnect there takes effect within 5 seconds everywhere. A connection the app stops using

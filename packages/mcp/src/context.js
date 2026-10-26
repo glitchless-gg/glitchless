@@ -55,10 +55,16 @@ export function useCredentials({ url, token }) {
 export async function workspaceGames(fresh = false) {
   const c = conn();
   if (!fresh && c.games && Date.now() - c.games.at < 30_000) return c.games.list;
-  const { games: list } = await agent('GET', '/games');
-  c.games = { at: Date.now(), list };
+  const { games: list, intake } = await agent('GET', '/games');
+  c.games = { at: Date.now(), list, intake };
   return list;
 }
+
+// The intake address games send to, as the last game list gave it.
+export const workspaceIntake = () => conn().games?.intake ?? null;
+
+// How to add Glitchless to a game, in any engine: the setup steps a coding agent follows (docs/agent-setup-prompt.md).
+export const SETUP_URL = 'https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md';
 
 export async function projectFor(game) {
   const c = conn();
@@ -70,7 +76,8 @@ export async function projectFor(game) {
     list = await workspaceGames(true);
     hit = find();
   }
-  if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(', ') || 'none yet'}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(', ') || 'none yet; glitchless_create_game makes one'}.`);
+  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play), and the setup steps for adding Glitchless to a game are at ${SETUP_URL}.`);
+  if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(', ')}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(', ')}.`);
   c.game = hit.id;
   return hit.id;
 }
@@ -137,7 +144,7 @@ export async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
   const { services } = await query('services');
-  if (!services?.length) throw new Error('No games are reporting to Glitchless yet. Add the SDK and play a level first.');
+  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next; the setup steps for adding the SDK are at ${SETUP_URL}. Data shows a few minutes after a level is played.`);
   return services.sort((a, b) => b.last_seen - a.last_seen)[0].service;
 }
 
@@ -240,7 +247,7 @@ function instructions(remote) {
   return [
     'Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.',
     remote
-      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board."
+      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_board makes a read-only link to a board."
       : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
     'Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.',
     'When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.',

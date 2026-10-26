@@ -37022,6 +37022,7 @@ var init_zod = __esm({
 var context_exports = {};
 __export(context_exports, {
   CREDENTIALS_FILE: () => CREDENTIALS_FILE,
+  SETUP_URL: () => SETUP_URL,
   VERSION: () => VERSION,
   agent: () => agent,
   apiKey: () => apiKey,
@@ -37046,6 +37047,7 @@ __export(context_exports, {
   toolList: () => toolList,
   useCredentials: () => useCredentials,
   workspaceGames: () => workspaceGames,
+  workspaceIntake: () => workspaceIntake,
   write: () => write
 });
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -37068,8 +37070,8 @@ function useCredentials({ url: url2, token }) {
 async function workspaceGames(fresh = false) {
   const c = conn();
   if (!fresh && c.games && Date.now() - c.games.at < 3e4) return c.games.list;
-  const { games: list } = await agent("GET", "/games");
-  c.games = { at: Date.now(), list };
+  const { games: list, intake } = await agent("GET", "/games");
+  c.games = { at: Date.now(), list, intake };
   return list;
 }
 async function projectFor(game) {
@@ -37082,7 +37084,8 @@ async function projectFor(game) {
     list = await workspaceGames(true);
     hit = find2();
   }
-  if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(", ") || "none yet"}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(", ") || "none yet; glitchless_create_game makes one"}.`);
+  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play), and the setup steps for adding Glitchless to a game are at ${SETUP_URL}.`);
+  if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(", ")}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(", ")}.`);
   c.game = hit.id;
   return hit.id;
 }
@@ -37137,7 +37140,7 @@ async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
   const { services } = await query("services");
-  if (!services?.length) throw new Error("No games are reporting to Glitchless yet. Add the SDK and play a level first.");
+  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next; the setup steps for adding the SDK are at ${SETUP_URL}. Data shows a few minutes after a level is played.`);
   return services.sort((a, b) => b.last_seen - a.last_seen)[0].service;
 }
 function range(hours = 24) {
@@ -37190,7 +37193,7 @@ function createServer({ remote = false, scopes = null, connection: c = null } = 
 function instructions(remote) {
   return [
     "Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.",
-    remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
+    remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_board makes a read-only link to a board." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
     "Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.",
     "When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.",
     "For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.",
@@ -37210,7 +37213,7 @@ function slimIssue(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, saved, local, connections, conn, base, apiKey, defaultService, isWorkspace, calls, common, tools, READS, titleOf, gameField;
+var VERSION, CREDENTIALS_FILE, saved, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
@@ -37230,6 +37233,8 @@ var init_context = __esm({
     apiKey = () => conn().apiKey;
     defaultService = () => conn().service;
     isWorkspace = () => conn().apiKey.startsWith("gl_ws_");
+    workspaceIntake = () => conn().games?.intake ?? null;
+    SETUP_URL = "https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md";
     calls = new AsyncLocalStorage();
     common = {
       service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
@@ -37348,6 +37353,10 @@ var init_login = __esm({
 });
 
 // src/tools/core.js
+function nextStep(game, intake) {
+  if (game.demo) return "This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.";
+  return `No data yet. To add Glitchless to ${game.name}, give the game's coding agent (Claude Code, Cursor, Codex and others) the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}, then play a level: data shows a few minutes later.`;
+}
 var init_core3 = __esm({
   "src/tools/core.js"() {
     init_zod();
@@ -37355,7 +37364,13 @@ var init_core3 = __esm({
     tool("glitchless_list_games", "List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.", {}, async () => {
       if (isWorkspace()) {
         const list = await workspaceGames(true);
-        return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list);
+        if (!list.length) {
+          const who = await agent("GET", "/whoami").catch(() => null);
+          const make = who?.scopes?.includes("manage") ? "Make one with glitchless_create_game (name: the game's name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play." : `Make one in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
+          return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game with its client token: the setup steps are at ${SETUP_URL}.`, []);
+        }
+        const intake = workspaceIntake();
+        return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) }));
       }
       const { services } = await query("services");
       return reply(`${services.length} game(s) reporting to ${base()}`, services.map((s) => ({ ...s, last_seen: new Date(s.last_seen).toISOString() })));
@@ -38069,12 +38084,17 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
     );
     act(
       "glitchless_create_game",
-      "Create a game in the signed-in workspace. Returns its client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game.",
-      { name: external_exports.string().describe("The game's name, as players know it") },
-      async ({ name }) => {
-        const made = await agent("POST", "/games", { name });
+      "Create a game in the signed-in workspace. Returns its client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games.",
+      {
+        name: external_exports.string().optional().describe("The game's name, as players know it (not needed with demo)"),
+        demo: external_exports.boolean().optional().describe("Make the demo game, with a week of sample play")
+      },
+      async ({ name, demo }) => {
+        if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
+        const made = await agent("POST", "/games", demo ? { demo: true } : { name });
         await workspaceGames(true);
         await projectFor(made.game.id);
+        if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
         return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
       }
     );

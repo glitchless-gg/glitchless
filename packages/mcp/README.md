@@ -91,7 +91,7 @@ above go in its environment.
 | --- | --- |
 | `glitchless_list_games` | Which games report to the server, with their versions and environments; signed in to a workspace, every game in it with its client token |
 | `glitchless_sign_in` | Connect to a Glitchless Cloud workspace: a link and a code for the person to approve |
-| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL |
+| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL; `demo: true` makes the demo game (a week of sample play) |
 | `glitchless_share_board` | A read-only link to one board page, for a dev log, Discord or a game's "Live stats" link; `glitchless_list_share_links` and `glitchless_revoke_share_link` manage them |
 | `glitchless_triage` | Ranked findings: stutter per level and what it correlates with, leaks, top errors, difficulty spikes. Start here |
 | `glitchless_overview` | Headline numbers: sessions, players, crash-free sessions, frame time against the budget, rage quits |

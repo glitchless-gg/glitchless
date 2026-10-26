@@ -1,12 +1,21 @@
 // The built-in reads: which games report, findings, headline numbers, frame time, errors, levels,
 // death hotspots and one session in detail.
 import { z } from 'zod';
-import { base, query, resolveService, range, reply, common, tool, slimIssue, slimGroup, filters, isWorkspace, workspaceGames } from '../context.js';
+import { base, query, resolveService, range, reply, common, tool, slimIssue, slimGroup, filters, isWorkspace, workspaceGames, workspaceIntake, agent, SETUP_URL } from '../context.js';
 
 tool('glitchless_list_games', 'List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.', {}, async () => {
   if (isWorkspace()) {
     const list = await workspaceGames(true);
-    return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list);
+    if (!list.length) {
+      // Someone who connected an app before making a game: say what to do, and what this connection may do about it.
+      const who = await agent('GET', '/whoami').catch(() => null);
+      const make = who?.scopes?.includes('manage')
+        ? 'Make one with glitchless_create_game (name: the game\'s name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play.'
+        : `Make one in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
+      return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game with its client token: the setup steps are at ${SETUP_URL}.`, []);
+    }
+    const intake = workspaceIntake();
+    return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list.map((g) => (g.services?.length ? g : { ...g, next_step: nextStep(g, intake) })));
   }
   const { services } = await query('services');
   return reply(`${services.length} game(s) reporting to ${base()}`, services.map((s) => ({ ...s, last_seen: new Date(s.last_seen).toISOString() })));
@@ -119,3 +128,10 @@ tool(
     return reply(`Session ${session_id}`, { session: d.session, timeline: timeline.slice(0, 150), frames: d.frames.map(({ ctx, ...f }) => ({ ...f, ...ctx })).slice(0, 120), ...(ticks.length ? { server_windows: ticks.slice(0, 120) } : {}) });
   },
 );
+
+// What to do about a game that hasn't sent anything yet: the demo game's sample play is on its way; any other game needs
+// the SDK, which its coding agent adds from the setup steps with the game's client token.
+function nextStep(game, intake) {
+  if (game.demo) return 'This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.';
+  return `No data yet. To add Glitchless to ${game.name}, give the game's coding agent (Claude Code, Cursor, Codex and others) the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ''}, then play a level: data shows a few minutes later.`;
+}
