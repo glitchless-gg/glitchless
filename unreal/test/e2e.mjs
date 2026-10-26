@@ -298,13 +298,19 @@ try {
   check('the server reads the frame times', () => assert.ok(perf.distribution && JSON.stringify(perf).includes('Template_Default'), 'no performance for the level'));
   check('every batch carries a batch_id, and the server stored no event twice over all the runs', () => {
     for (const b of batches) assert.match(b.json?.batch_id || '', BATCH_ID);
-    const seen = new Set();
+    // How many times the game made each event, counting a batch sent again (same batch_id) once. The genre run
+    // tracks "shot" 30 times in one frame on purpose, so equal events in one batch are each stored.
+    const key = (sid, e) => `${sid}|${e.type}|${e.ts}|${e.name ?? ''}`;
+    const made = new Map();
+    const sent = new Map(batches.filter((b) => b.json).map((b) => [b.json.batch_id, b.json]));
+    for (const b of sent.values()) for (const e of b.events || []) made.set(key(b.session_id, e), (made.get(key(b.session_id, e)) || 0) + 1);
+    const kept = new Map();
     for (const e of stored(path.join(tmp, 'data'))) {
-      const key = JSON.stringify({ ...e, received: 0 });
-      assert.ok(!seen.has(key), `stored twice: ${e.type} ${e.ts} in ${e.session_id}`);
-      seen.add(key);
+      const k = key(e.session_id, e);
+      kept.set(k, (kept.get(k) || 0) + 1);
+      assert.ok(kept.get(k) <= (made.get(k) || 1), `stored twice: ${e.type} ${e.ts} in ${e.session_id}`);
     }
-    assert.ok(seen.size > 0, 'nothing stored');
+    assert.ok(kept.size > 0, 'nothing stored');
   });
 } catch (err) {
   results.push(['FAIL', 'run', err.message]);

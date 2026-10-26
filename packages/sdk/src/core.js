@@ -11,7 +11,7 @@ import { MAX_PROPS, propKeyProblem, propValue, gameAttrs } from './props.js';
 import { GROUP_KINDS, validGroupId, hashGroupId, newRunId } from './groups.js';
 import { NetWindow, DISCONNECT_REASONS, readLink } from './net.js';
 
-export const SDK_VERSION = '0.5.0';
+export const SDK_VERSION = '0.6.0';
 const SDK = `glitchless-browser/${SDK_VERSION}`;
 
 const HITCH_MS = 50; // a single frame over 50ms is a visible stutter (LoAF threshold)

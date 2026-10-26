@@ -1,6 +1,6 @@
 {
   "name": "glitchless",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Game observability SDK for web games (Three.js, Phaser 3 and 4, Babylon.js, PlayCanvas, or plain WebGL): frame time, stutter, errors and where players quit, with an in-game overlay and WebMCP tools for coding agents.",
   "keywords": [
     "game-observability",

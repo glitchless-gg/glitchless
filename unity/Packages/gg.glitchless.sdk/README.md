@@ -23,7 +23,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.4.1"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.5.0"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.

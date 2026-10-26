@@ -42,7 +42,7 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
     ```bash
     node unreal/scripts/package-plugin.mjs --fab --engine 5.8 --fab-url <the ID or the whole address>
     ```
-    That writes `dist/unreal/Glitchless_0.3.1_UE5.8.zip`, with `"FabURL": "com.epicgames.launcher://ue/Fab/product/<ID>"`
+    That writes `dist/unreal/Glitchless_0.4.0_UE5.8.zip`, with `"FabURL": "com.epicgames.launcher://ue/Fab/product/<ID>"`
     in its `.uplugin` (Fab §4.3.6.c), and a `.sha256` beside it.
 
 ## Host the zip
@@ -51,7 +51,7 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
     notes). Either:
     - a **GitHub release asset**, if the public repo and its release exist by then. The parent session makes the
       release only with your OK. The link looks like
-      `https://github.com/glitchless-gg/glitchless/releases/download/glitchless-unreal%2Fv0.3.1/Glitchless_0.3.1_UE5.8.zip`; or
+      `https://github.com/glitchless-gg/glitchless/releases/download/glitchless-unreal%2Fv0.4.0/Glitchless_0.4.0_UE5.8.zip`; or
     - **Google Drive, Dropbox or OneDrive**, shared as "anyone with the link". Use a link that downloads the file, not
       a preview page.
 
@@ -73,7 +73,7 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
     - **Target platforms:** Mac, plus Windows if step 2 passed.
     - **Distribution method:** Engine Plugin.
     - **Project file link:** the link from step 11.
-    - **Version notes:** `0.3.1: first Fab release, for Unreal Engine 5.8.`
+    - **Version notes:** `0.4.0: first Fab release, for Unreal Engine 5.8.`
 16. **Technical information.** Paste the "Technical information" box from LISTING.md. If step 2 didn't pass, change
     the two platform lines to Mac only.
 17. **Third-party software:** "This product uses third-party software". Fill in Fab's form from LISTING.md →

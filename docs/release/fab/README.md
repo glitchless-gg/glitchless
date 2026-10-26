@@ -18,7 +18,7 @@ The zip comes from the release script, never by hand:
 node unreal/scripts/package-plugin.mjs --fab --engine 5.8 --fab-url <listing id>
 ```
 
-It writes `dist/unreal/Glitchless_<version>_UE5.8.zip` (0.3.1 now). That zip is the plugin's source as a commit has it, plus the
+It writes `dist/unreal/Glitchless_<version>_UE5.8.zip` (0.4.0 now). That zip is the plugin's source as a commit has it, plus the
 repo's LICENSE, with `EngineVersion` and `FabURL` stamped into its `.uplugin`. The script fails on anything Fab's
 rules reject. Without `--fab` it makes the GitHub release zips (`glitchless-unreal-<version>.zip` and
 `glitchless-unreal-toolset-<version>.zip`).

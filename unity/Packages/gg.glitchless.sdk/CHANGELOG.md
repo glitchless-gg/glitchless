@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 For multiplayer games and genres beyond the single-player level loop. Every new event needs a Glitchless server that knows it: an older one keeps the new fields and drops the new events, and the SDK sends counters and a server's sessions only to a server that says it takes them (`GET /v1/health`).
 

@@ -32,7 +32,7 @@ TEST(KeepsEverythingUntilInitThenSendsSessionStartFirst)
 	EXPECT_EQ(Env.Find("service")->AsString(), "fetch"); // service is lowercased
 	EXPECT_EQ(Env.Find("version")->AsString(), "1.2.3"); // the project's version
 	EXPECT_EQ(Env.Find("env")->AsString(), "dev"); // dev in the editor and development builds
-	EXPECT_EQ(Env.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
+	EXPECT_EQ(Env.Find("sdk")->AsString(), "glitchless-unreal/0.4.0");
 	EXPECT(Env.Find("player_id")->IsNull()); // anonymous mode has no player ID
 	EXPECT(Text::StartsWith(Env.Find("session_id")->AsString(), "s_"));
 	EXPECT_EQ(OfType(Events, "error").at(0).Find("fn")->AsString(), "LogTemp");
@@ -609,7 +609,7 @@ TEST(MeasureReportsTheNextSeconds)
 	EXPECT_EQ(Result.Find("frames")->AsInt(), 60);
 	EXPECT_EQ(Result.Find("frame_budget_ms")->AsNumber(), 16.67);
 	EXPECT_EQ(Result.Find("draw_calls")->Find("avg")->AsInt(), 40);
-	EXPECT_EQ(Result.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
+	EXPECT_EQ(Result.Find("sdk")->AsString(), "glitchless-unreal/0.4.0");
 	EXPECT_EQ(Result.Find("session_id")->AsString(), Core->GetSessionId());
 	EXPECT_EQ(Result.Find("update_cpu_ms")->Find("p50")->AsNumber(), 4.0);
 	EXPECT_EQ(Result.Find("render_cpu_ms")->Find("p50")->AsNumber(), 3.0);
@@ -965,7 +965,7 @@ TEST(LiveSaysWhatIsGoingOn)
 	H.Frames(*Core, 1); // the frame that finishes the hitch
 	Core->ReportError("log_error", "boom", "", FValue(), false, "LogTemp");
 	const FValue L = Core->Live();
-	EXPECT_EQ(L.Find("sdk")->AsString(), "glitchless-unreal/0.3.1");
+	EXPECT_EQ(L.Find("sdk")->AsString(), "glitchless-unreal/0.4.0");
 	EXPECT_EQ(L.Find("level")->AsString(), "Arena");
 	EXPECT_EQ(L.Find("session_id")->AsString(), Core->GetSessionId());
 	EXPECT(L.Find("frames")->Size() >= 2);

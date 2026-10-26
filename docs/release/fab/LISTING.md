@@ -32,6 +32,8 @@ Add the plugin, fill in three settings, and every play session reports:
 • Where players give up. Maps are levels on their own; deaths, fails, levels left halfway and quits feed level funnels, death heatmaps and rage-quit detection.
 • Bug reports. Players press F8 (or a button in your menu) to send a note and a screenshot from where they are.
 • Leaks. UObject and actor counts and memory, level by level.
+• Multiplayer. On a client, ping, packet loss and disconnects come from Unreal's own replication; on a dedicated or listen server, tick rate, players and server crashes, filed apart from the players. Matches, parties and runs tie sessions together, so you can tell a lagging lobby (the server) from one lagging player (their connection).
+• Your game's own terms. Counters for things that happen hundreds of times a second (shots, gold), player properties such as class or rank to split any chart by, level attributes such as difficulty, and zones in an open world.
 • Steam and TestFlight. On Steam, each session says its build, branch and hardware (Steam Deck included), so you can compare a beta branch or a Deck against everyone else. On iOS, TestFlight and development installs count as testers, not players, and their purchases stay out of revenue.
 
 Glitchless then ranks what it found. Each finding says what's wrong, how many players it hits and what usually fixes it, in Unreal's terms: turn PSO precaching on and ship a bundled PSO cache; pool actors instead of making a UObject per shot; test a pointer with IsValid(). Your coding agent (Claude Code, Codex, Cursor and others) reads the same findings over MCP, changes the game, and measures the new build with -glitchless-measure.
@@ -61,6 +63,8 @@ Features:
 - An offline outbox, gzip and retries, with an ID on every batch so a retried send is stored once; -glitchless-measure prints frame stats as JSON for agents and CI
 - Steam facts per session when the game already uses Steamworks (build, branch, Steam Deck and other hardware, Proton, Big Picture); never a Steam ID
 - iOS: App Store, TestFlight and development installs told apart; testers' sessions and sandbox purchases kept out of players and revenue
+- Multiplayer: net driver ping, packet loss and jitter, disconnects with their reason, match/party/run groups (IDs hashed by default); a server role for dedicated and listen servers (tick rate, players, server crashes)
+- Counters, player properties, level attributes, zones, and list and boolean attributes (FGlitchlessAttributes)
 - A Project Settings page, a Blueprint function library, a C++ API and a game instance subsystem
 
 Code Modules:
@@ -112,8 +116,8 @@ and Pricing page).
 | Engine version | **5.8** |
 | Target platforms | **Windows** and **Mac** (see the note under Technical information) |
 | Distribution method | **Engine Plugin** (Fab installs code plugins into `Engine/Plugins/Fab`, §4.3.6.3.a) |
-| Project file link | a direct download of `Glitchless_0.3.1_UE5.8.zip` that needs no sign-in (§4.2.1, and the asset file format page) |
-| Version notes | `0.3.1: first Fab release, for Unreal Engine 5.8.` |
+| Project file link | a direct download of `Glitchless_0.4.0_UE5.8.zip` that needs no sign-in (§4.2.1, and the asset file format page) |
+| Version notes | `0.4.0: first Fab release, for Unreal Engine 5.8.` |
 
 ## Third-party software declaration (Fab §4.2.5)
 

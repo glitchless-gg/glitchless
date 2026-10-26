@@ -35,7 +35,11 @@ function buildEditor() {
   const script = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'Build.bat' : 'Mac/Build.sh');
   const log = path.join(tmp, 'build.log');
   console.log(`building the editor target (log: ${log})…`);
-  const r = spawnSync(script, ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex'], { encoding: 'utf8', maxBuffer: 1 << 28, shell: WINDOWS });
+  const args = ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex'];
+  // Windows runs a .bat only through cmd, as one command line with its paths quoted (C:\Program Files\…).
+  const opts = { encoding: 'utf8', maxBuffer: 1 << 28 };
+  const q = (a) => (/\s/.test(a) ? `"${a}"` : a);
+  const r = WINDOWS ? spawnSync([script, ...args].map(q).join(' '), { ...opts, shell: true }) : spawnSync(script, args, opts);
   fs.writeFileSync(log, `${r.stdout}\n${r.stderr}`);
   if (r.status !== 0) throw new Error(`the editor target didn't build (log: ${log})`);
 }
@@ -188,8 +192,9 @@ try {
     const windows = two.serverEvents.filter((e) => e.type === 'server_window');
     assert.ok(windows.some((w) => w.players >= 2), JSON.stringify(windows.map((w) => w.players)));
     assert.ok(windows.every((w) => w.ticks > 0));
-    // An empty map's tick is quick: the wait for the frame cap is not work.
-    assert.ok(windows.every((w) => w.tick_p50 < 8), JSON.stringify(windows.map((w) => [w.tick_p50, w.late])));
+    // An empty map's tick is quick: the wait for the frame cap is not work. The first window holds the host loading
+    // the map (on a cold Windows box, shader compiles too), so only the windows after it are held to that.
+    assert.ok(windows.slice(1).every((w) => w.tick_p50 < 8), JSON.stringify(windows.map((w) => [w.tick_p50, w.late])));
     assert.equal(two.serverEvents.find((e) => e.type === 'group' && e.kind === 'match')?.id, MATCH);
     assert.ok(!two.serverEvents.some((e) => e.type === 'custom'), 'the host\'s own events went to the server session too');
   });

@@ -231,7 +231,7 @@ then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake =
 
 For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless) into the project's `Plugins` folder, enable it in **Edit → Plugins**, and fill in **Service** and **Intake** in **Project Settings → Plugins → Glitchless**; no code is needed. See its [README](unreal/Plugins/Glitchless/README.md), and [`unreal/demo`](unreal/demo) for a small game with planted problems.
 
-For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.2.0.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.2.0) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
+For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.3.0.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.3.0) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
 
 ## Connect your coding agent
 
