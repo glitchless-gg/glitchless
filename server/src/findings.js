@@ -671,7 +671,7 @@ function launchNote(by) {
 // One tip per Godot hitch cause. The SDK names causes from what the long frame measured: pipeline
 // compiles, a scene swap, 50+ nodes added, or process / physics / render time taking the frame.
 const GODOT_CAUSE_TIPS = {
-  shader_compile: 'Some hitches compile rendering pipelines: draw every material, mesh and particle effect the level uses once behind the loading screen (e.g. off-camera) so it compiles before play, and don\'t create new material variants mid-level; on Forward+ and Mobile, Godot 4.4+ ubershaders cover most of the rest.',
+  shader_compile: 'Some hitches compile rendering pipelines: draw every material, mesh and particle effect the level uses once while the loading screen covers the view (in front of the camera: objects outside it aren\'t drawn, so they don\'t compile) so it compiles before play, and don\'t create new material variants mid-level; on Forward+ and Mobile, Godot 4.4+ ubershaders cover most of the rest.',
   node_spawn: 'Some hitches add many nodes in one frame: pool and reuse nodes instead of calling instantiate() and add_child() in a burst, and draw many copies with one MultiMeshInstance2D/3D or GPUParticles node instead of a node each.',
   scene_change: 'Some hitches come with a scene change: load the next scene in the background with ResourceLoader.load_threaded_request() and switch once load_threaded_get_status() reports it loaded.',
   script: 'Some hitches are long _process() or _physics_process() frames: spread big loops, sorts and searches over several frames (or a WorkerThreadPool task) and cache get_node() lookups.',

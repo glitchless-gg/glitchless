@@ -86,6 +86,16 @@ function load(key, fallback) {
   }
 }
 
+// The services picked in this browser, most recent first ([] when there's nothing or it can't be read).
+function loadPicked() {
+  try {
+    const list = JSON.parse(load('glitchless.services', '[]'));
+    return Array.isArray(list) ? list.filter((s) => typeof s === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 // `shell` (optional) is how a host wraps the dashboard; see shell.js. Beyond the context values it takes:
 //   nav(items) → items   change the navigation (each item may carry its own `page` component)
 //   sidebarTop, footer   elements for the top and the bottom of the side navigation
@@ -94,6 +104,9 @@ export function App({ shell: custom = {} }) {
   const route = useHashRoute();
   const [rangeKey, setRangeKey] = useState(() => load('glitchless.range', '1d'));
   const [service, setService] = useState(() => load('glitchless.service', ''));
+  // The services picked in this browser, most recent first: a game opens on the last one picked in it, even after
+  // another game in between (a game can have several, such as a site's and its app's).
+  const picked = useRef(loadPicked());
   const [env, setEnv] = useState('');
   const [version, setVersion] = useState('');
   const [type, setType] = useState('all');
@@ -129,7 +142,7 @@ export function App({ shell: custom = {} }) {
       if (services.data && service) setService('');
       return;
     }
-    if (!service || !list.find((s) => s.service === service)) setService([...list].sort((a, b) => b.last_seen - a.last_seen)[0].service);
+    if (!service || !list.find((s) => s.service === service)) setService(picked.current.find((p) => list.some((s) => s.service === p)) ?? [...list].sort((a, b) => b.last_seen - a.last_seen)[0].service);
   }, [list, service]); // eslint-disable-line react-hooks/exhaustive-deps
   // Another game has other properties: its filter goes when the game changes (not when the remembered one loads).
   const lastService = useRef(service);
@@ -142,7 +155,11 @@ export function App({ shell: custom = {} }) {
       localStorage.setItem('glitchless.range', rangeKey);
       localStorage.setItem('glitchless.live', live ? '1' : '0');
       localStorage.setItem('glitchless.nav', folded ? 'folded' : 'open');
-      if (service) localStorage.setItem('glitchless.service', service);
+      if (service) {
+        localStorage.setItem('glitchless.service', service);
+        picked.current = [service, ...picked.current.filter((p) => p !== service)].slice(0, 20);
+        localStorage.setItem('glitchless.services', JSON.stringify(picked.current));
+      }
     } catch {}
   }, [rangeKey, live, service, folded]);
   // Relative time ranges slide forward while Live is on.
@@ -184,7 +201,7 @@ export function App({ shell: custom = {} }) {
     params: { service, env, version, type, from: now - range.ms, to: now, ...propParams },
     go: (path) => (window.location.hash = `#/${path}`),
     // The page that shows a built-in view (a board may have the view's own id, such as "servers").
-    pageOf: (view) => pages.find((p) => p.view === view)?.id ?? view,
+    pageOf: (view) => pathOf(pages.find((p) => p.view === view)?.id ?? view),
     versions: current?.versions || [],
     dashboard: { spec: dashboard?.spec ?? null, source: dashboard?.source, updated_at: dashboard?.updated_at, updated_by: dashboard?.updated_by, reload: dash.reload },
   };
@@ -194,7 +211,12 @@ export function App({ shell: custom = {} }) {
     ...pages.map((p) => ({ path: p.id, label: p.title, icon: p.icon, title: p.title, dash: p })),
     ...(service ? [{ path: 'pages', label: 'Edit pages', icon: 'edit', title: 'Dashboard pages', page: Pages, quiet: true }] : []),
   ];
-  const items = shell.nav ? shell.nav([...game, ...NAV]) : [...game, ...NAV];
+  const listed = shell.nav ? shell.nav([...game, ...NAV]) : [...game, ...NAV];
+  // A page of the game whose id is one of the dashboard's own addresses (a board called "agents" next to Agents & MCP)
+  // gets an address of its own, so both stay in the sidebar and each link opens its own page.
+  const own = new Set(listed.filter((n) => n.path && !n.dash).map((n) => n.path));
+  const items = listed.map((n) => (n.dash && own.has(n.path) ? { ...n, path: `${n.path}-page` } : n));
+  const pathOf = (id) => items.find((n) => n.dash?.id === id)?.path ?? id;
   const statics = { agents: Agents, setup: Setup };
   // A page of the game's dashboard; else another item; else a built-in view the dashboard leaves out (links
   // such as #/errors/<issue> or #/sessions/<id> still open it); else the first page.
@@ -202,8 +224,8 @@ export function App({ shell: custom = {} }) {
   const resolve = (id) => {
     const item = items.find((n) => n.path && n.path === id);
     const p = item?.dash;
-    if (p) return p.view ? { Page: VIEW_PAGES[p.view], title: p.title, page: p } : { Page: Board, title: p.title, page: p };
-    if (item) return { Page: item.page || statics[item.path], title: item.title };
+    if (p) return p.view ? { Page: VIEW_PAGES[p.view], title: p.title, page: p, path: item.path } : { Page: Board, title: p.title, page: p, path: item.path };
+    if (item) return { Page: item.page || statics[item.path], title: item.title, path: item.path };
     if (VIEW_PAGES[id]) return builtIn(id);
     return null;
   };
@@ -218,7 +240,7 @@ export function App({ shell: custom = {} }) {
   const deep = !!route.arg && !!VIEW_PAGES[route.page] && resolve(route.page)?.page?.view !== route.page;
   const shows = deep && pages.find((p) => p.view === route.page);
   const view = (deep ? (shows ? resolve(shows.id) : builtIn(route.page)) : resolve(route.page)) || (first ? resolve(first.path) : null);
-  const active = view?.page?.id ?? (items.some((n) => n.path === route.page) ? route.page : first?.path);
+  const active = view?.path ?? (view?.page ? pathOf(view.page.id) : null) ?? (items.some((n) => n.path === route.page) ? route.page : first?.path);
   const Page = view?.page?.view === 'sessions' && route.arg ? SessionDetail : view?.Page;
   const loading = (services.loading && !services.data) || (service && !dashboard && dash.loading);
   // On the folded rail each icon names itself beside it: once the mouse rests on it, and at once on keyboard focus.
