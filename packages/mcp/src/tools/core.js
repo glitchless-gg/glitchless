@@ -12,7 +12,7 @@ tool('glitchless_list_games', 'List the games: with a workspace key, every game 
       const make = who?.scopes?.includes('manage')
         ? 'Make one with glitchless_create_game (name: the game\'s name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play.'
         : `Make one in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
-      return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game with its client token: the setup steps are at ${SETUP_URL}.`, []);
+      return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll('<the game>', 'my game')}`, []);
     }
     const intake = workspaceIntake();
     return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list.map((g) => (g.services?.length ? g : { ...g, next_step: nextStep(g, intake) })));
@@ -130,8 +130,11 @@ tool(
 );
 
 // What to do about a game that hasn't sent anything yet: the demo game's sample play is on its way; any other game needs
-// the SDK, which its coding agent adds from the setup steps with the game's client token.
+// the SDK in its code. An agent that can edit the code adds it from the setup steps with the game's client token; one
+// that can't (an app in a browser, such as claude.ai or ChatGPT) sends the person to a coding agent in the game's
+// folder, where Claude Code signed in to the same Claude account already has the connection.
+const CANT_EDIT = 'If you can\'t edit the game\'s code (in claude.ai or ChatGPT, say), tell the person to open Claude Code in the game\'s folder and say "Set up Glitchless for <the game> in this folder", or to paste the prompt on the Get started page in Glitchless into another coding agent.';
 function nextStep(game, intake) {
   if (game.demo) return 'This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.';
-  return `No data yet. To add Glitchless to ${game.name}, give the game's coding agent (Claude Code, Cursor, Codex and others) the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ''}, then play a level: data shows a few minutes later.`;
+  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, follow the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ''}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll('<the game>', game.name)}`;
 }

@@ -74,11 +74,16 @@ Glitchy is a small playtest robot shaped like a handheld console. It plays your 
 - Define a game or performance term the first time it matters. For example, p95 frame time is the time taken by the slowest 5% of frames.
 - Show the real product: screenshots, real numbers and the actual commands.
 
+## Email
+
+The welcome and product emails open with `email/email-hero.png`: navy, the dark lockup and one line on the left, the frame-time strip along the bottom (a coral stutter, the fix, short mint bars) and Glitchy waving on the right. Plainer notes (the setup reminder, notices) use a slim navy band with the dark lockup instead. The site serves both images from `/img/`, where emails load them.
+
 ## Rebuilding the assets
 
 ```bash
 node assets/brand/glitchless/build.mjs           # every PNG size and the lockups, from the SVGs
 node assets/brand/glitchless/build.mjs compare   # logo/variants/*.svg side by side at 256–16 px
+node assets/brand/glitchless/email/render-banner.mjs   # the email banner, from email/banner.html
 ```
 
 The build also packs `favicon.ico` from the 16, 32 and 48 px PNGs and copies the small icon to `favicon.svg`.

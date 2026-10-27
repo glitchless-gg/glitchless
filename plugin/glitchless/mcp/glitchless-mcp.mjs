@@ -37193,7 +37193,7 @@ function createServer({ remote = false, scopes = null, connection: c = null } = 
 function instructions(remote) {
   return [
     "Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.",
-    remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_board makes a read-only link to a board." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
+    remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
     "Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.",
     "When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.",
     "For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.",
@@ -37355,8 +37355,9 @@ var init_login = __esm({
 // src/tools/core.js
 function nextStep(game, intake) {
   if (game.demo) return "This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.";
-  return `No data yet. To add Glitchless to ${game.name}, give the game's coding agent (Claude Code, Cursor, Codex and others) the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}, then play a level: data shows a few minutes later.`;
+  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, follow the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll("<the game>", game.name)}`;
 }
+var CANT_EDIT;
 var init_core3 = __esm({
   "src/tools/core.js"() {
     init_zod();
@@ -37367,7 +37368,7 @@ var init_core3 = __esm({
         if (!list.length) {
           const who = await agent("GET", "/whoami").catch(() => null);
           const make = who?.scopes?.includes("manage") ? "Make one with glitchless_create_game (name: the game's name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play." : `Make one in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
-          return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game with its client token: the setup steps are at ${SETUP_URL}.`, []);
+          return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, []);
         }
         const intake = workspaceIntake();
         return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) }));
@@ -37478,6 +37479,7 @@ Full findings with evidence (window ${new Date(meta3?.from).toISOString()} \u219
         return reply(`Session ${session_id}`, { session: d.session, timeline: timeline.slice(0, 150), frames: d.frames.map(({ ctx, ...f }) => ({ ...f, ...ctx })).slice(0, 120), ...ticks.length ? { server_windows: ticks.slice(0, 120) } : {} });
       }
     );
+    CANT_EDIT = `If you can't edit the game's code (in claude.ai or ChatGPT, say), tell the person to open Claude Code in the game's folder and say "Set up Glitchless for <the game> in this folder", or to paste the prompt on the Get started page in Glitchless into another coding agent.`;
   }
 });
 
