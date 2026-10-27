@@ -690,10 +690,10 @@ function byVersion(ctx, st, w, currency) {
 
 // The segments a source's revenue chart has, for a line saying it can't be split some way.
 const segmentsOf = (charts) => (charts?.segments?.length ? charts.segments.slice(0, 8).join(', ') : 'nothing');
-const readDaily = (name, what) => `${name}'s ${what} are read once a day: the first read comes with the next sync.`;
-// Lines for the splits, which are the whole game's and read once a day.
+const readDaily = (name, what) => `${name}'s ${what} come with its sync: the first read comes with the next one.`;
+// Lines for the splits, which are the whole game's and read with each sync.
 function splitNotes(w, name, asOf, what) {
-  return [...(asOf && asOf < w.hi ? [`${name}'s ${what} are read once a day: these go to ${asOf}.`] : []), ...(w.version ? [`The whole game's ${what}, whatever the version filter.`] : []), ...w.notes.filter((n) => n.includes('never converted'))];
+  return [...(asOf && asOf < w.hi ? [`${name}'s ${what} go to ${asOf}: the next sync reads them again.`] : []), ...(w.version ? [`The whole game's ${what}, whatever the version filter.`] : []), ...w.notes.filter((n) => n.includes('never converted'))];
 }
 
 // The window's installs (the source's new customers), revenue and purchases (its transactions, renewals among them) by

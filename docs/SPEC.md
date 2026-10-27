@@ -1370,11 +1370,11 @@ currency forgets the kept revenue, and the next sync backfills it in the new one
 | each chart's resolutions and segments | `GET /projects/{p}/charts/{revenue,mrr,actives,trials,customers_new,customers_active}/options?realtime=true` | once a day |
 | revenue and transactions, MRR, active subscriptions, active trials, new customers, active customers, by UTC day | `GET /projects/{p}/charts/{chart}?realtime=true&resolution=<the daily resolution's ID>&start_date=&end_date=&currency=` | every sync: the first back the plan's retention (14, 90 or 400 days; active customers 28, the days RevenueCat says are accurate), then from 3 days before the last day read (late renewals; Charts v3 takes refunds off on the day they are processed) |
 | revenue by app version | the revenue chart with `segment=<its app version segment>&limit_num_segments=20` | every sync, when the revenue chart's options list an app version segment |
-| revenue and transactions by country; new customers (installs) by country | the revenue and new customers charts with `segment=<their country segment>&limit_num_segments=50` | once a day, when the chart's options list a country segment (an ID or name `country`, `country_code` or `customer_country`, never a first-seen or store country) |
-| revenue and transactions by store | the revenue chart with `segment=<its store segment>&limit_num_segments=10` | once a day, when its options list a store segment (`store`) |
+| revenue and transactions by country; new customers (installs) by country | the revenue and new customers charts with `segment=<their country segment>&limit_num_segments=50` | every sync, when the chart's options list a country segment (an ID or name `country`, `country_code` or `customer_country`, never a first-seen or store country) |
+| revenue and transactions by store | the revenue chart with `segment=<its store segment>&limit_num_segments=10` | every sync, when its options list a store segment (`store`) |
 
-Charts & Metrics allow 25 requests a minute per RevenueCat project: a sync asks one call at a time, 7 or 8 of them
-(16 or 17 once a day, with the options and the splits by country and store), never more than 20, and a 429 ends it:
+Charts & Metrics allow 25 requests a minute per RevenueCat project: a sync asks one call at a time, 10 or 11 of them
+with the splits by country and store (16 or 17 once a day, with the options), never more than 20, and a 429 ends it:
 the rest wait for the next sync, from where it was. Options kept from before Glitchless looked for the country and
 store segments are read again at once. The
 stores' daily budget (1,500 calls a game) applies too. A chart's points are `{cohort, measure, value, incomplete,
