@@ -1905,7 +1905,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.5.1"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.0"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
@@ -1934,7 +1934,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.5.1"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.6.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
@@ -1963,7 +1963,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5c. Unreal SDK
 
-`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.4.0"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
+`unreal/Plugins/Glitchless` (Unreal Engine 5.8; 5.7 is guarded but not built) sends the same envelope with `"sdk": "glitchless-unreal/0.5.0"` and the same event types. See its [README](../unreal/Plugins/Glitchless/README.md) and [PRIVACY.md](../unreal/Plugins/Glitchless/PRIVACY.md). Positions are in metres with y up (x = X/100, y = Z/100, z = Y/100). Differences:
 
 | | |
 | --- | --- |
@@ -1994,7 +1994,7 @@ On the server, findings for an `unreal` game name Unreal's fixes (PSO precaching
 
 ## 5d. GameMaker SDK
 
-`gamemaker/` (GameMaker 2024.2 and later, built for LTS 2026) is GML: the `Glitchless` script's `glitchless_*` functions, internal `__glitchless_*` scripts and two persistent objects that `glitchless_init` creates. It sends the same envelope with `"sdk": "glitchless-gamemaker/0.3.0"` and the same event types, gzipped (a gzip wrapper around `buffer_compress`'s zlib stream; plain JSON in a web build). See its [README](../gamemaker/README.md) and [PRIVACY.md](../gamemaker/PRIVACY.md). Positions are room coordinates. Differences:
+`gamemaker/` (GameMaker 2024.2 and later, built for LTS 2026) is GML: the `Glitchless` script's `glitchless_*` functions, internal `__glitchless_*` scripts and two persistent objects that `glitchless_init` creates. It sends the same envelope with `"sdk": "glitchless-gamemaker/0.4.0"` and the same event types, gzipped (a gzip wrapper around `buffer_compress`'s zlib stream; plain JSON in a web build). See its [README](../gamemaker/README.md) and [PRIVACY.md](../gamemaker/PRIVACY.md). Positions are room coordinates. Differences:
 
 | | |
 | --- | --- |

@@ -16,8 +16,8 @@
 /// Struct fields are read with [$ "name"] wherever they may be missing: reading a missing one with
 /// a dot stops a GameMaker game.
 
-#macro GLITCHLESS_VERSION "0.3.0"
-#macro GLITCHLESS_SDK "glitchless-gamemaker/0.3.0"
+#macro GLITCHLESS_VERSION "0.4.0"
+#macro GLITCHLESS_SDK "glitchless-gamemaker/0.4.0"
 
 #macro __GLITCHLESS_HITCH_MS 50 // one frame over 50 ms is a stutter a player sees
 #macro __GLITCHLESS_JANK_MS 33.4 // two missed 60 Hz frames

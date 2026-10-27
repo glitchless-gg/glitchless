@@ -36,7 +36,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.5.1`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.6.0`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game sets them, events and windows also carry `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` ([Groups](#groups)).
 

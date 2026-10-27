@@ -1,6 +1,6 @@
 # The Unity package against the Asset Store's rules
 
-`gg.glitchless.sdk` 0.5.1 checked against the [Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines),
+`gg.glitchless.sdk` 0.6.0 checked against the [Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines),
 for the classic package that goes up first and the UPM product that may follow, and the UPM publishing pages ([enroll](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply),
 [draft](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/create-draft),
 [validate and upload](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/validate),

@@ -37,7 +37,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const PROJECT = path.join(ROOT, 'gamemaker/Glitchless.yyp');
 const BUILD = path.join(ROOT, 'gamemaker/.build');
 const SERVICE = 'glitchless-gamemaker-demo';
-const SDK = 'glitchless-gamemaker/0.3.0';
+const SDK = 'glitchless-gamemaker/0.4.0';
 const fixture = JSON.parse(fs.readFileSync(path.join(ROOT, 'gamemaker/test/fixtures/js-fixture.json'), 'utf8'));
 const results = [];
 
