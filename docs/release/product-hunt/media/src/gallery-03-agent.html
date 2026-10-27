@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- Product Hunt gallery 3, 1270 x 760: the commit Claude Code made in Starlift from what Glitchless showed (real text, trimmed) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>
+  .cards { grid-template-columns: 1fr; }
+  .card h2 { text-transform: none; letter-spacing: .02em; font-size: 9px; }
+  .commit { font: 9.8px/1.55 "JetBrains Mono", ui-monospace, Menlo, monospace; font-variant-ligatures: none; color: #e6ecf7; }
+  .commit p { margin: 0 0 6px; padding-left: 1.3em; text-indent: -1.3em; }
+  .commit .head { padding-left: 0; text-indent: 0; color: var(--fog); margin-bottom: 11px; }
+  .commit .c { margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>Your agent <em>fixes it in your repo</em></h1>
+  <div class="sub">Starlift's build 17, written with Claude Code from what Glitchless showed on players' phones. The commit, trimmed:</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card">
+      <h2>commit cd848c2 · Starlift · 26 October 2026</h2>
+<div class="commit">
+        <p class="head">Build 17: tutorial levels, Skip into Quick Play, Shader Baker, Glitchless 0.5.1, light look, try cards</p>
+        <p>- Tutorial: each lesson and item is its own Glitchless level (tutorial_1_up_and_down ... tutorial_8_prism), left on Skip; tutorial_skip says which lesson. <span class="k">A Skip on the first run goes straight into Quick Play</span> instead of Home.</p>
+        <p>- Shader Baker on in the iOS, Android and Google Play presets. First frame on a fresh install: <span class="k">iPhone 16 Pro Max 5.25 s to 1.79 s</span>, Galaxy A15 5.56 s to 4.97 s.</p>
+        <p>- Light look for slow GPUs: the sky at half size, its stars drawn apart as quads, no glow. It switches on when the median frame in the first seconds is over 24 ms. <span class="k">Galaxy A15 Home: 17 fps to 53 fps.</span></p>
+        <p>- Home's try card: the Voyage card stays until the Voyage is played.</p>
+        <p class="head c">Co-Authored-By: Claude Opus 5.5</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

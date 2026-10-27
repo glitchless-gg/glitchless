@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Product Hunt gallery 6, 1270 x 760: the eight engines and each one's real install line -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>
+  .cards { grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr 1fr; }
+  .web { grid-column: span 3; } .unity { grid-column: span 3; }
+  .godot, .unreal, .gm { grid-column: span 2; }
+  .card h3 small { font: 500 9px/1 Inter, sans-serif; color: #8796b5; margin-left: 4px; letter-spacing: 0; }
+  .card .how { font-size: 9.5px; line-height: 1.45; color: var(--fog); margin: 4px 0 7px; }
+  .card code { display: block; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); border-radius: 5px; padding: 6px 7px; font-size: 8.6px; overflow-wrap: normal; word-break: normal; }
+</style>
+</head>
+<body>
+  <h1>Eight engines, <em>one setup prompt</em></h1>
+  <div class="sub">Paste the setup prompt into your coding agent and it adds the SDK for you. By hand, it's one line:</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="cards">
+    <div class="card web"><h3>Three.js, Phaser, Babylon.js, PlayCanvas <small>web, 0.7.0</small></h3><div class="how">One npm package for every web engine.</div><code>npm install glitchless</code></div>
+    <div class="card unity"><h3>Unity <small>6.3 and later, 0.6.0</small></h3><div class="how">Package Manager, Add package from git URL:</div><code>https://github.com/<wbr>glitchless-gg/<wbr>glitchless.git?<wbr>path=unity/<wbr>Packages/<wbr>gg.glitchless.sdk#<wbr>gg.glitchless.sdk/<wbr>v0.6.0</code></div>
+    <div class="card godot"><h3>Godot <small>4.5+, 0.6.0</small></h3><div class="how">Copy the addon and turn on its plugin:</div><code>addons/glitchless/</code></div>
+    <div class="card unreal"><h3>Unreal <small>5.8, 0.5.0</small></h3><div class="how">Unzip the plugin into your project:</div><code>glitchless-unreal-0.5.0.zip → Plugins/Glitchless</code></div>
+    <div class="card gm"><h3>GameMaker <small>2024.2+, 0.4.0</small></h3><div class="how">Tools, Import Local Package:</div><code>Glitchless-0.4.0.yymps</code></div>
+  </div>
+</body>
+</html>

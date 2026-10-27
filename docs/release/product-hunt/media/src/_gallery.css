@@ -1,0 +1,20 @@
+/* Shared by the Product Hunt gallery pages: a navy frame, a headline, and a real capture (or cards) below it. 635 x 380,
+   rendered at 2x (1270 x 760). The look of the Unity Asset Store and Fab kits; colours from assets/brand/glitchless/BRAND.md. */
+:root { --navy: #14213d; --navy-2: #0e182e; --mint: #2ee6a6; --coral: #ff6b57; --fog: #c5d0e4; --mist: #f4f6fa; --card: #0b1427; --line: rgba(197, 208, 228, .16); }
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 635px; height: 380px; }
+body { position: relative; overflow: hidden; background: radial-gradient(120% 90% at 85% 0%, #1d2e52 0%, var(--navy) 55%, var(--navy-2) 100%); color: #fff; font-family: Inter, sans-serif; }
+.brand { position: absolute; right: 24px; top: 21px; display: flex; align-items: center; gap: 6px; font: 800 13px/1 Outfit, sans-serif; letter-spacing: -0.02em; color: var(--fog); }
+.brand img { width: 18px; height: 18px; }
+h1 { position: absolute; left: 24px; top: 17px; font: 800 23px/1.1 Outfit, sans-serif; letter-spacing: -0.02em; max-width: 480px; }
+h1 em { font-style: normal; color: var(--mint); }
+.sub { position: absolute; left: 24px; top: 47px; right: 24px; font-size: 10.5px; line-height: 1.45; color: var(--fog); }
+.shot { position: absolute; left: 24px; right: 24px; top: 80px; bottom: 16px; border-radius: 8px; overflow: hidden; box-shadow: 0 14px 40px rgba(0, 0, 0, .45); background: var(--mist); }
+.shot img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
+.cards { position: absolute; left: 24px; right: 24px; top: 80px; bottom: 16px; display: grid; gap: 10px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow: hidden; }
+.card h2 { font: 600 8.5px/1 Inter, sans-serif; letter-spacing: .07em; text-transform: uppercase; color: var(--mint); margin-bottom: 7px; }
+.card h3 { font: 800 14px/1.15 Outfit, sans-serif; letter-spacing: -0.01em; margin-bottom: 4px; }
+pre, code { font: 9px/1.5 "JetBrains Mono", ui-monospace, Menlo, monospace; font-variant-ligatures: none; color: #e6ecf7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.k { color: var(--mint); } .c { color: #8796b5; } .w { color: var(--coral); }
+.note { position: absolute; left: 24px; right: 24px; bottom: 8px; font-size: 8.5px; color: #8796b5; }

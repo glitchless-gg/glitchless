@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- Product Hunt gallery 5, 1270 x 760: two frames of the Zoomies demo's before-and-after clip (a real capture) -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
+<link href="_gallery.css" rel="stylesheet">
+<style>
+  .pair { position: absolute; left: 24px; right: 24px; top: 104px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pair figure { margin: 0; }
+  .pair figcaption { font: 800 15px/1 Outfit, sans-serif; letter-spacing: -0.01em; margin-bottom: 8px; }
+  .pair figcaption .w { color: var(--coral); } .pair figcaption .k { color: var(--mint); }
+  .pair img { width: 100%; aspect-ratio: 16 / 9; display: block; border-radius: 8px; box-shadow: 0 14px 40px rgba(0, 0, 0, .45); }
+  .explain { position: absolute; left: 24px; right: 24px; top: 308px; font-size: 10.5px; line-height: 1.5; color: var(--fog); }
+</style>
+</head>
+<body>
+  <h1>Every frame timed, <em>before and after the fix</em></h1>
+  <div class="sub">The bars along the bottom are each frame's time, measured in the game as it runs.</div>
+  <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
+  <div class="pair">
+    <figure><figcaption><span class="w">Before:</span> 11 fps</figcaption><img src="../captures/zoomies-before.png" alt=""></figure>
+    <figure><figcaption><span class="k">After:</span> 60 fps</figcaption><img src="../captures/zoomies-after.png" alt=""></figure>
+  </div>
+  <div class="explain">Zoomies, the Glitchless demo game, in Chrome with the CPU slowed 4×: the same level before and after the fix, its slowest 5% of frames down from 100 ms to 17 ms.</div>
+</body>
+</html>
