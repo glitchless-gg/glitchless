@@ -7,7 +7,7 @@
 
 # Glitchless
 
-Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
+**Game observability for coding agents.** Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit and check the fix. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.
@@ -16,6 +16,8 @@ Glitchless shows you how your game plays for real players, and gives your coding
 - **Your coding agent.** An MCP server for production data, WebMCP tools exposed by the running game, and autoplay bots that check a fix before it ships.
 
 It's open source and runs anywhere Node runs: one server with a file store, on a laptop, a VPS or in a container. It's anonymous by default ([what it sends](packages/sdk/PRIVACY.md)), and it can pass the same data on to Datadog or any OpenTelemetry backend.
+
+Read more: [a five-second first launch, found in player data and fixed](https://www.glitchless.gg/starlift-case-study.html) (a Godot game's first week), [what the SDK costs a web game, measured](https://www.glitchless.gg/glitchless-sdk-overhead.html), [debugging your game with real player data in Claude Code or Cursor](https://www.glitchless.gg/debug-game-with-real-player-data.html), [playtest bots in CI](https://www.glitchless.gg/playtest-bots-in-ci.html), and [every guide](https://www.glitchless.gg/articles.html).
 
 <p align="center">
   <img src="assets/brand/glitchless/diagram/glitchless-architecture.png" width="900" alt="Your game, with the Glitchless SDK, sends play sessions to Glitchless (dashboard and findings), which can export to Datadog or OpenTelemetry. Your coding agent reads player data from Glitchless over MCP and drives the running game over WebMCP.">
@@ -29,7 +31,7 @@ It's open source and runs anywhere Node runs: one server with a file store, on a
 
 | Path | What |
 | --- | --- |
-| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js, Phaser (3 and 4), Babylon.js and PlayCanvas adapters, overlay, WebMCP tools, Datadog RUM bridge. ~120 KB as one `<script>` (about 38 KB gzipped) |
+| [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js, Phaser (3 and 4), Babylon.js and PlayCanvas adapters, overlay, WebMCP tools, Datadog RUM bridge. 138 KB as one `<script>` (44 KB gzipped); a Three.js game's bundle adds 34 KB gzipped ([measured](packages/sdk/bench/overhead.mjs)) |
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
 | [`unity`](unity) | Glitchless for **Unity 6.3 LTS and later** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
