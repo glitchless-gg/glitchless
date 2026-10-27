@@ -9,6 +9,10 @@
 /// deactivates instances for its own pause menu; two persistent objects (obj_glitchless at the back,
 /// obj_glitchless_tail at the front) mark when drawing starts and ends and receive the HTTP replies.
 ///
+/// The player's switch (glitchless_set_enabled, SPEC §4d, player_on) sits on top of the build's own decision to send
+/// (build_on). `enabled` is both, so the checks that keep a build run from the IDE from sending keep a player who said
+/// no from sending too; with the switch off the clock also measures nothing.
+///
 /// Struct fields are read with [$ "name"] wherever they may be missing: reading a missing one with
 /// a dot stops a GameMaker game.
 
@@ -43,6 +47,7 @@ function __glitchless_defaults() {
         rooms_as_levels: true, // a room that reads as a level starts that level; the game's first glitchless_level_start turns it off
         rage_input: undefined, // undefined: on except on phones, where fast tapping is normal play
         enabled: undefined, // undefined: off when run from the IDE unless -glitchless
+        opt_in: false, // true: off on a device with no saved choice until glitchless_set_enabled(true), for a game that asks first
         gzip: true, // gzip batches (the server takes plain JSON too)
         debug: false,
         // true, or {hotkey: vk_f8, pause: true, screenshot: true, on_open, on_close}: players send bug reports from a form in the game
@@ -65,7 +70,15 @@ function __glitchless_new_state() {
     var _g = {
         opts: __glitchless_defaults(),
         inited: false,
-        enabled: false,
+        enabled: false, // sending now: the build sends (build_on) and the player hasn't turned Glitchless off (player_on)
+        build_on: false, // the build's own decision: the enabled option, off when run from the IDE unless -glitchless, an intake
+        // The player's switch (glitchless_set_enabled, SPEC §4d). Read from the device before anything else, so a player
+        // who turned Glitchless off has nothing measured, kept or sent from the start of the launch.
+        choice: __glitchless_load_choice(), // what glitchless/enabled holds: true, false, or undefined until the game calls it
+        player_on: true, // off: nothing at all is measured or sent
+        set_up: false, // the player ID, the outbox and the health check: once a launch, when sending first starts
+        off_level: undefined, // the level whose attempt was going when the player turned Glitchless off: no outcome for it
+        ignored: {}, // requests on their way when the player turned Glitchless off, by ID -> their body buffer (-1: none)
         sampled: true,
         service: "unknown-game",
         version: "0.0.0",
@@ -129,7 +142,7 @@ function __glitchless_new_state() {
         first_frame_ms: 0, // current_time: from the game's start
         first_frame_at: 0, // unix ms, the load event's ts
         first_launch: undefined, // the first launch of this game version on this device (the load event)
-        first_input_ms: 0,
+        first_input_ms: 0, // -1: the player turned Glitchless off before the first input, so this launch sends no load
         key_history: {},
         position: undefined,
         pos_buffer: [],
@@ -182,6 +195,7 @@ function __glitchless_new_state() {
         net_down_at: 0,
         disconnects: 0
     };
+    _g.player_on = is_undefined(_g.choice) || _g.choice; // opt_in, known at glitchless_init, can still start it off
     _g.win = __glitchless_new_window(_g);
     return _g;
 }
@@ -216,11 +230,14 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
         _g.session_type = "synthetic";
     }
     if (!is_undefined(_o.enabled)) {
-        _g.enabled = _o.enabled == true;
+        _g.build_on = _o.enabled == true;
     } else {
-        _g.enabled = GM_build_type != "run" || __glitchless_has_flag(_g, "glitchless") || _flag_intake != "";
+        _g.build_on = GM_build_type != "run" || __glitchless_has_flag(_g, "glitchless") || _flag_intake != "";
     }
-    _g.enabled = _g.enabled && _g.intake != "";
+    _g.build_on = _g.build_on && _g.intake != "";
+    // The player's switch, read from the device when the state was made (SPEC §4d): a saved choice wins over opt_in.
+    _g.player_on = is_undefined(_g.choice) ? _o.opt_in != true : _g.choice;
+    _g.enabled = _g.build_on && _g.player_on;
     _g.sampled = __glitchless_unit_random() < _o.sample_rate;
     var _bug = _o.bug_reports;
     if (is_struct(_bug) || _bug == true) {
@@ -252,11 +269,27 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
             started: false
         };
     }
+    if (!_g.player_on) {
+        // Not the outbox of an earlier launch either: it goes unread. The launch isn't measured from its start, so no load.
+        __glitchless_delete_outbox();
+        _g.load_sent = true;
+        _g.first_input_ms = -1;
+        _g.stats.last_status = "off";
+    }
     if (!_g.enabled) {
         _g.queue = [];
-        __glitchless_log(_g, "off (run from the IDE without -glitchless, or no intake)");
+        __glitchless_log(_g, _g.player_on ? "off (run from the IDE without -glitchless, or no intake)" : "off: the player turned it off (glitchless_set_enabled), or opt_in and no choice yet");
         return;
     }
+    __glitchless_set_up(_g);
+}
+
+/// What a build that sends does once a launch, before its first batch: notes the version, reads the player ID and the
+/// outbox of earlier launches, and asks the server what it takes. Done by glitchless_init or, for a player who had
+/// Glitchless off at launch, by turning it back on.
+function __glitchless_set_up(_g) {
+    if (_g.set_up) return;
+    _g.set_up = true;
     directory_create("glitchless");
     _g.first_launch = __glitchless_note_launch(_g);
     if (_g.keeps_ids) {
@@ -269,6 +302,102 @@ function __glitchless_init(_service, _version, _env, _intake, _options) {
     __glitchless_log(_g, "on: " + _g.service + " " + _g.version + " " + _g.env + " -> " + _g.intake + " (" + _g.privacy + ", " + _g.session_type + (_g.gzip ? ", gzip" : "") + ")");
 }
 
+/// The player's "share performance data" setting (SPEC §4d). The choice is saved first, in glitchless/enabled, so it
+/// holds from the start of every later launch, then off stops Glitchless at once and on starts a new session. A call
+/// that changes nothing only saves the choice, so a game can pass its own saved setting every time it starts. Before
+/// glitchless_init it is saved for init to read.
+function __glitchless_set_enabled(_on) {
+    var _g = __glitchless();
+    var _player_on = _on == true;
+    if (is_undefined(_g.choice) || _g.choice != _player_on) {
+        _g.choice = _player_on;
+        __glitchless_save_choice(_player_on);
+    }
+    if (_player_on == _g.player_on) return;
+    _g.player_on = _player_on;
+    if (_player_on) {
+        __glitchless_turn_on(_g);
+    } else {
+        __glitchless_turn_off(_g);
+    }
+    __glitchless_log(_g, _player_on ? "turned on by the player" : "turned off by the player");
+}
+
+/// Nothing more is measured or sent, from now on: no request of any kind. What was waiting goes, the outbox on the
+/// device too, and the session ends without a session_end or a level_abandon: after the player says no, nothing more
+/// goes out. What the game has said (the level, properties, groups, zone and gauges) stays in memory for a session
+/// started later; the player ID stays on the device.
+function __glitchless_turn_off(_g) {
+    _g.enabled = false;
+    _g.ended = true;
+    _g.session_start_sent = false;
+    _g.load_sent = true; // a load is only true of a launch measured from its start
+    if (_g.first_input_ms == 0) _g.first_input_ms = -1;
+    _g.stats.last_status = "off";
+    // The bug report form closes, and reports waiting for their screenshot or their answer say "off".
+    if (!is_undefined(_g.bug)) __glitchless_bug_close(_g);
+    var _capture = _g.bug_capture;
+    _g.bug_capture = undefined;
+    if (!is_undefined(_capture) && !_capture.form) __glitchless_report_done(_capture, { sent: false, reason: "off" });
+    // Requests already on their way can't be called back: their answers are ignored (__glitchless_on_http).
+    if (_g.http_id != -1) _g.ignored[$ string(_g.http_id)] = _g.http_buffer;
+    _g.in_flight = -1;
+    _g.http_id = -1;
+    _g.http_buffer = -1;
+    _g.health_id = -1;
+    var _ids = variable_struct_get_names(_g.report_requests);
+    for (var _i = 0; _i < array_length(_ids); _i++) {
+        var _pending = _g.report_requests[$ _ids[_i]];
+        _g.ignored[$ _ids[_i]] = _pending.buffer;
+        __glitchless_report_done(_pending.request, { sent: false, reason: "off" });
+    }
+    _g.report_requests = {};
+    // Everything waiting: the queue, batches to send again, the outbox file, the open window with its counters and
+    // network samples, hitches waiting for their causes, positions, and what the next hitch or report would carry.
+    _g.queue = [];
+    _g.outbox = [];
+    __glitchless_delete_outbox();
+    _g.retry_at = 0;
+    _g.backoff = 0;
+    _g.win = __glitchless_new_window(_g);
+    _g.pending_hitches = [];
+    _g.pending_long = undefined;
+    _g.pos_buffer = [];
+    _g.position = undefined;
+    _g.recent = [];
+    _g.history = [];
+    _g.recent_hitches = [];
+    _g.recent_windows = [];
+    _g.ring_idx = 0;
+    _g.ring_count = 0;
+    _g.recent_median = 0;
+    _g.net_connected = false;
+    _g.net_last = undefined;
+    _g.net_last_rtt = undefined;
+    _g.net_down_at = 0;
+}
+
+/// Back on after the player turned Glitchless off: a new session in the same launch, as after a long time in the
+/// background, measured from the next frame. The level stays the current one, but the attempt that was going has no
+/// level_start in the new session, so its outcome is dropped until the next level starts (__glitchless_unopened). The
+/// load isn't sent again. A build that sends nothing measures again, and still sends nothing.
+function __glitchless_turn_on(_g) {
+    _g.stats.last_status = "idle";
+    if (!_g.inited) return; // glitchless_init starts it
+    _g.enabled = _g.build_on;
+    _g.skip_frame = true; // the frame this call came in is not the next one
+    _g.pending_long = undefined;
+    _g.win = __glitchless_new_window(_g);
+    if (_g.level_open && !is_undefined(_g.level)) {
+        _g.level_open = false;
+        _g.off_level = _g.level;
+    }
+    if (!_g.enabled) return;
+    __glitchless_set_up(_g);
+    __glitchless_begin_session(_g);
+    _g.next_flush = current_time + min(2, _g.opts.flush_interval) * 1000; // its first batch goes soon, as at init
+}
+
 /// `_attrs`: what this attempt is (a difficulty, a mode, a party size), a struct like a custom event's attributes.
 /// Rooms that start levels by themselves send none.
 function __glitchless_level_start(_level, _manual, _attrs = undefined) {
@@ -279,6 +408,7 @@ function __glitchless_level_start(_level, _manual, _attrs = undefined) {
     _g.level_started = current_time;
     _g.level_open = true;
     _g.left_level = undefined;
+    _g.off_level = undefined;
     var _e = { type: "level_start" };
     if (is_struct(_attrs) && variable_struct_names_count(_attrs) > 0) _e.attrs = _attrs;
     __glitchless_push(_g, _e);
@@ -288,6 +418,7 @@ function __glitchless_level_start(_level, _manual, _attrs = undefined) {
 function __glitchless_level_complete(_level, _score, _duration_s) {
     var _g = __glitchless();
     var _lvl = is_undefined(_level) ? _g.level : string(_level);
+    if (__glitchless_unopened(_g, _lvl)) return;
     var _secs = _duration_s >= 0 ? _duration_s : (current_time - _g.level_started) / 1000;
     _g.level_open = false;
     var _e = { type: "level_complete", level: _lvl, duration_s: __glitchless_round(_secs, 0.01) };
@@ -322,9 +453,17 @@ function __glitchless_abandon(_g, _lvl, _reason) {
 }
 
 /// A game often ends its level as it closes (in a Clean Up or Game End event, say), after the session ended and
-/// Glitchless already sent the abandon: that attempt has its outcome.
+/// Glitchless already sent the abandon: that attempt has its outcome. One going when the player turned Glitchless off
+/// has none to send (__glitchless_unopened).
 function __glitchless_outcome_sent(_g, _lvl) {
+    if (__glitchless_unopened(_g, _lvl)) return true;
     return _g.ended && !is_undefined(_g.left_level) && !is_undefined(_lvl) && _lvl == _g.left_level;
+}
+
+/// The attempt that was going when the player turned Glitchless off has no level_start in the session that began when
+/// they turned it back on (SPEC §4d): until the next level starts, an outcome for it would arrive without its start.
+function __glitchless_unopened(_g, _lvl) {
+    return !is_undefined(_g.off_level) && !is_undefined(_lvl) && _lvl == _g.off_level;
 }
 
 /// The session ends with a level still going: the player left it (SPEC §2 level_abandon).
@@ -338,6 +477,7 @@ function __glitchless_end_level(_g, _reason) {
 /// positions option); the death and cause always are.
 function __glitchless_death(_x, _y, _cause, _z) {
     var _g = __glitchless();
+    if (!_g.player_on) return;
     _g.stats.deaths += 1;
     var _e = { type: "death", cause: _cause };
     if (_g.positions) {
@@ -374,7 +514,7 @@ function __glitchless_set_context(_gauges) {
 
 function __glitchless_set_position(_x, _y, _z) {
     var _g = __glitchless();
-    if (_g.positions) _g.position = [_x, _y, _z];
+    if (_g.positions && _g.player_on) _g.position = [_x, _y, _z];
 }
 
 /// An error the game caught itself: a message, or the exception a catch block got.
@@ -436,19 +576,23 @@ function __glitchless_tick() {
     __glitchless_check_focus(_g);
     __glitchless_check_room(_g);
     var _dt = delta_time / 1000;
-    if (_g.frame_id > 1 && !_g.skip_frame && _g.untimed == 0) __glitchless_frame(_g, _dt);
+    var _ms = current_time;
+    // With the player's switch off nothing is measured: the frame, positions, the engine counts. The rest goes on, so
+    // the level stays current, measure answers and quitting still ends the game.
+    if (_g.player_on) {
+        if (_g.frame_id > 1 && !_g.skip_frame && _g.untimed == 0) __glitchless_frame(_g, _dt);
+        if (_g.positions && !is_undefined(_g.position) && _ms >= _g.next_pos) {
+            _g.next_pos = _ms + 1000 / max(_g.opts.position_hz, 0.1);
+            array_push(_g.pos_buffer, [__glitchless_now(_g), __glitchless_round(_g.position[0], 0.01), __glitchless_round(_g.position[1], 0.01), __glitchless_round(_g.position[2], 0.01)]);
+        }
+        if (_g.frame_id % 30 == 0) {
+            __glitchless_sample_engine(_g, false);
+            __glitchless_check_screen(_g);
+        }
+    }
     _g.skip_frame = false;
     _g.untimed = max(0, _g.untimed - 1);
     _g.tick_us = _now_us;
-    var _ms = current_time;
-    if (_g.positions && !is_undefined(_g.position) && _ms >= _g.next_pos) {
-        _g.next_pos = _ms + 1000 / max(_g.opts.position_hz, 0.1);
-        array_push(_g.pos_buffer, [__glitchless_now(_g), __glitchless_round(_g.position[0], 0.01), __glitchless_round(_g.position[1], 0.01), __glitchless_round(_g.position[2], 0.01)]);
-    }
-    if (_g.frame_id % 30 == 0) {
-        __glitchless_sample_engine(_g, false);
-        __glitchless_check_screen(_g);
-    }
     __glitchless_check_probes(_g);
     if (_ms >= _g.next_flush && !_g.shut) __glitchless_flush(_g);
     if (_g.inited && _g.enabled && _g.in_flight != -1 && _ms - _g.in_flight_since > 20000) {
@@ -874,10 +1018,11 @@ function __glitchless_last_frames(_g, _count) {
 // ───────────────────────────── measure ─────────────────────────────
 
 /// Frame stats over the next `_seconds`, the same numbers as the browser SDK's glitchless_measure tool
-/// and the other engines' measure flags; `_callback(result)` gets them.
+/// and the other engines' measure flags; `_callback(result)` gets them. With the player's switch off there is nothing
+/// to measure, and the next frame's answer says so.
 function __glitchless_measure(_seconds, _callback) {
     var _g = __glitchless();
-    __glitchless_sample_engine(_g, true);
+    if (_g.player_on) __glitchless_sample_engine(_g, true);
     array_push(_g.probes, {
         sketch: __glitchless_sketch_new(),
         step: __glitchless_sketch_new(),
@@ -892,7 +1037,7 @@ function __glitchless_measure(_seconds, _callback) {
         level: _g.level,
         engine: __glitchless_copy(_g.engine),
         seconds: _seconds,
-        ends_at: current_time + _seconds * 1000,
+        ends_at: current_time + (_g.player_on ? _seconds * 1000 : 0),
         callback: _callback
     });
 }
@@ -914,6 +1059,7 @@ function __glitchless_check_probes(_g) {
 }
 
 function __glitchless_probe_result(_g, _p) {
+    if (!_g.player_on) return { error: "Glitchless is off on this device (glitchless_set_enabled(false), the player's setting), so it measures nothing. glitchless_set_enabled(true) turns it back on." };
     if (_p.frames == 0) return { error: "No frames were drawn: the game was paused or in the background." };
     var _s = _p.sketch;
     var _now = __glitchless_sample_engine(_g, true);
@@ -1012,8 +1158,10 @@ function __glitchless_is_own(_name) {
 }
 
 /// `_entry`: {kind, message, frames, attrs}. kind is "crash" (an unhandled exception: GameMaker stops
-/// the game), "manual" (glitchless_error) or the game's own word.
+/// the game), "manual" (glitchless_error) or the game's own word. Nothing is kept while the player has Glitchless off,
+/// so a crash then writes nothing to the outbox.
 function __glitchless_report_error(_g, _entry) {
+    if (!_g.player_on) return;
     var _frames = _entry.frames;
     var _kind = _entry.kind;
     var _message = __glitchless_trim(__glitchless_scrub(_entry.message, game_save_id));
@@ -1105,6 +1253,12 @@ function __glitchless_crash(_g, _ex) {
 /// to the last one.
 function __glitchless_new_session(_g) {
     __glitchless_flush(_g);
+    __glitchless_begin_session(_g);
+}
+
+/// A new session in the same launch, after a long time away or when the player turns Glitchless back on: its own ID,
+/// its own session_start with the next batch, and the properties and groups still set.
+function __glitchless_begin_session(_g) {
     _g.session_id = __glitchless_new_id("s_", 16);
     _g.started_at = __glitchless_now(_g);
     _g.session_start_sent = false;
@@ -1183,8 +1337,14 @@ function __glitchless_check_input(_g) {
 
 // ───────────────────────────── events ─────────────────────────────
 
+/// Whether what the game says now goes nowhere: this build sends nothing, or the player turned Glitchless off. Before
+/// glitchless_init, events wait for it, unless the player's saved choice is off.
+function __glitchless_off(_g) {
+    return _g.inited ? !_g.enabled : !_g.player_on;
+}
+
 function __glitchless_push(_g, _e) {
-    if (_g.inited && !_g.enabled) return;
+    if (__glitchless_off(_g)) return;
     if (is_undefined(_e[$ "ts"])) _e.ts = __glitchless_now(_g);
     __glitchless_stamp(_g, _e);
     __glitchless_queue_event(_g, _e);
@@ -1200,6 +1360,7 @@ function __glitchless_queue_event(_g, _e) {
 }
 
 function __glitchless_remember(_g, _name) {
+    if (!_g.player_on) return;
     array_push(_g.recent, { name: _name, t: current_time });
     if (array_length(_g.recent) > 20) array_delete(_g.recent, 0, 1);
 }

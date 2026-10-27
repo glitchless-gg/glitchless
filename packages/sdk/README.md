@@ -45,6 +45,7 @@ const glitchless = Glitchless.init({
   steam: null,                   // an Electron game's steamworks.js client: Steam build, branch and hardware per session
   properties: null,              // what holds for the session in your game's words: { mode: 'squads', region: 'eu' }
   hashGroupIds: true,            // match and party IDs are hashed before they're sent; false sends them as they are
+  optIn: false,                  // true: off on this device until setEnabled(true), for a game that asks the player first
 });
 instrumentThree(glitchless, { renderer, scene, camera, THREE });
 ```
@@ -52,6 +53,20 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE });
 Script tag: `<script src="https://<your-glitchless>/sdk/glitchless.js"></script>`, then use `Glitchless.init(...)` and `Glitchless.instrumentThree(glitchless, {...})`.
 
 **Retention needs install mode.** In anonymous mode (the default) nothing is kept between visits, so the dashboard can't tell a returning player from a new one. `privacy: 'install'` keeps a random `p_…` player ID in localStorage and sends it with every batch, and nothing else changes: the Players page and `retention` board panels then show D1, D7 and D30. `glitchless.resetInstallId()` forgets the ID (for a "reset my ID" setting): the page keeps the one it started with, and the next load makes a new one. A Steam Deck is tagged `steam_deck: true` when its browser shows the Deck's GPU.
+
+**A "share performance data" setting.** `glitchless.setEnabled(false)` turns Glitchless off for this player: it stops measuring and sending at once, drops what was waiting, and ends the session without sending anything more. `setEnabled(true)` turns it back on with a new session. The choice is saved in localStorage (`glitchless.enabled`), so a player who turned it off sends nothing at all on later visits, from the first frame. Wire it to a toggle in your settings:
+
+```js
+const share = document.querySelector('#share-data'); // <input type="checkbox">
+share.checked = localStorage.getItem('my-game.share') !== 'off'; // your own saved setting
+glitchless.setEnabled(share.checked); // changes nothing when it already agrees
+share.addEventListener('change', () => {
+  localStorage.setItem('my-game.share', share.checked ? 'on' : 'off');
+  glitchless.setEnabled(share.checked);
+});
+```
+
+For a game that asks the player before collecting anything, `optIn: true` keeps Glitchless off on a device until you call `setEnabled(true)` (the player said yes), and remembers the yes. `glitchless.isEnabled()` says whether it is on (it has an intake and the player hasn't turned it off).
 
 ## Phaser
 
@@ -166,6 +181,7 @@ What the adapter adds:
 | `glitchless.measure(seconds)` | frame-time stats over the next N seconds (the A/B primitive) |
 | `glitchless.reportBug({ note, screenshot })` | send a player's bug report from your own UI (`screenshot: false` leaves the picture out); resolves `{ sent }` |
 | `glitchless.openBugReport()` | open the built-in bug report form, from your pause menu for example |
+| `glitchless.setEnabled(on)` / `glitchless.isEnabled()` | the player's "share performance data" setting: off stops measuring and sending at once and drops what was waiting, on starts a new session; saved, so it holds on the next visit |
 
 ### Your own metrics
 

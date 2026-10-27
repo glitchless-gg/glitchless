@@ -21,6 +21,7 @@ Glitchless.init("starlift", "", "prod", Endpoints.GLITCHLESS_URL, {"enabled": Me
 - `""` for the version uses `application/config/version`, the version the stores show.
 - `Endpoints.GLITCHLESS_URL` would sit beside `DAILY_URL` / `COUNTS_URL`.
 - `{"enabled": Metrics.enabled}` keeps one switch for both. `Metrics` turns itself on in release builds or with `--metrics`. Leave the option out to use Glitchless's own switch, `--glitchless`.
+- That is the build's switch. A setting for players to turn reports off goes to `Glitchless.set_enabled(on)` instead ([README](README.md#the-players-off-switch)): Glitchless saves the choice and holds it from the first frame of the next launch, before `init` runs.
 
 ## 2. Forward every count
 

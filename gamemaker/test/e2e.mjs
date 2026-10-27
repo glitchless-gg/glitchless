@@ -174,7 +174,7 @@ try {
   build();
   // The runner's save area (every GameMaker game run from the IDE shares it): only Glitchless's own files go.
   const runnerSave = path.join(os.homedir(), 'Library/Application Support/com.yoyogames.macyoyorunner/glitchless');
-  for (const f of ['selftest.json', 'measure.json', 'outbox.json', 'outbox.json.tmp', 'player_id', 'args.txt', 'launched']) fs.rmSync(path.join(runnerSave, f), { force: true });
+  for (const f of ['selftest.json', 'measure.json', 'outbox.json', 'outbox.json.tmp', 'player_id', 'args.txt', 'launched', 'enabled']) fs.rmSync(path.join(runnerSave, f), { force: true });
   // 0. selftest
   runGame(['-glitchless-selftest'], 'selftest');
   const self = JSON.parse(fs.readFileSync(inSave('glitchless/selftest.json'), 'utf8'));

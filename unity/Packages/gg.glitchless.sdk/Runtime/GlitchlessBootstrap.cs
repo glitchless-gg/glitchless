@@ -26,6 +26,8 @@ namespace GlitchlessSdk
         public bool positions;
         [Tooltip("Report each scene as a level.")]
         public bool sceneLevels = true;
+        [Tooltip("Ask first: on a device where the player hasn't chosen yet, Glitchless measures and sends nothing until the game calls Glitchless.SetEnabled(true) because they said yes.")]
+        public bool optIn;
 
         void Awake()
         {
@@ -38,6 +40,7 @@ namespace GlitchlessSdk
                 Privacy = fullPrivacy ? Privacy.Full : installId ? Privacy.Install : Privacy.Anonymous,
                 Positions = positions ? true : (bool?)null,
                 SceneLevels = sceneLevels,
+                OptIn = optIn,
             });
         }
     }

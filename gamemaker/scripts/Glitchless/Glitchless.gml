@@ -14,14 +14,16 @@
 ///   glitchless_set_group("match", match_id);   // every event carries the match from now on
 ///   glitchless_net_sample(ping_ms);            // the game's own ping, about once a second
 ///   glitchless_report_bug(note);               // or bug_reports in the options: F8 opens a form
+///   glitchless_set_enabled(share_data);        // the player's "Share performance data" setting
 ///
 /// Call glitchless_init once, as early as you can (the first room's creation code, or the Create event of
 /// your first object). Every few seconds what happened goes out as one batch. Batches that could not be
 /// sent are kept in glitchless/ in the game's save area and sent on a later launch, and so is a crash.
 ///
 /// A build run from the IDE sends nothing unless it is run with -glitchless, so a developer's test runs do
-/// not skew the numbers. Anonymous mode, the default, sends nothing that can be tied to a person:
-/// PRIVACY.md lists every field each mode sends.
+/// not skew the numbers. A player can turn Glitchless off in the game's settings (glitchless_set_enabled), and
+/// then nothing more is measured or sent. Anonymous mode, the default, sends nothing that can be tied to a
+/// person: PRIVACY.md lists every field each mode sends.
 ///
 /// Flags (on the command line, or in the GLITCHLESS_ARGS environment variable):
 ///   -glitchless                  send from a build run from the IDE too
@@ -170,13 +172,13 @@ function glitchless_crash(_exception) {
 /// A player's bug report from the game's own UI: what they typed, a screenshot of the game (false sends
 /// none), where they are and what just happened. Sent on its own straight away, from every session.
 /// `callback({sent, reason})`: sent is true once the server has it; otherwise reason is "offline" (this
-/// build sends nothing) or "error" (it goes with a later batch).
+/// build sends nothing), "off" (the player turned Glitchless off) or "error" (it goes with a later batch).
 function glitchless_report_bug(_note = "", _screenshot = true, _callback = undefined) {
     __glitchless_report_bug(_note, _screenshot, _callback);
 }
 
 /// Opens the bug report form, for a game's own "Report a bug" button. Works whether or not bug_reports is
-/// on (that adds the F8 key).
+/// on (that adds the F8 key), but not while the player has Glitchless off.
 function glitchless_open_bug_report() {
     var _g = __glitchless();
     if (is_undefined(_g.bug)) __glitchless_bug_toggle(_g);
@@ -201,6 +203,28 @@ function glitchless_flush() {
 /// for the game's Quit button: game_end() alone leaves the last batch to the next launch.
 function glitchless_quit() {
     __glitchless_quit();
+}
+
+/// The player's "Share performance data" setting, for a toggle in the game's settings (SPEC §4d).
+///   false  nothing more is measured or sent, from this call on (no request of any kind); what was waiting is
+///          dropped, the outbox in the save area too; the session ends without a session_end
+///   true   after false: a new session starts, with the properties and groups still set
+/// The choice is saved in glitchless/enabled in the save area and read before anything else at the next launch,
+/// so a player who said no sends nothing from its first frame. A call that changes nothing does nothing, so the
+/// game can pass its own saved setting every time it starts. Safe before glitchless_init. It never turns on a
+/// build that sends nothing (run from the IDE without -glitchless, enabled: false, no intake).
+///   glitchless_set_enabled(global.settings.share_data);
+function glitchless_set_enabled(_on) {
+    __glitchless_set_enabled(_on);
+}
+
+/// Whether Glitchless is on now: this build sends (it has an intake, and wasn't run from the IDE without
+/// -glitchless or turned off with the enabled option) and the player hasn't turned it off. false before
+/// glitchless_init, and in a build that sends nothing whatever the player chose: a settings menu shows the
+/// game's own saved setting.
+function glitchless_is_enabled() {
+    var _g = __glitchless();
+    return _g.inited && _g.enabled;
 }
 
 /// Whether the game was started with a flag, read where Glitchless reads its own (the command line,

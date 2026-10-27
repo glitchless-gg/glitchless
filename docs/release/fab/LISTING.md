@@ -42,7 +42,7 @@ Setup needs no code: Project Settings → Plugins → Glitchless → Service, In
 
 You need a Glitchless server to send to: the open-source one runs on your own machine with one command (Node.js), or use the hosted service at glitchless.gg.
 
-Private by default: no player ID, no device identifier, only coarse device facts. PRIVACY.md lists every field that each of the three modes (anonymous, install, full) sends, with wording for your privacy policy and store forms.
+Private by default: no player ID, no device identifier, only coarse device facts. Players can turn it off at any time: wire a "Share performance data" setting to the Set Enabled node, which stops it at once, deletes what was waiting to be sent, and holds on every later launch; Opt In starts it off until the player says yes. PRIVACY.md lists every field that each of the three modes (anonymous, install, full) sends, with wording for your privacy policy and store forms.
 
 Made for Unreal Engine 5.8. The source is MIT-licensed on GitHub, with a small demo game that has three planted problems for Glitchless to find.
 
@@ -65,6 +65,7 @@ Features:
 - iOS: App Store, TestFlight and development installs told apart; testers' sessions and sandbox purchases kept out of players and revenue
 - Multiplayer: net driver ping, packet loss and jitter, disconnects with their reason, match/party/run groups (IDs hashed by default); a server role for dedicated and listen servers (tick rate, players, server crashes)
 - Counters, player properties, level attributes, zones, and list and boolean attributes (FGlitchlessAttributes)
+- The player's off switch: Set Enabled (FGlitchless::SetEnabled) for a "Share performance data" toggle, saved on the device and read before the first frame; Opt In for a game that asks first
 - A Project Settings page, a Blueprint function library, a C++ API and a game instance subsystem
 
 Code Modules:
@@ -81,7 +82,7 @@ Example Project: https://github.com/glitchless-gg/glitchless/tree/main/unreal/de
 Important/Additional Notes:
 - Needs a Glitchless server to send to: the open-source server (Node.js 20 or later, MIT, https://github.com/glitchless-gg/glitchless) or the hosted service at https://glitchless.gg.
 - Network use: HTTPS POST requests (or HTTP to a server on your own machine) of gzipped JSON to the Intake URL you set, every 15 seconds and when the game quits. Nothing is sent until Service and Intake are set. Enabled off, or -glitchless-off on the command line, sends nothing.
-- Privacy: anonymous by default, with no player ID and no device identifier. PRIVACY.md in the plugin lists every field each mode sends.
+- Privacy: anonymous by default, with no player ID and no device identifier. A player who turns it off (Set Enabled, from the game's settings) sends nothing more, in that launch or any later one. PRIVACY.md in the plugin lists every field each mode sends.
 - Dependencies: engine modules only (HTTP, ImageWrapper, Slate, RHI and others). No other plugins; Steam facts are read only through the Steamworks the game already set up.
 - Third-party code: the natural logarithm from fdlibm 5.3 (Sun Microsystems, freely redistributable, as in V8), so frame-time buckets match the JavaScript SDK exactly.
 ```

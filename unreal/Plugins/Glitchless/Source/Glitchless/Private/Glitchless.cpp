@@ -83,6 +83,7 @@ FGlitchlessOptions FGlitchlessOptions::FromSettings(const UGlitchlessSettings& S
 	{
 		O.Enabled = false;
 	}
+	O.bOptIn = Settings.bOptIn;
 	O.bDebug = Settings.bDebug;
 	O.bHashGroupIds = Settings.bHashGroupIds;
 	O.ServerRegion = Settings.ServerRegion;
@@ -362,6 +363,14 @@ void FGlitchless::Measure(float Seconds, TFunction<void(const FString& Json)> Do
 void FGlitchless::Flush()
 {
 	WithHost([](Glitchless::FCore& C) { C.Flush(); });
+}
+
+void FGlitchless::SetEnabled(bool bOn)
+{
+	if (FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get())
+	{
+		Runtime->SetEnabled(bOn);
+	}
 }
 
 bool FGlitchless::IsEnabled()

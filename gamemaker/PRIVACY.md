@@ -14,7 +14,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `glitchless/player_id` in the save area, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
 | Device | OS name, the runner (VM or YYC), the graphics API, screen size, refresh rate, a GPU tier where the runner names the GPU, whether it is a Steam Deck | the same as anonymous | adds the OS version, the GPU's name and vendor, and which Steam Deck |
 | Positions | **not sent** unless `positions: true`: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in room coordinates |
-| Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install |
+| Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on or off choice, once the game asks | unsent batches with their IDs, the player ID, the game version that last ran, and the player's choice | the same as install |
 
 `positions: true` turns positions on in anonymous and install mode. They are places in the game's own rooms, not the player's location.
 
@@ -105,6 +105,16 @@ Bug reports are off until the game turns them on (`bug_reports` in the options o
 - a report that can't be sent waits in `glitchless/outbox.json` until it can, like any batch;
 - a developer who opens a report sees all of it. Treat reports like support email: when a player asks, delete their report with the Delete button on it in the dashboard (or `DELETE /v1/report?service=&id=`), which removes the note and the screenshot.
 
+## Turned off by the player
+
+A game can give players a setting that turns Glitchless off, and back on, with `glitchless_set_enabled` (README, "The player's off switch"). In every mode, once a player turns it off:
+
+- nothing more is measured or sent, from that moment: no request of any kind goes out, not even the check of what the server takes, and the bug report form doesn't open;
+- what was waiting to go is deleted: the events in memory and `glitchless/outbox.json`, bug reports in it included. A batch already on its way when the player turned it off may still arrive;
+- the choice is saved (below) and read before anything else at the next launch, so a player who said no sends nothing at all from then on, until the game turns it back on.
+
+With `opt_in: true`, nothing is measured, kept or sent on a device until the game calls `glitchless_set_enabled(true)`, for a game that asks the player first. What was sent before the player turned Glitchless off stays on the server for its retention; a player who wants it deleted asks the game's developer.
+
 ## Kept on the device
 
 In the game's save area (`game_save_id`: `~/Library/Application Support/<game>` on macOS, `%LOCALAPPDATA%\<game>` on Windows, `~/.config/<game>` on Linux; a build run from the IDE uses the runner's, `~/Library/Application Support/com.yoyogames.macyoyorunner` on a Mac):
@@ -114,6 +124,7 @@ In the game's save area (`game_save_id`: `~/Library/Application Support/<game>` 
 | `glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or a crash): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id`; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
 | `glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
+| `glitchless/enabled` | `on` or `off`: the player's choice, written once the game calls `glitchless_set_enabled`, so a player who turned Glitchless off sends nothing from the start of every later launch. It holds nothing else, the same on every device that made the same choice, so it ties nothing to anyone. Never sent | all, once the game asks |
 | `glitchless/measure.json` | the last `-glitchless-measure` result | only when run with that flag |
 
 Uninstalling the game may leave the save area; deleting it removes them.
@@ -128,6 +139,10 @@ A paragraph for anonymous mode:
 
 > **Performance and error reports**
 > So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you quit, it sends these to our servers. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the computer: its system, its screen size and refresh rate, and how fast its graphics chip is. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your computer which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
+
+If the game has the setting (`glitchless_set_enabled`), add:
+
+> You can turn these reports off at any time in the game's settings (*[Settings → Share performance data]*). From then on nothing more is sent, and reports still waiting on your computer are deleted. The game remembers your choice, and nothing else, so it stays off the next time you play.
 
 If the game sets properties, groups or network samples, add:
 
@@ -164,7 +179,7 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 | Device or other IDs | not collected | collected (the random player ID) |
 | App activity → Other user-generated content | collected if the game turns bug reports on | the same |
 
-**Shared:** none (a service provider such as Datadog isn't sharing). **Encrypted in transit:** Yes, when the intake URL is `https://`. **Optional:** no, unless the game adds a settings switch that calls `glitchless_init(..., { enabled: false })`.
+**Shared:** none (a service provider such as Datadog isn't sharing). **Encrypted in transit:** Yes, when the intake URL is `https://`. **Required or optional:** optional, when the game has a settings toggle wired to `glitchless_set_enabled` (players can turn collection off, and with `opt_in: true` nothing is collected until they say yes); required without one.
 
 **Steam.** Valve's store page has no data form, but its rules ask a game that collects data to say so: the privacy paragraph above, linked from the store page, covers it.
 

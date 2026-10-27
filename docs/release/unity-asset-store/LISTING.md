@@ -50,7 +50,7 @@ Glitchless records how your game runs for real players and gives your coding age
 
 Setup without code: add the Glitchless Bootstrap component to your first scene and fill in the server, the game's name and its client token. Or call Glitchless.Init() from a script.
 
-Privacy. Anonymous by default: no player ID, no device identifier, coarse device facts only. Nothing is sent until you call Glitchless.Init() (or add the Bootstrap). PRIVACY.md, in the package, lists every field and has wording for your privacy policy and store forms.
+Privacy. Anonymous by default: no player ID, no device identifier, coarse device facts only. Nothing is sent until you call Glitchless.Init() (or add the Bootstrap). Players can turn it off at any time: wire a "Share performance data" setting to Glitchless.SetEnabled(), which stops it at once, deletes what was waiting to be sent, and holds on every later launch. OptIn starts it off until the player says yes. PRIVACY.md, in the package, lists every field and has wording for your privacy policy and store forms.
 
 The client token. A game sends with a public client token (gl_pub_...), which can only send data, so it ships inside your game like an analytics key. Secret keys (gl_sk_..., gl_ws_...) are for servers and agents and never go in a build.
 
@@ -71,6 +71,7 @@ This package uses no third-party components.
 - Sends JSON (gzipped, except in WebGL) to the server you choose, every 15 seconds; batches wait on the device while offline and go on a later launch.
 - Anonymous, install-ID and full privacy modes; PRIVACY.md lists every field each one sends.
 - Starts itself before the first scene so the first frames are kept, but sends nothing until Glitchless.Init(). Define GLITCHLESS_DISABLE to turn the automatic start off.
+- A player's off switch: Glitchless.SetEnabled(on) for a settings toggle, saved on the device and read before anything else; OptIn for a game that asks first.
 - Code in the GlitchlessSdk namespace, in one assembly (GlitchlessSdk.asmdef). No Editor code, no native plugins, no executables.
 - Documentation: README.md, PRIVACY.md and CHANGELOG.md in Assets/Glitchless.
 ```

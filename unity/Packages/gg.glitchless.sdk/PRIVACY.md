@@ -14,7 +14,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `persistentDataPath/glitchless/player_id` (in WebGL builds, in PlayerPrefs as `glitchless.player_id`, which is the browser's localStorage). Not tied to any account, device ID or advertising ID | the same ID as install mode |
 | Device | OS name, a low/mid/high tier, render pipeline and graphics API, screen size, refresh rate, whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless `Positions = true`: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
-| Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install mode |
+| Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on or off choice, once the game asks for one | unsent batches with their IDs, the player ID, the game version that last ran, and the player's choice | the same as install mode |
 
 **What install mode adds to anonymous mode:** the player ID, sent in every batch as `player_id` and saved on the device, so the next launch sends the same ID; and, because that ID is on the device anyway, unsent batches are saved with their session and player IDs. Everything else is sent exactly as in anonymous mode. Install and full mode share the saved ID; anonymous mode deletes one another build left. `Glitchless.ResetInstallId()` deletes it: the session in progress keeps sending the ID it started with, and the next launch makes a new one, which nothing links to the old one.
 
@@ -141,10 +141,22 @@ Bug reports are off until the game turns them on (`BugReports` in `GlitchlessOpt
 - say so in your game's privacy page (a paragraph is below): a report sends the player's note, a screenshot of the game and where they were;
 - don't ask players for contact details in the note. If you want to reply to them, collect that with consent in your own UI;
 - the screenshot is the game's own screen, but it shows whatever the game showed: a player's name or chat on screen goes with it;
-- a report that can't be sent waits in `persistentDataPath/glitchless/outbox.json` until it can, like any batch;
+- a report that can't be sent waits in `persistentDataPath/glitchless/outbox.json` until it can, like any batch (or until the player turns reports off, which deletes it);
 - a developer who opens a report sees all of it. Treat reports like support email: when a player asks, delete their report with the Delete button on it in the dashboard (or `DELETE /v1/report?service=&id=`), which removes the note and the screenshot.
 
 The form tells players what it sends ("your note, the screenshot and where you are in the game").
+
+## Turning it off
+
+A game can give players a "Share performance data" toggle in its settings, wired to `Glitchless.SetEnabled()`. When a player turns it off, in every mode:
+
+- nothing more is measured or sent from that moment: no frames, errors, events, positions, network samples or bug reports, and no request of any kind (not even the check of what the server takes). A request already on its way can't be called back; its answer is ignored;
+- everything waiting to go is deleted: the events in memory and the batches in `outbox.json`, bug reports included;
+- the session ends there, with nothing more said: the server sees it go quiet, as when a game is killed;
+- the choice is saved on the device (below) and read before anything else on every later launch, so from the first frame of those nothing is measured or sent, and an outbox an earlier launch left is deleted unread;
+- the player ID (install and full mode) stays on the device, so a player who turns reports back on is still counted as one player. `Glitchless.ResetInstallId()` is the separate setting that forgets it.
+
+Turning it back on starts a new session. With `OptIn = true`, a device where the player hasn't chosen yet starts off, and nothing is collected until the game calls `Glitchless.SetEnabled(true)` because they said yes. What was sent before a player turned reports off stays on the server for the game's usual retention; a player who wants it deleted asks the game's developer.
 
 ## Kept on the device
 
@@ -153,6 +165,7 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | `persistentDataPath/glitchless/outbox.json` | batches not yet sent (offline, or the app closed first): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id` so the server stores a batch once however often it arrives; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all, not in WebGL builds |
 | `persistentDataPath/glitchless/player_id` (WebGL: PlayerPrefs `glitchless.player_id`) | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `persistentDataPath/glitchless/launched` (WebGL: PlayerPrefs `glitchless.launched`) | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
+| `persistentDataPath/glitchless/enabled` (WebGL: PlayerPrefs `glitchless.enabled`) | `on` or `off`, the player's choice ([Turning it off](#turning-it-off)), and nothing else: the same on every device that made the same choice, so it ties nothing to anyone. Written only once the game calls `Glitchless.SetEnabled()` | all |
 
 Uninstalling the game deletes them all (in WebGL, clearing the site's data does).
 
@@ -168,6 +181,10 @@ A paragraph for anonymous mode, to adapt to the game's own voice:
 
 > **Performance and error reports**
 > So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your device which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
+
+If the game has a "Share performance data" setting wired to `Glitchless.SetEnabled()`, add:
+
+> You can turn these reports off at any time in the game's settings. From then on nothing more is measured or sent, and reports still waiting on your device are deleted. The setting stays as you left it the next time you play.
 
 With `Positions = true`, add that reports include where in the game world deaths happened. Install mode needs one more sentence:
 
@@ -218,7 +235,7 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 | Device or other IDs | not collected | collected (the random player ID) | collected (the random player ID) |
 | App activity → Other user-generated content | collected if the game turns bug reports on (the note and screenshot) | the same | the same |
 
-**Shared:** none, when the server is your own or the hosted service acting for you. **Encrypted in transit:** Yes, when the intake URL is `https://`. **Required or optional:** collection is required unless the game offers a setting; a toggle that skips `Glitchless.Init` (or passes `Enabled = false`) makes it optional.
+**Shared:** none, when the server is your own or the hosted service acting for you. **Encrypted in transit:** Yes, when the intake URL is `https://`. **Required or optional:** optional when the game has a settings toggle wired to `Glitchless.SetEnabled()` (Google Play: users can choose whether this data is collected), since turning it off stops collection at once and on every later launch; with `OptIn = true`, nothing is collected until the player says yes. Without such a setting, collection is required.
 
 ## When this file must change
 

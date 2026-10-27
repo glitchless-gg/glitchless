@@ -219,7 +219,10 @@ bool FGlitchlessSettingsTest::RunTest(const FString& Parameters)
 	Settings->bPositions = true;
 	Settings->bHashGroupIds = false;
 	Settings->ServerRegion = TEXT("eu-west");
+	TestFalse(TEXT("Glitchless is on until the player turns it off, unless the game asks first"), Settings->bOptIn);
+	Settings->bOptIn = true;
 	const FGlitchlessOptions Options = FGlitchlessOptions::FromSettings(*Settings);
+	TestTrue(TEXT("a game that asks the player first"), Options.bOptIn);
 	TestFalse(TEXT("group IDs as they are, when asked"), Options.bHashGroupIds);
 	TestEqual(TEXT("a server's region"), Options.ServerRegion, FString(TEXT("eu-west")));
 	TestEqual(TEXT("service"), Options.Service, FString(TEXT("my-game")));

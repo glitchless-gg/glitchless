@@ -15,6 +15,7 @@ extends Node
 ##   Glitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for this session
 ##   Glitchless.set_group("match", match_id)  # every event until set_group("match", null) carries it
 ##   Glitchless.set_zone("ashen_wastes")  # where the player is in an open world
+##   Glitchless.set_enabled(share_on)  # the player's "Share performance data" setting
 ##
 ## Multiplayer games built on Godot's MultiplayerAPI (ENet, or WebSocket in a
 ## web export) also send ping, packet loss and disconnects. A dedicated server
@@ -31,6 +32,11 @@ extends Node
 ## sends nothing that can be tied to a person; install mode adds a random
 ## player ID kept on the device, so returning players can be counted (retention):
 ## PRIVACY.md beside this file lists every field each mode sends.
+##
+## A player can turn it all off from the game's settings (set_enabled, SPEC
+## §4d): nothing more is measured or sent, and what was waiting is dropped. The
+## choice is saved in user://glitchless/enabled and read before the first frame
+## of every later launch.
 ##
 ## Flags (after "--" on the command line):
 ##   --glitchless                  send from a debug build too
@@ -75,6 +81,7 @@ const OUTBOX_PATH := "user://glitchless/outbox.json"
 const PLAYER_PATH := "user://glitchless/player_id"  # install and full mode
 const LAUNCHED_PATH := "user://glitchless/launched"  # the game version that last ran here (first_launch)
 const SERVER_OUTBOX_PATH := "user://glitchless/server_outbox.json"  # a dedicated server's, apart from a player build's
+const ENABLED_PATH := "user://glitchless/enabled"  # "on" or "off": the player's choice (set_enabled), once the game has asked
 const ID_CHARS := "abcdefghijklmnopqrstuvwxyz0123456789"
 const MAX_COUNTS := 64  # count() entries a window
 const MAX_COUNT_GROUP := 4  # words and booleans that split a counter
@@ -110,7 +117,8 @@ const DEFAULTS := {
 	"engine_gauges": true,  # node and object counts in ctx, where the findings look for leaks
 	"measure_render_time": true,
 	"rage_input": null,  # null: on except on phones, where fast tapping is normal play
-	"enabled": null,  # null: off in debug builds unless --glitchless
+	"enabled": null,  # null: off in debug builds unless --glitchless. The build's switch: the player's is set_enabled()
+	"opt_in": false,  # true: off on a device until set_enabled(true), for a game that asks the player first (not a server: no player to ask)
 	"debug": false,
 	# true, or {"hotkey": KEY_F8, "pause": true, "screenshot": true}: players send bug reports from a form in the game
 	"bug_reports": false,
@@ -132,7 +140,9 @@ signal bug_report_closed
 
 var session_id := ""
 var player_id := ""  ## stays empty in anonymous mode
-var enabled := false  ## whether anything is sent; decided by init()
+## Whether anything is sent: init() decides whether this build sends, and it is
+## false while the player has Glitchless off (set_enabled). is_enabled() reads it.
+var enabled := false
 var sampled := true
 var level: Variant = null
 var zone: Variant = null  ## where the player is in an open world: set_zone()
@@ -141,6 +151,10 @@ var stats := {"sent": 0, "failed": 0, "errors": 0, "hitches": 0, "deaths": 0, "l
 
 var _opts := DEFAULTS.duplicate()
 var _inited := false
+var _build_sends := false  # init()'s decision: the enabled option, a debug build only with --glitchless, an intake
+var _choice := ""  # what user://glitchless/enabled holds: "on", "off", or "" before the game has called set_enabled
+var _player_off := false  # the player turned Glitchless off (or opt_in, with no choice yet): nothing is measured or kept
+var _epoch := 0  # times Glitchless was turned off: an answer to a request sent before the last one is ignored
 var _service := "unknown-game"
 var _version := "0.0.0"
 var _version_given := false
@@ -161,6 +175,7 @@ var _started_at := 0  # unix ms of this session's start
 var _level_started := 0  # ticks ms
 var _level_open := false  # a level started and not yet completed, failed or abandoned
 var _left_level: Variant = null  # the level abandoned for the game as the session ended
+var _off_level: Variant = null  # the level going when the player turned Glitchless back on: its start isn't in this session
 var _ctx := {}
 var _recent: Array[Dictionary] = []  # the last game events, for breadcrumbs: {name, t}
 var _queue: Array[Dictionary] = []
@@ -276,6 +291,16 @@ class _Tail extends Node:
 		on_physics.call()
 
 
+# The player's choice comes first (SPEC §4d), before a frame is timed: a player
+# who turned Glitchless off has nothing measured or kept from the first frame,
+# and an earlier launch's outbox is deleted unread.
+func _init() -> void:
+	_choice = _saved_choice()
+	if _choice == "off":
+		_player_off = true
+		_stop()
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	process_priority = -(1 << 30)
@@ -359,10 +384,15 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	elif _sandbox and role != "server":
 		_session_type = "tester"  # a person on a TestFlight or development build, not a player from the App Store
 	if _opts.enabled != null:
-		enabled = bool(_opts.enabled)
+		_build_sends = bool(_opts.enabled)
 	else:
-		enabled = not OS.is_debug_build() or _has_flag("--glitchless") or flag_intake != ""
-	enabled = enabled and _intake != ""
+		_build_sends = not OS.is_debug_build() or _has_flag("--glitchless") or flag_intake != ""
+	_build_sends = _build_sends and _intake != ""
+	if _choice == "" and bool(_opts.opt_in) and role != "server":
+		_player_off = true  # the game asks the player first: off until set_enabled(true). A server has no player to ask
+	if _player_off:
+		_stop()  # what was kept before init() goes, and this role's outbox on the device goes unread
+	enabled = _build_sends and not _player_off
 	sampled = randf() < float(_opts.sample_rate)
 	var bug: Variant = _opts.bug_reports
 	if role != "server" and (bug is Dictionary or (bug is bool and bug)):
@@ -383,11 +413,17 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_early_groups.clear()
 	if not enabled:
 		_queue.clear()
-		_log("off (debug build without --glitchless, or no intake)")
+		_log("off (the player turned it off)" if _player_off and _build_sends else "off (debug build without --glitchless, or no intake)")
 		return
 	if role == "server":
 		# Frames timed before init() are a player's numbers: a server sends its ticks instead.
 		_queue = _queue.filter(func(e: Dictionary) -> bool: return not e.type in ["frame_window", "hitch", "pos", "load"])
+	_start_sending()
+
+
+# What init() does once this build sends and the player hasn't turned it off,
+# and set_enabled(true) does when they turn it back on later in the launch.
+func _start_sending() -> void:
 	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
 	if role != "server":
 		_first_launch = _note_launch()
@@ -396,10 +432,121 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		elif FileAccess.file_exists(PLAYER_PATH):
 			DirAccess.remove_absolute(PLAYER_PATH)  # left by an install- or full-mode build: anonymous mode keeps no ID
 	_load_outbox()
-	_ask_features()
+	if _features == null:
+		_ask_features()
 	if bool(_opts.network):
 		_watch(get_tree().get_multiplayer())
 	_log("on: %s %s %s -> %s (%s, %s, %s%s)" % [_service, _version, _env, _intake, role, _privacy, _session_type, ", " + Device.distribution() if Device.distribution() != "" else ""])
+
+
+## The player's "Share performance data" setting, from the game's settings
+## menu (SPEC §4d). false stops Glitchless at once: nothing more is measured or
+## sent, what was waiting is dropped (the outbox on the device too), and the
+## session ends without a session_end. true starts a new session in this
+## launch. The choice is saved in user://glitchless/enabled and read before the
+## first frame of every later launch. Safe before init(). A call that changes
+## nothing does nothing, so a game can pass its own saved setting each time it
+## starts. It never turns on a build that sends nothing (a debug build without
+## --glitchless, no intake, "enabled": false).
+func set_enabled(on: bool) -> void:
+	var choice := "on" if on else "off"
+	if choice != _choice:
+		_save_choice(choice)  # first, so it holds even if the game stops right after
+	if on != _player_off:
+		return  # on while on, off while off
+	if on:
+		_turn_on()
+	else:
+		_player_off = true
+		_stop()
+		_log("off: the player turned it off")
+
+
+## Whether Glitchless is on: this build sends (init() was given an intake, and
+## neither its options nor a debug build turned it off) and the player hasn't
+## turned it off. In a build that sends nothing it is false whatever the player
+## chose, so a settings menu shows the game's own saved setting.
+func is_enabled() -> bool:
+	return enabled
+
+
+# Off: the player said no, or the device starts off (their saved choice, or
+# opt_in with none). Everything waiting is dropped: the queue, the open window
+# with its counters, positions and network samples, hitches waiting for it,
+# what a bug report would carry, the batches waiting to be sent again, and this
+# role's outbox on the device, bug reports in it included. The session ends
+# without a session_end or a level_abandon: from here on nothing is pushed. A
+# request already on its way can't be called back, and its answer is ignored.
+func _stop() -> void:
+	enabled = false
+	_epoch += 1
+	if _in_flight >= 0:
+		_http.cancel_request()
+		_in_flight = -1
+	_queue.clear()
+	_outbox.clear()
+	if FileAccess.file_exists(_outbox_path()):
+		DirAccess.remove_absolute(_outbox_path())
+	_win = _new_window()
+	_pending_hitches.clear()
+	_pending_long = {}
+	_pos_buffer = []
+	_history.clear()
+	_recent_hitches.clear()
+	_recent_windows.clear()
+	# This launch's load isn't sent later: it went already, or it was measured before the player said no.
+	_load_sent = true
+	if _first_input_ms == 0:
+		_first_input_ms = -1
+	_set_measure_render(_measure_render)
+	if is_bug_report_open():
+		_bug_form.close()
+	stats.last_status = "off"
+
+
+# On again after off: measured from the next frame, and after init() a new
+# session in this launch, as after a long time in the background (a new ID, its
+# own session_start with the properties still set, a group event for each group).
+# The level stays current, but the attempt going when the player turned it off
+# (or started while it was off) isn't open in the new session: its outcome is
+# dropped until the next level_start, so none arrives without its start.
+func _turn_on() -> void:
+	_player_off = false
+	_last_us = 0
+	_win = _new_window()
+	_set_measure_render(_measure_render)
+	_level_open = false
+	_left_level = null
+	_net_left_level = null
+	_off_level = level
+	if not _inited:
+		return  # init() starts the session
+	enabled = _build_sends
+	if not enabled:
+		return  # the build's own switch holds
+	_ended = false
+	_start_sending()
+	_begin_session()
+	_next_flush = Time.get_ticks_msec() + int(minf(2.0, float(_opts.flush_interval)) * 1000.0)
+	_log("on again: session %s" % session_id)
+
+
+static func _saved_choice() -> String:
+	if not FileAccess.file_exists(ENABLED_PATH):
+		return ""
+	var saved := FileAccess.get_file_as_string(ENABLED_PATH).strip_edges()
+	return saved if saved == "on" or saved == "off" else ""
+
+
+# "on" or "off" and nothing else: the same on every device that made the same
+# choice, so it ties nothing to anyone. Kept in every privacy mode.
+func _save_choice(choice: String) -> void:
+	_choice = choice
+	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+	var f := FileAccess.open(ENABLED_PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(choice)
+		f.close()
 
 
 ## Forgets the player ID kept on the device (install and full mode), for a
@@ -419,6 +566,7 @@ func level_start(level_id: Variant, attrs: Dictionary = {}) -> void:
 	_level_open = true
 	_left_level = null
 	_net_left_level = null
+	_off_level = null
 	var e := {"type": "level_start"}
 	if not attrs.is_empty():
 		e.attrs = attrs
@@ -428,6 +576,8 @@ func level_start(level_id: Variant, attrs: Dictionary = {}) -> void:
 
 func level_complete(level_id: Variant = null, score: Variant = null, duration_s: float = -1.0) -> void:
 	var lvl: Variant = str(level_id) if level_id != null else level
+	if _off_level != null and lvl == _off_level:
+		return  # its start went to the session the player turned off, or was never sent
 	var secs := duration_s if duration_s >= 0.0 else (Time.get_ticks_msec() - _level_started) / 1000.0
 	_level_open = false
 	_push({"type": "level_complete", "level": lvl, "duration_s": snappedf(secs, 0.01), "score": score})
@@ -465,9 +615,10 @@ func _abandon(lvl: Variant, reason: String) -> void:
 
 # A game often ends its level as it closes (in _exit_tree, say), after the session
 # ended and Glitchless already sent the abandon: that attempt has its outcome. So
-# has one a disconnect ended, until the player reconnects and plays on in it.
+# has one a disconnect ended, until the player reconnects and plays on in it. One
+# going when the player turned Glitchless back on has no start in this session.
 func _outcome_sent(lvl: Variant) -> bool:
-	return (_ended and _left_level != null and lvl == _left_level) or (_net_left_level != null and lvl == _net_left_level)
+	return (_ended and _left_level != null and lvl == _left_level) or (_net_left_level != null and lvl == _net_left_level) or (_off_level != null and lvl == _off_level)
 
 
 ## A death at a place in the game world. The place is sent only when positions
@@ -507,7 +658,7 @@ func track(event: String, what: Variant = null) -> void:
 ##   Glitchless.count("gold", {"source": "loot", "amount": 35})
 ##   Glitchless.count("shot", "bow", 3)  # one word is the attribute "what"; n events at once
 func count(event: String, what: Variant = null, n: int = 1) -> void:
-	if (_inited and not enabled) or event == "" or n < 1:
+	if _player_off or (_inited and not enabled) or event == "" or n < 1:
 		return
 	var attrs := {}
 	if what is Dictionary:
@@ -791,14 +942,20 @@ func error(message: String, attrs: Dictionary = {}) -> void:
 ## what just happened. Sent on its own straight away, from every session:
 ##   var result := await Glitchless.report_bug(note)
 ## result.sent is true once the server has it; otherwise result.reason is
-## "offline" (nothing is sent from this build) or "error" (it goes with a later batch).
+## "offline" (nothing is sent from this build), "off" (the player turned
+## Glitchless off: nothing is taken or kept) or "error" (it goes with a later batch).
 func report_bug(note: String = "", screenshot: Variant = true) -> Dictionary:
+	if _player_off:
+		return {"sent": false, "reason": "off"}
 	return await _send_report(_bug_snapshot(screenshot), note)
 
 
 ## Opens the bug report form, for a game's own "Report a bug" button. Works
-## whether or not bug_reports is on (that adds the hotkey).
+## whether or not bug_reports is on (that adds the hotkey), but not while the
+## player has Glitchless off.
 func open_bug_report() -> void:
+	if _player_off:
+		return
 	_bug_report_form().open()
 
 
@@ -852,6 +1009,12 @@ func flush() -> void:
 # ───────────────────────────── frame timing ─────────────────────────────
 
 func _process(_delta: float) -> void:
+	if _player_off:
+		# Nothing is measured while the player has Glitchless off; errors heard meanwhile go unread.
+		_logger.take()
+		_last_us = 0
+		_tick_at = 0
+		return
 	# Wall-clock time between frames. The delta Godot passes is smoothed
 	# (application/run/delta_smoothing) and scaled by Engine.time_scale, which
 	# would hide the very stutters this is here to find.
@@ -887,6 +1050,8 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	if _player_off:
+		return
 	_physics_head_us = Time.get_ticks_usec()
 	if _tick_at > 0:
 		_end_tick(_physics_head_us)  # the tick before this one ran in the same frame
@@ -1329,9 +1494,11 @@ func _last_frames(count: int) -> Array[float]:
 	return out
 
 
+# Timing the renderer costs a little every frame, so it stops while the player has Glitchless off.
 func _set_measure_render(on: bool) -> void:
 	_measure_render = on
-	RenderingServer.viewport_set_measure_render_time(_vp, on)
+	if _vp.is_valid():  # none yet in _init()
+		RenderingServer.viewport_set_measure_render_time(_vp, on and not _player_off)
 
 
 # ───────────────────────────── network ─────────────────────────────
@@ -1380,6 +1547,8 @@ func _watch(mp: MultiplayerAPI) -> void:
 
 
 func _net_add(rtt: Variant, loss: Variant, jitter: Variant, bytes: Array, t: String, host: bool) -> void:
+	if _player_off:
+		return
 	var n: Dictionary = _win.net
 	if n.is_empty():
 		n.merge({"sketch": Sketch.new(NET_ALPHA), "loss": 0.0, "loss_n": 0, "jitter": 0.0, "jitter_n": 0, "rx": null, "tx": null})
@@ -1508,6 +1677,8 @@ func _end_server_session(reason: String) -> void:
 # ───────────────────────────── measure ─────────────────────────────
 
 func _probe_result(p: Dictionary, seconds: float) -> Dictionary:
+	if _player_off:
+		return {"error": "Glitchless is off: the player turned it off in the game's settings (set_enabled(false)), so no frames were measured."}
 	if p.frames == 0:
 		return {"error": "No frames were drawn: the game was paused or in the background."}
 	var s: Sketch = p.sketch
@@ -1574,6 +1745,8 @@ func _run_measure_flag(seconds: float, warmup: float, out_path: String) -> void:
 # ───────────────────────────── errors ─────────────────────────────
 
 func _report_error(entry: Dictionary) -> void:
+	if _player_off:
+		return
 	var frames: Array = entry.frames
 	if not frames.is_empty() and str(frames[0].file).begins_with(ADDON_DIR) and entry.get("kind") != "manual":
 		return  # raised inside Glitchless (a failed send, say): never report it, or it could feed itself
@@ -1735,7 +1908,13 @@ func _on_foreground() -> void:
 # Back after a long time away: a new session with a new random ID. In
 # anonymous mode nothing joins it to the last one.
 func _new_session() -> void:
-	flush()
+	flush()  # the last session's events go under its own ID
+	_begin_session()
+
+
+# The new session's start goes with the next batch. Turning Glitchless back on
+# starts here too: nothing waits to be flushed then.
+func _begin_session() -> void:
 	session_id = _new_id("s_", 16)
 	_started_at = _now()
 	_session_start_sent = false
@@ -1769,6 +1948,8 @@ func _shutdown(reason: String) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if _player_off:
+		return  # nothing is read, and the bug report hotkey is the game's again
 	if not event.is_pressed() or event.is_echo():
 		return
 	if _bug_hotkey != KEY_NONE and event is InputEventKey and ((event as InputEventKey).physical_keycode == _bug_hotkey or (event as InputEventKey).keycode == _bug_hotkey):
@@ -1801,7 +1982,7 @@ func _input(event: InputEvent) -> void:
 # ───────────────────────────── events ─────────────────────────────
 
 func _push(e: Dictionary) -> void:
-	if _inited and not enabled:
+	if _player_off or (_inited and not enabled):
 		return
 	if not e.has("ts"):
 		e.ts = _now()
@@ -1951,6 +2132,8 @@ func _bug_snapshot(screenshot: Variant) -> Dictionary:
 # Sends one report on a request of its own. It waits in the outbox meanwhile,
 # so if the send fails, or the game closes first, it goes with a later batch.
 func _send_report(snap: Dictionary, note: String) -> Dictionary:
+	if _player_off:
+		return {"sent": false, "reason": "off"}
 	var e := {"type": "bug_report", "ts": snap.ts, "level": snap.level, "note": note.substr(0, BugReport.MAX_NOTE)}
 	if snap.screenshot != "":
 		e.screenshot = snap.screenshot
@@ -1974,10 +2157,13 @@ func _send_report(snap: Dictionary, note: String) -> Dictionary:
 	http.timeout = 20.0
 	add_child(http)
 	var code := 0
+	var epoch := _epoch
 	if http.request(_intake_url(), ["Content-Type: application/json"], HTTPClient.METHOD_POST, _body(b)) == OK:
 		var r: Array = await http.request_completed
 		code = r[1] if r[0] == HTTPRequest.RESULT_SUCCESS else 0
 	http.queue_free()
+	if epoch != _epoch:
+		return {"sent": false, "reason": "off"}  # the player turned Glitchless off meanwhile: the answer is ignored
 	b.erase("direct")
 	var sent := code >= 200 and code < 300
 	if sent or (code >= 400 and code < 500 and code != 408 and code != 429):  # a rejected report would only be rejected again
@@ -2080,10 +2266,13 @@ func _ask_features() -> void:
 	http.timeout = 10.0
 	add_child(http)
 	var answer: Array = []
+	var epoch := _epoch
 	if http.request(_intake + "/v1/health") == OK:
 		answer = await http.request_completed
 	http.queue_free()
 	_asking_features = false
+	if epoch != _epoch:
+		return  # the player turned Glitchless off meanwhile: the answer is ignored
 	if answer.is_empty() or answer[0] != HTTPRequest.RESULT_SUCCESS or answer[1] != 200:
 		return
 	var data: Variant = JSON.parse_string((answer[3] as PackedByteArray).get_string_from_utf8())
@@ -2100,6 +2289,7 @@ func _ask_features() -> void:
 	_log("the server takes: %s" % ", ".join(features.keys()))
 	if role == "server" and not features.has("server_mode"):
 		_warn("feature:server_mode", "this Glitchless server doesn't take dedicated servers' sessions yet, so this server sends nothing. Update the server.", false)
+		_build_sends = false  # for this launch: set_enabled(true) can't turn it back on
 		enabled = false
 		_queue.clear()
 		_outbox.clear()
@@ -2150,6 +2340,8 @@ func _send_next() -> void:
 
 func _on_sent(result: int, code: int, _headers: PackedStringArray, _body_bytes: PackedByteArray) -> void:
 	var id := _in_flight
+	if id < 0:
+		return  # cancelled as the player turned Glitchless off: its answer is ignored
 	_in_flight = -1
 	var i := _outbox_index(id)
 	var n: int = _outbox[i].events.size() if i >= 0 else 0

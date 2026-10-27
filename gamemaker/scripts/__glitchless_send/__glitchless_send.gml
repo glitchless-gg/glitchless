@@ -5,12 +5,14 @@
 /// outbox, which is saved to glitchless/outbox.json in the game's save area. One batch is in flight at a
 /// time, through http_request; its reply comes to obj_glitchless's Async HTTP event. A batch leaves the
 /// outbox once the server has it (or turned it away for good), so a game played offline, or one that
-/// crashed, sends on a later launch.
+/// crashed, sends on a later launch. Glitchless's other files in the save area are here too: the player ID,
+/// the version that last ran, and the player's switch.
 
 #macro __GLITCHLESS_BATCH_BYTES 60000
 #macro __GLITCHLESS_MAX_OUTBOX_EVENTS 4000
 #macro __GLITCHLESS_MAX_OUTBOX_AGE_MS 518400000 // 6 days: the server files anything over 7 days old under "now"
 #macro __GLITCHLESS_OUTBOX "glitchless/outbox.json"
+#macro __GLITCHLESS_CHOICE "glitchless/enabled" // the player's switch
 
 /// Closes the current frame window and moves what is waiting into the outbox. Runs by itself every
 /// flush_interval seconds.
@@ -146,6 +148,13 @@ function __glitchless_send_next(_g) {
 function __glitchless_on_http(_id, _status, _http_status, _result = "") {
     var _g = __glitchless();
     if (_status == 1) return; // still downloading the reply
+    var _ignored = _g.ignored[$ string(_id)];
+    if (!is_undefined(_ignored)) {
+        // Sent before the player turned Glitchless off: what it carried is gone, so its answer changes nothing.
+        variable_struct_remove(_g.ignored, string(_id));
+        if (_ignored != -1) buffer_delete(_ignored);
+        return;
+    }
     if (_id == _g.health_id) {
         _g.health_id = -1;
         __glitchless_on_features(_g, _status == 0 && _http_status >= 200 && _http_status < 300, _result);
@@ -300,6 +309,12 @@ function __glitchless_save_outbox(_g) {
     file_rename(_tmp, __GLITCHLESS_OUTBOX);
 }
 
+/// The outbox on the device, deleted unread: the player turned Glitchless off (SPEC §4d), bug reports in it included.
+function __glitchless_delete_outbox() {
+    if (file_exists(__GLITCHLESS_OUTBOX)) file_delete(__GLITCHLESS_OUTBOX);
+    if (file_exists(__GLITCHLESS_OUTBOX + ".tmp")) file_delete(__GLITCHLESS_OUTBOX + ".tmp");
+}
+
 function __glitchless_load_outbox(_g) {
     var _path = file_exists(__GLITCHLESS_OUTBOX) ? __GLITCHLESS_OUTBOX : __GLITCHLESS_OUTBOX + ".tmp"; // a save cut off between its two steps
     var _text = __glitchless_read_text(_path);
@@ -355,6 +370,21 @@ function __glitchless_note_launch(_g) {
     if (_last == _g.version) return false;
     __glitchless_write_text("glitchless/launched", _g.version);
     return true;
+}
+
+/// The player's switch (SPEC §4d): "on" or "off" in glitchless/enabled, written once the game has called
+/// glitchless_set_enabled, in every privacy mode. It holds nothing else, the same on every device that made the same
+/// choice, so it ties nothing to anyone. true, false, or undefined while there is none.
+function __glitchless_load_choice() {
+    var _saved = __glitchless_trim(__glitchless_read_text(__GLITCHLESS_CHOICE));
+    if (_saved == "on") return true;
+    if (_saved == "off") return false;
+    return undefined;
+}
+
+function __glitchless_save_choice(_on) {
+    directory_create("glitchless");
+    __glitchless_write_text(__GLITCHLESS_CHOICE, _on ? "on" : "off");
 }
 
 function __glitchless_load_player_id() {

@@ -50,6 +50,7 @@ try { load_save(); } catch (_e) { glitchless_error(_e, { slot: 2 }); } // an err
 glitchless_measure(5, function(_stats) { show_debug_message(json_stringify(_stats)); });
 glitchless_open_bug_report();                   // the bug report form, from a pause menu
 glitchless_report_bug(note);                    // or a report from the game's own form
+glitchless_set_enabled(share_data);             // the player's "Share performance data" setting
 glitchless_quit();                              // the Quit button: sends the last batch, then game_end()
 ```
 
@@ -71,8 +72,10 @@ glitchless_quit();                              // the Quit button: sends the la
 | `glitchless_set_position(x, y, [z])` | sampled 4 times a second for heatmaps, when positions are on |
 | `glitchless_error(message_or_exception, [attrs])` | |
 | `glitchless_crash(exception)` | for a game with its own `exception_unhandled_handler` (see [Errors](#errors)) |
-| `glitchless_report_bug([note], [screenshot], [callback])` | `callback({sent})`, or `{sent: false, reason: "offline" or "error"}` |
-| `glitchless_open_bug_report()`, `glitchless_bug_report_is_open()` | |
+| `glitchless_report_bug([note], [screenshot], [callback])` | `callback({sent})`, or `{sent: false, reason: "offline", "off" or "error"}` |
+| `glitchless_open_bug_report()`, `glitchless_bug_report_is_open()` | the form doesn't open while the player has Glitchless off |
+| `glitchless_set_enabled(on)` | the player's own switch: `false` stops Glitchless at once and for every later launch, `true` turns it back on. [The player's off switch](#the-players-off-switch) |
+| `glitchless_is_enabled()` | whether Glitchless is on now: this build sends and the player hasn't turned it off |
 | `glitchless_measure(seconds, callback)` | what `-glitchless-measure` prints |
 | `glitchless_flush()` | closes the window and sends what is waiting; runs by itself every few seconds |
 | `glitchless_quit()` | see [Quitting](#quitting-offline-and-crashes) |
@@ -93,7 +96,8 @@ glitchless_quit();                              // the Quit button: sends the la
 | `rooms_as_levels` | `true` | a room that reads as a level starts that level |
 | `engine_gauges` | `true` | put `instances`, `surfaces`, `ds_lists`, `ds_maps`, `ds_grids`, `buffers`, `particle_systems` and `vertex_buffers` in `ctx` |
 | `rage_input` | off on phones | the same key or click four times in a second |
-| `enabled` | off when run from the IDE | force sending on or off |
+| `enabled` | off when run from the IDE | force sending on or off. The build's own switch: the player's can turn a build that sends off, never one that doesn't on |
+| `opt_in` | `false` | `true`: a device where the player hasn't chosen yet starts off, until `glitchless_set_enabled(true)`. For a game that asks first ([below](#the-players-off-switch)) |
 | `gzip` | `true` | gzip each batch (plain JSON in a web build, or where the runner's zlib can't make gzip) |
 | `debug` | `false` | log what is sent with `show_debug_message` |
 | `bug_reports` | `false` | `true`, or `{ hotkey: vk_f8, pause: true, screenshot: true, on_open, on_close }`: F8 opens the [bug report form](#bug-reports) |
@@ -111,6 +115,38 @@ A game whose levels aren't rooms (an endless runner, waves in one room) calls `g
 ### Off when run from the IDE
 
 A build run from the IDE (or Igor's `Run`, where `GM_build_type` is `"run"`) sends nothing unless it is run with `-glitchless`, so a developer's test runs and the agents' bot runs stay out of the players' numbers. Executables (`GM_build_type` `"exe"`) send by default.
+
+### The player's off switch
+
+Give players a "Share performance data" toggle in the game's settings and wire it to `glitchless_set_enabled`. When a player turns it off, nothing more is measured or sent from that moment: no frames, errors or events, and no request of any kind. What was waiting to go is dropped, the outbox in the save area too, and the session just ends (no `session_end`). Turned back on, a new session starts with the properties and groups still set. Keep the setting with the game's others and pass it at start too; a call that changes nothing does nothing:
+
+```gml
+// As the game starts, after glitchless_init (or before it: it's safe), with the game's own saved setting:
+glitchless_set_enabled(global.settings.share_data);
+
+// The settings menu shows the game's own setting...
+draw_text(_x, _y, "Share performance data: " + (global.settings.share_data ? "On" : "Off"));
+
+// ...and its toggle tells Glitchless when the player flips it.
+global.settings.share_data = !global.settings.share_data;
+save_settings(); // the game's own
+glitchless_set_enabled(global.settings.share_data);
+```
+
+A game that asks before collecting anything starts with `opt_in`:
+
+```gml
+glitchless_init("caverun", "", "prod", intake, { opt_in: true }); // off until the player says yes
+// the first launch's "Help us find bugs and stutters?" screen:
+glitchless_set_enabled(_answer_yes);
+```
+
+- **Remembered.** The choice is saved as `on` or `off` in `glitchless/enabled` in the save area once the game has called `glitchless_set_enabled`, in every privacy mode, and `glitchless_init` reads it before anything else. A player who turned it off sends nothing at all at the next launch, not last launch's outbox (which is deleted unread) nor any other request, even if the game reads its own settings after `glitchless_init`.
+- **Asking first.** With `opt_in: true`, a device where the player hasn't chosen yet starts off: nothing is measured, kept or sent until the game calls `glitchless_set_enabled(true)`. A saved choice wins over `opt_in`, so the question is asked once.
+- **Kept while off:** the level, properties, groups, zone and gauges the game sets, in memory, so a later session carries them; the player ID file in install and full mode. An attempt at a level that was going when the player turned Glitchless off isn't part of the new session: its `glitchless_level_complete`, `glitchless_level_fail` or `glitchless_level_abandon` is dropped until the next level starts.
+- **While off**, every call is safe and does nothing. The bug report form doesn't open, `glitchless_report_bug` answers `{sent: false, reason: "off"}`, `glitchless_measure` and `-glitchless-measure` answer with an `error` that says Glitchless is off, and `glitchless_quit` ends the game at once.
+- **`glitchless_is_enabled()`** is false while the player has it off, and also in a build that sends nothing (run from the IDE without `-glitchless`, `enabled: false`, no intake), whatever the player chose: there, `glitchless_set_enabled(true)` saves the choice but sends nothing. So a settings menu shows the game's own saved setting, as above.
+- **Run from the IDE**, every game shares the runner's save area, so a choice made in one is read by the next: delete `glitchless/enabled` there (`~/Library/Application Support/com.yoyogames.macyoyorunner/` on a Mac) to start over.
 
 ### Bug reports
 
@@ -364,7 +400,7 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 
 From the repo root:
 
-- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`. The genre tests read the batches the GML sends and check them against the design's wire format (`docs/design/genre-coverage.md`): counters and their limits, a server without counters, property checks and `props` events, level attributes, hashed match and party IDs, runs, zones, net samples, disconnects and their abandon.
+- `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`. The genre tests read the batches the GML sends and check them against the design's wire format (`docs/design/genre-coverage.md`): counters and their limits, a server without counters, property checks and `props` events, level attributes, hashed match and party IDs, runs, zones, net samples, disconnects and their abandon. The off switch's tests read every request the GML makes: turning off drops the queue and the outbox and sends nothing more (no `session_end`), a reply already on its way changes nothing, turning on starts a new session with the properties and groups, a call that changes nothing does nothing, a saved choice read at the next launch (its outbox deleted unread), `opt_in`, a build that sends nothing staying off, bug reports and measure answering `off`, and no crash written while off.
 - `npm run test:gamemaker` builds the demo with GameMaker's Igor (a VM build for the mac target, in `gamemaker/.build`) and plays it against a local server: see [the demo](#the-demo). First the runner computes the sketch, fingerprints, gzip and JSON numbers of the JavaScript fixture (`-glitchless-selftest`), then come offline and the outbox, full and install mode, measure, the planted crash sent on the next launch, and bug reports from code and the F8 form, 32 checks in all (with batch IDs in the outbox, nothing stored twice, and the load event at the first frame). The bug report's screenshot is saved as `gamemaker/.build/bug-report.png`. Each run starts the runtime's YoYo Runner with its flags on the command line and its output in a `-debugoutput` file, so it opens a game window for a few seconds and needs a logged-in macOS desktop.
 - `npm test` includes `server/test/gamemaker-findings.test.js`: GameMaker sessions get GameMaker's fixes.
 

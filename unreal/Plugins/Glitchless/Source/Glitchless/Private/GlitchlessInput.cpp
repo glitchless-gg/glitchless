@@ -32,7 +32,8 @@ bool FGlitchlessInputProcessor::HandleKeyDownEvent(FSlateApplication& SlateApp, 
 	}
 	const FKey Key = InKeyEvent.GetKey();
 	const FKey& BugReportKey = GetDefault<UGlitchlessSettings>()->BugReportKey;
-	if (BugReportKey.IsValid() && Key == BugReportKey && (GlitchlessBugReport::IsDialogOpen() || ForTheGame()))
+	// With Glitchless turned off by the player the key opens nothing, so the game has it.
+	if (BugReportKey.IsValid() && Key == BugReportKey && (GlitchlessBugReport::IsDialogOpen() || (ForTheGame() && !Runtime->IsTurnedOff())))
 	{
 		if (GlitchlessBugReport::IsDialogOpen())
 		{

@@ -118,6 +118,25 @@ menu can call **Show Bug Report Dialog** (`FGlitchless::ShowBugReportDialog()`),
 (`FGlitchless::ReportBug(Note)`), and `FGlitchless::OnBugReportDialog()` (or the Glitchless subsystem's On Bug
 Report Dialog) says when the box opens and closes.
 
+## 4c. A "Share performance data" setting (where the game has a settings menu)
+
+If the game has a settings or options menu, offer the user a toggle there that the player can turn off (ask before
+adding UI; a game with no settings menu can go without). Keep it with the game's other settings, saved the way they are
+(its SaveGame or `UGameUserSettings`), and pass it on as the game starts and on every change:
+
+```cpp
+FGlitchless::SetEnabled(Settings->bSharePerformanceData); // in UGameInstance::Init, and when the toggle changes
+```
+
+In Blueprint: the Check Box's **On Check State Changed** → **Set Enabled** (Is Checked into On), and the same node with
+the saved value where the game loads its settings. Off stops measuring and sending at once and drops what was waiting
+(the outbox on disk too); the plugin saves the choice in `Saved/Glitchless/enabled` and reads it before the first frame
+of the next launch, so it holds even though Glitchless starts from Project Settings before any menu. A call that
+changes nothing does nothing. Show the game's own setting on the toggle, not **Is Enabled** (false in a build that
+sends nothing, such as a development build without `-glitchless`). For a game that asks before collecting anything,
+set `bOptIn=True` in the settings above and default the toggle to off. With a toggle, the store forms can answer that
+collection is optional, and the privacy page gets a sentence about it (the plugin's `PRIVACY.md`).
+
 ## 5. Bots and measuring
 
 Package a Development build, then run it with flags:

@@ -38,6 +38,7 @@ export async function snapshot(gd, { screenshot = true } = {}) {
 // Sends one report on its own request. Resolves { sent: true } once the intake took it, or { sent: false, reason }.
 // Reports go out from every session, sampled or not; a failed send is queued and tried again with the next batch.
 export async function sendReport(gd, snap, note = '') {
+  if (gd.playerOff) return { sent: false, reason: 'off' }; // the player turned Glitchless off while the form was open
   const e = {
     type: 'bug_report',
     ts: snap.ts,
@@ -167,7 +168,7 @@ export class BugReportForm {
     const inForm = path.includes(this.host);
     const button = path.includes(this.sendBtn) ? 'send' : path.includes(this.cancelBtn) ? 'cancel' : null;
     const what = route(e, { open: this.isOpen, hotkey: this.opts.hotkey, inForm, button });
-    if (what === 'pass') return;
+    if (what === 'pass' || (what === 'open' && this.gd.playerOff)) return; // turned off: the key is the game's again
     e.stopImmediatePropagation();
     if (what === 'block') {
       // Typing and clicking inside the form still work (those are the browser's defaults); outside it, nothing.
@@ -181,7 +182,7 @@ export class BugReportForm {
   }
 
   async open() {
-    if (this.isOpen) return;
+    if (this.isOpen || this.gd.playerOff) return;
     this.isOpen = true;
     this.mount();
     document.exitPointerLock?.();

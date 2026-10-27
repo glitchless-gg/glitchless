@@ -11,6 +11,7 @@
 #include "GlitchlessStrings.h"
 #include "GlitchlessTransport.h"
 
+#include "Async/Async.h"
 #include "Blueprint/BlueprintExceptionInfo.h"
 #include "DynamicRHI.h"
 #include "Engine/Engine.h"
@@ -271,6 +272,14 @@ FGlitchlessRuntime::FGlitchlessRuntime()
 		Core->ServerInfo = [this]() { return ServerFacts; };
 	}
 	Configure(*Core, bDedicated ? TEXT("Server") : TEXT(""));
+	// The player's choice first, before a frame or an error is kept: a player who turned Glitchless off sends nothing
+	// from this launch, not even what an earlier one left in the outbox. Opt In is read from the project's settings
+	// here too, so a game that asks first keeps nothing before it has asked.
+	Core->ReadChoice(GetDefault<UGlitchlessSettings>()->bOptIn);
+	if (Core->IsTurnedOff())
+	{
+		ForgetServerOutbox();
+	}
 
 	LogDevice = MakeUnique<FGlitchlessOutputDevice>();
 	GLog->AddOutputDevice(LogDevice.Get());
@@ -455,6 +464,7 @@ void FGlitchlessRuntime::Init(const FGlitchlessOptions& Options)
 	}
 	O.MapLevels = Options.bMapLevels;
 	O.SendInDevelopmentBuilds = Options.bSendInDevelopmentBuilds;
+	O.OptIn = Options.bOptIn;
 	O.CaptureLogErrors = Options.bCaptureLogErrors;
 	O.CaptureWarnings = Options.bCaptureWarnings;
 	O.SampleRate = Options.SampleRate;
@@ -487,6 +497,11 @@ void FGlitchlessRuntime::Init(const FGlitchlessOptions& Options)
 		{
 			UE_LOG(LogGlitchless, Log, TEXT("Glitchless %s: sending %s %s (%s) to %s"), FGlitchless::SdkVersion(), *GlitchlessText::Tchar(C.GetService()),
 				*GlitchlessText::Tchar(C.GetVersion()), *GlitchlessText::Tchar(C.GetEnv()), *Options.Intake);
+		}
+		else if (C.IsTurnedOff())
+		{
+			UE_LOG(LogGlitchless, Log, TEXT("Glitchless %s: off on this device (the player's choice, or Opt In before they chose): nothing is sent until Set Enabled (true)"), FGlitchless::SdkVersion());
+			ForgetServerOutbox();
 		}
 	});
 	bInitialized = true;
@@ -563,6 +578,62 @@ void FGlitchlessRuntime::SendBugReport(Glitchless::FValue Report, const FString&
 {
 	const std::string N = GlitchlessText::Utf8(Note);
 	With([&](Glitchless::FCore& C) { C.SendBugReport(std::move(Report), N); });
+}
+
+void FGlitchlessRuntime::SetEnabled(bool bOn)
+{
+	bool bChanged = false;
+	bool bSends = false;
+	{
+		FScopeLock Lock(&Mutex);
+		bChanged = Core->IsTurnedOff() == bOn;
+		// A listen server's own session runs on the player's machine: it follows their switch, and their file is the
+		// one saved. It goes first, so a measure the player's session answers (and quits on) finds it quiet already.
+		if (ServerCore)
+		{
+			ServerCore->SetEnabled(bOn, false);
+		}
+		Core->SetEnabled(bOn);
+		bSends = Core->IsEnabled();
+		if (!bOn && !ServerCore)
+		{
+			ForgetServerOutbox();
+		}
+	}
+	if (!bChanged)
+	{
+		return;
+	}
+	if (bOn)
+	{
+		UE_LOG(LogGlitchless, Log, TEXT("Glitchless turned on by the player (Set Enabled)%s"), bSends || !bInitialized ? TEXT("") : TEXT(", but this build sends nothing (bEnabled, Enabled, no intake, or a development build without -glitchless)"));
+		return;
+	}
+	UE_LOG(LogGlitchless, Log, TEXT("Glitchless turned off by the player (Set Enabled): nothing more is measured or sent"));
+	// A bug report box open now would send nothing: it goes.
+	if (IsInGameThread())
+	{
+		GlitchlessBugReport::CloseDialog();
+	}
+	else
+	{
+		AsyncTask(ENamedThreads::GameThread, []() { GlitchlessBugReport::CloseDialog(); });
+	}
+}
+
+bool FGlitchlessRuntime::IsTurnedOff()
+{
+	bool bOff = false;
+	With([&](Glitchless::FCore& C) { bOff = C.IsTurnedOff(); });
+	return bOff;
+}
+
+void FGlitchlessRuntime::ForgetServerOutbox() const
+{
+	if (!bDedicated)
+	{
+		IFileManager::Get().Delete(*GlitchlessText::Tchar(Core->SaveDir + "/Server/outbox.json"), false, false, true);
+	}
 }
 
 // ───────────────────────────── frames ─────────────────────────────
@@ -914,6 +985,7 @@ void FGlitchlessRuntime::StartListenServer(UWorld* World)
 	ServerCore->ServerInfo = [this]() { return ServerFacts; };
 	Configure(*ServerCore, TEXT("Server"));
 	ServerCore->AppVersion = Core->AppVersion;
+	// Its switch is the player's, on while it hosts (SetEnabled): it reads no choice of its own.
 	ServerCore->Init(CoreOptions);
 	if (Core->HasManualLevels() && Core->GetLevel())
 	{

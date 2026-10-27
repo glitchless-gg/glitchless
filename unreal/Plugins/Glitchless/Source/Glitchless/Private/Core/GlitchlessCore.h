@@ -80,6 +80,9 @@ namespace Glitchless
 		std::optional<bool> Enabled;
 		/** Send from the editor and development builds. Off keeps your own play out of the numbers; -glitchless turns it on for one run. */
 		bool SendInDevelopmentBuilds = true;
+		/** For a game that asks the player first: a device with no saved choice starts off, and nothing is measured,
+		 * kept or sent until SetEnabled(true). A saved choice wins over it. A server has no player to ask: not there. */
+		bool OptIn = false;
 		/** Log each batch as it is sent. */
 		bool Debug = false;
 		/** What holds for the session (mode, rank band, region), as SetProperty takes them: an object. */
@@ -237,6 +240,16 @@ namespace Glitchless
 		/** Says who the game is and where to send. Until this is called nothing is sent, but frame
 		 * times, errors and events are kept, so a game may call it late. Only the first call counts. */
 		void Init(const FOptions& InOptions);
+		/** The player's "Share performance data" setting (SPEC §4d). Off saves the choice, then stops at once: nothing
+		 * more is measured, kept or sent, what is waiting (the outbox on disk too) is dropped, and the session ends
+		 * without a session_end. On saves it and starts a new session. A call that changes nothing does nothing, and
+		 * on can't turn on a build that doesn't send. Save false: a listen server's own session, which follows its
+		 * host's switch and keeps no file of its own. Safe before Init. */
+		void SetEnabled(bool On, bool Save = true);
+		/** Reads the choice SetEnabled saved (SaveDir/enabled), before anything is kept: the Unreal side calls it as
+		 * the plugin starts. A choice of off deletes an outbox from earlier launches unread. OptIn: with no saved
+		 * choice, start off (Init's OptIn does the same). */
+		void ReadChoice(bool OptIn = false);
 		/** Attrs (an object) describe the attempt: difficulty, party size, the build. */
 		void LevelStart(const std::string& LevelId, FValue Attrs = FValue());
 		void LevelComplete(const std::optional<std::string>& LevelId = std::nullopt, std::optional<double> Score = std::nullopt, std::optional<double> DurationS = std::nullopt);
@@ -328,7 +341,10 @@ namespace Glitchless
 		bool IsInited() const { return Inited; }
 		bool HasManualLevels() const { return ManualLevels; }
 		bool IsEnded() const { return Ended; }
+		/** Glitchless is on: Init found the build sends, and the player hasn't turned it off. */
 		bool IsEnabled() const { return Enabled; }
+		/** The player turned Glitchless off (SetEnabled(false), a saved choice, or OptIn with no choice yet). */
+		bool IsTurnedOff() const { return PlayerOff; }
 		bool IsSampled() const { return Sampled; }
 		const std::string& GetSessionId() const { return SessionId; }
 		const std::string& GetPlayerId() const { return PlayerId; }
@@ -449,6 +465,16 @@ namespace Glitchless
 
 		double Ticks() const { return Clock(); }
 		void Begin();
+		/** What Init does once the build sends and the player hasn't said no: the device's facts, the install ID, the
+		 * outbox from earlier launches and what the server takes. Done at Init, or when the player turns it on. */
+		void Open();
+		/** Nothing is kept: the player turned Glitchless off, or Init found the build doesn't send. */
+		bool Dropping() const { return PlayerOff || (Inited && !Enabled); }
+		void TurnOff();
+		void TurnOn();
+		void WriteChoice(bool On);
+		/** No outcome for a level whose start isn't in this session: the one going when the player turned Glitchless off. */
+		bool StartedWhileOff(const std::optional<std::string>& LevelId) const;
 		void StartLevel(const std::string& LevelId, bool FromMap, FValue Attrs = FValue());
 		void LeaveLevel();
 		void Abandon(const std::optional<std::string>& LevelId, const std::string& Reason);
@@ -481,7 +507,9 @@ namespace Glitchless
 		void Gauge(const std::string& Key, double V);
 		std::vector<double> LastFrames(int Count) const;
 		FValue ProbeResult(FProbe& P);
+		/** Sends what is waiting, then NextSession. */
 		void NewSession();
+		void NextSession();
 		FValue SessionEnd(const std::string& Reason);
 		static FValue Ev(const char* Type);
 		void Push(FValue E);
@@ -504,6 +532,7 @@ namespace Glitchless
 		void RetryLater(const std::string& Why);
 		std::string OutboxPath() const;
 		std::string PlayerPath() const;
+		std::string ChoicePath() const;
 		void SaveOutbox();
 		void LoadOutbox();
 		std::string LoadPlayerId();
@@ -518,6 +547,10 @@ namespace Glitchless
 
 		FOptions Options;
 		bool Inited = false, Enabled = false, Sampled = true;
+		// The player's switch (SPEC §4d): Enabled is BuildOn (what Init decided) and not PlayerOff.
+		bool BuildOn = false, PlayerOff = false, Opened = false;
+		std::optional<bool> Choice; // what the player chose, saved on the device
+		std::optional<std::string> OffLevel; // the level going when the player turned Glitchless off, or started while off
 		std::string SessionId, PlayerId;
 		std::optional<std::string> Level;
 		bool LevelOpen = false; // a level started and not yet completed, failed or abandoned
@@ -529,6 +562,7 @@ namespace Glitchless
 
 		std::string Service = "unknown-game", Version = "0.0.0", Env = "dev", Intake, SessionType = "user";
 		bool Sandbox = false; // a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
+		std::string InstalledFrom; // DeviceFacts::IosDistribution, for the debug line
 		bool VersionGiven = false;
 		bool Detailed = false, StoresId = false, PositionsOn = false, RageInputOn = false, DebugOn = false, ManualLevels = false, MapLevels = true;
 		int64_t StartedAt = 0;

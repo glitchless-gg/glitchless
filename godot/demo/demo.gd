@@ -28,6 +28,9 @@ extends Node2D
 ##   --session-timeout=S  Glitchless's session_timeout (default 300)
 ##   --bug-report-at=S    send a bug report from code (Glitchless.report_bug) S seconds in
 ##   --bug-form-at=S      S seconds in, press F8 and Esc, then F8, type a note into the form and press Ctrl+Enter
+##   --off-at=S           S seconds in, the player turns "Share performance data" off (Glitchless.set_enabled(false))
+##   --on-at=S            S seconds in, the player turns it back on (Glitchless.set_enabled(true))
+##   --opt-in             ask first: Glitchless is off until the player turns it on (the opt_in option)
 ##   --glitchless            send even though this is a debug build
 ## e.g. godot --path godot -- --autoplay --seed=3 --glitchless
 
@@ -50,6 +53,8 @@ var _focus_away_at := -1.0
 var _focus_away_for := 1.5
 var _bug_report_at := -1.0
 var _bug_form_at := -1.0
+var _off_at := -1.0
+var _on_at := -1.0
 var _bonus_target = null  # untyped: in a release export a call on a typed null crashes the game outright
 
 
@@ -58,6 +63,7 @@ func _ready() -> void:
 	var privacy := "anonymous"
 	var timeout := 300.0
 	var reset_id := false
+	var opt_in := false
 	for a in OS.get_cmdline_user_args():
 		if a == "--autoplay":
 			_autoplay = true
@@ -87,8 +93,15 @@ func _ready() -> void:
 			_bug_report_at = float(a.get_slice("=", 1))
 		elif a.begins_with("--bug-form-at="):
 			_bug_form_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--off-at="):
+			_off_at = float(a.get_slice("=", 1))
+		elif a.begins_with("--on-at="):
+			_on_at = float(a.get_slice("=", 1))
+		elif a == "--opt-in":
+			opt_in = true
 	print("user dir: ", OS.get_user_data_dir())
-	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout, "bug_reports": true})
+	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout, "bug_reports": true, "opt_in": opt_in})
+	print("glitchless on: ", Glitchless.is_enabled())
 	if reset_id:
 		Glitchless.reset_install_id()
 	if _background_at >= 0.0:
@@ -101,6 +114,10 @@ func _ready() -> void:
 		_report_from_code()
 	if _bug_form_at >= 0.0:
 		_report_from_form()
+	if _off_at >= 0.0:
+		_switch_at(_off_at, false)
+	if _on_at >= 0.0:
+		_switch_at(_on_at, true)
 	_next_level()
 
 
@@ -211,6 +228,13 @@ func _report_from_code() -> void:
 		shot.fill(Color(0.3, 0.3, 0.3))
 	var result := await Glitchless.report_bug("the bonus on %s never paid out" % LEVELS[_level], shot)
 	print("bug report from code: ", result)
+
+
+# The player flipping "Share performance data" in the game's settings.
+func _switch_at(seconds: float, on: bool) -> void:
+	await get_tree().create_timer(seconds).timeout
+	Glitchless.set_enabled(on)
+	print("glitchless on: ", Glitchless.is_enabled(), " (set_enabled(%s) on %s)" % [on, LEVELS[_level] if _level < LEVELS.size() else "the way out"])
 
 
 # A player pressing F8, typing a note and pressing Ctrl+Enter, as input events.

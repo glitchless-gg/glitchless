@@ -9,6 +9,7 @@ Game observability for Unity 6.3 LTS and later. Glitchless records how your game
 - **Multiplayer.** Ping, jitter and disconnects from Netcode for GameObjects or Mirror, with nothing to set up; which match, party or run each event belongs to; and a server mode that measures a dedicated server's ticks and players without counting it as a player.
 - **Bug reports from players**, when you turn them on: F8 (or your own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 - **Anonymous by default.** No player ID, no device identifier, coarse device facts only. `Privacy = Privacy.Install` adds a saved random player ID so retention (D1, D7, D30) can be counted, and nothing else. [PRIVACY.md](PRIVACY.md) lists every field.
+- **Players can turn it off.** `Glitchless.SetEnabled(false)` from a "Share performance data" toggle stops it at once, and the choice holds on every later launch.
 
 It sends the same events as the [browser](https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk) and [Godot](https://github.com/glitchless-gg/glitchless/tree/main/godot/addons/glitchless) SDKs, so the dashboard, the findings and the MCP tools work with a Unity game as they are.
 
@@ -58,6 +59,38 @@ Glitchless starts itself before the first scene loads, so frame times and errors
 
 The Editor and development builds send too, with `Env` set to `dev` unless you set it, so you can check data arrives from Play mode. Release builds default to `prod`.
 
+### A "Share performance data" setting
+
+Give players a toggle in your settings menu and wire it to `Glitchless.SetEnabled`. Off stops Glitchless at once: nothing more is measured or sent, what was waiting to go is deleted (on the device too), and the session ends there. On starts a new session. Glitchless saves the choice on the device (`persistentDataPath/glitchless/enabled`, PlayerPrefs in WebGL builds) and reads it before anything else at the next launch, so a player who said no sends nothing from the first frame, however Glitchless was started.
+
+```csharp
+using GlitchlessSdk;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class ShareDataSetting : MonoBehaviour
+{
+    [SerializeField] Toggle toggle; // "Share performance data"
+
+    void Start()
+    {
+        toggle.isOn = PlayerPrefs.GetInt("share_data", 1) == 1; // the game's own saved setting
+        Glitchless.SetEnabled(toggle.isOn);                     // changes nothing when the two agree
+        toggle.onValueChanged.AddListener(on =>
+        {
+            PlayerPrefs.SetInt("share_data", on ? 1 : 0);
+            Glitchless.SetEnabled(on);
+        });
+    }
+}
+```
+
+Show the game's own setting on the toggle, not `Glitchless.Enabled`: that is false in a build that sends nothing (the Editor with no intake, `--glitchless-off`) whatever the player chose. A call that changes nothing does nothing, and every call is safe before `Init`, so passing the saved setting each time the game starts is fine.
+
+**Asking first.** `OptIn = true` in the options (or **Opt In** on the Bootstrap) starts a device with no choice saved off: nothing is measured, kept or sent until the game calls `Glitchless.SetEnabled(true)` because the player said yes. Default the game's own setting to off too (`PlayerPrefs.GetInt("share_data", 0)`). The automatic start runs before `Init` and can't know about `OptIn`, so it keeps the first frames as usual, and `Init` drops them. A choice the player made wins over `OptIn` on every later launch. A game server has no player to ask, so `OptIn` leaves it on.
+
+While it's off, the bug report form doesn't open, `ReportBug` answers `(false, "off")`, and `--glitchless-measure` has no frames and says Glitchless is off. The level, properties, groups and zone the game set are kept for when it comes back on, but the level attempt that was going gets no outcome. The player ID (install and full mode) stays on the device, so a player who turns it back on is still one player; `ResetInstallId()` is the separate setting that forgets it. `GlitchlessOptions.Enabled = false` and `--glitchless-off` still turn a build off whatever the player chose. The Editor saves the choice too, in the project's `persistentDataPath`: `Glitchless.SetEnabled(true)` turns it back on.
+
 Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless-synthetic`, and on the test phones Google Play's pre-launch report plays every new build on (Android's `firebase.test.lab` setting, or a GPU that draws in software such as SwiftShader; read on the device and not sent) are marked `synthetic`, unless `SessionType` says otherwise. The dashboard leaves them out of player counts. Nor are testers: a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart, with no native plugin) is marked `tester`, which findings and share links leave out too.
 
 ## Tell it about your game
@@ -79,6 +112,7 @@ Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless
 | the player's place, every frame | `Glitchless.SetPosition(player.position)` (sent only when positions are on) |
 | an exception you caught | `Glitchless.Error(e)` |
 | a player's bug report from your own UI | `Glitchless.ReportBug(note)`, or `Glitchless.OpenBugReport()` for the built-in form ([below](#bug-reports)) |
+| the player turns "Share performance data" off or on in your settings | `Glitchless.SetEnabled(on)` ([above](#a-share-performance-data-setting)); `Glitchless.Enabled` says whether Glitchless is on now |
 
 Use the game's own words for names, causes and levels, never anything a player typed.
 
@@ -152,7 +186,7 @@ Glitchless.Init(new GlitchlessOptions
 });
 
 Glitchless.OpenBugReport();                            // a pause menu's "Report a bug" (works without BugReports)
-Glitchless.ReportBug(note, done: (sent, reason) => …); // your own form; reason is "offline" or "error" when not sent
+Glitchless.ReportBug(note, done: (sent, reason) => …); // your own form; reason is "off", "offline" or "error" when not sent
 if (Glitchless.IsBugReportOpen) return;                // input you read from UnityEngine.Input while the form is open
 ```
 
@@ -230,15 +264,17 @@ Run a built player with `--glitchless-measure=SECONDS` and it prints one line of
 | `--glitchless-intake=URL` | send to this server instead |
 | `--glitchless-synthetic` | mark the session as a bot's (`--autoplay` and batch mode do too) |
 | `--glitchless-server` | run as a game server ([server mode](#multiplayer)) |
-| `--glitchless-off` | send nothing |
+| `--glitchless-off` | send nothing (measuring still works) |
 | `--glitchless-debug` | log each batch as it is sent |
+
+When the player has turned Glitchless off on that device (`Glitchless.SetEnabled(false)`), measuring has no frames: the JSON is `{"glitchless_measure": {"error": "No frames were measured: Glitchless is off on this device…"}}`.
 
 In the Editor, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))` does the same from code, for example through an agent that can run C# in a live Editor.
 
 ## The sample
 
-**Package Manager → Glitchless → Samples → Fetch! → Import** adds a small runner with an autoplay bot and four planted bugs for Glitchless to find: a mesh and material leak on every level load, confetti made of physics cubes that are never destroyed, an exception on the level 3 frisbee, and a jump almost nobody makes. Open `FetchBoot.unity` and press Play; set the intake on the **Fetch** GameObject. A built player takes `--autoplay --seed=7 --skill=0.9 --level=2`. F8 opens the bug report form; `--bug-report-at=5` sends a report from code five seconds in.
+**Package Manager → Glitchless → Samples → Fetch! → Import** adds a small runner with an autoplay bot and four planted bugs for Glitchless to find: a mesh and material leak on every level load, confetti made of physics cubes that are never destroyed, an exception on the level 3 frisbee, and a jump almost nobody makes. Open `FetchBoot.unity` and press Play; set the intake on the **Fetch** GameObject. A built player takes `--autoplay --seed=7 --skill=0.9 --level=2`. F8 opens the bug report form; `--bug-report-at=5` sends a report from code five seconds in, and `--share-off-at=5` turns Glitchless off five seconds in, as a settings toggle would.
 
 ## Tests
 
-The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking; counters, properties, groups, zones, ping and disconnects, Mirror through stand-ins, and server mode) and PlayMode tests (the runner, the bug report form pausing the game, and a real Netcode for GameObjects server and client in one run, which compiles only where NGO 2.x is installed). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.
+The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking; counters, properties, groups, zones, ping and disconnects, Mirror through stand-ins, server mode, and the player's off switch) and PlayMode tests (the runner, the bug report form pausing the game and staying shut while Glitchless is off, and a real Netcode for GameObjects server and client in one run, which compiles only where NGO 2.x is installed). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.

@@ -49,18 +49,29 @@ export class DatadogBridge {
         trackResources: true,
         trackLongTasks: true,
         defaultPrivacyLevel: 'mask-user-input',
+        trackingConsent: this.off ? 'not-granted' : 'granted', // the player turned Glitchless off while the script loaded
         // Experimental in v7.9+: replay WebGL canvases instead of a blank rectangle.
         ...(this.cfg.replay ? { sessionReplayCanvasRecording: { enable: true, quality: 'low' } } : {}),
       });
     }
     this.rum = rum;
+    this.owned = init;
     this.call('setGlobalContextProperty', 'game', { service: this.opts.service, sdk: 'glitchless' });
     const queued = this.pending;
     this.pending = [];
     queued.forEach(([m, args]) => this.call(m, ...args));
   }
 
+  // The player turned Glitchless off, or back on (SPEC §4d): nothing more is mirrored meanwhile, and RUM that
+  // Glitchless started itself stops collecting (tracking consent, RUM v5.15+). A game's own RUM is the game's.
+  setEnabled(on) {
+    this.off = !on;
+    if (this.off) this.pending = [];
+    if (this.owned) this.call('setTrackingConsent', on ? 'granted' : 'not-granted');
+  }
+
   call(method, ...args) {
+    if (this.off && method !== 'setTrackingConsent') return;
     if (!this.rum) {
       if (this.pending.length < 200) this.pending.push([method, args]);
       return;

@@ -65,6 +65,8 @@ So do source maps for the production build ([step 4c](threejs.md#4c-readable-err
 Streams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in
 [step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,
 and its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).
+If the game has a settings screen, offer a "share performance data" toggle wired to `glitchless.setEnabled(on)`
+([step 4d](threejs.md#4d-a-share-performance-data-setting-offer-it)).
 
 ## 5. Bots and playtests
 

@@ -23,10 +23,13 @@
 //                the server stores it once (Starlift's first batches arrived up to 8 times without one)
 //  11. close     the window closes mid-level: Glitchless records the abandon before the session's end, and drops
 //                the "left" fail the game sends as it tears the level down
+//  12, 13.       multiplayer: an ENet server and a client against a fake intake, and against an older server
+//  14. off switch  the player turns Glitchless off and on (set_enabled), its choice holds on the next launch, opt_in
+//                starts a device off, and a debug build's own off holds, against a fake intake that keeps every request
 // It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys), test/device_test.gd
 // (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Google Play's pre-launch phones),
-// test/frames_test.gd (the refresh rate read off the fast frames; hitch causes) and test/steam_test.gd (Steam facts
-// from a fake GodotSteam).
+// test/frames_test.gd (the refresh rate read off the fast frames; hitch causes), test/steam_test.gd (Steam facts
+// from a fake GodotSteam), test/genre_test.gd and test/off_switch_test.gd (the player's off switch, without a server).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -125,12 +128,15 @@ async function holdingProxy(target, holdMs) {
 }
 
 // The intake of a server that takes the genre additions, before the real one does: it keeps every batch as it came,
-// and GET /v1/health lists `features` (none at all, as an older server answers, when features is null).
+// and every request's method and path, and GET /v1/health lists `features` (none at all, as an older server answers,
+// when features is null).
 async function fakeIntake(features) {
   const batches = [];
+  const requests = [];
   const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c);
+    requests.push(`${req.method} ${req.url.split('?')[0]}`);
     if (req.url === '/v1/health') return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(features ? { ok: true, features } : { ok: true }));
     if (req.method === 'POST' && req.url.startsWith('/v1/intake')) {
       batches.push(JSON.parse(Buffer.concat(chunks).toString('utf8')));
@@ -139,7 +145,7 @@ async function fakeIntake(features) {
     res.writeHead(404).end();
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { port: server.address().port, batches, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+  return { port: server.address().port, batches, requests, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
 }
 
 // A Godot process to steer while it runs (freeze it with SIGSTOP): its output so far, and a promise of its exit.
@@ -201,6 +207,8 @@ let server;
 try {
   if (!fs.existsSync(path.join(PROJECT, '.godot'))) spawnSync(godot, ['--headless', '--path', PROJECT, '--import'], { stdio: 'ignore' });
   const userDir = runGodot(['--script', 'res://test/user_dir.gd'], 'user dir').match(/^user dir: (.+)$/m)[1].trim();
+  const enabledFile = path.join(userDir, 'glitchless/enabled');
+  fs.rmSync(enabledFile, { force: true });  // a choice an aborted run left would turn every test off
   const unit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/bug_report_test.gd'], { encoding: 'utf8', timeout: 120_000 });
   for (const m of unit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `bug report unit: ${m[2]}`] : ['FAIL', `bug report unit: ${m[2]}`]);
   check('bug report unit tests ran', () => assert.match(unit.stdout, /bug report tests: 0 failed/, unit.stdout + unit.stderr));
@@ -218,6 +226,12 @@ try {
   check('genre unit tests ran to the end, with no script error', () => {
     assert.match(genreUnit.stdout, /genre tests: 0 failed/, genreUnit.stdout + genreUnit.stderr);
     assert.doesNotMatch(genreUnit.stdout + genreUnit.stderr, /SCRIPT ERROR/, genreUnit.stdout + genreUnit.stderr);
+  });
+  const offUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/off_switch_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of offUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `off switch unit: ${m[2]}`] : ['FAIL', `off switch unit: ${m[2]}`]);
+  check('off switch unit tests ran to the end, with no script error', () => {
+    assert.match(offUnit.stdout, /off switch tests: 0 failed/, offUnit.stdout + offUnit.stderr);
+    assert.doesNotMatch(offUnit.stdout + offUnit.stderr, /SCRIPT ERROR/, offUnit.stdout + offUnit.stderr);
   });
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
@@ -708,6 +722,112 @@ try {
     assert.equal(ofType(events, 'counts').length, 0);
     assert.match(old.cli.out, /doesn't take count\(\) yet/);
   });
+
+  // 14. The player's off switch (SPEC §4d), against a fake intake that keeps every request. Levels run 1.5 s each.
+  //   a. "Share performance data" goes off in level_2, after the first batch, and back on in level_3, which started
+  //      while it was off
+  //   b. off while offline, with a batch waiting in the outbox
+  //   c. the next launch, with the choice saved as off and an outbox planted on the device: a bug report from code,
+  //      the F8 form and --glitchless-measure
+  //   d. opt_in with no saved choice; e. opt_in, turned on 1 s in; f. a saved on wins over opt_in
+  //   g. a debug build without --glitchless, turned off and on
+  const choice = () => (fs.existsSync(enabledFile) ? fs.readFileSync(enabledFile, 'utf8') : null);
+  fs.rmSync(enabledFile, { force: true });
+  // The fake intake answers from this process, so Godot runs beside it (runGodotAsync), never blocking it.
+  const off = await fakeIntake(['counts', 'props', 'groups', 'net', 'server_mode']);
+  try {
+    const offIntake = `--intake=http://127.0.0.1:${off.port}`;
+    const take = () => ({ batches: off.batches.splice(0), requests: off.requests.splice(0) });
+    const eventsOf = (batches) => batches.flatMap((b) => b.events.map((e) => ({ ...e, session_id: b.session_id })));
+    const sessionsOf = (batches) => [...new Set(batches.map((b) => b.session_id))];
+
+    const switchOut = await runGodotAsync(demo(['--seed=15', '--off-at=2.6', '--on-at=3.5', offIntake]));
+    const sw = take();
+    const [s1, s2] = sessionsOf(sw.batches);
+    const first = eventsOf(sw.batches.filter((b) => b.session_id === s1));
+    const second = eventsOf(sw.batches.filter((b) => b.session_id === s2));
+    check('off switch: off mid-level sends nothing more, no level_abandon and no session_end', () => {
+      assert.match(switchOut, /glitchless on: false \(set_enabled\(false\) on level_2\)/, switchOut);
+      assert.equal(first[0]?.type, 'session_start', 'the first batch went before the switch');
+      assert.deepEqual(first.filter((e) => ['level_abandon', 'level_fail', 'session_end'].includes(e.type) || (e.type === 'level_complete' && e.level === 'level_2')).map((e) => e.type), []);
+      assert.ok(!fs.existsSync(outbox), 'outbox.json left');
+    });
+    check('off switch: back on is a new session, with no load, and the level going at the switch gets no outcome', () => {
+      assert.match(switchOut, /glitchless on: true \(set_enabled\(true\) on level_3\)/, switchOut);
+      assert.equal(sessionsOf(sw.batches).length, 2, JSON.stringify(sessionsOf(sw.batches)));
+      assert.equal(second[0]?.type, 'session_start');
+      assert.equal(second.filter((e) => e.type === 'load').length, 0, 'a load sent again');
+      assert.ok(second.some((e) => e.type === 'custom' && e.level === 'level_3'), 'events carry the level');
+      assert.deepEqual(second.filter((e) => e.type.startsWith('level_')).map((e) => `${e.type} ${e.level}`), [], 'level_3 started while off: its fail and complete are dropped');
+      assert.ok(second.some((e) => e.type === 'session_end' && e.reason === 'quit'), 'the new session ends as usual');
+      assert.equal(choice(), 'on');
+    });
+
+    const offlineOut = await runGodotAsync(demo(['--seed=16', '--off-at=2.6', '--glitchless-debug', `--intake=http://127.0.0.1:${deadPort}`]));
+    check('off switch: turning it off deletes the batch waiting in the outbox, and closing writes none', () => {
+      assert.match(offlineOut, /send failed/, 'no batch was waiting');
+      assert.match(offlineOut, /off: the player turned it off/);
+      assert.ok(!fs.existsSync(outbox), 'outbox.json left');
+      assert.equal(choice(), 'off');
+    });
+
+    fs.writeFileSync(outbox, JSON.stringify({ v: 1, batches: [{ bid: 'b_0123456789abcdef', service: SERVICE, env: 'dev', version: '0.1.0', group: '1', events: [{ type: 'session_start', ts: Date.now(), level: null }] }] }));
+    const savedOut = await runGodotAsync(demo(['--seed=17', '--bug-report-at=0.5', '--bug-form-at=0.8', '--glitchless-measure=1.5', offIntake]));
+    const saved = take();
+    const measured = savedOut.split('\n').find((l) => l.startsWith('{"glitchless_measure"'));
+    check('off switch: the next launch, with the choice saved as off, sends nothing at all, not even GET /v1/health', () => {
+      assert.match(savedOut, /^glitchless on: false$/m);
+      assert.deepEqual(saved.requests, []);
+      assert.ok(!fs.existsSync(outbox), 'the outbox found on the device is still there');
+      assert.equal(choice(), 'off');
+    });
+    check('off switch: a bug report answers off, F8 opens no form, and --glitchless-measure says Glitchless is off', () => {
+      assert.match(savedOut, /bug report from code: \{ "sent": false, "reason": "off" \}/);
+      assert.doesNotMatch(savedOut, /bug report form opened/);
+      assert.ok(measured, 'no {"glitchless_measure": ...} line');
+      assert.match(JSON.parse(measured).glitchless_measure.error, /^Glitchless is off/);
+    });
+
+    fs.rmSync(enabledFile, { force: true });
+    const optOut = await runGodotAsync(demo(['--seed=18', '--opt-in', offIntake]));
+    const asked = take();
+    check('opt_in: with no saved choice the device starts off, sends nothing, and saves no choice', () => {
+      assert.match(optOut, /^glitchless on: false$/m);
+      assert.deepEqual(asked.requests, []);
+      assert.equal(choice(), null);
+    });
+
+    await runGodotAsync(demo(['--seed=19', '--opt-in', '--on-at=1', offIntake]));
+    const yes = take();
+    const yesEvents = eventsOf(yes.batches);
+    check('opt_in: set_enabled(true) starts one session then, with no load, and no outcome for the level it found going', () => {
+      assert.equal(choice(), 'on');
+      assert.equal(yes.requests[0], 'GET /v1/health');
+      assert.equal(sessionsOf(yes.batches).length, 1);
+      assert.equal(yesEvents[0]?.type, 'session_start');
+      assert.equal(yesEvents.filter((e) => e.type === 'load').length, 0);
+      const levels = yesEvents.filter((e) => e.type.startsWith('level_')).map((e) => `${e.type} ${e.level}`);
+      assert.ok(!levels.some((l) => l.endsWith('level_1')) && levels.includes('level_start level_2') && levels.includes('level_complete level_2'), JSON.stringify(levels));
+    });
+
+    await runGodotAsync(demo(['--seed=20', '--opt-in', offIntake]));
+    const wins = eventsOf(take().batches);
+    check('opt_in: a saved on wins, so the launch sends from its first frame, its load included', () => {
+      assert.equal(wins.filter((e) => e.type === 'load' && e.ttff_ms != null).length, 1);
+      assert.deepEqual(wins.filter((e) => e.type === 'level_start').map((e) => e.level), ['level_1', 'level_2', 'level_3']);
+    });
+
+    const debugOut = await runGodotAsync(['--', '--autoplay', '--seed=21', '--level-seconds=1', '--off-at=0.5', '--on-at=1', offIntake]);
+    const debugRun = take();
+    check('off switch: set_enabled(true) never turns on a build that sends nothing, but saves the choice', () => {
+      assert.deepEqual(debugRun.requests, []);
+      assert.match(debugOut, /glitchless on: false \(set_enabled\(true\)/, debugOut);
+      assert.equal(choice(), 'on');
+    });
+  } finally {
+    await off.close();
+    fs.rmSync(enabledFile, { force: true });
+  }
 } finally {
   server?.kill();
   fs.rmSync(tmp, { recursive: true, force: true });

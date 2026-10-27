@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The player's off switch. `Glitchless.SetEnabled(on)` is for a "Share performance data" toggle in the game's settings. Off saves the choice first, then stops Glitchless at once: nothing more is measured or sent (not even `GET /v1/health`), everything waiting is dropped, the outbox on the device included, and the session ends without a `session_end` or `level_abandon`. The bug report form doesn't open, `ReportBug` answers `(false, "off")`, and measuring says Glitchless is off. On starts a new session in the same launch, with the properties and groups still set; the level attempt that was going gets no outcome. A call that changes nothing does nothing, and every call is safe before `Init`.
+- The choice is saved in `persistentDataPath/glitchless/enabled` (WebGL: PlayerPrefs `glitchless.enabled`) as `on` or `off`, in every privacy mode, once the game calls `SetEnabled`. The automatic start reads it before anything else, so a player who turned Glitchless off has nothing measured from the first frame, and an outbox an earlier launch left is deleted unread.
+- `GlitchlessOptions.OptIn` (and **Opt In** on the Bootstrap): a device with no choice saved starts off until the game calls `SetEnabled(true)`, for a game that asks first. A saved choice wins over it.
+- `Glitchless.Enabled` is false while the player has Glitchless off. `GlitchlessOptions.Enabled = false` and `--glitchless-off` still turn a build off whatever the player chose.
+
 ## 0.5.1
 
 - Google Play's pre-launch test phones are `synthetic` again. They no longer set Android's `firebase.test.lab` setting (Starlift's pre-launch runs in October 2026 came without it): they are virtual phones that draw in software, so an Android device whose GPU is a software renderer (SwiftShader, llvmpipe) is a test phone too (`DeviceInfo.IsStoreTestDevice`). No phone a player holds draws in software. Nothing new is sent.

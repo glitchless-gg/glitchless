@@ -51,9 +51,13 @@ public:
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless")
 	bool bSendInDevelopmentBuilds = true;
 
-	/** Off sends nothing at all. */
+	/** Off sends nothing at all, whatever the player chose with Set Enabled. */
 	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless")
 	bool bEnabled = true;
+
+	/** Ask the player first: on a device where they haven't chosen yet, Glitchless starts off (nothing measured, kept or sent) until the game calls Set Enabled (true) from its "Share performance data" setting. Their saved choice wins over this. A dedicated server has no player to ask and starts on. */
+	UPROPERTY(config, EditAnywhere, BlueprintReadOnly, Category = "Glitchless")
+	bool bOptIn = false;
 
 	/** Empty: the Steam build ("steam-18231") when the game runs one from Steam with Steamworks, else Project Settings >
 	 * Description > Project Version. Bump it on every release, so versions can be compared. */

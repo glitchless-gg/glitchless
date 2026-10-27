@@ -183,6 +183,26 @@ GLITCHLESS_API_KEY=… npx glitchless-sourcemaps upload dist --version 1.2.0 --s
 
 `--url` (or `GLITCHLESS_URL`) is the Glitchless server, as for the MCP server.
 
+## 4d. A "share performance data" setting (offer it)
+
+If the game has a settings or options screen, offer a toggle for it, so players can turn Glitchless off at any time and
+back on. `setEnabled(false)` stops measuring and sending at once, drops what was waiting and sends nothing more, not
+even a closing event; `setEnabled(true)` starts a new session. The SDK saves the choice in localStorage itself, so the
+next visit sends nothing until the player turns it back on. Wire it next to the game's other settings:
+
+```js
+// where the settings load
+glitchless.setEnabled(settings.shareData !== false); // changes nothing when it already agrees
+// where the toggle changes
+settings.shareData = checked;
+saveSettings();
+glitchless.setEnabled(checked);
+```
+
+If the user wants players to agree before anything is collected, add `optIn: true` to init and call
+`setEnabled(true)` when the player says yes. Tell them to mention the setting in the game's privacy page
+(`packages/sdk/PRIVACY.md` has a sentence for it).
+
 ## 5. Verify
 
 1. Run the game, press `` ` ``: the Glitchless overlay shows fps, p95 frame time, draw calls, context gauges.

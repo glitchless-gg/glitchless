@@ -19,6 +19,10 @@
 //                quitting sends the batch again, and its batch_id lets the server store it once. The quit sends
 //                level_abandon before session_end, and the "left" fail the game sends as it tears the level down
 //                (--fail-on-quit) is dropped
+//   7. share off  the player turns "Share performance data" off mid-run (--share-off-at): the choice is saved, and the
+//                session ends there, with no session_end and no level_abandon
+//   8. saved off  the next launch, with an outbox planted from step 1: nothing goes out at all, not the outbox, not a
+//                health check, and the outbox is deleted unread
 // The offline and online runs each send a bug report from code (--bug-report-at): the offline one waits in the
 // outbox and goes on the next launch.
 import { spawn, spawnSync } from 'node:child_process';
@@ -137,11 +141,13 @@ function playAsync(args, label) {
 }
 
 // Passes each request on to the server, so every batch is stored, but holds the answer to the first intake request
-// back for holdMs: what a phone that stalled, or a game that quit mid-send, sees.
+// back for holdMs: what a phone that stalled, or a game that quit mid-send, sees. `requests` lists every request.
 async function holdingProxy(target, holdMs) {
   let first = true;
   const answers = [];
+  const requests = [];
   const server = http.createServer(async (req, res) => {
+    requests.push(`${req.method} ${req.url.split('?')[0]}`);
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const r = await fetch(`http://127.0.0.1:${target}${req.url}`, { method: req.method, body: req.method === 'POST' ? Buffer.concat(chunks) : undefined });
@@ -156,7 +162,7 @@ async function holdingProxy(target, holdMs) {
     if (res.writable) res.writeHead(r.status, { 'Content-Type': 'application/json' }).end(text);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  return { port: server.address().port, answers, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+  return { port: server.address().port, answers, requests, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
 }
 
 const readRaw = () => fs.readdirSync(path.join(tmp, 'data')).filter((f) => f.startsWith('events-')).flatMap((f) => fs.readFileSync(path.join(tmp, 'data', f), 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
@@ -371,6 +377,55 @@ try {
       seen.add(key);
     }
   });
+
+  // 7. share off: the first batch goes about 2 s after Init; the player turns it off at 5 s, mid-level, and the game
+  // quits at 9 s.
+  const choiceFile = path.join(dataDir, 'enabled');
+  const beforeShareOff = new Set((await query(port, 'sessions')).sessions.map((s) => s.session_id));
+  const offProxy = await holdingProxy(port, 0);
+  let shareOffLog = '';
+  try {
+    shareOffLog = await playAsync(['--level=1', '--skill=1', '--seed=7', '--share-off-at=5', '--quit-after=9', `--glitchless-intake=http://127.0.0.1:${offProxy.port}`], 'share-off');
+  } finally {
+    await offProxy.close();
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const offRun = (await query(port, 'sessions')).sessions.filter((s) => !beforeShareOff.has(s.session_id));
+  const raw7 = readRaw().filter((e) => e.session_id === offRun[0]?.session_id);
+  check('share off: the choice is saved on the device as "off"', () => {
+    assert.match(shareOffLog, /share performance data: off/);
+    assert.equal(fs.existsSync(choiceFile) ? fs.readFileSync(choiceFile, 'utf8') : null, 'off');
+  });
+  check('share off: what went before stays, and the session ends with nothing more said', () => {
+    assert.equal(offRun.length, 1, `${offRun.length} sessions`);
+    assert.ok(raw7.some((e) => e.type === 'session_start'), 'no session_start');
+    assert.deepEqual(raw7.filter((e) => ['session_end', 'level_abandon'].includes(e.type)).map((e) => e.type), []);
+    assert.equal(offRun[0].ended, false);
+    assert.ok(!fs.existsSync(outbox), 'an outbox was left');
+  });
+
+  // 8. saved off: the outbox an offline launch left (step 1's) is put back, and the game runs with the choice still off.
+  fs.writeFileSync(outbox, saved);
+  const beforeSavedOff = (await query(port, 'sessions')).sessions.length;
+  const quietProxy = await holdingProxy(port, 0);
+  let savedOffLog = '';
+  try {
+    savedOffLog = await playAsync(['--level=3', '--skill=0.95', '--seed=8', '--quit-after=6', '--bug-report-at=3', `--glitchless-intake=http://127.0.0.1:${quietProxy.port}`], 'saved-off');
+  } finally {
+    await quietProxy.close();
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const afterSavedOff = (await query(port, 'sessions')).sessions.length;
+  check('saved off: nothing goes out at all, not the old outbox, not a health check', () => {
+    assert.deepEqual(quietProxy.requests, []);
+    assert.equal(afterSavedOff, beforeSavedOff, 'a session arrived');
+  });
+  check('saved off: the outbox from the earlier launch is deleted unread, and the choice stays off', () => {
+    assert.ok(!fs.existsSync(outbox), 'outbox.json still there');
+    assert.equal(fs.readFileSync(choiceFile, 'utf8'), 'off');
+  });
+  check('saved off: a bug report from code answers "off"', () => assert.match(savedOffLog, /bug report from code: sent=False reason=off/));
+  fs.rmSync(choiceFile, { force: true });
 } catch (err) {
   results.push(['FAIL', 'run', err.message]);
 } finally {

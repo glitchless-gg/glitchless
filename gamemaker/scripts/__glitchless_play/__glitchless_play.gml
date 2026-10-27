@@ -51,7 +51,7 @@ function __glitchless_stamp(_g, _e) {
 /// entry it adds to; its numbers (at most 4) are added up as given; `_n` adds to the entry's count.
 function __glitchless_count(_name, _what, _n) {
     var _g = __glitchless();
-    if ((_g.inited && !_g.enabled) || (!is_undefined(_g.counts_ok) && !_g.counts_ok)) return;
+    if (__glitchless_off(_g) || (!is_undefined(_g.counts_ok) && !_g.counts_ok)) return;
     if (!is_real(_n) && !is_int64(_n)) _n = 1;
     _n = min(floor(_n), __GLITCHLESS_MAX_COUNT_N);
     if (_n < 1) return;
@@ -164,7 +164,7 @@ function __glitchless_check_track_rate(_g, _name) {
 /// event, so against one that answers without "counts" the counters send nothing and say so once. No answer
 /// (offline) leaves them on: a later launch may send them to a server that takes them.
 function __glitchless_ask_features(_g) {
-    if (_g.health_id != -1 || !is_undefined(_g.counts_ok) || !_g.sampled) return;
+    if (!_g.enabled || _g.health_id != -1 || !is_undefined(_g.counts_ok) || !_g.sampled) return;
     var _id = http_request(_g.intake + "/v1/health", "GET", __glitchless_headers(_g), "");
     if (_id >= 0) _g.health_id = _id;
 }
@@ -461,7 +461,7 @@ function __glitchless_set_zone(_zone) {
 /// a disconnect starts a new connection.
 function __glitchless_net_sample(_rtt_ms, _loss_pct, _jitter_ms) {
     var _g = __glitchless();
-    if ((_g.inited && !_g.enabled) || !(is_real(_rtt_ms) || is_int64(_rtt_ms)) || _rtt_ms < 0) return;
+    if (__glitchless_off(_g) || !(is_real(_rtt_ms) || is_int64(_rtt_ms)) || _rtt_ms < 0) return;
     if (_g.net_connected && current_time - _g.net_last_sample < __GLITCHLESS_NET_MIN_GAP_MS) return;
     _g.net_last_sample = current_time;
     if (!_g.net_connected) {
@@ -522,7 +522,7 @@ function __glitchless_net_json(_g, _n) {
 /// level's abandon with reason "disconnect": never a fail.
 function __glitchless_disconnect(_reason) {
     var _g = __glitchless();
-    if (_g.inited && !_g.enabled) return;
+    if (__glitchless_off(_g)) return;
     var _r = is_string(_reason) ? _reason : "other";
     if (!__glitchless_has(["timeout", "connection_lost", "kicked", "server_closed", "failed_to_connect", "other"], _r)) _r = "other";
     var _numbers = _g.net_last;
@@ -549,7 +549,7 @@ function __glitchless_disconnect(_reason) {
 /// Back on the same connection after a disconnect.
 function __glitchless_reconnect() {
     var _g = __glitchless();
-    if ((_g.inited && !_g.enabled) || _g.net_down_at == 0) return;
+    if (__glitchless_off(_g) || _g.net_down_at == 0) return;
     __glitchless_push(_g, { type: "reconnect", after_s: __glitchless_round((current_time - _g.net_down_at) / 1000, 0.1) });
     __glitchless_remember(_g, "reconnect");
     _g.net_down_at = 0;

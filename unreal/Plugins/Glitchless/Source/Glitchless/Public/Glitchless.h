@@ -28,8 +28,12 @@ struct GLITCHLESS_API FGlitchlessOptions
 	bool bCaptureLogErrors = true;
 	bool bCaptureWarnings = false;
 	float SampleRate = 1;
-	/** Unset: on whenever there is an intake. */
+	/** Unset: on whenever there is an intake. False sends nothing, whatever the player chose with SetEnabled. */
 	TOptional<bool> Enabled;
+	/** For a game that asks the player first: on a device where they haven't chosen yet, nothing is measured, kept
+	 * or sent until FGlitchless::SetEnabled(true). Their saved choice wins over it. The project setting Opt In does
+	 * the same from the first frame. */
+	bool bOptIn = false;
 	bool bDebug = false;
 	/** What holds for the session from the start (mode, region): as SetProperty takes them, and checked the same way. */
 	TMap<FString, FString> Properties;
@@ -56,6 +60,7 @@ struct GLITCHLESS_API FGlitchlessOptions
  *   FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"));  // what holds for the session
  *   FGlitchless::SetGroup(EGlitchlessGroup::Match, MatchId);  // every event marked with the match, hashed
  *   FGlitchless::SetContext(TEXT("enemies"), Enemies.Num());
+ *   FGlitchless::SetEnabled(Settings->bSharePerformanceData);  // the player's "Share performance data" toggle
  *
  * Maps are levels on their own. Every call is safe before Init and from any thread, and does nothing
  * in the editor outside Play In Editor. Positions are taken in Unreal units (centimetres, Z up) and
@@ -158,6 +163,15 @@ public:
 	/** Closes the current frame window and sends what is waiting. Runs by itself every few seconds. */
 	static void Flush();
 
+	/** The player's "Share performance data" setting, for a toggle in the game's settings. Off stops Glitchless at
+	 * once: nothing more is measured or sent, what was waiting (on the device too) is dropped, and the session ends
+	 * without a word. On starts a new session. The choice is saved on the device (Saved/Glitchless/enabled) and read
+	 * before anything is measured on the next launch, so a player who turned it off sends nothing at all. A call that
+	 * changes nothing does nothing, so the game can pass its own saved setting every time it starts. It can't turn
+	 * on a build that doesn't send (bEnabled, Enabled false, no intake, a development build without -glitchless). */
+	static void SetEnabled(bool bOn);
+	/** True while Glitchless is on: this build sends and the player hasn't turned it off. For a settings menu, show
+	 * the game's own saved setting: in a build that sends nothing this is false whatever the player chose. */
 	static bool IsEnabled();
 	static FString GetSessionId();
 	static FString GetLevel();

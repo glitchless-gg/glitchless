@@ -129,6 +129,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Glitchless")
 	static void Flush();
 
+	/** For the player's "Share performance data" setting: wire a checkbox's On Check State Changed here. Off stops Glitchless at once (nothing more is measured or sent, and what was waiting is dropped); on starts a new session. The choice is saved on the device and holds on the next launch from its first frame. Calling it with the same value again does nothing. */
+	UFUNCTION(BlueprintCallable, Category = "Glitchless", meta = (DisplayName = "Set Enabled"))
+	static void SetEnabled(bool bOn);
+
+	/** True while Glitchless is on: this build sends and the player hasn't turned it off with Set Enabled. A settings menu shows the game's own saved setting. */
 	UFUNCTION(BlueprintPure, Category = "Glitchless")
 	static bool IsEnabled();
 

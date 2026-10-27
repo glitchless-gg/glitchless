@@ -33,7 +33,9 @@ class UWorld;
  * hosts, a second core runs its own server session.
  *
  * A packaged game starts it when the module loads, so the first frames and errors are kept; nothing
- * is sent until Init. In the editor it runs only during Play In Editor.
+ * is sent until Init. In the editor it runs only during Play In Editor. The player's own switch (SetEnabled,
+ * saved in Saved/Glitchless/enabled) is read first, so a player who turned Glitchless off has nothing kept
+ * from the first frame; a listen server's own session follows it too.
  *
  * Flags (on the command line, - or --):
  *   -glitchless                 send from a development build too
@@ -90,6 +92,10 @@ public:
 	Glitchless::FValue MakeBugReport(const FString& Screenshot);
 	void SendBugReport(Glitchless::FValue Report, const FString& Note);
 	void SkipNextFrames(int32 Count);
+	/** The player's "Share performance data" setting, for the player's session and a listen server's own. */
+	void SetEnabled(bool bOn);
+	/** The player turned Glitchless off: no bug report box, no screenshot. */
+	bool IsTurnedOff();
 
 private:
 	FGlitchlessRuntime();
@@ -102,6 +108,8 @@ private:
 	void SampleServer(Glitchless::FCore& C, UWorld* World, UNetDriver* Driver, bool bListen);
 	Glitchless::FValue ServerInfo(UWorld* World, UNetDriver* Driver, bool bListen) const;
 	void StartListenServer(UWorld* World);
+	/** A listen server's outbox from an earlier launch, while the player has Glitchless off and no session of its own runs to drop it. */
+	void ForgetServerOutbox() const;
 	void BindNetworkFailures();
 	void OnNetworkFailure(UWorld* World, UNetDriver* Driver, const std::string& Reason);
 	void OnPreGarbageCollect();

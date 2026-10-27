@@ -27,7 +27,8 @@ namespace GlitchlessSdk
     /// (Application.logMessageReceivedThreaded), scenes, input and the app's lifecycle.
     ///
     /// It starts itself before the first scene loads, so the first frames and errors are kept; nothing
-    /// is sent until Glitchless.Init(). Define GLITCHLESS_DISABLE to stop the automatic start.
+    /// is sent until Glitchless.Init(). It reads the player's saved choice first (Glitchless.SetEnabled): a player
+    /// who turned Glitchless off has nothing kept. Define GLITCHLESS_DISABLE to stop the automatic start.
     ///
     /// Flags (on the player's command line):
     ///   --glitchless-intake=URL       send to this server instead
@@ -139,6 +140,9 @@ namespace GlitchlessSdk
                 FixedHz = () => Time.fixedDeltaTime > 0 ? 1 / Time.fixedDeltaTime : 50,
                 ServerHost = DeviceInfo.ServerHost,
             };
+            // The player's saved choice comes before anything else: a player who turned Glitchless off has nothing
+            // measured from the first frame, and the last launch's outbox is deleted unread (SPEC §4d).
+            Core.LoadChoice();
             Core.NetSources.AddRange(Netcode.Find());
             Core.Scrubber.AddPath(Application.persistentDataPath, "persistent:");
             Core.Scrubber.AddPath(Application.temporaryCachePath, "cache:");
@@ -411,6 +415,11 @@ namespace GlitchlessSdk
             if (EnsureRunning() == null)
             {
                 done?.Invoke(false, "offline");
+                return;
+            }
+            if (Core.SwitchedOff)
+            {
+                done?.Invoke(false, "off"); // the player turned Glitchless off: no screenshot is taken either
                 return;
             }
             instance.StartCoroutine(instance.Report(Core.BugSnapshot(), note, screenshot, done));

@@ -116,6 +116,24 @@ System. While it's open, `Time.timeScale` is 0 and the Input System's actions ar
 reads straight from `UnityEngine.Input` or a device isn't held back: guard it with `if (Glitchless.IsBugReportOpen)
 return;`. A pause menu can call `Glitchless.OpenBugReport()`, and the game's own form `Glitchless.ReportBug(note)`.
 
+## 4d. A "Share performance data" setting
+
+If the game has a settings or options menu, offer the user a toggle there that the player can turn off (store privacy
+forms then count the data as optional). Add it next to the game's other settings, saved the way they are, and pass it
+on as the game starts and on every change:
+
+```csharp
+toggle.isOn = PlayerPrefs.GetInt("share_data", 1) == 1;   // the game's own saved setting
+Glitchless.SetEnabled(toggle.isOn);                       // changes nothing when it agrees
+toggle.onValueChanged.AddListener(on => { PlayerPrefs.SetInt("share_data", on ? 1 : 0); Glitchless.SetEnabled(on); });
+```
+
+Off stops Glitchless at once and deletes what was waiting; the SDK saves the choice and reads it before anything else
+next launch, so it holds even though Glitchless starts before the menu. Show the game's own setting on the toggle, not
+`Glitchless.Enabled` (false in a build that sends nothing). For a game that asks before collecting anything, add
+`OptIn = true` to the options and default the setting to off. Don't add a toggle without asking; a game with no
+settings menu can go without.
+
 ## 5. Bots and measuring
 
 If the game has an autoplay or test mode, start it from the command line (`--autoplay --seed=N`): the SDK marks

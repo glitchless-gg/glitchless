@@ -100,6 +100,23 @@ it's open, so a game with its own pause passes `bug_reports: { pause: false, on_
 calls `glitchless_open_bug_report()`, and the game's own form `glitchless_report_bug(note, true, callback)`. The
 screenshot is a PNG of the application surface. Privacy wording: `gamemaker/PRIVACY.md`.
 
+## 4e. A "Share performance data" setting (where the game has a settings menu)
+
+If the game has a settings or options menu, offer the user a toggle there, so players can turn Glitchless off and back
+on (ask before adding UI). Keep the setting with the game's others, and call `glitchless_set_enabled` with it as the game
+starts and whenever the player flips it:
+
+```gml
+glitchless_set_enabled(global.settings.share_data); // at start (safe before glitchless_init) and in the toggle
+```
+
+Off stops measuring and sending at once, drops what was waiting (the outbox too) and is remembered in
+`glitchless/enabled`, so later launches send nothing until it's on again; a call that changes nothing does nothing. The
+menu shows the game's own setting, not `glitchless_is_enabled()`, which is false in a build run from the IDE without
+`-glitchless` whatever the player chose. For a game that asks players before collecting anything, pass `opt_in: true`
+to `glitchless_init` and call `glitchless_set_enabled(true)` when they say yes. With a toggle, the store forms can answer
+that collection is optional, and the privacy page gets a sentence about it (`gamemaker/PRIVACY.md`).
+
 ## 5. Bots and measuring
 
 Give the game an `-autoplay` flag (read it with `glitchless_has_flag("autoplay")`) that plays a few levels and

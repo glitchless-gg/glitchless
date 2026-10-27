@@ -12,6 +12,8 @@
 //    the first frame with first_launch, and gpu_or_os.
 // 6. Genre coverage (docs/design/genre-coverage.md A5 to A8): counters, properties, groups with level attributes and
 //    zones, and network samples, checked against the design's wire format in the batches the GML sends.
+// 7. The player's off switch (SPEC §4d): glitchless_set_enabled, glitchless_is_enabled and opt_in, checked against every
+//    request the GML makes.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -1063,4 +1065,337 @@ test('A8: a disconnect before any sample says so; other reasons are "other"; 20 
   assert.equal(disconnects[1].reason, 'other');
   assert.equal(rec.events('level_abandon').length, 0, 'no level open, nothing to abandon');
   assert.equal(rec.events('reconnect').length, 1);
+});
+
+// ───────────────────────────── 7. the player's off switch (SPEC §4d) ─────────────────────────────
+// A player turns Glitchless off in the game's settings (glitchless_set_enabled), and back on. These read every request
+// the game makes, the health check included, and the batches in them.
+
+// Every request the game makes ({url, body}: an intake request's batch, unpacked), passed on to the server. With `hold`,
+// the reply to the first batch waits for release(): a request on its way as the player turns Glitchless off.
+function switchFetch({ hold = false } = {}) {
+  const requests = [];
+  let release = () => {};
+  const held = hold ? new Promise((r) => (release = r)) : null;
+  let batches = 0;
+  const impl = async (url, init) => {
+    const intake = url.includes('/v1/intake');
+    const body = intake ? JSON.parse(Buffer.isBuffer(init.body) && init.body[0] === 0x1f ? zlib.gunzipSync(init.body).toString('utf8') : String(init.body)) : null;
+    requests.push({ url, body });
+    if (url.endsWith('/v1/health')) return new Response(JSON.stringify({ ok: true, features: FEATURES }), { status: 200 });
+    const r = await fetch(url, init);
+    const text = await r.text();
+    if (intake && held && ++batches === 1) await held;
+    return new Response(text, { status: r.status });
+  };
+  // The events sent, a session's (`sid`) or all of them.
+  const events = (sid) => requests.filter((q) => q.body && (!sid || q.body.session_id === sid)).flatMap((q) => q.body.events);
+  return { impl, requests, events, release: () => release() };
+}
+
+function switchGame({ saveDir = newSave(), args = ['-glitchless'], options = {}, hold = false, buildType = 'exe', intake = `http://127.0.0.1:${port}`, before = null } = {}) {
+  const rec = switchFetch({ hold });
+  const game = launch({ saveDir, args, rooms: ROOMS, fetchImpl: rec.impl, buildType });
+  game.state.timer += Math.floor(Math.random() * 1e9); // its own session ID
+  before?.(game);
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', intake, game.struct(options));
+  return { game, rec, saveDir };
+}
+
+const choiceOf = (dir) => (fs.existsSync(path.join(dir, 'glitchless/enabled')) ? fs.readFileSync(path.join(dir, 'glitchless/enabled'), 'utf8') : null);
+const types = (events) => events.map((e) => e.type);
+// Waits for the batch in flight to be answered (a reply held back by switchFetch is not waited for).
+async function answered(game) {
+  for (let i = 0; i < 100 && game.g.in_flight !== -1; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    await game.deliver();
+  }
+}
+
+test('off: what was waiting goes, the outbox on the device too, and nothing more is measured or sent, not even a session_end', async () => {
+  // Offline, so batches pile up in the outbox and on the device; install mode, so there is a player ID to keep.
+  const { game, rec, saveDir } = switchGame({ args: ['-glitchless', '-glitchless-privacy=install'], intake: `http://127.0.0.1:${deadPort}` });
+  game.call('glitchless_level_start', 'cave_1');
+  game.call('glitchless_set_group', 'match', 'match-0001-abcd');
+  await game.frames(200, (i) => ({ during: (g) => i % 20 === 0 && g.call('glitchless_track', 'jump') }));
+  await game.frame({ dt: 130 }); // a hitch, waiting in the window for its causes
+  await game.frame({ during: (g) => g.call('glitchless_count', 'kill') });
+  const g = game.g;
+  assert.ok(fs.existsSync(outbox(saveDir)) && g.outbox.length > 0, 'the first batch could not go, so it waits on the device');
+  assert.ok(g.queue.length > 0 && g.pending_hitches.length === 1 && g.win.count_list.length === 1 && g.win.frames > 0);
+  assert.equal(game.call('glitchless_is_enabled'), true);
+  assert.equal(choiceOf(saveDir), null, 'nothing is saved until the game calls glitchless_set_enabled');
+  const sent = rec.requests.length;
+  const errors = g.stats.errors;
+  const hitches = g.stats.hitches;
+
+  game.call('glitchless_set_enabled', false);
+  assert.equal(choiceOf(saveDir), 'off');
+  assert.equal(game.call('glitchless_is_enabled'), false);
+  assert.equal(g.stats.last_status, 'off');
+  assert.deepEqual([g.queue.length, g.outbox.length, g.win.frames, g.win.count_list.length, g.pending_hitches.length, g.pos_buffer.length], [0, 0, 0, 0, 0, 0]);
+  assert.ok(!fs.existsSync(outbox(saveDir)), 'the outbox on the device is deleted');
+  assert.ok(fs.existsSync(path.join(saveDir, 'glitchless/player_id')), 'the player ID stays, so a player who turns it back on is still one player');
+  assert.equal(g.level, 'cave_1', 'what the game said stays in memory');
+
+  // Every call stays safe and does nothing: no frame, hitch, error, event, count, position or network sample is kept.
+  await game.frames(400, (i) => ({
+    dt: i === 200 ? 130 : 16.667,
+    during: (gm) => {
+      gm.call('glitchless_track', 'after_off');
+      gm.call('glitchless_count', 'kill');
+      gm.call('glitchless_set_position', 10, 20);
+      gm.call('glitchless_set_context', gm.struct({ enemies: 7 }));
+      if (i === 10) gm.call('glitchless_death', 1, 2, 'spikes');
+      if (i === 20) gm.call('glitchless_error', 'save slot missing');
+      if (i % 60 === 0) gm.call('glitchless_net_sample', 40);
+      if (i === 100) gm.call('glitchless_disconnect', 'timeout');
+      if (i === 300) gm.call('glitchless_level_complete');
+    },
+  }));
+  game.call('glitchless_flush');
+  game.state.focus = false; // losing focus flushes
+  await game.frame();
+  game.state.focus = true;
+  await game.frames(2);
+  assert.deepEqual([g.queue.length, g.outbox.length, g.win.frames, g.win.count_list.length, g.pos_buffer.length, g.stats.errors, g.stats.hitches], [0, 0, 0, 0, 0, errors, hitches]);
+  assert.equal(g.recent.length, 0, 'nothing for a later hitch or report to carry');
+  game.call('glitchless_quit');
+  assert.equal(game.state.ended, true, 'quitting ends the game at once: nothing waits to go');
+  game.call('__glitchless_game_end'); // the Game End event
+  assert.ok(!fs.existsSync(outbox(saveDir)), 'nothing was saved for the next launch');
+  assert.equal(rec.requests.length, sent, 'no request of any kind after the player said no');
+  assert.deepEqual(rec.events().filter((e) => ['session_end', 'level_abandon'].includes(e.type)), [], 'the session ends without a session_end or level_abandon');
+});
+
+test('a request on its way as the player turns Glitchless off: its answer changes nothing', async () => {
+  const { game, rec } = switchGame({ hold: true });
+  await game.frames(130); // the first batch goes at 2 s; its reply is held back
+  await new Promise((r) => setTimeout(r, 100));
+  const g = game.g;
+  const buffer = g.http_buffer;
+  assert.ok(g.http_id !== -1 && buffer !== -1 && game.state.buffers.has(buffer), 'a gzipped batch in flight');
+  game.call('glitchless_set_enabled', false);
+  assert.equal(Object.keys(g.ignored).length, 1);
+  game.call('glitchless_set_enabled', true);
+  await game.frames(130); // the new session's first batch goes, and is answered
+  await answered(game);
+  const before = { sent: g.stats.sent, outbox: g.outbox.length, status: g.stats.last_status };
+  rec.release();
+  await game.settle();
+  assert.deepEqual({ sent: g.stats.sent, outbox: g.outbox.length, status: g.stats.last_status }, before, 'the old reply was ignored');
+  assert.deepEqual(Object.keys(g.ignored), []);
+  assert.ok(!game.state.buffers.has(buffer), 'its body buffer was freed when the answer came');
+});
+
+test('on after off: a new session with the properties and groups still set, measured from the next frame; the attempt open at off gets no outcome, and no load goes again', async () => {
+  const { game, rec } = switchGame();
+  game.call('glitchless_set_properties', game.struct({ rank: 'gold' }));
+  const match = game.call('glitchless_set_group', 'match', 'match-0001-abcd', game.struct({ mode: 'duo' }));
+  game.call('glitchless_level_start', 'cave_1');
+  await game.frames(130);
+  await game.settle();
+  const first = game.g.session_id;
+  assert.ok(types(rec.events(first)).includes('load'));
+
+  game.call('glitchless_set_enabled', false);
+  // What the game says while off stays in memory, unsent.
+  game.call('glitchless_set_properties', game.struct({ rank: 'platinum' }));
+  game.call('glitchless_set_zone', 'docks');
+  await game.frames(60, { during: (g) => g.call('glitchless_track', 'while_off') });
+  game.call('glitchless_set_enabled', true);
+  const second = game.g.session_id;
+  assert.notEqual(second, first);
+  assert.equal(choiceOf(game.saveDir), 'on');
+  assert.equal(game.call('glitchless_is_enabled'), true);
+  await game.frames(5, (i) => ({ during: (g) => i === 2 && g.call('glitchless_track', 'back') }));
+  // cave_1 was going when the player turned Glitchless off: the new session never saw it start.
+  game.call('glitchless_level_fail', undefined, 'spikes');
+  game.call('glitchless_level_abandon');
+  game.call('glitchless_level_complete', 'cave_1', 10);
+  game.call('glitchless_level_start', 'cave_2');
+  game.call('glitchless_level_complete', undefined, 20);
+  await flushNow(game);
+
+  const events = rec.events(second);
+  assert.equal(events[0].type, 'session_start');
+  assert.deepEqual(events[0].props, { rank: 'platinum' }, 'with the properties set by now');
+  assert.deepEqual(events.filter((e) => e.type === 'group').map((e) => [e.kind, e.id, e.attrs]), [['match', match, { mode: 'duo' }]]);
+  assert.ok(!types(events).includes('load'), 'the load is not sent again');
+  assert.ok(!rec.events().some((e) => e.name === 'while_off'));
+  const back = events.find((e) => e.name === 'back');
+  assert.deepEqual([back.level, back.zone, back.match], ['cave_1', 'docks', match], 'the level, zone and match are still the current ones');
+  assert.deepEqual(events.filter((e) => e.type.startsWith('level_')).map((e) => [e.type, e.level]), [['level_start', 'cave_2'], ['level_complete', 'cave_2']]);
+  const windows = events.filter((e) => e.type === 'frame_window');
+  assert.deepEqual([windows[0].level, windows[0].frames], ['cave_1', 4], 'measured from the frame after the call');
+  assert.deepEqual(types(rec.events(first)).filter((t) => ['session_end', 'level_abandon'].includes(t)), [], 'the first session just went quiet');
+  // The server takes the new session.
+  assert.ok(rawEvents().some((e) => e.type === 'session_start' && e.session_id === second));
+
+  // Turned off before the launch's first batch: its load never goes, not the first frame's nor the first input's.
+  const early = switchGame();
+  await early.game.frames(30);
+  early.game.call('glitchless_set_enabled', false);
+  early.game.call('glitchless_set_enabled', true);
+  await early.game.frames(130, (i) => ({ during: (g) => i === 60 && g.state.pressed.add(32) }));
+  await early.game.settle();
+  assert.equal(early.rec.events()[0].type, 'session_start');
+  assert.ok(!types(early.rec.events()).includes('load'), JSON.stringify(types(early.rec.events())));
+});
+
+test('a call that changes nothing does nothing, and the choice is saved as on or off once the game calls it', async () => {
+  const { game, rec, saveDir } = switchGame();
+  await game.frames(130);
+  await game.settle();
+  const sid = game.g.session_id;
+  const requests = rec.requests.length;
+  game.call('glitchless_set_enabled', true); // on while on: saved, nothing else
+  assert.equal(choiceOf(saveDir), 'on');
+  assert.deepEqual([game.g.session_id, game.g.session_start_sent, rec.requests.length], [sid, true, requests]);
+  game.call('glitchless_set_enabled', false);
+  game.call('glitchless_set_enabled', false);
+  assert.equal(choiceOf(saveDir), 'off');
+  game.call('glitchless_set_enabled', true);
+  const next = game.g.session_id;
+  game.call('glitchless_set_enabled', true);
+  assert.equal(game.g.session_id, next, 'one new session, not two');
+  assert.notEqual(next, sid);
+  await game.frames(130);
+  await game.settle();
+  assert.equal(rec.events(next).filter((e) => e.type === 'session_start').length, 1);
+});
+
+test('the saved choice is read before anything else: off, an earlier launch\'s outbox is deleted unread and nothing is measured or sent', async () => {
+  const saveDir = newSave();
+  await play({ saveDir, intake: `http://127.0.0.1:${deadPort}` });
+  assert.ok(fs.existsSync(outbox(saveDir)), 'an earlier launch left batches');
+  fs.writeFileSync(path.join(saveDir, 'glitchless/enabled'), 'off');
+  fs.rmSync(path.join(saveDir, 'glitchless/launched'));
+  const { game, rec } = switchGame({ saveDir });
+  assert.ok(!fs.existsSync(outbox(saveDir)), 'deleted unread at glitchless_init');
+  assert.deepEqual([game.g.outbox.length, game.call('glitchless_is_enabled'), game.g.stats.last_status], [0, false, 'off']);
+  const results = [];
+  await game.frames(300, (i) => ({
+    during: (g) => {
+      g.call('glitchless_track', 'jump');
+      if (i === 10) g.call('glitchless_error', 'save slot missing');
+      if (i === 100) g.call('glitchless_measure', 3, (r) => results.push(plainJson(g, r)));
+    },
+  }));
+  assert.equal(results.length, 1, 'measure answers at once');
+  assert.match(results[0].error, /Glitchless is off on this device/);
+  assert.deepEqual([game.g.win.frames, game.g.queue.length, game.g.stats.errors], [0, 0, 0]);
+  assert.ok(!fs.existsSync(path.join(saveDir, 'glitchless/launched')), 'nothing else is written to the device');
+  game.call('glitchless_quit');
+  assert.equal(game.state.ended, true);
+  assert.deepEqual(rec.requests, [], 'not the outbox, not a health check: nothing');
+
+  // -glitchless-measure says so too, and the game still quits.
+  const measured = launch({ saveDir, args: ['-glitchless', '-glitchless-measure=1'], rooms: ROOMS });
+  measured.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, measured.struct({}));
+  for (let i = 0; i < 300 && (await measured.frame()); i++);
+  assert.equal(measured.state.ended, true);
+  assert.match(JSON.parse(measured.debugMessages.find((m) => m.startsWith('{"glitchless_measure"'))).glitchless_measure.error, /off/);
+
+  // A choice made before glitchless_init holds from init.
+  const early = switchGame({ before: (g) => g.call('glitchless_set_enabled', false) });
+  await early.game.frames(200, { during: (g) => g.call('glitchless_track', 'jump') });
+  assert.deepEqual([choiceOf(early.saveDir), early.game.call('glitchless_is_enabled'), early.rec.requests.length], ['off', false, 0]);
+});
+
+test('opt_in: with no saved choice the device starts off until glitchless_set_enabled(true); a saved choice wins over it', async () => {
+  const saveDir = newSave();
+  const { game, rec } = switchGame({ saveDir, options: { opt_in: true } });
+  assert.equal(game.call('glitchless_is_enabled'), false);
+  await game.frames(200, { during: (g) => g.call('glitchless_track', 'menu') });
+  assert.deepEqual([rec.requests.length, choiceOf(saveDir)], [0, null], 'nothing measured, kept or sent, and no choice made yet');
+  game.call('glitchless_set_enabled', true); // the player said yes
+  assert.equal(game.call('glitchless_is_enabled'), true);
+  assert.equal(choiceOf(saveDir), 'on');
+  await game.frames(130, { during: (g) => g.call('glitchless_track', 'play') });
+  await game.settle();
+  assert.ok(rec.requests.some((q) => q.url.endsWith('/v1/health')), 'it asks what the server takes now');
+  const events = rec.events(game.g.session_id);
+  assert.equal(events[0].type, 'session_start');
+  assert.ok(events.some((e) => e.name === 'play') && !events.some((e) => e.name === 'menu'));
+  assert.ok(!types(events).includes('load'), 'the launch was not measured from its start');
+  game.call('glitchless_quit');
+  await game.settle();
+
+  // The next launch reads the player's yes, whatever opt_in says.
+  const next = switchGame({ saveDir, options: { opt_in: true } });
+  assert.equal(next.game.call('glitchless_is_enabled'), true);
+  await next.game.frames(130);
+  await next.game.settle();
+  assert.ok(next.rec.events(next.game.g.session_id).some((e) => e.type === 'load' && e.ttff_ms != null));
+});
+
+test('a build that sends nothing stays off: glitchless_set_enabled(true) can\'t turn it on, but the choice is saved', async () => {
+  const { game, rec, saveDir } = switchGame({ buildType: 'run', args: [] }); // run from the IDE without -glitchless
+  assert.equal(game.call('glitchless_is_enabled'), false);
+  const results = [];
+  game.call('glitchless_set_enabled', false);
+  assert.equal(choiceOf(saveDir), 'off');
+  game.call('glitchless_measure', 1, (r) => results.push(plainJson(game, r)));
+  await game.frames(2);
+  assert.match(results[0]?.error ?? '', /Glitchless is off/);
+  game.call('glitchless_set_enabled', true);
+  assert.equal(choiceOf(saveDir), 'on');
+  assert.equal(game.call('glitchless_is_enabled'), false, 'the build\'s own off holds');
+  game.call('glitchless_measure', 1, (r) => results.push(plainJson(game, r)));
+  await game.frames(70);
+  assert.ok(results[1]?.frames > 50, 'it measures again for an agent: ' + JSON.stringify(results[1]));
+  await flushNow(game);
+  assert.deepEqual(rec.requests, []);
+});
+
+test('bug reports while off: an open form closes, F8 and glitchless_open_bug_report open none, and glitchless_report_bug answers off', async () => {
+  const seen = [];
+  const { game, rec } = switchGame({ options: { bug_reports: tool.struct({ on_open: () => seen.push('open'), on_close: () => seen.push('close') }) } });
+  await game.frames(5);
+  game.state.pressed.add(119); // F8
+  await game.frame();
+  assert.equal(game.call('glitchless_bug_report_is_open'), true);
+  game.call('glitchless_set_enabled', false);
+  assert.equal(game.call('glitchless_bug_report_is_open'), false);
+  assert.deepEqual(seen, ['open', 'close'], 'the game\'s own pause is undone');
+  game.state.pressed.add(119);
+  await game.frame();
+  game.call('glitchless_open_bug_report');
+  await game.frames(2);
+  assert.equal(game.call('glitchless_bug_report_is_open'), false);
+  const results = [];
+  const note = (r) => results.push(plainJson(game, r));
+  game.call('glitchless_report_bug', 'the bonus never paid out', true, note);
+  game.call('glitchless_report_bug', 'no screenshot', false, note);
+  assert.deepEqual(results, [{ sent: false, reason: 'off' }, { sent: false, reason: 'off' }], 'answered at once, with no screenshot taken');
+
+  // A report waiting for this frame's screenshot as the player turns Glitchless off answers off too.
+  game.call('glitchless_set_enabled', true);
+  game.call('glitchless_report_bug', 'waiting for its screenshot', true, note);
+  game.call('glitchless_set_enabled', false);
+  await game.frames(2);
+  assert.deepEqual(results.at(-1), { sent: false, reason: 'off' });
+  assert.equal(results.length, 3);
+  assert.ok(!rec.events().some((e) => e.type === 'bug_report'));
+});
+
+test('a crash while the player has Glitchless off writes nothing to the outbox, and the game\'s own handler still runs', async () => {
+  const theirs = [];
+  const { game, rec, saveDir } = switchGame({ options: { exception_handler: (ex) => theirs.push(ex.message) } });
+  await game.frames(130);
+  await game.settle();
+  const sent = rec.requests.length;
+  game.call('glitchless_set_enabled', false);
+  game.crash({ message: 'off-switch crash 4412', stacktrace: ['gml_Script_bonus_pay (line 14)'] });
+  game.call('__glitchless_game_end'); // GameMaker then closes the game
+  assert.deepEqual(theirs, ['off-switch crash 4412']);
+  assert.ok(!fs.existsSync(outbox(saveDir)), 'no crash written for the next launch');
+  assert.equal(rec.requests.length, sent);
+  // The next launch reads the choice and sends nothing either.
+  const next = switchGame({ saveDir });
+  await next.game.frames(200);
+  await next.game.settle();
+  assert.deepEqual(next.rec.requests, []);
+  assert.ok(!rawEvents().some((e) => e.message === 'off-switch crash 4412'));
 });

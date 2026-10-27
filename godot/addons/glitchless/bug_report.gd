@@ -91,7 +91,8 @@ func send() -> void:
 	var result: Dictionary = await _gl._send_report(snap, _note.text)
 	if not is_same(_snap, snap):
 		return  # closed meanwhile
-	var state := "sent" if result.sent else "offline" if result.get("reason") == "offline" else "failed"
+	var reason: String = result.get("reason", "")
+	var state := "sent" if result.sent else reason if reason in ["offline", "off"] else "failed"
 	_render(state)
 	await get_tree().create_timer(1.2 if result.sent else 2.5, true).timeout
 	if is_same(_snap, snap):
@@ -150,6 +151,7 @@ func _render(state: String) -> void:
 	var done: String = {
 		"sent": "Thanks! Your report was sent.",
 		"offline": "Not sent: this build has no Glitchless intake.",
+		"off": "Not sent: reports are turned off in the game's settings.",
 		"failed": "Couldn't send it now. It will be sent with the game's next batch.",
 	}.get(state, "")
 	if done != "":

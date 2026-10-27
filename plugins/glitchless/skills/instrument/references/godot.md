@@ -17,6 +17,17 @@ a game with its own pause logic passes `"bug_reports": {"pause": false}` and con
 `await Glitchless.report_bug(note)`. The screenshot is the root viewport; headless runs have none. Privacy wording:
 `godot/addons/glitchless/PRIVACY.md`.
 
+## The player's off switch (where the game has a settings menu)
+
+If the game has a settings or options menu, offer the user a "Share performance data" toggle there (ask first, as for
+bug reports). Store it with the game's own settings, show that saved value in the menu, and call
+`Glitchless.set_enabled(on)` when it changes; calling it again at start-up with the saved value does nothing. Use a
+`CheckButton` like the game's other toggles (README, "The player's off switch"). Don't show `Glitchless.is_enabled()`
+there: it is false in a debug build without `--glitchless`. Glitchless saves the choice itself
+(`user://glitchless/enabled`), so it holds from the first frame of the next launch. For a game that asks before
+collecting anything, pass `"opt_in": true` to `init` and call `set_enabled(true)` when the player says yes. With the
+toggle, Google Play's Data safety form can say collection is optional (PRIVACY.md, "For the store forms").
+
 ## Streams, properties, matches and zones
 
 - **Count a stream, track a moment.** Shots, hits, kills, loot and gold go through

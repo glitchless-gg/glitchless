@@ -50,6 +50,7 @@ const DEFAULTS = {
   steam: null, // an Electron game's steamworks.js client (what steamworks.init() returned): Steam facts per session (steam.js)
   properties: null, // what holds for the session in the game's words ({ mode: 'squads', region: 'eu' }); see setProperties
   hashGroupIds: true, // match and party IDs are hashed before they are sent (groups.js); false sends them as they are
+  optIn: false, // true: off on a device until setEnabled(true), for a game that asks the player first (SPEC §4d)
   debug: false,
 };
 
@@ -79,6 +80,11 @@ export class Glitchless {
     this.privacy = PRIVACY_LEVELS.includes(this.opts.privacy) ? this.opts.privacy : 'anonymous';
     this.positionsOn = this.opts.positions ?? this.privacy === 'full';
     this.playerId = storedId(this.privacy);
+    // The player's own switch (setEnabled, SPEC §4d), saved on the device: off sends nothing at all from the start.
+    this.playerOff = !(loadChoice() ?? !this.opts.optIn);
+    this.gen = 0; // which run of sending a request belongs to: turning off makes the answers to earlier ones moot
+    this.loadOff = this.playerOff; // the load event is only true of a page measured from its start
+    this.offLevel = null; // the attempt going when the player turned Glitchless off: not part of the next session
     this.lastFlushAt = 0;
     this.sampled = Math.random() < this.opts.sampleRate;
     this.startedAt = Date.now();
@@ -90,7 +96,7 @@ export class Glitchless {
     this.recent = [];
     this.queue = [];
     this.retries = []; // batches whose send failed, kept whole with their batch_id to send again
-    this.stats = { sent: 0, failed: 0, errors: 0, hitches: 0, deaths: 0, lastStatus: 'idle' };
+    this.stats = { sent: 0, failed: 0, errors: 0, hitches: 0, deaths: 0, lastStatus: this.playerOff ? 'off' : 'idle' };
     this.errorCounts = new Map();
     this.position = null;
     this.posBuffer = [];
@@ -118,6 +124,7 @@ export class Glitchless {
     this.refreshDeltas = []; // frame times for the refresh-rate guess (frame budget)
     this.zone = null; // where the player is in an open world (setZone), stamped on events like the level
     this.groups = {}; // kind → the ID sent: the match, party and run the session's events belong to (setGroup)
+    this.groupAttrs = {}; // kind → its attributes, said again in a new session
     this.props = {}; // the session's properties now (setProperties)
     this.sentProps = {}; // what the server has been told: session_start.props, then each props event
     this.propKeys = new Set(); // every key set this session (at most 12)
@@ -129,7 +136,7 @@ export class Glitchless {
     this.warned = new Set();
     this.net = { connected: false, since: 0, lastSample: 0, transport: null, host: false, last: null, disconnects: 0, disconnectedAt: 0, leftLevel: null };
     this.win = this.newWindow();
-    this.datadog = this.opts.datadog ? new DatadogBridge(this.opts) : null;
+    this.datadog = this.opts.datadog && !this.playerOff ? new DatadogBridge(this.opts) : null; // not even its script while off
     if (this.opts.properties) this.setProperties(this.opts.properties);
 
     if (typeof window === 'undefined') return;
@@ -166,6 +173,7 @@ export class Glitchless {
     this.levelStartedAt = Date.now();
     this.levelOpen = true;
     this.leftLevel = null;
+    this.offLevel = null;
     this.net.leftLevel = null;
     const a = gameAttrs(attrs);
     this.push({ type: 'level_start', ...(a ? { attrs: a } : {}) });
@@ -185,6 +193,7 @@ export class Glitchless {
 
   levelComplete(levelId, { durationS, score } = {}) {
     const level = String(levelId ?? this.level);
+    if (level === this.offLevel) return;
     const duration_s = durationS ?? (Date.now() - this.levelStartedAt) / 1000;
     this.levelOpen = false;
     this.push({ type: 'level_complete', level, duration_s: round(duration_s, 2), score: score ?? null });
@@ -220,11 +229,13 @@ export class Glitchless {
   // A game that ends its level as the page goes (in its own pagehide handler) does it after the SDK's abandon: that
   // attempt has its outcome. So does one that ends it in its own disconnect handler, after disconnect().
   outcomeSent(level) {
+    if (level === this.offLevel) return true; // started before the player turned Glitchless off and on: no start to pair with
     if (!this.net.connected && this.net.leftLevel != null && level === this.net.leftLevel) return true;
     return !!this.ended && this.leftLevel != null && level === this.leftLevel;
   }
 
   death({ x = 0, y = 0, z = 0, cause = 'unknown' } = {}) {
+    if (this.playerOff) return;
     this.stats.deaths++;
     // Death places are positions: only sent when positions are on (full mode, or positions: true).
     const where = this.positionsOn ? { x: round(x, 2), y: round(y, 2), z: round(z, 2) } : {};
@@ -234,6 +245,7 @@ export class Glitchless {
   }
 
   track(name, attrs = {}) {
+    if (this.playerOff) return;
     this.push({ type: 'custom', name, attrs });
     this.remember(name);
     this.datadog?.action(name, { ...attrs, level: this.level });
@@ -244,6 +256,7 @@ export class Glitchless {
   // instead of queueing an event (counts.js). The string and boolean attributes are the group, numbers are added up
   // (count('gold', { source: 'loot', amount: 35 })), and `n` adds to the count.
   count(name, attrs = {}, n = 1) {
+    if (this.playerOff) return;
     this.counter.add(name, attrs, n);
   }
 
@@ -297,6 +310,7 @@ export class Glitchless {
       if (!this.groups[kind]) return null;
       this.closeWindowIfAny();
       delete this.groups[kind];
+      delete this.groupAttrs[kind];
       this.push({ type: 'group', kind, id: null });
       return null;
     }
@@ -320,6 +334,8 @@ export class Glitchless {
     this.closeWindowIfAny();
     this.groups[kind] = sent;
     const a = gameAttrs(attrs);
+    if (a) this.groupAttrs[kind] = a;
+    else delete this.groupAttrs[kind];
     this.push({ type: 'group', kind, id: sent, ...(a ? { attrs: a } : {}), ...(resumed ? { resumed: true } : {}) });
     return sent;
   }
@@ -329,6 +345,7 @@ export class Glitchless {
   // host (true for the player hosting the game). Each frame window then carries `net` (SPEC §2). A WebRTC game can
   // use instrumentNet() (net.js) instead.
   netSample(sample = {}) {
+    if (this.playerOff) return;
     const now = Date.now();
     if (!this.net.connected) {
       this.net.connected = true;
@@ -400,6 +417,7 @@ export class Glitchless {
 
   // Implemented by the engine adapter (see three.js). Kept here so games can call it unconditionally.
   captureMap(levelId, opts) {
+    if (this.playerOff) return;
     if (this.render?.captureMap) return this.render.captureMap(levelId, opts);
     this.log('captureMap ignored: no engine adapter installed');
   }
@@ -407,6 +425,7 @@ export class Glitchless {
   // A player's bug report: `note` is what they typed. Sends a screenshot (screenshot: false leaves it out), where
   // they are and what just happened. Resolves { sent: true }, or { sent: false, reason: 'offline' | 'error' }.
   async reportBug({ note = '', screenshot = true } = {}) {
+    if (this.playerOff) return { sent: false, reason: 'off' };
     return sendReport(this, await snapshot(this, { screenshot }), note);
   }
 
@@ -419,9 +438,77 @@ export class Glitchless {
   // Opens the bug report form (bugReports in init adds a hotkey and an overlay button for it), for a game's own
   // "Report a bug" menu item.
   openBugReport() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || this.playerOff) return;
     if (!this.bugForm) this.bugForm = new BugReportForm(this, { hotkey: null, ...(typeof this.opts.bugReports === 'object' ? this.opts.bugReports : {}) });
     this.bugForm.open();
+  }
+
+  // The player's "share performance data" setting (SPEC §4d), saved on the device so it holds from the start of the
+  // next visit. Off stops measuring and sending at once, drops what's waiting and ends the session without a
+  // session_end: after the player says no, nothing more goes out. On again starts a new session. A call that changes
+  // nothing does nothing, so a game can pass its own saved setting every time it starts.
+  setEnabled(on) {
+    const off = !on;
+    saveChoice(!off);
+    if (off === this.playerOff) return;
+    this.playerOff = off;
+    if (off) this.stop();
+    else this.restart();
+    this.log(off ? 'turned off by the player' : 'turned on by the player', { session: this.sessionId });
+  }
+
+  // Whether Glitchless is on: it has somewhere to send and the player hasn't turned it off.
+  isEnabled() {
+    return !this.playerOff && !!this.opts.intake;
+  }
+
+  // Nothing more is measured or sent, and what was waiting goes: the queue, the open window with its counts and
+  // positions, hitches waiting for their causes, counts waiting for /v1/health and batches waiting to go again. What
+  // the game has said (its level, properties, groups, zone and gauges) stays, for a session started later.
+  stop() {
+    this.gen++;
+    this.queue = [];
+    this.retries = [];
+    this.heldCounts = [];
+    this.pendingHitches = [];
+    this.posBuffer = [];
+    this.counter = new Counter();
+    this.win = this.newWindow();
+    this.loadOff = true;
+    this.skipFrame();
+    this.stats.lastStatus = 'off';
+    this.datadog?.setEnabled(false);
+  }
+
+  // Back on: a new session, as a new page load would start, with the properties and groups still set. The attempt
+  // that was going isn't part of it (offLevel), and the load event isn't sent again.
+  restart() {
+    this.sessionId = 's_' + randomId(16);
+    this.startedAt = Date.now();
+    this.sessionStartSent = false;
+    this.ended = false;
+    this.leftLevel = null;
+    if (this.levelOpen && this.level != null) {
+      this.offLevel = this.level;
+      this.levelOpen = false;
+    }
+    this.recent = [];
+    this.history = [];
+    this.errorCounts.clear();
+    this.sentProps = {};
+    this.propsChangedAt = 0;
+    this.propKeys = new Set(Object.keys(this.props));
+    this.net.disconnects = 0;
+    this.net.leftLevel = null;
+    this.win = this.newWindow();
+    this.skipFrame();
+    this.stats.lastStatus = 'idle';
+    for (const kind of GROUP_KINDS) {
+      if (this.groups[kind]) this.push({ type: 'group', kind, id: this.groups[kind], ...(this.groupAttrs[kind] ? { attrs: this.groupAttrs[kind] } : {}) });
+    }
+    if (this.opts.datadog && !this.datadog) this.datadog = new DatadogBridge(this.opts);
+    else this.datadog?.setEnabled(true);
+    if (typeof window !== 'undefined') this.checkFeatures();
   }
 
   // Expose a game-specific tool to coding agents over WebMCP, e.g. "load_level" or "spawn_enemy",
@@ -434,6 +521,7 @@ export class Glitchless {
 
   // Frame stats over the next `seconds` — the A/B primitive agents use before/after a fix.
   measure(seconds = 5) {
+    if (this.playerOff) return Promise.resolve('Glitchless is turned off on this device (setEnabled(false), the player\'s setting), so it measures nothing. setEnabled(true) turns it back on.');
     const before = this.render?.memory?.() || {};
     const probe = { sketch: new Sketch(), renderSketch: new Sketch(), updateSketch: new Sketch(), frames: 0, max: 0, hitches: [], calls: 0, callsMax: 0, tris: 0, renderFrames: 0, ctxMax: {}, errors: this.stats.errors, level: this.level };
     this.probes.add(probe);
@@ -538,6 +626,7 @@ export class Glitchless {
 
   // The frame that starts at `now` (a performance.now() time): times the one before it.
   tick(now) {
+    if (this.playerOff) return;
     this.frameId++;
     const last = this.lastFrameAt;
     if (last && !document.hidden) {
@@ -721,6 +810,7 @@ export class Glitchless {
   }
 
   reportError({ kind, error, message, source, line, col, attrs }) {
+    if (this.playerOff) return;
     const raw = error instanceof Error ? `${error.name}: ${error.message}` : message ?? error?.message ?? error ?? 'Unknown error';
     const scrub = this.privacy === 'full' ? (t) => t : scrubUrls;
     const msg = scrub(String(raw).replace(/^Uncaught\s+/, '').slice(0, 500)) || 'Unknown error';
@@ -775,7 +865,7 @@ export class Glitchless {
   }
 
   end(reason) {
-    if (this.ended) return;
+    if (this.ended || this.playerOff) return;
     // An engine adapter sets the level to null back in a menu: then no level is going.
     if (this.levelOpen && this.level != null) {
       this.leftLevel = this.level;
@@ -819,7 +909,7 @@ export class Glitchless {
     const onInput = (code) => {
       if (this.bugForm?.isOpen) return; // typing a bug report is not playing
       const now = performance.now();
-      if (!this.firstInputAt && this.firstFrameAt) {
+      if (!this.firstInputAt && this.firstFrameAt && !this.loadOff) {
         this.firstInputAt = now;
         this.push({ type: 'load', ttp_ms: Math.round(now) });
       }
@@ -836,7 +926,7 @@ export class Glitchless {
   }
 
   samplePosition() {
-    if (!this.position || document.hidden) return;
+    if (!this.position || document.hidden || this.playerOff) return;
     const [x, y, z] = this.position;
     this.posBuffer.push([Date.now(), round(x, 2), round(y, 2), round(z, 2)]);
   }
@@ -844,6 +934,7 @@ export class Glitchless {
   // ───────────────────────────── transport ─────────────────────────────
 
   push(event) {
+    if (this.playerOff) return;
     const e = { ts: Date.now(), level: this.level, ...this.stamps(), ...event };
     this.queue.push(e);
     if (this.queue.length > MAX_QUEUE) this.queue.splice(0, this.queue.length - MAX_QUEUE);
@@ -899,6 +990,7 @@ export class Glitchless {
   closeWindow() {
     const w = this.win;
     this.win = this.newWindow();
+    if (this.playerOff) return;
     const stamps = this.stamps();
     const props = this.propsChange();
     if (props) this.push(props);
@@ -983,12 +1075,13 @@ export class Glitchless {
   }
 
   flush({ beacon = false } = {}) {
+    if (this.playerOff) return;
     if (beacon) this.closeWindow(); // page hide/close: ship the partial window too
     this.lastFlushAt = Date.now();
     if (!this.sessionStartSent && (this.render || Date.now() - this.startedAt > 3000 || beacon)) {
       this.queue.unshift(this.sessionStartEvent());
       this.sessionStartSent = true;
-      if (this.firstFrameAt) this.queue.push({ type: 'load', ts: this.firstFrameWall, level: this.level, ttff_ms: Math.round(this.firstFrameAt), assets: this.render?.assetStats?.() || null });
+      if (this.firstFrameAt && !this.loadOff) this.queue.push({ type: 'load', ts: this.firstFrameWall, level: this.level, ttff_ms: Math.round(this.firstFrameAt), assets: this.render?.assetStats?.() || null });
     }
     if ((!this.queue.length && !this.retries.length) || !this.sessionStartSent) return;
     if (!this.opts.intake || !this.sampled) {
@@ -1015,6 +1108,7 @@ export class Glitchless {
   // Resolves true once the intake took the events (a beacon: once the browser queued it). `id` is the batch's own
   // ID (SPEC §2 batch_id), the same on every try of it.
   send(events, beacon, id = batchId()) {
+    const gen = this.gen;
     const body = JSON.stringify({
       service: this.opts.service,
       env: this.opts.env,
@@ -1034,8 +1128,10 @@ export class Glitchless {
     // Regular sends are gzipped (about 5x smaller). Content-Type stays text/plain, a CORS-safelisted
     // value, so cross-origin intake needs no preflight request; the server spots gzip by its magic bytes.
     return gzip(body)
-      .then((payload) => fetch(url, { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain' }, keepalive: (payload.byteLength ?? payload.length) < BEACON_LIMIT }))
+      // Turned off while the batch was being compressed: it doesn't go at all.
+      .then((payload) => (gen !== this.gen ? null : fetch(url, { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain' }, keepalive: (payload.byteLength ?? payload.length) < BEACON_LIMIT })))
       .then((r) => {
+        if (gen !== this.gen || !r) return false; // the player turned Glitchless off meanwhile: what it was is gone
         // Turned away (a bad payload, a revoked key): it would only be turned away again. 408 and 429 are worth another try.
         if (r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429) {
           this.stats.failed += events.length;
@@ -1048,6 +1144,7 @@ export class Glitchless {
         return true;
       })
       .catch((err) => {
+        if (gen !== this.gen) return false;
         this.stats.failed += events.length;
         this.stats.lastStatus = 'error';
         this.log('send failed', err.message);
@@ -1082,11 +1179,15 @@ export class Glitchless {
 
   // Asks the server what it reads (GET /v1/health → features): once, and again a minute after a failed try.
   checkFeatures() {
-    if (this.features || this.featuresAsked > Date.now() - 60_000 || !this.opts.intake || !this.sampled) return;
+    if (this.playerOff || this.features || this.featuresAsked > Date.now() - 60_000 || !this.opts.intake || !this.sampled) return;
     this.featuresAsked = Date.now();
     this.featuresCheck = Promise.resolve()
-      .then(() => fetch(`${this.opts.intake}/v1/health`))
-      .then((r) => (r.ok ? r.json() : null))
+      .then(() => {
+        if (!this.playerOff) return fetch(`${this.opts.intake}/v1/health`);
+        this.featuresAsked = 0; // turned off before it went: asked again once back on
+        return null;
+      })
+      .then((r) => (r?.ok ? r.json() : null))
       .then((health) => {
         if (!health) return;
         this.features = featureSet(health.features);
@@ -1175,6 +1276,23 @@ const PRIVACY_LEVELS = ['anonymous', 'install', 'full'];
 
 function storedId(privacy) {
   return privacy === 'anonymous' ? forgetPlayerId() : loadPlayerId();
+}
+
+// The player's switch (SPEC §4d): 'on' or 'off', kept once the game has called setEnabled; null before that. Without
+// localStorage it lasts the page load, and the game passes its own setting.
+function loadChoice() {
+  try {
+    const v = localStorage.getItem('glitchless.enabled');
+    return v === 'on' ? true : v === 'off' ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveChoice(on) {
+  try {
+    localStorage.setItem('glitchless.enabled', on ? 'on' : 'off');
+  } catch {}
 }
 
 function forgetPlayerId() {

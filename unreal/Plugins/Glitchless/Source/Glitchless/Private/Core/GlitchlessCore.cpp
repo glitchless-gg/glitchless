@@ -212,8 +212,8 @@ namespace Glitchless
 		RageInputOn = Options.RageInput.value_or(!IsMobile) && !Server;
 		MapLevels = Options.MapLevels;
 		DebugOn = DebugOn || Options.Debug || HasFlag("glitchless-debug");
-		const std::string Where = Server || !Distribution ? std::string() : Distribution();
-		Sandbox = DeviceFacts::IsSandbox(Where);
+		InstalledFrom = Server || !Distribution ? std::string() : Distribution();
+		Sandbox = DeviceFacts::IsSandbox(InstalledFrom);
 		// Each server's own command line says where it runs; the project's settings are every server's.
 		if (const std::optional<std::string> Region = FlagValue("glitchless-region"))
 		{
@@ -246,16 +246,28 @@ namespace Glitchless
 		}
 		// A development build sends only when told to, so the developer's own play can be kept out.
 		const bool On = Options.Enabled.value_or(!IsDevelopmentBuild || Options.SendInDevelopmentBuilds || HasFlag("glitchless") || FlagIntake.has_value());
-		Enabled = On && !HasFlag("glitchless-off") && !Intake.empty();
+		BuildOn = On && !HasFlag("glitchless-off") && !Intake.empty();
+		// A game that asks the player first starts off on a device where they haven't answered yet.
+		if (Options.OptIn && !Choice && !Server && !PlayerOff)
+		{
+			TurnOff();
+		}
+		Enabled = BuildOn && !PlayerOff;
 		Sampled = Random01() < Options.SampleRate;
 		// The first batch goes soon, so a session that crashes early is still seen.
 		NextFlushAt = Ticks() + std::min(2000.0, Options.FlushIntervalSeconds * 1000);
 		if (!Enabled)
 		{
 			Queue.clear();
-			Debug("off (no intake, turned off, or a development build without -glitchless)");
+			Debug(PlayerOff ? "off: the player turned it off (SetEnabled)" : "off (no intake, turned off, or a development build without -glitchless)");
 			return;
 		}
+		Open();
+	}
+
+	void FCore::Open()
+	{
+		Opened = true;
 		DeviceInfo = Device ? Device(Detailed) : FValue::Object();
 		if (!SaveDir.empty())
 		{
@@ -274,7 +286,168 @@ namespace Glitchless
 			LoadOutbox();
 		}
 		AskFeatures();
-		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + (Server ? ", server" : "") + (Where.empty() ? "" : ", " + Where) + ")");
+		Debug("on: " + Service + " " + Version + " " + Env + " -> " + Intake + " (" + PrivacyName(Options.Privacy) + ", " + SessionType + (Role == ERole::Server ? ", server" : "") + (InstalledFrom.empty() ? "" : ", " + InstalledFrom) + ")");
+	}
+
+	// ───────────────────────────── the player's switch ─────────────────────────────
+
+	void FCore::SetEnabled(bool On, bool Save)
+	{
+		// The choice is saved first, so a game killed right after the player said no doesn't send on its next launch.
+		if (Choice != On)
+		{
+			Choice = On;
+			if (Save)
+			{
+				WriteChoice(On);
+			}
+		}
+		if (On != PlayerOff)
+		{
+			return; // on while on, off while off
+		}
+		if (On)
+		{
+			TurnOn();
+		}
+		else
+		{
+			TurnOff();
+		}
+	}
+
+	void FCore::ReadChoice(bool OptIn)
+	{
+		std::string Saved;
+		if (!SaveDir.empty() && ReadFile(ChoicePath(), Saved))
+		{
+			Saved = Text::Trim(Saved);
+			if (Saved == "on" || Saved == "off")
+			{
+				Choice = Saved == "on";
+			}
+		}
+		const bool Off = Choice ? !*Choice : OptIn && Role == ERole::Player;
+		if (Off && !PlayerOff)
+		{
+			TurnOff();
+		}
+	}
+
+	// From here on nothing is measured, kept or sent, and what was waiting goes. The session ends without a
+	// session_end and a level going without its level_abandon: after the player said no, nothing more is sent, and
+	// the server sees the session go quiet, as when a game is killed. What the game said (the level, properties,
+	// groups, zone and gauges) stays in memory for a session started later, and so does the player ID.
+	void FCore::TurnOff()
+	{
+		PlayerOff = true;
+		Enabled = false;
+		SessionStartSent = true; // this session has nothing more to say: a later one gets a new ID
+		// The load and the first input are the launch's: a session turned on later sends neither.
+		LoadSent = true;
+		if (FirstInputAt <= 0)
+		{
+			FirstInputAt = std::max(Ticks(), 1.0);
+		}
+		OffLevel = Level;
+		LevelOpen = false;
+		LeftLevel.reset();
+		DisconnectedLevel.reset();
+		Queue.clear();
+		Win = NewWindow();
+		PosBuffer.clear();
+		Position.reset();
+		PendingHitches.clear();
+		Unfinished.reset();
+		PendingLong.reset();
+		Counts.clear();
+		CountedNames = 0;
+		CountsDropped = 0;
+		HeldCounts.clear();
+		History.clear();
+		Recent.clear();
+		RecentHitches.clear();
+		RecentWindows.clear();
+		// A request already on its way can't be called back: its answer is ignored (OnSent, OnHealth).
+		Outbox.clear();
+		InFlight = -1;
+		RetryAt = 0;
+		BackoffS = 0;
+		if (FeaturesState == EFeatures::Asking)
+		{
+			FeaturesState = EFeatures::Unknown;
+		}
+		if (!SaveDir.empty())
+		{
+			RemoveFile(OutboxPath()); // bug reports and a crash from an earlier launch with it
+		}
+		Debug("off: the player turned it off, so nothing more is measured or sent");
+		// A measure going has no more frames to measure. Answered last: -glitchless-measure quits from its answer.
+		std::vector<std::unique_ptr<FProbe>> Cut = std::move(Probes);
+		Probes.clear();
+		for (std::unique_ptr<FProbe>& P : Cut)
+		{
+			if (P->Done)
+			{
+				P->Done(ProbeResult(*P));
+			}
+		}
+	}
+
+	// Back on, as after a long time in the background: a new session with a new ID, its own session_start (with the
+	// properties still set), a group event for each group still set, and frames from the next one. The level stays
+	// the current one, but the attempt that was going isn't open in the new session (StartedWhileOff).
+	void FCore::TurnOn()
+	{
+		PlayerOff = false;
+		if (Inited && !BuildOn)
+		{
+			return; // the build itself sends nothing: the player's switch can't change that
+		}
+		Enabled = Inited;
+		if (Inited && !Opened)
+		{
+			Open();
+		}
+		Win = NewWindow();
+		// The connection is learned again from the next sample, without a reconnect for what happened while off.
+		NetConnected = false;
+		NetLostAt = 0;
+		LastNetSampleAt = -1e18;
+		LastNet = FValue();
+		// A session that had ended (in the background, a listen server that stopped hosting) starts again as it would
+		// have: back from the background, or hosting again.
+		if (!Ended)
+		{
+			NextSession();
+		}
+		if (Inited)
+		{
+			NextFlushAt = Ticks() + std::min(2000.0, Options.FlushIntervalSeconds * 1000);
+		}
+		Debug("on: the player turned it on, in a new session");
+	}
+
+	void FCore::WriteChoice(bool On)
+	{
+		if (SaveDir.empty())
+		{
+			return;
+		}
+		if (Files.MakeDir)
+		{
+			Files.MakeDir(SaveDir);
+		}
+		// "on" or "off" and nothing else: the same on every device that made the same choice.
+		if (!WriteFile(ChoicePath(), On ? "on" : "off"))
+		{
+			Debug("could not write " + ChoicePath());
+		}
+	}
+
+	bool FCore::StartedWhileOff(const std::optional<std::string>& LevelId) const
+	{
+		return OffLevel && LevelId && *LevelId == *OffLevel;
 	}
 
 	void FCore::LevelStart(const std::string& LevelId, FValue Attrs)
@@ -288,12 +461,21 @@ namespace Glitchless
 		{
 			ManualLevels = true; // the game knows its levels better than the map names do
 		}
+		if (PlayerOff)
+		{
+			// The level is current, in memory, but its start isn't sent: its attempt is never open.
+			Level = LevelId;
+			LevelStartedAt = Ticks();
+			OffLevel = LevelId;
+			return;
+		}
 		CloseWindow(false); // so a frame window never spans two levels
 		Level = LevelId;
 		LevelStartedAt = Ticks();
 		LevelOpen = Role == ERole::Player; // a server's level is the map it hosts: never left or abandoned
 		LeftLevel.reset();
 		DisconnectedLevel.reset();
+		OffLevel.reset();
 		FValue E = Ev("level_start");
 		if (Attrs.IsObject() && Attrs.Size() > 0)
 		{
@@ -305,6 +487,10 @@ namespace Glitchless
 
 	void FCore::LevelComplete(const std::optional<std::string>& LevelId, std::optional<double> Score, std::optional<double> DurationS)
 	{
+		if (PlayerOff || StartedWhileOff(LevelId ? LevelId : Level))
+		{
+			return;
+		}
 		LevelOpen = false;
 		LeftLevel.reset(); // completed: nothing to open again when the game comes back
 		FValue E = Ev("level_complete");
@@ -318,7 +504,7 @@ namespace Glitchless
 	void FCore::LevelFail(const std::optional<std::string>& LevelId, const std::string& Cause)
 	{
 		const std::optional<std::string> L = LevelId ? LevelId : Level;
-		if (OutcomeSent(L))
+		if (PlayerOff || OutcomeSent(L) || StartedWhileOff(L))
 		{
 			return;
 		}
@@ -333,7 +519,7 @@ namespace Glitchless
 	void FCore::LevelAbandon(const std::optional<std::string>& LevelId)
 	{
 		const std::optional<std::string> L = LevelId ? LevelId : Level;
-		if (OutcomeSent(L))
+		if (PlayerOff || OutcomeSent(L) || StartedWhileOff(L))
 		{
 			return;
 		}
@@ -374,6 +560,10 @@ namespace Glitchless
 
 	void FCore::Death(std::optional<double> X, std::optional<double> Y, std::optional<double> Z, const std::string& InCause)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		Stats.Deaths++;
 		const std::string Cause = InCause.empty() ? "unknown" : InCause;
 		FValue E = Ev("death");
@@ -390,6 +580,10 @@ namespace Glitchless
 
 	void FCore::Track(const std::string& Name, FValue Attrs)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		FValue E = Ev("custom");
 		E.Set("name", Name);
 		if (!Attrs.IsObject())
@@ -423,7 +617,7 @@ namespace Glitchless
 
 	void FCore::Count(const std::string& Name, const FValue& Attrs, int64_t N)
 	{
-		if (Name.empty() || N <= 0 || (Inited && !Enabled))
+		if (Name.empty() || N <= 0 || Dropping())
 		{
 			return;
 		}
@@ -677,7 +871,7 @@ namespace Glitchless
 
 	void FCore::NetSample(const FNetSample& S)
 	{
-		if (Role == ERole::Server)
+		if (Role == ERole::Server || PlayerOff)
 		{
 			return; // a server's players' connections are in its server windows
 		}
@@ -730,7 +924,7 @@ namespace Glitchless
 
 	void FCore::NetEnded()
 	{
-		if (!NetConnected)
+		if (!NetConnected || PlayerOff)
 		{
 			return; // ended by a disconnect already: a reconnect still says so
 		}
@@ -741,7 +935,7 @@ namespace Glitchless
 
 	void FCore::Disconnect(const std::string& InReason)
 	{
-		if (Role == ERole::Server)
+		if (Role == ERole::Server || PlayerOff)
 		{
 			return;
 		}
@@ -790,7 +984,7 @@ namespace Glitchless
 
 	void FCore::Reconnect()
 	{
-		if (Role == ERole::Server || NetConnected)
+		if (Role == ERole::Server || NetConnected || PlayerOff)
 		{
 			return;
 		}
@@ -817,6 +1011,10 @@ namespace Glitchless
 
 	void FCore::ServerSample(const FServerSample& S)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		Begin();
 		LastServer = S;
 		if (S.TickHz > 0)
@@ -868,7 +1066,7 @@ namespace Glitchless
 
 	void FCore::SetPosition(double X, double Y, double Z)
 	{
-		if (PositionsOn)
+		if (PositionsOn && !PlayerOff)
 		{
 			Position = std::vector<double>{X, Y, Z};
 		}
@@ -920,6 +1118,10 @@ namespace Glitchless
 
 	void FCore::Frame(double DtMs, const FFrameCost& Measured)
 	{
+		if (PlayerOff)
+		{
+			return; // no frames are measured while the player has Glitchless off
+		}
 		Begin();
 		FrameCount++;
 		if (Role == ERole::Server)
@@ -1714,6 +1916,14 @@ namespace Glitchless
 	void FCore::Measure(double Seconds, std::function<void(const FValue&)> Done)
 	{
 		std::unique_ptr<FProbe> P(new FProbe());
+		if (PlayerOff)
+		{
+			if (Done)
+			{
+				Done(ProbeResult(*P)); // no frames are measured while the player has Glitchless off
+			}
+			return;
+		}
 		P->EndAt = Ticks() + Seconds * 1000;
 		P->Seconds = Seconds;
 		P->Done = std::move(Done);
@@ -1729,6 +1939,12 @@ namespace Glitchless
 
 	FValue FCore::ProbeResult(FProbe& P)
 	{
+		if (PlayerOff)
+		{
+			FValue Err = FValue::Object();
+			Err.Set("error", "Glitchless is off: the player turned it off in the game's settings (SetEnabled(false)), so no frames are measured.");
+			return Err;
+		}
 		if (P.Count == 0)
 		{
 			FValue Err = FValue::Object();
@@ -1824,6 +2040,10 @@ namespace Glitchless
 
 	void FCore::ReportError(const std::string& Kind, const std::string& InMessage, const std::string& Stack, FValue Attrs, bool Manual, const std::string& FnHint)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		std::vector<FStackFrame> Frames = StackParser::Parse(Stack);
 		Frames.erase(std::remove_if(Frames.begin(), Frames.end(), StackParser::IsPlumbing), Frames.end());
 		if (!Manual && Kind != "crash" && !Frames.empty() && StackParser::IsGlitchless(Frames[0]))
@@ -1894,9 +2114,9 @@ namespace Glitchless
 
 	void FCore::ReportCrash(const std::string& Kind, const std::string& Message, const std::string& Stack)
 	{
-		if (Crashed)
+		if (Crashed || PlayerOff)
 		{
-			return;
+			return; // off: no crash is written to the outbox either
 		}
 		Crashed = true;
 		ReportError(Kind, Message, Stack);
@@ -1916,6 +2136,10 @@ namespace Glitchless
 
 	FValue FCore::MakeBugReport(const std::string& Screenshot)
 	{
+		if (PlayerOff)
+		{
+			return FValue(); // nothing to send it with: SendBugReport takes no report
+		}
 		Begin();
 		const int64_t Now = UnixNow();
 		FValue E = Ev("bug_report");
@@ -1985,6 +2209,7 @@ namespace Glitchless
 		L.Set("sdk", Sdk);
 		L.Set("inited", Inited);
 		L.Set("enabled", Enabled);
+		L.Set("turned_off", PlayerOff); // by the player, in the game's settings (SetEnabled(false))
 		L.Set("service", Service);
 		L.Set("version", Version);
 		L.Set("env", Env);
@@ -2036,7 +2261,7 @@ namespace Glitchless
 
 	void FCore::SendBugReport(FValue Report, const std::string& Note)
 	{
-		if (!Report.IsObject() || (Inited && !Enabled))
+		if (!Report.IsObject() || Dropping())
 		{
 			return;
 		}
@@ -2082,6 +2307,10 @@ namespace Glitchless
 
 	void FCore::OnInput(const std::string& Code)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		const double Now = Ticks();
 		if (FirstInputAt <= 0 && FirstFrameMs > 0)
 		{
@@ -2159,6 +2388,11 @@ namespace Glitchless
 	void FCore::NewSession()
 	{
 		Flush();
+		NextSession();
+	}
+
+	void FCore::NextSession()
+	{
 		SessionId = NewId("s_", 16);
 		StartedAt = UnixNow();
 		SessionBeganAt = Ticks();
@@ -2214,8 +2448,16 @@ namespace Glitchless
 
 	void FCore::EndSession(const std::string& Reason)
 	{
-		if (!Inited || !Enabled || Ended)
+		if (!Inited || Ended)
 		{
+			return;
+		}
+		if (!Enabled)
+		{
+			if (PlayerOff)
+			{
+				Ended = true; // a listen server stopped hosting while the player had it off: turning on starts nothing
+			}
 			return;
 		}
 		EndLevel(Reason);
@@ -2254,7 +2496,7 @@ namespace Glitchless
 
 	void FCore::Push(FValue E)
 	{
-		if (Inited && !Enabled)
+		if (Dropping())
 		{
 			return;
 		}
@@ -2322,6 +2564,10 @@ namespace Glitchless
 
 	void FCore::QueueEvent(FValue E)
 	{
+		if (PlayerOff)
+		{
+			return;
+		}
 		Queue.push_back(std::move(E));
 		if (Queue.size() > MaxQueue)
 		{
@@ -2484,6 +2730,11 @@ namespace Glitchless
 
 	void FCore::OnHealth(int64_t Status, const std::string& Body)
 	{
+		if (PlayerOff)
+		{
+			FeaturesState = EFeatures::Unknown; // asked when the player turns it on again
+			return;
+		}
 		FValue Health;
 		if (Status < 200 || Status >= 300 || !FValue::Parse(Body, Health) || !Health.IsObject())
 		{
@@ -2541,6 +2792,7 @@ namespace Glitchless
 			// An older server would file a server's sessions among the players': send nothing at all.
 			ServerRefused = true;
 			WarnOnce("server_mode", "this Glitchless server doesn't take a game server's sessions yet: nothing is sent from this server");
+			BuildOn = false;
 			Enabled = false;
 			Queue.clear();
 			Outbox.clear();
@@ -2719,7 +2971,7 @@ namespace Glitchless
 
 	void FCore::SendNext()
 	{
-		if (Draining || InFlight >= 0 || Outbox.empty() || Ticks() < RetryAt || !Transport || !MaySend())
+		if (!Enabled || Draining || InFlight >= 0 || Outbox.empty() || Ticks() < RetryAt || !Transport || !MaySend())
 		{
 			return;
 		}
@@ -2784,7 +3036,7 @@ namespace Glitchless
 
 	void FCore::SendNow(int DeadlineMs)
 	{
-		if (Outbox.empty() || !Sampled || !Transport || !MaySend())
+		if (!Enabled || Outbox.empty() || !Sampled || !Transport || !MaySend())
 		{
 			return; // a server's batches wait in the outbox until the Glitchless server says it takes them
 		}
@@ -2859,6 +3111,12 @@ namespace Glitchless
 	std::string FCore::PlayerPath() const
 	{
 		return SaveDir + "/player_id";
+	}
+
+	// The player's choice, "on" or "off", kept in every privacy mode once the game has called SetEnabled.
+	std::string FCore::ChoicePath() const
+	{
+		return SaveDir + "/enabled";
 	}
 
 	// Batches that couldn't be sent are saved, so a game played offline is sent when the network is

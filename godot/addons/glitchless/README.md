@@ -54,6 +54,8 @@ Glitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for 
 Glitchless.level_start("pit_80", {"tier": "pit_80", "party_size": 3})  # an attempt with its attributes
 Glitchless.set_group("match", match_id)               # every event until set_group("match", null) carries it
 Glitchless.set_zone("ashen_wastes")                   # where the player is in an open world
+Glitchless.set_enabled(on)                            # the player's "Share performance data" setting
+Glitchless.is_enabled()                               # true while this build sends and the player hasn't turned it off
 ```
 
 **Leaving a level is not losing it.** Call `level_abandon()` when the player leaves a level before it ends (goes to the menu, restarts it), not `level_fail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background or closes with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session's end, and drops a `level_fail` or `level_abandon` the game sends for that level afterwards (from `_exit_tree`, say). Back from the background in the same session, the level carries on and the server takes the abandon back.
@@ -82,7 +84,8 @@ Purchases have one convention in every Glitchless SDK:
 | `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |
 | `capture_warnings` | `false` | also report `push_warning` and engine warnings |
 | `rage_input` | off on phones | the same key or tap four times in a second; fast tapping is normal play in a phone game |
-| `enabled` | off in debug builds | force sending on or off |
+| `enabled` | off in debug builds | force sending on or off. This is the build's switch, which the player's [off switch](#the-players-off-switch) can't override |
+| `opt_in` | `false` | `true`: each device starts off until the game calls `set_enabled(true)`, for a game that asks the player first. A choice the player already made wins. A dedicated server has no player to ask, so it starts on |
 | `debug` | `false` | print each batch |
 | `bug_reports` | `false` | `true`, or `{"hotkey": KEY_F8, "pause": true, "screenshot": true}`: F8 opens the [bug report form](#bug-reports) |
 | `properties` | `{}` | the session's [properties](#properties) from the start, as `set_properties` takes them |
@@ -93,7 +96,7 @@ Purchases have one convention in every Glitchless SDK:
 | `max_players` | `0` | the most players a server takes |
 | `session_per_match` | `false` | a server's session lasts one match, for a server that hosts one at a time |
 
-Frame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings.
+Frame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings. A player who turned Glitchless off has nothing collected from the first frame on.
 
 ### Retention needs install mode
 
@@ -111,6 +114,34 @@ If the game already uses [GodotSteam](https://godotsteam.com), every session als
 
 As with the `Metrics` autoload in Linebreakers and Starlift, a debug build (the editor, or an export with debug on) sends nothing unless it is run with `--glitchless`. That keeps a developer's phone and the agents' bot runs out of the players' numbers. Release exports send by default.
 
+### The player's off switch
+
+Give players a "Share performance data" toggle in the game's settings and wire it to `Glitchless.set_enabled()`. Turned off, Glitchless stops at once: nothing more is measured or sent, not even a check that the server is there, and what it hadn't sent yet is deleted, the outbox on the device included. The session just goes quiet: no `session_end` or `level_abandon` is sent, and the server doesn't count it as a crash. Turned back on, a new session starts in the same launch, as after a long time in the background, with the properties and groups the game had set.
+
+```gdscript
+# settings_menu.gd
+@onready var share: CheckButton = %SharePerformanceData
+
+func _ready() -> void:
+	share.button_pressed = Settings.share_performance_data  # the game's own saved setting
+	share.toggled.connect(_on_share_toggled)
+
+func _on_share_toggled(on: bool) -> void:
+	Settings.share_performance_data = on
+	Settings.save()
+	Glitchless.set_enabled(on)
+```
+
+- **The choice is kept on the device**, as `on` or `off` in `user://glitchless/enabled`, and the autoload reads it before the first frame of every launch. A player who turned it off sends nothing from the start of the next launch, even though the game reads its own settings after Glitchless starts, and a batch an earlier launch left in the outbox is deleted unread. The file is written only once the game calls `set_enabled`, in every privacy mode.
+- **A call that changes nothing does nothing**, so the game can also pass its own saved setting each time it starts: `Glitchless.set_enabled(Settings.share_performance_data)`.
+- **Show the game's own setting in the menu**, not `Glitchless.is_enabled()`. `is_enabled()` is true only while this build sends and the player hasn't turned it off, so it is false in a debug build without `--glitchless` whatever the player chose. `set_enabled(true)` never turns on a build that sends nothing; it still saves the choice.
+- **Asking first.** `{"opt_in": true}` starts each device off until the game calls `set_enabled(true)`, for a game that asks the player before collecting anything, such as a prompt on first launch. A choice the player already made wins over it, and what was collected before `init()` is dropped when `opt_in` leaves it off. A dedicated server has no player to ask, so `opt_in` leaves it on.
+- **While it is off**, every call is safe and does nothing. The F8 form doesn't open, `report_bug()` answers `{"sent": false, "reason": "off"}`, and `measure()` and `--glitchless-measure` return an `error` saying Glitchless is off. The level, properties, groups, zone and gauges stay in memory for the next session.
+- **Back on**, the attempt that was going when the player turned it off (or one started while it was off) gets no `level_complete`, `level_fail` or `level_abandon` until the next `level_start`, since its start was never sent in the new session. The load isn't sent again.
+- **The player ID stays** (install and full mode), so a player who turns it back on is still one player. `reset_install_id()` is the separate setting that forgets it.
+- A dedicated server follows the same switch, saved in the same file.
+- With the toggle, collection is optional for the store forms ([PRIVACY.md](PRIVACY.md#for-the-store-forms)).
+
 ### Bug reports
 
 Players and playtesters flag a problem where they see it, and you (or your coding agent, with the `glitchless_bug_reports` MCP tool) see it in Glitchless's Bug Reports view with the screenshot and a link to the session's replay.
@@ -120,7 +151,7 @@ Glitchless.init("starlift", "", "prod", intake, {"bug_reports": true})   # F8 op
 Glitchless.init("starlift", "", "prod", intake, {"bug_reports": {"hotkey": KEY_F1, "pause": false}})
 Glitchless.bug_report_opened.connect(_pause)          # bug_report_closed too; for games that pause themselves
 Glitchless.open_bug_report()                          # a pause menu's "Report a bug" (works without bug_reports)
-var result := await Glitchless.report_bug(note)       # the game's own form: {"sent": true}, or {"sent": false, "reason": "offline" | "error"}
+var result := await Glitchless.report_bug(note)       # the game's own form: {"sent": true}, or {"sent": false, "reason": "offline" | "off" | "error"}
 ```
 
 | `bug_reports` key | default | |
@@ -131,7 +162,7 @@ var result := await Glitchless.report_bug(note)       # the game's own form: {"s
 
 - **The screenshot** is the root viewport's last frame, read before the form shows, so the form is never in it. It is shrunk until it fits the server's 200,000-character limit: the longer side at most 960 px, then 800, 640, 480 and 320, at lower JPEG quality. The frames that read it back and draw the form aren't timed, so they never show as hitches. A headless run draws nothing, so its reports have no screenshot; `report_bug(note, image)` sends an `Image` you pass, and `report_bug(note, false)` none.
 - **The form** is a `CanvasLayer` on layer 128 with the note box, Send and Cancel. Esc cancels, Ctrl+Enter (Cmd+Enter) sends, and a captured mouse is set free while it is open.
-- **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so.
+- **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn't apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so (`"offline"`). While the player has Glitchless [off](#the-players-off-switch), the form doesn't open and `report_bug()` takes no screenshot and answers `"off"`.
 - **The note is the player's own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.
 
 ### Counters
@@ -244,7 +275,7 @@ These go after `--` on the command line, like the games' own debug flags.
 godot --path . -- --autoplay --seed=7 --glitchless-measure=10 | grep '^{"glitchless_measure"'
 ```
 
-It works in any build, sends nothing unless sending is on, and quits when done. The fields match the browser SDK's `glitchless_measure`:
+It works in any build, sends nothing unless sending is on, and quits when done. On a device where the player turned Glitchless off it measures nothing, and the JSON holds only an `error` that says so. The fields match the browser SDK's `glitchless_measure`:
 
 | field | |
 | --- | --- |
@@ -342,5 +373,5 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 
 From the repo root:
 
-- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, and `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does.
+- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows) and `test/off_switch_test.gd` (the player's off switch). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does. Last, it plays the demo with the off switch (`--off-at`, `--on-at`, `--opt-in`) against a fake intake that keeps every request: off and back on mid-run, off while offline, a launch with the choice saved as off, `opt_in`, and a debug build.
 - `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.

@@ -14,7 +14,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `Saved/Glitchless/player_id`, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
 | Device | OS name, a low/mid/high tier, renderer and graphics API, screen size (and on phones its refresh rate), whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless Positions is on: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples in the game world |
-| Saved on the device | unsent batches, without the session or player ID | unsent batches with their IDs, and the player ID | the same as install |
+| Saved on the device | unsent batches, without the session or player ID; the player's on or off choice, once the game has asked | unsent batches with their IDs, the player ID, and the on or off choice | the same as install |
 
 Positions (Advanced) turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location: Unreal units are sent as metres, with y up.
 
@@ -98,6 +98,10 @@ When the game plays online through Unreal's own networking, each frame window sa
 
 A dedicated server, and a listen server while it hosts, sends a session of its own, marked `role: "server"`: its tick times, how many players are connected and their round trip times as the server sees them (numbers only, never which player), its traffic, CPU and memory use, the map it hosts, the match ID, its errors and crashes. About itself it sends its OS, core count and memory, and a region only in the game's own words (`ServerRegion`), never its IP address or host name. It sends nothing about players: no player IDs, account IDs, names, chat or addresses. `player_id` is always null, in every mode. Its unsent batches are kept in `Saved/Glitchless/Server/outbox.json`.
 
+## The player's off switch
+
+A game can let the player turn Glitchless off in its settings (a "Share performance data" toggle wired to `FGlitchless::SetEnabled`, or **Set Enabled** in Blueprint), and back on. From the moment it is off nothing more is measured, kept or sent, in every mode: no frames, errors, crashes, events, positions or network samples, no bug report, and no request of any kind. What was waiting to be sent is deleted, on the device too (`Saved/Glitchless/outbox.json`, a listen server's `Server/outbox.json`), and the session ends without a word. The choice is saved on the device (below) and read before anything is measured on the next launch, so a player who said no sends nothing at all in a later launch, not even what an earlier one left behind. With **Opt In** set, a device where the player hasn't chosen yet starts off. Turning it back on starts a new session under a new random session ID. The install ID (install and full mode) stays on the device while it is off, so a player who turns it back on counts once; nothing else about them is kept. What was sent before the player turned it off stays on the server for the game's retention.
+
 ## Steam facts
 
 When the game already uses Steamworks through Unreal's `SteamShared` or `OnlineSubsystemSteam` module, `session_start`'s `device` also carries these, in every mode (`Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp`). The plugin reads them through Steam's own library, only while one of those modules is loaded and once Steamworks is initialised, and links nothing of Steam's. A library without a call leaves that field out (Unreal 5.8 ships SDK 1.64, which tells a Steam Deck but not the other hardware, and has no Proton call).
@@ -125,8 +129,9 @@ When the game already uses Steamworks through Unreal's `SteamShared` or `OnlineS
 | `Saved/Glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or it crashed): the events above, each batch with its own random batch ID (`b_…`, sent as `batch_id` so the server stores a batch once however often it arrives; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Rewritten as each batch is sent, deleted once everything is. At most 4,000 events, none over 6 days old | all |
 | `Saved/Glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `Saved/Glitchless/Server/outbox.json` | on a dedicated server, or a listen server's own session: its unsent batches, as above, without any player ID | all |
+| `Saved/Glitchless/enabled` | the player's choice, `on` or `off` and nothing else, written when the game calls Set Enabled (its "Share performance data" setting) and read as the plugin starts. The same on every device that made the same choice, so it ties nothing to anyone. Off deletes the outbox files above. A dedicated server keeps its own in `Saved/Glitchless/Server/enabled` | all, once the game has called Set Enabled |
 
-`Saved` is the game's own folder: `%LOCALAPPDATA%\<Game>\Saved` on Windows, `~/Library/Application Support/Epic/<Game>/Saved` on macOS. Uninstalling the game may leave it; deleting it removes both files.
+`Saved` is the game's own folder: `%LOCALAPPDATA%\<Game>\Saved` on Windows, `~/Library/Application Support/Epic/<Game>/Saved` on macOS. Uninstalling the game may leave it; deleting it removes these files.
 
 ## Kept on the server
 
@@ -136,12 +141,14 @@ If the server forwards to Datadog or an OpenTelemetry backend, that backend rece
 
 ## For the privacy page
 
-A paragraph for anonymous mode, to adapt to the game's own voice:
+A paragraph for anonymous mode, to adapt to the game's own voice. Its last sentence is for a game with a "Share performance data" setting wired to Set Enabled:
 
 > **Performance and error reports**
 > So that we can find and fix stutters, crashes and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers; a crash report is sent the next time you play. A report says how long frames took, what was on screen (for example how many enemies), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and whether it is a Steam Deck. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. They are deleted after *[30 days]*.
 >
 > If you send a bug report, it includes what you wrote and a picture of the game's screen at that moment.
+>
+> You can turn these reports off at any time in the game's settings (*[Settings → Share performance data]*). From then on nothing more is sent, in this session or any later one, and reports still waiting on your device are deleted, until you turn it back on.
 
 If the game sets properties, plays online or keeps match IDs, add what applies:
 
@@ -180,8 +187,8 @@ For each type: **purposes** Analytics, and App Functionality if the reports are 
 
 **Steam and the Epic Games Store** ask no form-by-form questions, but a game that sends data must say so in its privacy policy, and the EULA or store page should point to it.
 
-**Shared:** none, when the server is your own or the hosted service acting for you. **Encrypted in transit:** Yes, when the intake URL is `https://`. **Required or optional:** collection is required unless the game offers a setting; a toggle that leaves the service empty, or turns Enabled off, makes it optional.
+**Shared:** none, when the server is your own or the hosted service acting for you. **Encrypted in transit:** Yes, when the intake URL is `https://`. **Required or optional:** optional when the game has a setting the player can turn it off with: a "Share performance data" toggle wired to Set Enabled (`FGlitchless::SetEnabled`) stops all collection at once and in every later launch, so players can choose. With Opt In set, nothing is collected until the player turns it on. Without such a setting, collection is required.
 
 ## When this file must change
 
-Read it again when any of these change: the events or fields in `GlitchlessCore.cpp`, the checks on properties and group IDs in `GlitchlessRules.cpp`, the device fields in `GlitchlessDevice.cpp`, the Steam facts in `GlitchlessSteam.cpp` and `GlitchlessSteamworks.cpp`, the counters in `GlitchlessRuntime.cpp`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.
+Read it again when any of these change: the events or fields in `GlitchlessCore.cpp` (and what its off switch stops and deletes), the checks on properties and group IDs in `GlitchlessRules.cpp`, the device fields in `GlitchlessDevice.cpp`, the Steam facts in `GlitchlessSteam.cpp` and `GlitchlessSteamworks.cpp`, the counters in `GlitchlessRuntime.cpp`, what the server stores, or where it forwards. Then change the game's privacy page and store answers before the build that sends more is released.

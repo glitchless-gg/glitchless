@@ -26,6 +26,7 @@ const glitchless = Glitchless.init({
   steam: null,                     // an Electron game's steamworks.js client (what steamworks.init() returned): Steam facts per session (§4c)
   properties: null,                // what holds for the session in the game's words ({ mode: 'squads', region: 'eu' }): see setProperties
   hashGroupIds: true,              // match and party IDs are hashed before they're sent; false sends them as they are
+  optIn: false,                    // true: off on a device until setEnabled(true), for a game that asks the player first (§4d)
 });
 
 instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is optional (enables LoadingManager hooks)
@@ -56,6 +57,8 @@ instrumentThree(glitchless, { renderer, scene, camera, THREE }); // THREE is opt
 | `glitchless.reportBug({ note, screenshot })` | send a player's bug report from the game's own UI (`screenshot: false` sends none); resolves `{ sent, reason? }` |
 | `glitchless.openBugReport()` | open the built-in bug report form (from a pause menu, say) |
 | `glitchless.resetInstallId()` | forget the stored player ID (§4b), for a "reset my ID" setting: this page load keeps its ID, the next makes a new one |
+| `glitchless.setEnabled(on)` | the player's "share performance data" setting (§4d): `false` stops measuring and sending at once, drops what's waiting and ends the session without a `session_end`; `true` starts a new session. Saved in `localStorage`, so it holds from the start of the next visit |
+| `glitchless.isEnabled()` | whether Glitchless is on: it has an intake and the player hasn't turned it off (§4d) |
 
 Everything else (frames, hitches, errors, device/GPU, load timing, memory, session lifecycle) is automatic.
 
@@ -1715,6 +1718,10 @@ session in progress keeps sending the ID it started with (so it is never split),
 that nothing links to the old one. Where nothing can be stored (a browser that blocks localStorage) the ID lasts one
 launch.
 
+**Turned off.** In every mode a player can turn Glitchless off, and back on, from the game's settings (§4d): off sends
+nothing more and drops what was waiting. Once the game has called it, the choice is saved on the device as `on` or
+`off`, which holds nothing about the player.
+
 **Properties** (§2 `props`) go with the session in every mode, as event attributes do: the game's words about the
 session (its mode, a rank tier, a class, the server region), never about the person. In anonymous mode nothing ties one
 session's properties to another session's. The SDKs and intake drop keys that name a person or a device and values
@@ -1809,6 +1816,93 @@ than 31 days is answered over its last 31 days (`meta.note`); `by_steam_branch` 
 work over any range. A breakdown by a Steam fact counts events per session, so a series can't be split by one, and
 sums (kept per minute and currency) aren't split by one either.
 
+## 4d. The player's off switch
+
+Every SDK that runs on a player's device has one call for a "Share performance data" toggle in the game's settings,
+so a player can turn Glitchless off at any time and back on: the browser's `glitchless.setEnabled(on)`, Godot
+`Glitchless.set_enabled(on)`, Unity `Glitchless.SetEnabled(on)`, Unreal `FGlitchless::SetEnabled(bOn)` (Blueprint
+**Set Enabled**), GameMaker `glitchless_set_enabled(on)`. It is the player's choice, on top of the developer's: Init,
+its `enabled` option, an intake and the off flags (`--glitchless-off`, a build that sends only with `--glitchless`)
+still decide whether a build sends at all. The switch can turn a build that sends off; it never turns on one that
+doesn't. A call that changes nothing (on while on, off while off) only saves the choice, so a game may call it with
+its saved setting every time it starts.
+
+**Off** (`setEnabled(false)`):
+- The choice is saved on the device first (below).
+- Nothing more is measured or sent, from that call on: no frames, hitches, errors, events, counts, positions or
+  network samples are kept, and no request of any kind goes out, `GET /v1/health` included. Every call stays safe and
+  does nothing. The bug report form doesn't open, and a bug report from the game's own UI answers `off`. Measuring
+  for an agent (`measure()`, `--glitchless-measure`) has no frames to measure and says Glitchless is off.
+- Everything waiting is dropped: the events queued in memory, the open frame window with its counters and positions,
+  hitches waiting for their causes, counters waiting for `GET /v1/health`, batches waiting to be sent again, and the
+  outbox on the device (the engine SDKs; a server role's too), bug reports in it included. A request already on its way
+  can't be called back; its answer is ignored.
+- The session ends without a `session_end`, and a level going ends without a `level_abandon`: after the player says
+  no, nothing more is sent. The server sees the session go quiet, as when a game is killed. It isn't counted as a crash
+  (that takes a fatal error, §4).
+- What the game has said stays in memory, unsent: the level, properties, groups, zone and gauges, so a session started
+  later carries them.
+- The player ID (install and full mode, §4b) stays on the device, so a player who turns Glitchless back on is still
+  one player. Forgetting it is the separate reset setting (`resetInstallId()`, where the SDK has it).
+
+**On** (`setEnabled(true)`, after off): the choice is saved, and a new session starts in the same launch, as after a
+long time in the background: a new session ID, its own `session_start` (with the properties still set), a `group` event
+for each group still set, and measuring from the next frame. The level stays the current one, so events carry it, but
+the attempt that was going when the player turned Glitchless off isn't open in the new session: until the next level
+start, a `level_complete`, `level_fail` or `level_abandon` for that level is dropped, so no outcome arrives without its
+start. No `load` is sent in the new session: a load is only true of a launch measured from its start, so a launch
+that started off, or was turned off before its first batch, sends none at all.
+
+**Remembered across launches.** The SDK saves the choice on the device and reads it before anything else when it next
+starts. So a player who turned Glitchless off sends nothing at all from the first frame of every later launch (not the
+outbox of an earlier launch, not a health check) until the game turns it on again. The SDK keeps it, rather than the
+game passing it to Init each launch, because:
+- Glitchless often starts before the game reads its own settings: Unreal from Project Settings with the engine, Unity
+  before the first scene (and from its Bootstrap component without a line of the game's code), Godot as an autoload,
+  and it sends the last launch's outbox, a crash among it, as soon as it starts. A choice passed to Init would have to
+  be read and passed ahead of all that in every engine, and a game that forgets the line would send for a player who
+  said no. Kept by the SDK, the off switch holds however the game is wired;
+- it is the same rule in every engine, so each PRIVACY.md and the store answers can say once that a player who turns it
+  off sends nothing more.
+
+The game still owns its toggle: it can keep the setting with its others and call `setEnabled(saved)` as it starts
+(changing nothing else when the two agree), and read the switch back with `isEnabled()` (below).
+
+| SDK | saved in |
+| --- | --- |
+| browser | `localStorage['glitchless.enabled']`; where storage is blocked, the choice lasts the page load, so the game passes its own setting with `setEnabled(saved)` after `init` |
+| Godot | `user://glitchless/enabled` |
+| Unity | `persistentDataPath/glitchless/enabled` (WebGL: PlayerPrefs `glitchless.enabled`) |
+| Unreal | `Saved/Glitchless/enabled` |
+| GameMaker | `glitchless/enabled` in the save area |
+
+It holds `on` or `off` and nothing else, the same on every device that made the same choice, so it ties nothing to
+anyone. It is kept in every privacy mode, and only once the game has called `setEnabled`. An outbox found at start
+while the choice is off is deleted unread.
+
+**Asking first** (`optIn`). With `optIn: true` (Godot `"opt_in": true`, Unity `OptIn = true`, Unreal `bOptIn` and the
+project setting **Opt In**, GameMaker `opt_in: true`), a device with no saved choice starts off: nothing is measured,
+kept or sent until the game calls `setEnabled(true)`, for a game that asks the player before collecting anything.
+Without it, Glitchless is on until the player turns it off. A saved choice wins over both. A game server has no
+player to ask, so `optIn` leaves it on (a game's player and server builds can share their options). Unity's automatic start
+and Godot's autoload (both measure before `Init`) read the saved choice too, and keep no early frames for a player who
+turned it off; with `optIn` they learn of it only at `Init`, and drop what they kept then.
+
+**Reading it.** `isEnabled()` (Godot `is_enabled()`, Unity `Glitchless.Enabled`, Unreal `FGlitchless::IsEnabled()` and
+Blueprint **Is Enabled**, GameMaker `glitchless_is_enabled()`) is true while Glitchless is on: the build sends (it has
+an intake and wasn't turned off at Init or by a flag) and the player hasn't turned it off. In a build that sends nothing, such as Godot or GameMaker run from the editor
+without `--glitchless`, it is false whatever the player chose, so a settings menu shows the game's own saved setting
+(or `isEnabled()` in a build that sends).
+
+**Servers.** A game server role (Godot, Unity, Unreal) follows the same switch: Godot and Unity read the same file
+(the role is known only at Init, after the choice is read), an Unreal dedicated server its own
+`Saved/Glitchless/Server/enabled`; an Unreal listen server's own session follows the player's switch, since it runs
+on their machine. The Node server SDK has none: a
+server's operator who doesn't want it doesn't call `init`.
+
+**What it doesn't touch.** What was sent before the player turned Glitchless off stays on the server for the game's
+retention (§6); a player who wants it deleted asks the game's developer.
+
 ## 5. Godot SDK
 
 `godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.5.1"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
@@ -1816,6 +1910,7 @@ sums (kept per minute and currency) aren't split by one either.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default), and the server files the session under `session_id`; install and full mode send the stored `p_…` player ID (`user://glitchless/player_id`, §4b) |
+| off switch | `Glitchless.set_enabled(on)`, `is_enabled()` and the `opt_in` option (§4d). The choice is saved in `user://glitchless/enabled` (a dedicated server reads the same file: the role is known only at `init`, and the choice is read before the first frame) and read by the autoload before it measures anything, so a player who turned it off has no early frames kept; with `opt_in` and no saved choice, `init` drops what was kept before it. `enabled`, the build's own switch (`init`'s `enabled` option, off in debug builds unless `--glitchless`), is false while the player has it off |
 | `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, headless (except a dedicated server's, below), or on Google Play's pre-launch report phones (the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton, or the GPU is a software renderer such as SwiftShader; neither is sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game passes `session_type`. `props`: the properties set before the first batch, when there are any |
 | `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `OS.get_executable_path()`'s folder); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz` |
 | `frame_window` | adds `gpu_ms` (Vulkan and Direct3D 12 only: Godot doesn't time the GPU on Metal or OpenGL), `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. The top-level counts are the values when the window closed; `ctx` holds each gauge's highest value in the window, so a leak check compares like with like (the top-level counts, or ctx's maxima). `hz` and `budget_ms` are measured from the frames: the 20th percentile of frame times under 100 ms (a frame can take longer than the screen's interval, never less), a first guess after 30 frames, the answer at 120, a look every 480 frames that only ever goes faster, and lowered when the OS says the screen slowed down (Low Power Mode). A window never spans two levels |
@@ -1844,6 +1939,7 @@ sums (kept per minute and currency) aren't split by one either.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); `Privacy.Install` and `Privacy.Full` send the stored `p_…` player ID (§4b). `batch_id` (§2) on every batch, kept through retries and saved with the batch in every mode. A server (below) adds `role: "server"` and always sends `player_id` null |
+| off switch | `Glitchless.SetEnabled(bool)`, `Glitchless.Enabled` and `GlitchlessOptions.OptIn` (§4d). The choice is saved in `persistentDataPath/glitchless/enabled` (WebGL: PlayerPrefs `glitchless.enabled`) and read by the automatic start, so a player who turned it off has no early frames kept. `GlitchlessOptions.Enabled = false` and `--glitchless-off` still turn a build off whatever the player chose |
 | `session_start` | `session_type` is `synthetic` in batch mode (not on a server: below), with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, or on Google Play's pre-launch report phones (Android's `firebase.test.lab` setting is `true`, read through `UnityPlayer.currentActivity`'s content resolver, or the GPU is a software renderer such as SwiftShader; neither is sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game sets `SessionType` |
 | `session_start.device` | `browser: "Unity"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer` (`built-in`, `urp`, `hdrp`), `driver` (graphics API), `screen`, `dpr` (null), `refresh_hz` (`Screen.currentResolution`'s rate as the OS reports it, not the rate the game ran at: that is each `frame_window`'s `hz`), `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `Application.dataPath`'s folder, with no native plugin); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With Steamworks.NET or Facepunch.Steamworks, the Steam facts (§4c). `page` and `nav_ms` are null |
 | `frame_window` | frame times from `Time.unscaledDeltaTime`; adds `process_ms` (Update to LateUpdate), `physics_ms` (FixedUpdate and physics), `render_ms` (PostLateUpdate), `gpu_ms`, `setpass_calls`, `batches`, `gc_collections`, `gc_alloc_kb`, `materials`, `objects`, `game_objects`, `gc_reserved_mb`, `system_mb`, `screen`, `window`; `geometries` is the mesh count and `heap_mb` the GC heap; counts Unity only has in development builds are null in release builds. `ctx` also holds `game_objects`, `meshes`, `materials`. `gpu_ms` comes from `FrameTimingManager` (Frame Timing Stats on; the latest frame the GPU finished). The memory and object counts are their values when the window closed (sampled every 30 frames); `ctx` holds each gauge's highest value in the window. `hz` and `budget_ms` are measured as Godot's (§5). A window never spans two levels |
@@ -1872,6 +1968,7 @@ sums (kept per minute and currency) aren't split by one either.
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID. `batch_id` (§2) on every batch, a bug report's and a crash's too, kept through retries and saved with the batch in every mode |
+| off switch | `FGlitchless::SetEnabled(bool)`, `FGlitchless::IsEnabled()`, Blueprint **Set Enabled** and **Is Enabled**, and `FGlitchlessOptions::bOptIn` with the project setting **Opt In** (§4d). The choice is saved in `Saved/Glitchless/enabled` (a dedicated server's in `Saved/Glitchless/Server/enabled`) and read before the plugin starts from Project Settings; it covers a listen server's own session. `bEnabled` in the settings and `Enabled` in the options still turn a build off whatever the player chose |
 | `session_start` | `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "Unreal"`, `browser_version` (`5.8.4`), `os` (`Windows`, `macOS`, `Linux`, `SteamOS`, `iOS`, `Android`), `mobile`, `device_tier`, `gpu_tier` (`low` on a Steam Deck), `renderer` (`deferred`, `forward`, `mobile`), `driver` (`D3D12`, `Metal`, `Vulkan`), `screen`, `dpr` (null), `refresh_hz` (phones only: the panel's highest rate as the OS reports it; each `frame_window`'s `hz` is the measured rate), `steam_deck`, `distribution` (iOS, §4b: the files are looked for from `FPlatformProcess::UserHomeDir()` and the main bundle); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With the SteamShared or OnlineSubsystemSteam module loaded, the Steam facts (§4c). `page` and `nav_ms` are null. `session_type` is `tester` on a TestFlight or development install on iOS unless the game sets one or a bot flag makes it `synthetic` |
 | `frame_window` | frame times from a clock at the start of each frame. Adds `game_ms` (game thread, GGameThreadTime), `process_ms` (the same, under the name the playtest gate reads), `render_ms` (render thread), `rhi_ms` (null without an RHI thread), `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles` (pipeline states created at draw time that took over 20 ms, UE 5.8), `shader_compiles` (the editor only), `packages_loaded`, `objects` (UObjects), `actors`, `heap_mb` (the process), `texture_mb`, `screen`, `window`. `draw_calls` and `triangles` only while the RHI counts them (usually null in a packaged build); `geometries`, `textures`, `programs` are null. `ctx` also holds `objects` and `actors`. Thread and GPU times are averages over the window's frames; `gc_*`, `pso_compiles`, `shader_compiles` and `packages_loaded` totals; each `ctx` gauge its highest value in the window; `objects`, `actors`, `heap_mb` and `texture_mb` the last sample. `hz` and `budget_ms` are measured from the frames: the fastest fifth of the first 30 under 100 ms, then the median of the first 120 (60 before that). A window never spans two levels |
 | `hitch` | `duration_ms` is the frame's time on the clock (Unreal leaves waits out of its thread times, so a frame stalled on a pipeline state, the GPU or the disk would look short by them). `causes` from `pso_compile`, `shader_compile`, `gc`, `map_load`, `level_stream`, `asset_load`, `script` (game thread at 40% of the frame), `render` (render, RHI or GPU at 40%), `gpu_or_os` (none of the others, and game, render, RHI and GPU time add up to under max(16 ms, 40% of the frame): waiting to present, GPU work Unreal didn't time, or the OS), `frozen` (over 700 ms). Adds `bound` (the slowest of `game`, `render`, `rhi`, `gpu`), `game_ms`, `process_ms`, `render_ms`, `rhi_ms`, `gpu_ms`, `gc_collections`, `gc_ms`, `pso_compiles`, `shader_compiles`, `packages_loaded`; `loaf` is empty |
@@ -1902,6 +1999,7 @@ On the server, findings for an `unreal` game name Unreal's fixes (PSO precaching
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default); install and full mode send a stored random `p_…` ID. `batch_id` (§2) on every batch, a bug report's and a crash's too, kept through retries and saved with the batch in every mode; its hash takes in the session ID, as GameMaker has no random source of its own that leaves the game's `random()` alone |
+| off switch | `glitchless_set_enabled(on)`, `glitchless_is_enabled()` and the `opt_in` option (§4d). The choice is saved in `glitchless/enabled` in the save area and read by `glitchless_init` before anything else. The `enabled` option (off when run from the IDE unless `-glitchless`) still turns a build off whatever the player chose |
 | every event | `level`, and while the game sets them `zone` (`glitchless_set_zone`) and `match`, `party`, `run` (`glitchless_set_group`). Groups and zones are left out while unset; zone names are cut to 64 characters. A group change closes the frame window, as a level start does, so a window (and its counters and network samples) never spans two matches; a zone change does once the window has run a second, so a player stepping back and forth over a zone's edge doesn't fill the queue (a shorter window takes the new zone) |
 | `session_start` | `props`: the properties set before the session's first batch (`properties` in the options, `glitchless_set_properties`), left out when there are none. `privacy` (`anonymous`, `install`, `full`). `device`: `browser: "GameMaker"`, `browser_version` (the runtime, `2026.0.0.23`), `os`, `mobile`, `device_tier` (`unknown`: GameMaker can't read cores or memory), `gpu_tier` (from the GPU's name in `os_get_info`; `low` on a Steam Deck), `renderer` (`vm` or `yyc`), `driver`, `screen`, `dpr` (null), `refresh_hz`, `steam_deck` (as Unreal decides it: `SteamDeck=1`, a Valve board, or SteamOS, with `os` `SteamOS`); full mode adds `os_version`, `gpu`, `gpu_vendor`, and `model` on a Steam Deck (`cores`, `memory_gb` are null). `page` and `nav_ms` are null |
 | `frame_window` | frame times from `delta_time`; `hz` and `budget_ms` from the game speed. Adds `process_ms` (the Step events: the frame's start to the first Pre-Draw), `render_ms` (the draw events: the first Pre-Draw to the last Draw GUI End), `gc_collections`, `gc_ms` (`gc_get_stats`), `texture_loads` (texture groups loaded or fetched), `heap_mb` (`debug_event("DumpMemory")`), `instances`, `surfaces`, `ds_lists`, `ds_maps`, `buffers` (`debug_event("ResourceCounts")`), `screen`, `window`. `draw_calls`, `triangles`, `gpu_ms`, `physics_ms`, `geometries`, `textures`, `programs` are null. `ctx` also holds `instances` and the resource counts. A window never spans two levels. While the game sends network samples (`glitchless_net_sample(rtt_ms, [loss_pct], [jitter_ms])`, from its own ping over `network_*`; samples under 500 ms apart are ignored), `net`: `rtt` (a 5% sketch), `rtt_p50`, `rtt_p95`, `rtt_max`, `jitter_ms` (the game's, else the mean change between consecutive round trips), `loss_pct` (the game's, else null), `samples`, `transport` (`gamemaker`, or the `net_transport` option); `in_kbps`, `out_kbps` and `link` are null and `host` false (only clients sample). No `net` before the first sample or after a disconnect |

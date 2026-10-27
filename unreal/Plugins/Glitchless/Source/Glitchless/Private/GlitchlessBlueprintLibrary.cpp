@@ -172,6 +172,11 @@ void UGlitchlessBlueprintLibrary::Flush()
 	FGlitchless::Flush();
 }
 
+void UGlitchlessBlueprintLibrary::SetEnabled(bool bOn)
+{
+	FGlitchless::SetEnabled(bOn);
+}
+
 bool UGlitchlessBlueprintLibrary::IsEnabled()
 {
 	return FGlitchless::IsEnabled();

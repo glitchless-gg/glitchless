@@ -23,7 +23,7 @@ means `unity/scripts/asset-store.mjs` checks or does it on every run.
 | 1.5.b | Keys not built into games, and the description says how they're stored | The public client token is made to ship (it can only send); secret keys never go in a build. The description says so | LISTING.md |
 | 1.5.c | A service's terms and costs at the top of the description and in the docs | First paragraph of the description; the README's install section links the server and Cloud | LISTING.md |
 | 1.5.d | Analytics and SaaS SDKs are asked to consider Verified Solutions | Optional; worth a look once listed | owner, later |
-| **1.5.e** | **Analytics opt-in, and customers can opt out at any time** | Opt-in: nothing is sent until `Glitchless.Init()` or the Bootstrap; the automatic start keeps early frames in memory only, and `GLITCHLESS_DISABLE` turns it off. **Missing: a runtime off switch** (a player's "share data" setting) in every SDK. Worth adding before submitting: `Glitchless.SetEnabled(false)` that stops sending and clears the outbox, in SPEC and all SDKs | **to do** |
+| 1.5.e | Analytics opt-in, and customers can opt out at any time | Opt-in: nothing is sent until `Glitchless.Init()` or the Bootstrap; the automatic start keeps early frames in memory only, and `GLITCHLESS_DISABLE` turns it off. `GlitchlessOptions.OptIn` (**Opt In** on the Bootstrap) starts a device off until the player says yes. Opt-out at any time: `Glitchless.SetEnabled(false)` for a "Share performance data" setting stops measuring and sending at once, deletes the outbox, and is saved on the device and read before anything else on every later launch (SPEC §4d; README, PRIVACY.md) | done |
 | 1.6.a | AI-made functional parts disclosed in the "AI description" field | Filled in | LISTING.md |
 | 2.1.a, d, e | One root folder; no AssetStoreTools folder; paths under 150 characters from the package's name | `Assets/Glitchless` (the Publishing Tools install under `Packages/`, outside it); longest path well under | script |
 | 2.3.a, b | Documentation for code, setup and options, as .md or similar | README.md, PRIVACY.md and CHANGELOG.md in the package; the script rewrites the README's install, sample and tests text for the store copy | done |
@@ -41,8 +41,8 @@ means `unity/scripts/asset-store.mjs` checks or does it on every run.
 ## Known risks
 
 - **The review queue.** Unity says at least five business days; publishers reported a month and more in October 2026.
-- **The opt-out (1.5.e).** A reviewer may read "opt out at any time" as needing a runtime switch. Adding one is small
-  and helps every SDK's store privacy answers too.
+- **The opt-out (1.5.e).** A reviewer may read "opt out at any time" as needing a runtime switch: there is one now
+  (`Glitchless.SetEnabled`, and `OptIn` for asking first). The description says so.
 - **The validator.** Its checks aren't published; anything it flags comes back to the parent session (STEPS 5).
 - **Projects without the modules.** A buyer who removed a built-in module the package uses gets compile errors that
   name it; README.md says how to turn it back on, and the Uploader's Include Package Manifest may do it for them.

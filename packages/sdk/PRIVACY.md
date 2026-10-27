@@ -29,6 +29,14 @@ In every mode:
 
 The GPU renderer string sent in full mode helps tell slow devices apart, but it is also one of the inputs browsers treat as fingerprintable. Anonymous and install mode send only the tier, and `steam_deck: true` when the renderer string is a Steam Deck's (the browser reads the string to work these out, and doesn't send it).
 
+## Turned off by the player
+
+A game can give players a setting to turn Glitchless off, and back on, with `glitchless.setEnabled()` (`docs/SPEC.md` §4d). Off stops measuring and sending at once: nothing more leaves the browser, not even a closing event or a check of the server, and the events waiting to be sent are dropped. The choice is saved in localStorage (`glitchless.enabled`, below), so the next visit sends nothing either until the player turns it back on. Turning it off doesn't delete the player ID in install and full mode (`resetInstallId()` does), and doesn't delete what was sent before. With `optIn: true`, nothing is collected on a device until the game calls `setEnabled(true)`, for a game that asks first.
+
+For the game's privacy page, if it has the setting:
+
+> You can turn these reports off at any time in the game's settings (*[Settings → Share performance data]*). Then the game sends nothing more, and remembers your choice on this device.
+
 ## Field by field
 
 Every batch has an envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the stored player ID in install and full mode), `sdk` and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once). Every event has `type`, `ts` (milliseconds, UTC) and `level` (the game's own level name, or null).
@@ -121,6 +129,7 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | --- | --- | --- |
 | `glitchless.overlay` (localStorage) | whether the developer overlay is open | all, only when the overlay runs (off by default when `env` is `prod`) |
 | `glitchless.pid` (localStorage) | the random player ID | **install** and **full**. Anonymous mode deletes it |
+| `glitchless.enabled` (localStorage) | `on` or `off`: the player's choice to share performance data, once the game has called `setEnabled`. It holds nothing about the player | all |
 
 Unsent batches are held in memory only, and are dropped if the page closes before they can be sent.
 
@@ -130,4 +139,4 @@ A Node game server that uses `glitchless/server` sends nothing about players but
 
 ## The Datadog bridge
 
-`datadog: {…}` loads Datadog's own RUM SDK, which collects its own data under Datadog's terms. It is off by default, and nothing above covers it.
+`datadog: {…}` loads Datadog's own RUM SDK, which collects its own data under Datadog's terms. It is off by default, and nothing above covers it. While the player has Glitchless turned off, the SDK doesn't load it, stops mirroring into it, and, when the SDK started RUM itself, sets RUM's tracking consent to `not-granted` (a game's own RUM is left to the game).

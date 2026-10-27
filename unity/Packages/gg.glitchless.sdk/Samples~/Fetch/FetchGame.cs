@@ -24,6 +24,7 @@ namespace GlitchlessSamples.Fetch
     /// --bug-report-at=5 (send a bug report from code, as a "Report a bug" button would)
     /// --fail-on-quit (end the level as a "left" fail as the game closes, as some games do: Glitchless has sent the
     /// abandon by then, and drops it)
+    /// --share-off-at=5 (the player turns "Share performance data" off in the settings, five seconds in)
     /// </summary>
     public sealed class FetchGame : MonoBehaviour
     {
@@ -58,7 +59,7 @@ namespace GlitchlessSamples.Fetch
         float lastGrounded = -1, jumpAt = -1, boostUntil, respawnUntil, checkpoint, levelStartedAt;
         int lives, score, confetti, attempt;
         string banner, lastBurst;
-        float quitAfter, bugReportAt;
+        float quitAfter, bugReportAt, shareOffAt;
         bool failOnQuit;
         FetchBot bot;
         Camera cam;
@@ -112,6 +113,7 @@ namespace GlitchlessSamples.Fetch
                 else if (a.StartsWith("--quit-after=")) float.TryParse(a.Substring(13), NumberStyles.Float, CultureInfo.InvariantCulture, out quitAfter);
                 else if (a.StartsWith("--bug-report-at=")) float.TryParse(a.Substring(16), NumberStyles.Float, CultureInfo.InvariantCulture, out bugReportAt);
                 else if (a == "--fail-on-quit") failOnQuit = true;
+                else if (a.StartsWith("--share-off-at=")) float.TryParse(a.Substring(15), NumberStyles.Float, CultureInfo.InvariantCulture, out shareOffAt);
             }
         }
 
@@ -221,6 +223,12 @@ namespace GlitchlessSamples.Fetch
             {
                 bugReportAt = 0;
                 Glitchless.ReportBug($"the pup ran into something invisible on {level?.Id}", done: (sent, reason) => Debug.Log($"bug report from code: sent={sent} reason={reason ?? "none"}"));
+            }
+            if (shareOffAt > 0 && Time.realtimeSinceStartup > shareOffAt)
+            {
+                shareOffAt = 0;
+                Glitchless.SetEnabled(false); // what a settings menu's "Share performance data" toggle calls
+                Debug.Log("share performance data: off");
             }
             if (WantsJumpKey()) jumpAt = Time.time;
             if (dog != null) dog.position = new Vector3(pos.x, pos.y + 0.12f, 0);

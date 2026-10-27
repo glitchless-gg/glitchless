@@ -17,6 +17,8 @@
 //                 background gives that batch up and it is sent again: the server stores it once, by its batch_id
 //   2e. genre     properties, groups, a level with attributes, a zone, counts, flags and lists, and a connection
 //                 that drops and comes back (the recorder's health answer lists the features a newer server has)
+//   2f. switch    the player turns Glitchless off mid-level and back on (Set Enabled), then off with a crash, and a
+//                 launch with it off sends nothing at all
 //   3. measure    -glitchless-measure prints frame stats as one line of JSON and quits
 // Last, nothing the server stored over all these runs is stored twice.
 import { spawn, spawnSync } from 'node:child_process';
@@ -124,6 +126,18 @@ async function holdingProxy(target, holdMs) {
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return { port: server.address().port, answers, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
+}
+
+// Answers every request with 200 and keeps what came: for a launch that must send nothing at all, GET /v1/health included.
+async function tally() {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    requests.push(`${req.method} ${req.url}`);
+    req.resume();
+    req.on('end', () => res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}'));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { port: server.address().port, requests, close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))) };
 }
 
 // Everything the server stored, as its file store wrote it.
@@ -255,6 +269,59 @@ try {
   const beforeGenre = batches.length;
   const genre = await play(exe, ['-autoplay', '-glitchless-test-genre', intake], 'genre');
   checkGenre(check, events(batches.slice(beforeGenre)), genre.stdout);
+
+  // 2f. the player's off switch
+  console.log("2f. the player's off switch…");
+  const enabledFile = path.join(savedDir, 'Glitchless/enabled');
+  const beforeSwitch = batches.length;
+  await play(exe, ['-autoplay', '-glitchless-test-switch', intake], 'switch');
+  const switched = batches.slice(beforeSwitch).filter((b) => b.json);
+  const sids = [...new Set(switched.map((b) => b.json.session_id))];
+  const ofSession = (sid) => switched.filter((b) => b.json.session_id === sid).flatMap((b) => b.json.events);
+  const [offSession, onSession] = sids.map(ofSession);
+  check('switch: turned off mid-level, the session goes quiet: no session_end, no level_abandon', () => {
+    assert.equal(sids.length, 2, `sessions ${JSON.stringify(sids)}`);
+    assert.ok(offSession.some((e) => e.type === 'custom' && e.name === 'before_off'), 'before_off was not sent');
+    assert.ok(!offSession.some((e) => e.type === 'session_end' || e.type === 'level_abandon'), JSON.stringify(offSession.map((e) => e.type)));
+  });
+  check('switch: nothing done while it was off is sent: no event, error, hitch, frame or bug report', () => {
+    const all = [...offSession, ...onSession];
+    assert.ok(!all.some((e) => e.name === 'while_off' || e.type === 'bug_report' || /while off/.test(e.message || '')), 'something from while it was off arrived');
+    const off = all.find((e) => e.name === 'before_off').ts + 2500;
+    const on = all.find((e) => e.name === 'back_on').ts - 500;
+    const kept = all.filter((e) => e.ts > off && e.ts < on);
+    assert.deepEqual(kept.map((e) => e.type), []);
+  });
+  check('switch: turned back on, a new session with the properties still set, without a load or the outcome of the level it was in', () => {
+    assert.equal(onSession[0]?.type, 'session_start');
+    assert.deepEqual(onSession[0].props, { mode: 'squads', difficulty: 'hard' });
+    assert.ok(onSession.some((e) => e.type === 'custom' && e.name === 'back_on'), 'back_on was not sent');
+    assert.ok(!onSession.some((e) => e.type === 'load'), 'a second load');
+    assert.deepEqual(onSession.filter((e) => /^level_(complete|fail|abandon)$/.test(e.type)).map((e) => e.level), ['arena-3']);
+  });
+  check('switch: the choice is saved on the device', () => assert.equal(fs.readFileSync(enabledFile, 'utf8').trim(), 'on'));
+  const beforeOffCrash = batches.length;
+  const offCrash = await play(exe, ['-autoplay', '-glitchless-test-switch-crash', intake], 'switch-crash', { expectCrash: true });
+  check('switch: a crash with it off is not written to the outbox', () => {
+    assert.ok(offCrash.status !== 0, `exited with ${offCrash.status}`);
+    assert.equal(fs.readFileSync(enabledFile, 'utf8').trim(), 'off');
+    assert.ok(!fs.existsSync(outbox), 'outbox.json was written');
+    assert.ok(!events(batches.slice(beforeOffCrash)).some((e) => e.name === 'never'));
+  });
+  const quiet = await tally();
+  let offLaunch;
+  try {
+    offLaunch = await play(exe, ['-glitchless-measure=2', `-glitchless-intake=http://127.0.0.1:${quiet.port}`], 'switch-off-launch');
+  } finally {
+    await quiet.close();
+  }
+  check('switch: a later launch with it off sends nothing at all, not even GET /v1/health, and its measure says so', () => {
+    assert.deepEqual(quiet.requests, []);
+    const line = offLaunch.stdout.split('\n').map((l) => l.trim()).find((l) => l.startsWith('{"glitchless_measure"'));
+    assert.ok(line, 'no measure line');
+    assert.match(JSON.parse(line).glitchless_measure.error || '', /Glitchless is off/);
+  });
+  fs.rmSync(enabledFile, { force: true }); // the runs after this one start on
 
   // 3. measure
   console.log('3. measure…');

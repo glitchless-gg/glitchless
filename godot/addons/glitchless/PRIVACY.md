@@ -14,9 +14,11 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID | the same ID as install mode |
 | Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name, core count, memory |
 | Positions | **not sent**: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
-| Saved on the device | unsent batches, without the session or player ID; the game version that last ran | unsent batches with their IDs, the player ID, and the game version that last ran | the same as install mode |
+| Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on/off choice, once the game asks | unsent batches with their IDs, the player ID, the game version that last ran, and the on/off choice | the same as install mode |
 
 **What install mode adds to anonymous mode:** the player ID, sent in every batch as `player_id` and kept in `user://glitchless/player_id`, so the next launch sends the same ID; and, because that ID is on the device anyway, unsent batches are saved with their session and player IDs. Everything else is sent exactly as in anonymous mode. Install and full mode share the saved ID; anonymous mode deletes one another build left. `Glitchless.reset_install_id()` deletes it: the session in progress keeps sending the ID it started with, and the next launch makes a new one, which nothing links to the old one.
+
+**The player's switch.** In every mode, a game can let players turn Glitchless off in its settings (`Glitchless.set_enabled(false)`). From that call on nothing more is measured or sent, and what wasn't sent yet, the outbox on the device included, is deleted. The choice is saved as `on` or `off` and holds from the first frame of every later launch. `"opt_in": true` starts each device off until the player says yes.
 
 `positions: true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
@@ -140,8 +142,9 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | `user://glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `user://glitchless/server_outbox.json` | a dedicated server's batches not yet sent, kept apart from a player build's: the [server mode](#server-mode) events, with no player ID | a dedicated server |
 | `user://glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
+| `user://glitchless/enabled` | `on` or `off`: the player's choice from the game's "Share performance data" setting (`Glitchless.set_enabled`), so a player who turned it off has nothing measured or sent from the first frame of every later launch. The same on every device that made the same choice, so it ties nothing to anyone. Written only once the game calls `set_enabled` | all, and a dedicated server |
 
-Deleting the app deletes them all.
+Deleting the app deletes them all. While the choice is `off`, nothing else is written: the outbox is deleted, unread, and no new one is kept.
 
 ## Kept on the server
 
@@ -161,7 +164,7 @@ Linebreakers' and Starlift's pages (`site/privacy/index.html`) say today:
 A paragraph in the pages' own voice, for anonymous mode:
 
 > **Performance and error reports**
-> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many blocks), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your device which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. *[If the server forwards to Datadog: We use Datadog, a monitoring service, to store and chart them on our behalf.]* They are deleted after *[30 days]*.
+> So that we can find and fix stutters and bugs, the game measures how smoothly it runs and notes errors in its own code. Every few seconds, and when you leave the game, it sends these to our servers. A report says how long frames took, what was on screen (for example how many blocks), which level you were on and which of the game's events had just happened, along with the game's version and a few broad facts about the device: its system, whether it is a slower or faster model, its screen size and refresh rate. Reports from one launch share a random number made when the game starts. The number is never saved, so the next launch cannot be linked to it. The game notes on your device which of its versions last ran, so a report can say whether this is the first launch of a version (those start slower); that note holds nothing about you. Reports carry no player ID, no device identifier or model name, nothing you type and no location, and we do not keep the address they came from. *[If the server forwards to Datadog: We use Datadog, a monitoring service, to store and chart them on our behalf.]* They are deleted after *[30 days]*. *[If the game's settings have the switch: You can turn these reports off in the game's settings, under Share performance data. From then on the game sends nothing more, and deletes the reports it had not sent yet.]*
 
 Install mode needs one more sentence:
 
@@ -215,7 +218,7 @@ For each type, Apple asks four things:
 
 - **Shared:** none. Google doesn't count passing data to a service provider like Datadog as sharing.
 - **Encrypted in transit:** Yes, when the intake URL is `https://`.
-- **Required or optional:** collection is required, since there is no in-game switch. Adding a settings toggle that calls `init(..., {"enabled": false})` would make it optional.
+- **Required or optional:** **optional** when the game's settings have a toggle wired to `Glitchless.set_enabled()` ([README](README.md#the-players-off-switch)): users can choose whether this data is collected, and turning it off stops collection at once and on every later launch. Answer the same for each data type above. Without the toggle, collection is required. `"opt_in": true` goes further, collecting nothing until the player says yes.
 
 ## When this file must change
 

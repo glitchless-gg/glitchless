@@ -130,7 +130,7 @@ namespace GlitchlessSdk
     [AddComponentMenu("")]
     sealed class BugReportForm : MonoBehaviour
     {
-        enum State { Taking, Form, Sending, Sent, Offline, Failed }
+        enum State { Taking, Form, Sending, Sent, Offline, Off, Failed }
 
         static readonly Color Back = new Color(0.03f, 0.05f, 0.09f, 0.55f);
         static readonly Color Panel = new Color32(0x14, 0x21, 0x3d, 255);
@@ -180,7 +180,7 @@ namespace GlitchlessSdk
 
         public void Open()
         {
-            if (IsOpen || Core == null) return;
+            if (IsOpen || Core == null || Core.SwitchedOff) return; // the player turned Glitchless off: no form
             IsOpen = true;
             enabled = true;
             state = State.Taking;
@@ -249,7 +249,7 @@ namespace GlitchlessSdk
             Core.SendBugReport(snap, note.TrimEnd(), shot, (sent, reason) =>
             {
                 if (t != token) return; // closed meanwhile
-                state = sent ? State.Sent : reason == "offline" ? State.Offline : State.Failed;
+                state = sent ? State.Sent : reason == "offline" ? State.Offline : reason == "off" ? State.Off : State.Failed;
                 closeAt = Time.unscaledTime + (sent ? 1.2f : 2.5f);
             });
         }
@@ -434,7 +434,7 @@ namespace GlitchlessSdk
             y += 20 * s + gap;
             if (!form)
             {
-                var done = state == State.Sent ? "Thanks! Your report was sent." : state == State.Offline ? "Not sent: this build has no Glitchless intake." : "Couldn't send it now. It will be sent with the game's next batch.";
+                var done = state == State.Sent ? "Thanks! Your report was sent." : state == State.Offline ? "Not sent: this build has no Glitchless intake." : state == State.Off ? "Not sent: sharing reports is turned off in the game's settings." : "Couldn't send it now. It will be sent with the game's next batch.";
                 GUI.Label(new Rect(box.x + pad, y, inner, 64 * s), done, centered);
                 sendRect = cancelRect = noteRect = Rect.zero;
                 return;

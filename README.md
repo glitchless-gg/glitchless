@@ -95,6 +95,9 @@ hit and check that the fix worked.
    Ask me whether players should be able to send bug reports from inside the game (a hotkey or a
    button, with a note and a screenshot). If yes, turn them on as the skill describes; the note is
    whatever the player types, so it needs a line in the privacy policy too.
+   If the game has a settings or options menu, add a "Share performance data" toggle there, wired to
+   Glitchless's off switch as the skill describes, so players can turn it off and back on at any
+   time. If I want players to agree before anything is collected, use the skill's opt-in option.
    If players differ in ways worth comparing (rank, class, region, mode, a graphics preset), set
    those as session properties as the skill describes: bands and the game's own words, never a name
    or an ID. They're sent in every privacy mode, so they need a line in the privacy policy.

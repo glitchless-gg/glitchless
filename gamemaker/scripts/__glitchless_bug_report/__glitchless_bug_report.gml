@@ -13,9 +13,14 @@
 #macro __GLITCHLESS_MAX_NOTE 2000
 #macro __GLITCHLESS_MAX_SCREENSHOT 200000 // characters of data URL the server keeps (larger ones lose the picture)
 
-/// glitchless_report_bug: a report from the game's own UI.
+/// glitchless_report_bug: a report from the game's own UI. With the player's switch off it answers "off" at once,
+/// before any screenshot is taken.
 function __glitchless_report_bug(_note, _screenshot, _callback) {
     var _g = __glitchless();
+    if (!_g.player_on) {
+        if (!is_undefined(_callback)) _callback({ sent: false, reason: "off" });
+        return;
+    }
     __glitchless_remember(_g, "bug_report");
     var _request = { note: string(_note), callback: _callback, form: false };
     if (_screenshot == true) {
@@ -25,11 +30,12 @@ function __glitchless_report_bug(_note, _screenshot, _callback) {
     }
 }
 
-/// F8, or glitchless_open_bug_report: the form opens once this frame's screenshot is taken.
+/// F8, or glitchless_open_bug_report: the form opens once this frame's screenshot is taken. Not while the player has
+/// Glitchless off.
 function __glitchless_bug_toggle(_g) {
     if (!is_undefined(_g.bug)) {
         __glitchless_bug_close(_g);
-    } else if (is_undefined(_g.bug_capture)) {
+    } else if (is_undefined(_g.bug_capture) && _g.player_on) {
         _g.bug_capture = { note: "", callback: undefined, form: true };
     }
 }
@@ -85,8 +91,8 @@ function __glitchless_bug_snapshot(_g, _screenshot) {
 }
 
 /// Sends one report on a request of its own. `_request.callback({sent, reason})`: sent is true once the
-/// server has it; otherwise reason is "offline" (nothing is sent from this build) or "error" (it goes
-/// with a later batch).
+/// server has it; otherwise reason is "offline" (nothing is sent from this build), "off" (the player turned
+/// Glitchless off) or "error" (it goes with a later batch).
 function __glitchless_send_report(_g, _snap, _request) {
     var _e = { type: "bug_report", ts: _snap.ts, level: _snap.level, note: __glitchless_cut(_request.note, __GLITCHLESS_MAX_NOTE) };
     if (_snap.screenshot != "") _e.screenshot = _snap.screenshot;
@@ -99,7 +105,7 @@ function __glitchless_send_report(_g, _snap, _request) {
     _e.frames = _snap.frames;
     _e.device = __glitchless_device(_g.full);
     if (!_g.inited || !_g.enabled) {
-        __glitchless_report_done(_request, { sent: false, reason: "offline" });
+        __glitchless_report_done(_request, { sent: false, reason: _g.player_on ? "offline" : "off" });
         return;
     }
     __glitchless_flush(_g); // the session's own events first, so the report's session is there when someone opens it

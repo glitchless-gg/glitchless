@@ -46,6 +46,8 @@ void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 	bDialog = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-dialog"));
 	bLeave = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-leave"));
 	bGenre = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-genre"));
+	bSwitch = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-switch"));
+	bSwitchCrash = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-switch-crash"));
 	FParse::Value(FCommandLine::Get(), TEXT("glitchless-test-quit="), QuitAfter);
 	bSolo = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-solo"));
 	StartedAt = FPlatformTime::Seconds();
@@ -91,6 +93,10 @@ bool UGlitchlessTestScript::Step(float DeltaTime)
 	if (bGenre)
 	{
 		return StepGenre(World);
+	}
+	if (bSwitch || bSwitchCrash)
+	{
+		return StepSwitch();
 	}
 	if (bDialog)
 	{
@@ -282,6 +288,64 @@ bool UGlitchlessTestScript::StepGenre(UWorld* World)
 		FGlitchless::LevelComplete(TEXT("nmd_ghoa"), 9100.0);
 		FGlitchless::Flush();
 		FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest genre"));
+		return false;
+	default:
+		break;
+	}
+	return true;
+}
+
+// The player's off switch, as a settings screen's "Share performance data" toggle calls it.
+bool UGlitchlessTestScript::StepSwitch()
+{
+	if (bSwitchCrash)
+	{
+		if (Done == 2)
+		{
+			FGlitchless::SetEnabled(false);
+			FGlitchless::Track(TEXT("never"));
+		}
+		else if (Done == 3)
+		{
+			UE_LOG(LogGlitchlessTest, Display, TEXT("Planted crash with Glitchless off"));
+			volatile int32* Nowhere = nullptr;
+			*Nowhere = 1; // with Glitchless off, nothing is written to the outbox for the next launch
+		}
+		return true;
+	}
+	switch (Done)
+	{
+	case 2:
+		FGlitchless::SetProperty(TEXT("mode"), TEXT("squads"));
+		FGlitchless::LevelStart(TEXT("arena-2"));
+		FGlitchless::Track(TEXT("before_off"));
+		break;
+	case 3:
+		FGlitchless::Flush();
+		break;
+	case 4:
+		FGlitchless::SetEnabled(false); // mid-level: no abandon, no session_end
+		FGlitchless::Track(TEXT("while_off"));
+		UE_LOG(LogGlitchlessTest, Error, TEXT("Planted error while off"));
+		FGlitchless::ReportBug(TEXT("Planted bug report while off"));
+		FGlitchless::SetProperty(TEXT("difficulty"), TEXT("hard")); // kept for the next session
+		Spin(150);
+		break;
+	case 5:
+		FGlitchless::SetEnabled(false); // changes nothing
+		break;
+	case 6:
+		FGlitchless::SetEnabled(true); // a new session
+		FGlitchless::Track(TEXT("back_on"));
+		break;
+	case 7:
+		FGlitchless::LevelComplete(TEXT("arena-2"), 10.0); // its start was in the other session: dropped
+		FGlitchless::LevelStart(TEXT("arena-3"));
+		FGlitchless::LevelComplete(TEXT("arena-3"), 20.0);
+		break;
+	case 8:
+		FGlitchless::Flush();
+		FPlatformMisc::RequestExit(false, TEXT("GlitchlessTest switch"));
 		return false;
 	default:
 		break;

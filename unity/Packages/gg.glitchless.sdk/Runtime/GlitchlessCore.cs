@@ -127,7 +127,12 @@ namespace GlitchlessSdk
 
         public GlitchlessOptions Options = new GlitchlessOptions();
         public bool Inited { get; private set; }
-        public bool Enabled { get; private set; }
+        /// <summary>Glitchless is on now: this build sends (Init found an intake, and neither Options.Enabled nor
+        /// --glitchless-off turned it off) and the player hasn't turned it off (SetEnabled, SPEC §4d).</summary>
+        public bool Enabled => buildOn && !SwitchedOff;
+        /// <summary>The player has Glitchless off: SetEnabled(false), the choice an earlier launch saved, or OptIn before
+        /// they said yes. Nothing is measured, kept or sent meanwhile.</summary>
+        public bool SwitchedOff { get; private set; }
         public bool Sampled { get; private set; } = true;
         public string SessionId { get; private set; }
         public string PlayerId { get; private set; } = "";
@@ -147,10 +152,15 @@ namespace GlitchlessSdk
         bool sandbox; // a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
         Dictionary<string, object> steamFacts; // read once Steamworks answers
         bool full, storesId, versionGiven, positionsOn, rageInputOn, debug, manualLevels, sceneLevels = true;
+        bool buildOn; // Init's decision: this build sends (an intake, and not turned off by the options or a flag)
+        bool sendingStarted; // the player ID, the outbox and /v1/health have been seen to, once a launch
+        string choice; // the player's choice as saved on the device, "on" or "off"; null until the game calls SetEnabled
+        bool choiceRead;
         long startedAt;
         double levelStartedAt;
         bool levelOpen; // a level started and not yet completed, failed or abandoned
         string leftLevel; // the level abandoned for the game as the session ended
+        string offLevel; // the level whose attempt was going at off, or started while off: its outcome is dropped (SPEC §4d)
         readonly List<(string name, double t)> recent = new List<(string, double)>();
         readonly List<Dictionary<string, object>> history = new List<Dictionary<string, object>>(); // the last game events, slimmed, for bug reports
         readonly List<Dictionary<string, object>> recentHitches = new List<Dictionary<string, object>>();
@@ -305,11 +315,12 @@ namespace GlitchlessSdk
         // ───────────────────────────── the game's calls ─────────────────────────────
 
         /// <summary>Says who the game is and where to send. Until this is called nothing is sent, but frame
-        /// times, errors and events are kept, so a game may call it late.</summary>
+        /// times, errors and events are kept, so a game may call it late (unless the player has Glitchless off).</summary>
         public void Init(GlitchlessOptions options)
         {
             if (Inited) return;
             Inited = true;
+            LoadChoice();
             Options = options ?? new GlitchlessOptions();
             service = string.IsNullOrEmpty(Options.Service) ? "unknown-game" : Options.Service.ToLowerInvariant();
             versionGiven = !string.IsNullOrEmpty(Options.Version);
@@ -328,18 +339,39 @@ namespace GlitchlessSdk
             sessionType = SessionTypeFor(Options.SessionType, IsBatchMode || HasFlag("--autoplay") || HasFlag("--glitchless-synthetic") || HasFlag("--glitchless-measure"), TestLabSetting, sandbox);
             IsServer = Options.Role == GlitchlessRole.Server || (Options.Role == GlitchlessRole.Auto && (IsServerBuild || HasFlag("--glitchless-server")));
             if (IsServer) StartServerMode();
-            Enabled = (Options.Enabled ?? !HasFlag("--glitchless-off")) && intake != "";
+            buildOn = (Options.Enabled ?? !HasFlag("--glitchless-off")) && intake != "";
+            // A game that asks first: with no choice saved, nothing is kept until the player says yes. What the automatic
+            // start kept before Init knew is dropped now. A server has no player to ask, so OptIn leaves it on.
+            if (choice == null && Options.OptIn && !IsServer) SwitchOff();
             Sampled = random.NextDouble() < Options.SampleRate;
             // The first batch goes soon, so a session that crashes early is still seen.
             nextFlushAt = Ticks + Math.Min(2000, Options.FlushIntervalSeconds * 1000);
             if (Options.Properties != null) SetProperties(Options.Properties);
             HashGroupsSetBeforeInit();
-            if (!Enabled)
+            if (!buildOn)
             {
                 queue.Clear();
                 Debug("off (no intake, or turned off)");
                 return;
             }
+            if (SwitchedOff)
+            {
+                Debug(choice == "off" ? "off: the player turned it off (Glitchless.SetEnabled), so nothing is measured or sent" : "off until the player says yes (OptIn): Glitchless.SetEnabled(true) turns it on");
+                return;
+            }
+            StartSending();
+        }
+
+        // Once a launch, when this build first sends: at Init, or when the player turns Glitchless on after an Init that
+        // found it off. Until then no player ID is read or made, and no outbox is read.
+        void StartSending()
+        {
+            if (sendingStarted)
+            {
+                CheckFeatures();
+                return;
+            }
+            sendingStarted = true;
             if (SaveDir != null) TryIo(() => Directory.CreateDirectory(SaveDir));
             firstLaunch = NoteLaunch();
             // Install and full mode share one saved ID (SPEC §4b); anonymous mode deletes one another build left. A server
@@ -396,9 +428,17 @@ namespace GlitchlessSdk
             CloseWindow(false); // so a frame window never spans two levels
             Level = levelId;
             levelStartedAt = Ticks;
-            levelOpen = true;
             leftLevel = null;
             droppedLevel = null;
+            if (SwitchedOff)
+            {
+                // The level is the current one when Glitchless comes back on, but this attempt's start was never sent.
+                levelOpen = false;
+                offLevel = levelId;
+                return;
+            }
+            levelOpen = true;
+            offLevel = null;
             var e = Ev("level_start");
             if (attrs != null && attrs.Count > 0) e["attrs"] = new Dictionary<string, object>(attrs);
             Push(e);
@@ -407,9 +447,11 @@ namespace GlitchlessSdk
 
         public void LevelComplete(string levelId = null, double? score = null, double? durationS = null)
         {
+            var level = levelId ?? Level;
+            if (OffAttempt(level)) return;
             levelOpen = false;
             var e = Ev("level_complete");
-            e["level"] = levelId ?? Level;
+            e["level"] = level;
             e["duration_s"] = Sketch.Round(durationS ?? (Ticks - levelStartedAt) / 1000, 2);
             e["score"] = score;
             Push(e);
@@ -420,7 +462,7 @@ namespace GlitchlessSdk
         public void LevelFail(string levelId = null, string cause = null)
         {
             var level = levelId ?? Level;
-            if (OutcomeSent(level)) return;
+            if (OutcomeSent(level) || OffAttempt(level)) return;
             levelOpen = false;
             var e = Ev("level_fail");
             e["level"] = level;
@@ -434,7 +476,7 @@ namespace GlitchlessSdk
         public void LevelAbandon(string levelId = null)
         {
             var level = levelId ?? Level;
-            if (OutcomeSent(level)) return;
+            if (OutcomeSent(level) || OffAttempt(level)) return;
             Abandon(level, null);
         }
 
@@ -453,6 +495,10 @@ namespace GlitchlessSdk
         // sent the abandon: that attempt has its outcome.
         bool OutcomeSent(string level) => ended && leftLevel != null && level == leftLevel;
 
+        // Nothing goes while the player has Glitchless off, and after they turn it back on the attempt that was going (or
+        // began while off) has no start in the new session: until the next level start, its outcome isn't sent either.
+        bool OffAttempt(string level) => SwitchedOff || (offLevel != null && level == offLevel);
+
         // The session ends with a level still going: the player left it (SPEC §2 level_abandon).
         void EndLevel(string reason)
         {
@@ -464,6 +510,7 @@ namespace GlitchlessSdk
         /// <summary>A death. The place is sent only when positions are on; the death and cause always are.</summary>
         public void Death(double? x, double? y, double? z, string cause)
         {
+            if (SwitchedOff) return;
             Stats.Deaths++;
             cause = string.IsNullOrEmpty(cause) ? "unknown" : cause;
             var e = Ev("death");
@@ -480,6 +527,7 @@ namespace GlitchlessSdk
 
         public void Track(string name, Dictionary<string, object> attrs)
         {
+            if (SwitchedOff) return;
             var e = Ev("custom");
             e["name"] = name;
             e["attrs"] = SandboxAttrs(name, attrs ?? new Dictionary<string, object>(), sandbox);
@@ -507,7 +555,7 @@ namespace GlitchlessSdk
         /// added up as given; `n` is how many events the call stands for.</summary>
         public void Count(string name, Dictionary<string, object> attrs = null, long n = 1)
         {
-            if (string.IsNullOrEmpty(name) || n <= 0 || (Inited && !Enabled)) return;
+            if (string.IsNullOrEmpty(name) || n <= 0 || Dropping) return;
             if (countsOff)
             {
                 Warn("counts", "this Glitchless server doesn't take counters yet, so Glitchless.Count sends nothing to it: update the server");
@@ -617,6 +665,7 @@ namespace GlitchlessSdk
             Transport.Get(intake + "/v1/health", (status, body) =>
             {
                 featuresAsked = false;
+                if (SwitchedOff) return; // turned off on its way: the answer is ignored, and asked for again once back on
                 if (status >= 200 && status < 300) OnFeatures(ParseFeatures(body));
                 else featuresRetryAt = Ticks + Options.FlushIntervalSeconds * 1000;
             });
@@ -867,7 +916,7 @@ namespace GlitchlessSdk
 
         public void SetPosition(double x, double y, double z)
         {
-            if (positionsOn) position = new[] { x, y, z };
+            if (positionsOn && !SwitchedOff) position = new[] { x, y, z };
         }
 
         // ───────────────────────────── scenes as levels ─────────────────────────────
@@ -912,6 +961,13 @@ namespace GlitchlessSdk
         public void Frame(double dtMs, FrameCost cost)
         {
             FrameCount++;
+            if (SwitchedOff)
+            {
+                // The player has Glitchless off: nothing is measured. A launch whose first frame went by unmeasured has
+                // no load event, even if they turn it on later.
+                if (firstFrameMs <= 0) loadSent = true;
+                return;
+            }
             if (IsServer)
             {
                 ServerFrame(dtMs, cost);
@@ -1327,6 +1383,7 @@ namespace GlitchlessSdk
         /// any library Glitchless doesn't read itself. At most one a second counts.</summary>
         public void NetSample(double? rttMs, double? lossPct = null, double? jitterMs = null)
         {
+            if (SwitchedOff) return;
             var now = Ticks;
             if (manualNetAt > 0 && now - manualNetAt < 1000) return;
             manualNetAt = now;
@@ -1336,7 +1393,7 @@ namespace GlitchlessSdk
 
         void NetConnected(string transport)
         {
-            if (netConnected || IsServer) return;
+            if (netConnected || IsServer || SwitchedOff) return;
             netConnected = true;
             netTransport = transport;
             connectedAt = Ticks;
@@ -1386,7 +1443,7 @@ namespace GlitchlessSdk
         /// failed_to_connect or other. With a level going, it ends in a level_abandon with reason disconnect: never a fail.</summary>
         public void NetDisconnect(string reason, string transport = null)
         {
-            if (IsServer) return; // a server's players come and go: that's its player count, not a disconnect
+            if (IsServer || SwitchedOff) return; // a server's players come and go: that's its player count, not a disconnect
             var e = Ev("disconnect");
             e["reason"] = Array.IndexOf(DisconnectReasons, reason) >= 0 ? reason : "other";
             e["connected_s"] = netConnected ? Sketch.Round((Ticks - connectedAt) / 1000, 1) : 0;
@@ -1541,10 +1598,18 @@ namespace GlitchlessSdk
         /// <summary>Frame stats over the next `seconds`, the same numbers as the browser SDK's glitchless_measure.</summary>
         public void Measure(double seconds, Action<Dictionary<string, object>> done)
         {
+            if (SwitchedOff)
+            {
+                done?.Invoke(OffResult());
+                return;
+            }
             var fps = new Dictionary<string, int>();
             foreach (var kv in errorLog) fps[kv.Key] = (int)kv.Value["count"];
             probes.Add(new Probe { EndAt = Ticks + seconds * 1000, Seconds = seconds, Done = done, Errors = Stats.Errors, Fingerprints = fps, Level = Level, Engine = new Dictionary<string, object>(SampleEngine()) });
         }
+
+        // What measure() says while the player has Glitchless off: there are no frames, and why.
+        static Dictionary<string, object> OffResult() => new Dictionary<string, object> { ["error"] = "No frames were measured: Glitchless is off on this device, because the player turned it off in the game's settings (or, with OptIn, hasn't said yes yet)." };
 
         Dictionary<string, object> ProbeResult(Probe p)
         {
@@ -1595,6 +1660,7 @@ namespace GlitchlessSdk
         /// <summary>An error from Unity's log, or one the game reported (manual).</summary>
         public void ReportError(string kind, string message, string stack, Dictionary<string, object> attrs = null, bool manual = false)
         {
+            if (SwitchedOff) return;
             var frames = StackParser.Parse(stack);
             frames.RemoveAll(StackParser.IsPlumbing);
             if (!manual && frames.Count > 0 && StackParser.IsGlitchless(frames[0])) return; // raised inside Glitchless (a failed send, say): never report it, or it could feed itself
@@ -1646,6 +1712,11 @@ namespace GlitchlessSdk
         public void OnInput(string code)
         {
             var now = Ticks;
+            if (SwitchedOff)
+            {
+                if (firstInputAt <= 0) firstInputAt = now; // the launch's first input, gone by unmeasured
+                return;
+            }
             if (firstInputAt <= 0 && firstFrameMs > 0)
             {
                 firstInputAt = now;
@@ -1721,6 +1792,11 @@ namespace GlitchlessSdk
         void NewSession()
         {
             Flush();
+            StartSession();
+        }
+
+        void StartSession()
+        {
             SessionId = NewId("s_", 16);
             startedAt = UnixNow();
             sessionStartSent = false;
@@ -1763,13 +1839,123 @@ namespace GlitchlessSdk
             return e;
         }
 
+        // ───────────────────────────── the player's switch ─────────────────────────────
+
+        const string ChoiceName = "enabled"; // "on" or "off", kept by name like the player ID, in every privacy mode
+
+        /// <summary>Reads the player's saved choice (SPEC §4d). The automatic start calls it before anything is measured,
+        /// so a player who turned Glitchless off has nothing kept from the first frame, and an outbox an earlier launch
+        /// left is deleted unread; Init and SetEnabled read it when nothing has yet.</summary>
+        public void LoadChoice()
+        {
+            if (choiceRead) return;
+            choiceRead = true;
+            TryIo(() =>
+            {
+                var saved = ReadId(ChoiceName)?.Trim();
+                choice = saved == "on" || saved == "off" ? saved : null;
+            });
+            if (choice == "off") SwitchOff();
+        }
+
+        /// <summary>The player's own switch, for a "Share performance data" toggle in the game's settings (SPEC §4d). Off
+        /// saves the choice first, then stops measuring and sending at once and drops everything waiting, on the device
+        /// too; the session ends with nothing more said. On, after off, starts a new session. The choice is saved on the
+        /// device and read before anything else at the next launch. A call that changes nothing does nothing, and a build
+        /// that sends nothing (Options.Enabled, --glitchless-off, no intake) stays off.</summary>
+        public void SetEnabled(bool on)
+        {
+            LoadChoice();
+            var word = on ? "on" : "off";
+            if (choice != word)
+            {
+                choice = word;
+                SaveChoice(word); // before anything else, so the choice holds whatever happens next
+            }
+            if (on == !SwitchedOff) return;
+            if (on) SwitchOn();
+            else SwitchOff();
+            Debug(on ? "on again, in a new session" : "off: the player turned it off");
+        }
+
+        // Nothing more is measured or sent, and everything waiting goes: the queue, the open window with its counters and
+        // positions, hitches waiting for their causes, counts waiting for /v1/health, batches waiting to go again, and the
+        // outbox on the device, bug reports in it included. The session ends without a session_end and a level going
+        // without a level_abandon: the server sees the session go quiet, as when a game is killed. What the game said
+        // (the level, properties, groups, zone, gauges) stays for a later session, and the player ID stays on the device.
+        void SwitchOff()
+        {
+            SwitchedOff = true;
+            queue.Clear();
+            outbox.Clear();
+            inFlight = -1; // the answer to a request on its way now is ignored: its batch is gone
+            retryAt = backoffS = 0;
+            heldCounts.Clear();
+            counters.Clear();
+            counterList.Clear();
+            countsDropped = 0;
+            pendingHitches.Clear();
+            pendingLong = null;
+            posBuffer.Clear();
+            position = null;
+            win = NewWindow();
+            recent.Clear();
+            history.Clear();
+            recentHitches.Clear();
+            recentWindows.Clear();
+            errorCounts.Clear();
+            errorLog.Clear();
+            pendingProps = null;
+            sessionStartSent = false;
+            ended = false;
+            leftLevel = null;
+            if (levelOpen) offLevel = Level;
+            levelOpen = false;
+            droppedLevel = null;
+            netConnected = false;
+            disconnectedAt = 0;
+            lastNet = null;
+            lastRtt = -1;
+            loadSent |= firstFrameMs > 0; // measured and not sent yet: it isn't sent later
+            Stats.LastStatus = "off";
+            DeleteOutbox();
+            var going = probes.ToArray();
+            probes.Clear();
+            foreach (var p in going) p.Done?.Invoke(OffResult());
+        }
+
+        // Back on: a new session in the same launch, as after a long time in the background, with its own session_start
+        // (the properties still set) and a group event for each group still set, measured from the next frame. The level
+        // stays the current one, but the attempt that was going at off isn't open in it (OffAttempt). No load goes again.
+        void SwitchOn()
+        {
+            SwitchedOff = false;
+            win = NewWindow();
+            skipNext = true; // the frame the switch flipped in was only partly measured
+            pendingLong = null;
+            Stats.LastStatus = "idle";
+            StartSession();
+            if (!Inited) return; // kept until Init, as at launch
+            nextFlushAt = Ticks + Math.Min(2000, Options.FlushIntervalSeconds * 1000);
+            if (buildOn) StartSending();
+        }
+
+        void SaveChoice(string word) => TryIo(() =>
+        {
+            if (Ids == null && SaveDir != null) Directory.CreateDirectory(SaveDir);
+            WriteId(ChoiceName, word);
+        });
+
         // ───────────────────────────── events ─────────────────────────────
 
         static Dictionary<string, object> Ev(string type) => new Dictionary<string, object> { ["type"] = type };
 
+        // Nothing is kept: the player has Glitchless off, or Init found that this build sends nothing.
+        bool Dropping => SwitchedOff || (Inited && !buildOn);
+
         void Push(Dictionary<string, object> e)
         {
-            if (Inited && !Enabled) return;
+            if (Dropping) return;
             if (!e.ContainsKey("ts")) e["ts"] = UnixNow();
             if (!e.ContainsKey("level")) e["level"] = Level;
             Stamp(e);
@@ -1888,9 +2074,15 @@ namespace GlitchlessSdk
         /// <summary>Sends a bug report on a request of its own, straight away and from every session (sampling
         /// doesn't apply). It waits in the outbox meanwhile, so if the send fails, or the game closes first, it
         /// goes with a later batch. `screenshot` is a JPEG data URL or null. done(sent, reason): reason is
-        /// "offline" when this build sends nothing, "error" when it will go later.</summary>
+        /// "off" when the player has Glitchless off, "offline" when this build sends nothing, "error" when it will go
+        /// later.</summary>
         public void SendBugReport(Dictionary<string, object> snapshot, string note, string screenshot, Action<bool, string> done)
         {
+            if (SwitchedOff)
+            {
+                done?.Invoke(false, "off");
+                return;
+            }
             note = note ?? "";
             var e = new Dictionary<string, object>(snapshot) { ["type"] = "bug_report", ["note"] = note.Length > MaxNote ? note.Substring(0, MaxNote) : note };
             if (screenshot != null) e["screenshot"] = screenshot;
@@ -1923,6 +2115,11 @@ namespace GlitchlessSdk
                     return;
                 }
                 Stats.Failed++;
+                if (SwitchedOff)
+                {
+                    done?.Invoke(false, "off"); // dropped with everything else waiting when the player turned Glitchless off
+                    return;
+                }
                 Debug($"bug report not sent ({(status == 0 ? "network error" : $"HTTP {status}")}): it goes with the next batch");
                 done?.Invoke(false, "error");
             });
@@ -2215,6 +2412,17 @@ namespace GlitchlessSdk
                 File.WriteAllText(tmp, Json.Serialize(new Dictionary<string, object> { ["v"] = 1, ["batches"] = batches }));
                 if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
                 File.Move(tmp, OutboxPath);
+            });
+        }
+
+        // The player turned Glitchless off: the batches saved for later go unsent, and unread at start.
+        void DeleteOutbox()
+        {
+            if (SaveDir == null || IsWeb) return;
+            TryIo(() =>
+            {
+                if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
+                if (File.Exists(OutboxPath + ".tmp")) File.Delete(OutboxPath + ".tmp");
             });
         }
 

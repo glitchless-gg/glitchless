@@ -18,6 +18,7 @@ namespace GlitchlessSdk
     ///   Glitchless.SetProperty("rank", "diamond"); // what holds for the session
     ///   Glitchless.SetGroup("match", lobby.Id); // every event from here on belongs to this match
     ///   Glitchless.ReportBug(note); // or BugReports = new BugReportOptions() in the options: F8 opens a form
+    ///   Glitchless.SetEnabled(shareToggle.isOn); // the player's "Share performance data" setting
     ///
     /// Scenes are levels on their own (see GlitchlessOptions.SceneLevels). Netcode for GameObjects and Mirror are
     /// read for ping and disconnects, and a Dedicated Server build reports as a server. Every call is safe before
@@ -161,8 +162,9 @@ namespace GlitchlessSdk
 
         /// <summary>A player's bug report from the game's own UI: what they typed, a screenshot of the game (taken at
         /// the end of this frame), where they are and what just happened. It goes on its own straight away, from
-        /// every session. done(sent, reason): reason is "offline" when this build sends nothing, "error" when the
-        /// report waits for a later batch. The note is the player's own words: see PRIVACY.md.</summary>
+        /// every session. done(sent, reason): reason is "off" when the player has turned Glitchless off (SetEnabled),
+        /// "offline" when this build sends nothing, "error" when the report waits for a later batch. The note is the
+        /// player's own words: see PRIVACY.md.</summary>
         public static void ReportBug(string note, bool screenshot = true, Action<bool, string> done = null) => GlitchlessRunner.ReportBug(note, screenshot, done);
 
         /// <summary>Opens the bug report form, for a game's own "Report a bug" button. GlitchlessOptions.BugReports
@@ -183,7 +185,19 @@ namespace GlitchlessSdk
         /// session keeps sending the ID it started with; the next launch makes a new one, so nothing joins the two.</summary>
         public static void ResetInstallId() => Core?.ResetInstallId();
 
+        /// <summary>The player's switch, for a "Share performance data" toggle in the game's settings. Off stops Glitchless
+        /// at once: nothing more is measured or sent, and what was waiting to go is deleted, on the device too. On starts
+        /// a new session. The choice is saved on the device (persistentDataPath/glitchless/enabled) and read before
+        /// anything else at the next launch, so a player who said no sends nothing from the first frame. A call that
+        /// changes nothing does nothing, so the game may pass its own saved setting every time it starts. Safe before
+        /// Init. GlitchlessOptions.OptIn starts a device with no choice saved off, for a game that asks first.</summary>
+        public static void SetEnabled(bool on) => Core?.SetEnabled(on);
+
         public static string SessionId => Core?.SessionId;
+
+        /// <summary>Glitchless is on now: this build sends (Init found an intake, and neither GlitchlessOptions.Enabled
+        /// nor --glitchless-off turned it off) and the player hasn't turned it off (SetEnabled). False before Init. A
+        /// settings toggle shows the game's own saved setting, not this.</summary>
         public static bool Enabled => Core?.Enabled ?? false;
         public static GlitchlessStats Stats => Core?.Stats;
         public static string Level => Core?.Level;

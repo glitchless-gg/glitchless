@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
@@ -143,6 +144,42 @@ namespace GlitchlessSdk.Tests
             Glitchless.ReportBug("before init", done: (sent, reason) => result = (sent, reason));
             for (var i = 0; i < 3 && result == null; i++) yield return null;
             Assert.AreEqual((false, "offline"), result);
+        }
+
+        [UnityTest]
+        public IEnumerator TurnedOffTheFormStaysShutAndAReportAnswersOff()
+        {
+            // A folder of its own: persistentDataPath is the one the e2e test's player (and other runs) use.
+            var core = GlitchlessRunner.Core;
+            var saveDir = core.SaveDir;
+            core.SaveDir = Path.Combine(Path.GetTempPath(), "glitchless-runner-" + Guid.NewGuid().ToString("N"));
+            var file = Path.Combine(core.SaveDir, "enabled");
+            try
+            {
+                Glitchless.SetEnabled(false); // the player's "Share performance data" toggle
+                Assert.IsFalse(Glitchless.Enabled);
+                Assert.AreEqual("off", File.ReadAllText(file), "saved where the next launch reads it first");
+                Glitchless.OpenBugReport();
+                yield return null;
+                Assert.IsFalse(Glitchless.IsBugReportOpen, "the form doesn't open");
+                (bool sent, string reason)? result = null;
+                Glitchless.ReportBug("while off", done: (sent, reason) => result = (sent, reason));
+                Assert.AreEqual((false, "off"), result, "answered at once, with no screenshot taken");
+                Dictionary<string, object> measured = null;
+                Glitchless.Measure(0.2f, r => measured = r);
+                StringAssert.Contains("Glitchless is off", (string)measured["error"]);
+                var frames = core.FrameCount;
+                for (var i = 0; i < 5; i++) yield return null;
+                core.Flush();
+                Assert.Greater(core.FrameCount, frames);
+                Assert.IsEmpty(core.Queued, "frames go by unmeasured");
+            }
+            finally
+            {
+                Glitchless.SetEnabled(true);
+                Directory.Delete(core.SaveDir, true);
+                core.SaveDir = saveDir;
+            }
         }
 
         [UnityTest]

@@ -66,8 +66,13 @@ namespace GlitchlessSdk
         public bool EngineGauges = true;
         /// <summary>The same key four times in a second. Null: on except on phones, where fast tapping is play.</summary>
         public bool? RageInput;
-        /// <summary>Null: on whenever there is an intake URL.</summary>
+        /// <summary>Null: on whenever there is an intake URL. False turns this build off whatever the player chose:
+        /// Glitchless.SetEnabled(true) can't turn it on.</summary>
         public bool? Enabled;
+        /// <summary>Ask first: on a device with no choice saved, Glitchless starts off, and measures, keeps and sends
+        /// nothing until the game calls Glitchless.SetEnabled(true) because the player said yes. A choice the player
+        /// made (SetEnabled, on any launch) wins over it. A game server has no player to ask, so it stays on.</summary>
+        public bool OptIn;
         /// <summary>Log each batch as it is sent.</summary>
         public bool Debug = false;
         /// <summary>Players send bug reports from a form in the game: new BugReportOptions() adds a hotkey (F8) that

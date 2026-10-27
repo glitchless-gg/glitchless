@@ -41,6 +41,17 @@ Settings, for every engine:
   D1, D7, D30), offer install mode: it adds only a random player ID kept on the device (`privacy: 'install'`;
   Godot `"privacy": "install"`; Unity `Privacy = Privacy.Install`; Unreal `Privacy=Install`). Anonymous mode
   can't count returning players. Full mode adds a stored player ID, device detail and positions.
+- **A "share performance data" setting.** If the game has a settings or options menu, offer to add a toggle wired to
+  Glitchless's off switch, so players can turn it off and back on at any time (store rules such as the Unity Asset
+  Store's ask for it, and it lets the store forms answer "optional"): `glitchless.setEnabled(on)`; Godot
+  `Glitchless.set_enabled(on)`; Unity `Glitchless.SetEnabled(on)`; Unreal `FGlitchless::SetEnabled(bOn)` or the
+  Blueprint node Set Enabled; GameMaker `glitchless_set_enabled(on)`. Off stops measuring and sending at once and drops
+  what was waiting; on starts a new session. Glitchless saves the choice on the device itself, so it holds from the
+  first frame of the next launch: show the toggle from the game's own saved setting and call the switch when it
+  changes (calling it with the saved value at start changes nothing when they agree). If the user wants players to
+  agree before anything is collected, set the opt-in option (`optIn: true`; Godot and GameMaker `opt_in`; Unity
+  `OptIn`; Unreal `bOptIn` or Project Settings > Opt In) and call the switch with `true` when the player says yes.
+  Each SDK's reference below has the code.
 - **Bots.** Sessions from autoplay bots and tests must be marked synthetic, so they stay out of player numbers.
 - **Testers.** On iOS the Godot, Unity and Unreal SDKs tell a TestFlight install from an App Store one themselves
   (`distribution` in the device fields) and mark its sessions `tester`, out of player numbers, even though a

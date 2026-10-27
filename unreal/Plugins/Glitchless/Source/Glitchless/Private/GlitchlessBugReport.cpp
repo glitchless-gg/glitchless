@@ -319,9 +319,9 @@ namespace GlitchlessBugReport
 		TArray<FPending> Taken = MoveTemp(Pending);
 		Pending.Reset();
 		FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get();
-		if (!Runtime)
+		if (!Runtime || Runtime->IsTurnedOff())
 		{
-			return;
+			return; // the player turned Glitchless off while the screenshot was taken: no report, no box
 		}
 		// The frame that read the viewport back was Glitchless's, not the game's, and so is the box's first draw.
 		const bool bOpensBox = Taken.ContainsByPredicate([](const FPending& P) { return P.bDialog; });
@@ -379,7 +379,9 @@ namespace GlitchlessBugReport
 			AsyncTask(ENamedThreads::GameThread, [Note]() { Report(Note); });
 			return;
 		}
-		if (FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get())
+		// With Glitchless turned off by the player, a report sends nothing: no screenshot is taken for it.
+		FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get();
+		if (Runtime && !Runtime->IsTurnedOff())
 		{
 			Capture(FPending{Runtime->MakeBugReport(FString()), Note, false});
 		}
@@ -393,9 +395,9 @@ namespace GlitchlessBugReport
 			return;
 		}
 		FGlitchlessRuntime* Runtime = FGlitchlessRuntime::Get();
-		if (OpenDialog.IsValid() || !Runtime || Pending.ContainsByPredicate([](const FPending& P) { return P.bDialog; }))
+		if (OpenDialog.IsValid() || !Runtime || Runtime->IsTurnedOff() || Pending.ContainsByPredicate([](const FPending& P) { return P.bDialog; }))
 		{
-			return;
+			return; // turned off by the player: the box doesn't open
 		}
 		// The report describes what the player saw when they asked, not when they pressed Send; the box
 		// opens once the screenshot is taken, so it isn't in it.
