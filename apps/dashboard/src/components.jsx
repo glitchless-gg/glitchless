@@ -282,13 +282,16 @@ export function TimeSeries({ ts, series, height = 180, unit = '', format, thresh
     const axis = { stroke: ink('var(--chart-axis)'), grid: { stroke: ink('var(--chart-grid)'), width: 1 }, font: '11px Noto Sans, sans-serif' };
     const data = [ts.map((t) => t / 1000), ...series.map((s) => s.values)];
     const fmt = (v) => (v == null ? '' : format ? format(v) : `${fmtNum(v, v < 10 ? 1 : 0)}${unit}`);
+    // Bars are centred on their times, so the first and last would hang half outside a range that ends at them: half a
+    // step more on each side keeps every bar, and the last one's label, on the chart.
+    const half = bars && data[0].length > 1 ? (data[0].at(-1) - data[0][0]) / (data[0].length - 1) / 2 : 0;
     const opts = {
       width,
       height,
       padding: [8, 8, 0, 0],
       cursor: { points: { size: 6 }, drag: { x: false, y: false } },
       legend: { show: false },
-      scales: { x: { time: true }, y: { range: (u, min, max) => [yMin ?? Math.min(0, min), Math.max(max * 1.12, ...thresholds.map((t) => t.value * 1.15), 1)] } },
+      scales: { x: { time: true, ...(half ? { range: (u, min, max) => [min - half, max + half] } : {}) }, y: { range: (u, min, max) => [yMin ?? Math.min(0, min), Math.max(max * 1.12, ...thresholds.map((t) => t.value * 1.15), 1)] } },
       axes: [
         { ...axis, ticks: { stroke: ink('var(--chart-tick)'), width: 1 } },
         { ...axis, ticks: { show: false }, size: 52, values: (u, vals) => vals.map(fmt) },
