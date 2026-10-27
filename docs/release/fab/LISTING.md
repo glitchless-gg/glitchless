@@ -44,7 +44,7 @@ You need a Glitchless server to send to: the open-source one runs on your own ma
 
 Private by default: no player ID, no device identifier, only coarse device facts. Players can turn it off at any time: wire a "Share performance data" setting to the Set Enabled node, which stops it at once, deletes what was waiting to be sent, and holds on every later launch; Opt In starts it off until the player says yes. PRIVACY.md lists every field that each of the three modes (anonymous, install, full) sends, with wording for your privacy policy and store forms.
 
-Made for Unreal Engine 5.8. The source is MIT-licensed on GitHub, with a small demo game that has three planted problems for Glitchless to find.
+Made for Unreal Engine 5.8. The source is also on GitHub, with a small demo game that has three planted problems for Glitchless to find.
 
 Optional, separate and Experimental: the Glitchless Toolset plugin on GitHub adds Status and Measure tools to Epic's Unreal MCP (Experimental in UE 5.8), so an agent can measure the game in Play In Editor. This product doesn't include it or need it.
 ```
@@ -80,7 +80,7 @@ Documentation: https://github.com/glitchless-gg/glitchless/blob/main/unreal/Plug
 Example Project: https://github.com/glitchless-gg/glitchless/tree/main/unreal/demo
 
 Important/Additional Notes:
-- Needs a Glitchless server to send to: the open-source server (Node.js 20 or later, MIT, https://github.com/glitchless-gg/glitchless) or the hosted service at https://glitchless.gg.
+- Needs a Glitchless server to send to: the open-source server (Node.js 20 or later, https://github.com/glitchless-gg/glitchless) or the hosted service at https://glitchless.gg.
 - Network use: HTTPS POST requests (or HTTP to a server on your own machine) of gzipped JSON to the Intake URL you set, every 15 seconds and when the game quits. Nothing is sent until Service and Intake are set. Enabled off, or -glitchless-off on the command line, sends nothing.
 - Privacy: anonymous by default, with no player ID and no device identifier. A player who turns it off (Set Enabled, from the game's settings) sends nothing more, in that launch or any later one. PRIVACY.md in the plugin lists every field each mode sends.
 - Dependencies: engine modules only (HTTP, ImageWrapper, Slate, RHI and others). No other plugins; Steam facts are read only through the Steamworks the game already set up.
@@ -107,7 +107,9 @@ analytics, telemetry, performance, profiling, optimization, debugging, crash rep
 ## Price and license
 
 **Free** ($0.00) under Fab's Standard license. The same source stays MIT on GitHub; publishing it on Fab under Fab's
-license is the copyright holder's own choice. If you'd rather charge, the lowest paid price is $0.99 (Fab's Licenses
+license is the copyright holder's own choice. Nothing on Fab may name another licence: the review (Changes needed,
+27 October 2026) refused the zip's LICENSE file, so the Fab zip has none, its notices stop at the copyright, and the
+text above doesn't mention MIT. If you'd rather charge, the lowest paid price is $0.99 (Fab's Licenses
 and Pricing page).
 
 ## Project version (one per engine version, Fab §4.2.2.d)

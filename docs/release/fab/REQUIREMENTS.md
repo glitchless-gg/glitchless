@@ -29,7 +29,8 @@ The status column says who has to act:
 | 4.3.6.c | `FabURL` with the listing's ID | ID known only once the draft exists; `--fab-url` stamps it | owner then zip (STEPS 10) |
 | 4.3.6.d | depends only on plugins that ship with the engine | Glitchless depends on none. GlitchlessToolset depends on Glitchless, so it can't be listed and stays on GitHub (*script*) | ok |
 | 4.3.6.1.a | source included | all source, no binaries | ok |
-| 4.3.6.1.b | a copyright comment with the publisher and year in every source and header file | `// Copyright (c) 2026 The Glitchless authors. MIT License: see LICENSE.` in every file (U1, 22966b2; *script*) | ok |
+| Legal (review, 27 Oct 2026) | no EULA, licence or conduct files, nor policies other than the licence chosen on Fab | the Fab zip has no LICENSE (the review found it there: Changes needed), names no other licence, and the listing text doesn't mention MIT; the script refuses a licence file or "MIT License" outside `Source/ThirdParty` (*script*) | fixed |
+| 4.3.6.1.b | a copyright comment with the publisher and year in every source and header file | `// Copyright (c) 2026 The Glitchless authors.` in every file of the Fab zip (the repo's own add `MIT License: see LICENSE.`, which the script leaves out for Fab) | ok |
 | 4.3.6.1.c | at least one C++ module | `Glitchless` (Runtime) | ok |
 | 4.3.6.1.d | integrates UE with third-party systems or adds editor features | sends telemetry to a Glitchless server; settings page, Blueprint library | ok |
 | 4.3.6.1.e | no `.exe` or `.msi` (*script*) | none | ok |
@@ -40,7 +41,7 @@ The status column says who has to act:
 | 4.3.6.3 | an example project, linked from Technical Information, without the plugin inside | `unreal/demo` loads the plugin through `AdditionalPluginDirectories` and carries no copy | ok |
 | 4.3.7.1.c | names in English letters, digits and underscores (*script*) | all names pass | ok |
 | 4.3.7.3.a | no Binaries, Build, Intermediate or Saved (*script*) | the zip is built from git, which tracks none | zip |
-| 4.3.7.3.b | `Config/FilterPlugin.ini` for anything outside Config, Content, Resources and Source | lists README.md, PRIVACY.md and LICENSE (U1, 22966b2; *script*) | ok |
+| 4.3.7.3.b | `Config/FilterPlugin.ini` for anything outside Config, Content, Resources and Source | lists README.md and PRIVACY.md in the Fab zip (*script*) | ok |
 | 4.3.7.3.c | paths of 170 characters or less (*script*) | the longest is 67 | ok |
 | 4.3.7.3.d | third-party code in `Source/ThirdParty` | `Source/ThirdParty/fdlibm/fdlibm_log.h`, with Sun's notice and a README (U1, 22966b2) | ok |
 | 4.3.8 | free documentation in English | README.md and PRIVACY.md in the plugin, and on GitHub | ok |

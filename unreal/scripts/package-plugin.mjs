@@ -1,5 +1,8 @@
 // Makes the Unreal plugin's release zips from a commit: plugin source only (what git tracks, so no Binaries,
-// Intermediate or Saved), with the repo's LICENSE, checked before and after zipping. It creates no release.
+// Intermediate or Saved), checked before and after zipping. It creates no release. A GitHub zip carries the repo's
+// LICENSE (MIT). A Fab zip carries no licence of its own: Fab's EULA covers what it sells, and its review refuses a
+// product with a LICENSE, EULA or other licence file (Changes needed, 2026-10-27). So the Fab copy leaves LICENSE out,
+// FilterPlugin.ini stops listing it, and each source file's notice stops at the copyright.
 //
 //   node unreal/scripts/package-plugin.mjs                     GitHub: glitchless-unreal-<version>.zip and
 //                                                              glitchless-unreal-toolset-<version>.zip
@@ -36,6 +39,8 @@ const UE_ROOT = process.env.UE_ROOT || (process.platform === 'win32' ? 'C:/Progr
 const TMP = fs.realpathSync(os.tmpdir());
 const LOCAL_DIRS = ['Binaries', 'Build', 'Intermediate', 'Saved', 'DerivedDataCache'];
 const SOURCE_EXT = /\.(h|hpp|inl|c|cc|cpp|cs)$/i;
+// A file that is a licence or terms of its own (LICENSE, LICENSE.md, EULA.txt, COPYING…).
+const LICENCE_FILE = /^(LICEN[CS]E|EULA|COPYING|TERMS)(\.[a-z]+)?$/i;
 const NOTICE = /copyright/i;
 const failures = [];
 const warnings = [];
@@ -79,7 +84,8 @@ function packagePlugin({ plugin, zip }) {
   if (!/^\d+\.\d+\.\d+$/.test(version || '')) failures.push(`${plugin}: VersionName "${version}" isn't x.y.z`);
   if (args.version && args.version !== version) failures.push(`${plugin}: VersionName is ${version}, not --version ${args.version}`);
 
-  // Stage what git has at the commit: the plugin folder, the licence, and (for Fab) the stamped descriptor.
+  // Stage what git has at the commit: the plugin folder, the licence (GitHub) or none (Fab), and for Fab the stamped
+  // descriptor.
   const stage = fs.mkdtempSync(path.join(TMP, `glitchless-${plugin}-`));
   const top = path.join(stage, plugin);
   fs.mkdirSync(top);
@@ -89,8 +95,17 @@ function packagePlugin({ plugin, zip }) {
   if (untar.status !== 0) throw new Error(`tar failed: ${untar.stderr}`);
   // --strip-components took the folder's own name off too: everything is in the stage root, so move it in.
   for (const name of fs.readdirSync(stage)) if (name !== plugin) fs.renameSync(path.join(stage, name), path.join(top, name));
-  fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(top, 'LICENSE'));
+  if (!fab) fs.copyFileSync(path.join(ROOT, 'LICENSE'), path.join(top, 'LICENSE'));
   if (fab) {
+    // No licence of our own on Fab: FilterPlugin.ini stops listing it, and the notices keep only the copyright.
+    const filter = path.join(top, 'Config/FilterPlugin.ini');
+    if (fs.existsSync(filter)) fs.writeFileSync(filter, fs.readFileSync(filter, 'utf8').split('\n').filter((l) => l.trim() !== '/LICENSE').join('\n'));
+    for (const f of walk(path.join(top, 'Source'))) {
+      if (!SOURCE_EXT.test(f) || f.includes(`${path.sep}ThirdParty${path.sep}`)) continue;
+      const text = fs.readFileSync(f, 'utf8');
+      const plain = text.replace(/^(\/\/ Copyright \(c\) [^\n]*?authors\.) MIT License: see LICENSE\./m, '$1');
+      if (plain !== text) fs.writeFileSync(f, plain);
+    }
     // Fab wants the EngineVersion right after VersionName, and FabURL once the draft listing exists.
     const stamped = {};
     for (const [k, v] of Object.entries(descriptor)) {
@@ -119,12 +134,14 @@ function packagePlugin({ plugin, zip }) {
       : spawnSync('zip', ['-r', '-X', '-D', '-q', out, ...walk(path.join(stage, plugin)).map((f) => path.relative(stage, f)).sort()], { cwd: stage });
   if (z.status !== 0) throw new Error(`zipping failed: ${z.stderr}`);
 
-  // Read the zip back: one top folder, the descriptor, the licence, nothing local.
+  // Read the zip back: one top folder, the descriptor, the licence (GitHub) or no licence file at all (Fab), nothing
+  // local.
   const listed = (process.platform === 'win32' ? spawnSync('tar', ['-t', '-f', out]) : spawnSync('unzip', ['-Z1', out])).stdout.toString().split(/\r?\n/).filter(Boolean); // Windows' tar ends its lines in \r\n
   const files = listed.filter((f) => !f.endsWith('/'));
   const tops = new Set(listed.map((f) => f.split('/')[0]));
   if (tops.size !== 1 || !tops.has(plugin)) failures.push(`${zip(version)}: holds ${[...tops].join(', ')}, not one ${plugin} folder`);
-  for (const need of [`${plugin}/${descriptorPath}`, `${plugin}/LICENSE`]) if (!files.includes(need)) failures.push(`${zip(version)}: no ${need}`);
+  for (const need of [`${plugin}/${descriptorPath}`, ...(fab ? [] : [`${plugin}/LICENSE`])]) if (!files.includes(need)) failures.push(`${zip(version)}: no ${need}`);
+  if (fab) for (const f of files) if (LICENCE_FILE.test(path.basename(f)) && !f.includes('/ThirdParty/')) failures.push(`${zip(version)}: ${f} is a licence file, which Fab refuses (its EULA covers the product)`);
   if (!files.some((f) => f.startsWith(`${plugin}/Source/`))) failures.push(`${zip(version)}: no Source folder`);
   for (const f of files) if (f.split('/').some((part) => LOCAL_DIRS.includes(part))) failures.push(`${zip(version)}: ${f} is a local build file`);
 
@@ -162,6 +179,12 @@ function check(plugin, top, d) {
       const head = fs.readFileSync(path.join(top, f), 'utf8').split('\n').slice(0, 5).join('\n');
       if (!/^\s*(\/\/|\/\*)/m.test(head) || !NOTICE.test(head)) unnoticed.push(f);
     }
+  }
+  // Fab: no licence of our own, in a file or in the notices (third-party code keeps its own, in Source/ThirdParty).
+  if (fab) {
+    for (const f of files) if (LICENCE_FILE.test(path.basename(f)) && !f.startsWith('Source/ThirdParty/')) problem(`${f}: Fab refuses licence files; its EULA covers the product`, true);
+    const mit = files.filter((f) => SOURCE_EXT.test(f) && !f.startsWith('Source/ThirdParty/') && /MIT License/.test(fs.readFileSync(path.join(top, f), 'utf8')));
+    if (mit.length) problem(`${mit.length} files still name the MIT License, for example ${mit.slice(0, 3).join(', ')}`, true);
   }
   if (unnoticed.length) problem(`${unnoticed.length} source and header files have no copyright notice in their first lines (Fab 4.3.6.1.b), for example ${unnoticed.slice(0, 3).join(', ')}`);
   // Fab builds with BuildPlugin, which keeps only Config, Content, Resources and Source unless FilterPlugin.ini lists more.
