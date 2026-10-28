@@ -28,6 +28,7 @@ const ICONS = {
   play: 'M6 4l14 8-14 8z',
   pause: 'M6 4h4v16H6zM14 4h4v16h-4z',
   x: 'M18 6L6 18M6 6l12 12',
+  menu: 'M4 6h16M4 12h16M4 18h16',
   bolt: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
   money: 'M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6',
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z',

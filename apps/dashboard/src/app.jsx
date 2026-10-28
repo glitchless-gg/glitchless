@@ -87,6 +87,20 @@ function load(key, fallback) {
 }
 
 // The services picked in this browser, most recent first ([] when there's nothing or it can't be read).
+// Whether a media query matches, following it as the window changes.
+function useMedia(query) {
+  const [on, setOn] = useState(() => typeof matchMedia === 'function' && matchMedia(query).matches);
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return undefined;
+    const m = matchMedia(query);
+    const change = () => setOn(m.matches);
+    change();
+    m.addEventListener('change', change);
+    return () => m.removeEventListener('change', change);
+  }, [query]);
+  return on;
+}
+
 function loadPicked() {
   try {
     const list = JSON.parse(load('glitchless.services', '[]'));
@@ -113,8 +127,15 @@ export function App({ shell: custom = {} }) {
   const [props, setPropsState] = useState(readProps);
   const setProps = (next) => (writeProps(next), setPropsState(next));
   const [live, setLive] = useState(() => load('glitchless.live', '1') === '1');
-  // The side navigation folds to a rail of icons, remembered in this browser; on a phone there's no side navigation.
+  // The side navigation folds to a rail of icons, remembered in this browser. On a phone it's a drawer instead: the
+  // menu button at the start of the top bar slides it out over the page, and choosing a page, the backdrop or Escape
+  // puts it away. The rail is the desktop's, so a phone's drawer always shows the game picker and the names.
   const [folded, setFolded] = useState(() => load('glitchless.nav', 'open') === 'folded');
+  const phone = useMedia('(max-width: 760px)');
+  const rail = folded && !phone;
+  const [drawer, setDrawer] = useState(false);
+  const menuBtn = useRef(null);
+  const navRef = useRef(null);
   const [navTip, setNavTip] = useState(null); // a folded rail's name for the icon pointed at or focused
   const navRest = useRef(null);
   const [tick, setTick] = useState(0);
@@ -243,9 +264,27 @@ export function App({ shell: custom = {} }) {
   const active = view?.path ?? (view?.page ? pathOf(view.page.id) : null) ?? (items.some((n) => n.path === route.page) ? route.page : first?.path);
   const Page = view?.page?.view === 'sessions' && route.arg ? SessionDetail : view?.Page;
   const loading = (services.loading && !services.data) || (service && !dashboard && dash.loading);
+  // The drawer goes away when a page is chosen or the window grows past a phone's width.
+  useEffect(() => setDrawer(false), [route.page, route.arg, phone]);
+  useEffect(() => {
+    if (!drawer) return undefined;
+    // The first control a phone shows (the desktop's fold button is hidden there).
+    [...(navRef.current?.querySelectorAll('button, select, a') ?? [])].find((el) => el.offsetParent)?.focus({ preventScroll: true });
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setDrawer(false);
+      menuBtn.current?.focus();
+    };
+    document.documentElement.classList.add('drawer-open'); // the page under it doesn't scroll
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.documentElement.classList.remove('drawer-open');
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [drawer]);
   // On the folded rail each icon names itself beside it: once the mouse rests on it, and at once on keyboard focus.
   const named = (label) =>
-    folded
+    rail
       ? {
           'aria-label': label,
           onPointerEnter: (e) => {
@@ -266,8 +305,8 @@ export function App({ shell: custom = {} }) {
   return (
     <Shell.Provider value={shell}>
       <Filters.Provider value={filters}>
-        <div className={`app ${shell.className} ${folded ? 'nav-collapsed' : ''} ${branded.className}`.replace(/\s+/g, ' ').trim()} style={branded.style}>
-          <nav className="sidenav" aria-label="Pages">
+        <div className={`app ${shell.className} ${rail ? 'nav-collapsed' : ''} ${drawer ? 'nav-open' : ''} ${branded.className}`.replace(/\s+/g, ' ').trim()} style={branded.style}>
+          <nav className="sidenav" id="sidenav" aria-label="Pages" ref={navRef}>
             <div className="brand">
               <img src={shell.brand.logo} alt={shell.brand.name} />
               <div>
@@ -277,10 +316,13 @@ export function App({ shell: custom = {} }) {
               <button type="button" className="nav-toggle" aria-expanded={!folded} title={folded ? undefined : fold} {...named(fold)} aria-label={fold} onClick={() => (setFolded(!folded), setNavTip(null))}>
                 <Icon name={folded ? 'expand' : 'collapse'} size={18} />
               </button>
+              <button type="button" className="nav-close" aria-label="Close the menu" onClick={() => (setDrawer(false), menuBtn.current?.focus())}>
+                <Icon name="x" size={18} />
+              </button>
             </div>
-            {!folded && shell.sidebarTop}
+            {!rail && shell.sidebarTop}
             {/* Self-hosted, this picks the game. Hosted, a game is picked above and almost always has one service. */}
-            {!folded && (!shell.sidebarTop || list.length > 1) && (
+            {!rail && (!shell.sidebarTop || list.length > 1) && (
             <div className="svc-pick">
               {shell.servicesLabel && <div className="svc-label">{shell.servicesLabel}</div>}
               <select value={service} onChange={(e) => setService(e.target.value)} title="Game service">
@@ -306,17 +348,21 @@ export function App({ shell: custom = {} }) {
               ),
             )}
             <div className="nav-end">
-              <ThemePick folded={folded} named={named} onPick={() => setNavTip(null)} />
-              {!folded && (shell.footer ?? null)}
+              <ThemePick folded={rail} named={named} onPick={() => setNavTip(null)} />
+              {!rail && (shell.footer ?? null)}
             </div>
           </nav>
-          {folded && navTip && (
+          {drawer && <div className="nav-scrim" aria-hidden="true" onClick={() => setDrawer(false)} />}
+          {rail && navTip && (
             <Floating anchor={navTip.el} place="right" className="navtip">
               {navTip.label}
             </Floating>
           )}
           <main>
             <header className="topbar">
+              <button type="button" className="menu-btn" ref={menuBtn} aria-label="Menu: games and pages" aria-expanded={drawer} aria-controls="sidenav" onClick={() => setDrawer(!drawer)}>
+                <Icon name="menu" size={20} />
+              </button>
               <div className="crumbs">
                 <BrandLogo brand={brand} />
                 <span className="root">{service || shell.brand.name} /</span>

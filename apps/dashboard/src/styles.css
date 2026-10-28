@@ -410,6 +410,22 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 }
 @media (max-width: 760px) { .nav-toggle { display: none; } }
 
+/* On a phone the side navigation is a drawer (app.jsx): the menu button at the start of the top bar slides it out
+   over the page, with a scrim behind it; a page, the scrim, the close button or Escape puts it away. */
+.menu-btn, .nav-close { display: none; }
+@media (max-width: 760px) {
+  .menu-btn { display: inline-grid; place-items: center; flex: none; width: 38px; height: 38px; margin-left: -4px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text); cursor: pointer; }
+  .menu-btn:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+  .app.nav-open .sidenav { display: flex; position: fixed; inset: 0 auto 0 0; z-index: 60; width: min(300px, 86vw); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); overscroll-behavior: contain; box-shadow: 8px 0 32px rgba(0, 0, 0, .45); }
+  .nav-scrim { position: fixed; inset: 0; z-index: 59; background: rgba(8, 12, 24, .55); }
+  .nav-close { margin-left: auto; flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 6px; background: none; color: var(--nav-fg); cursor: pointer; }
+  .nav-close:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+  /* Finger-sized rows in the drawer. */
+  .nav-open .navitem { padding-block: 11px; }
+  .nav-open .svc-pick select { padding-block: 9px; }
+}
+html.drawer-open { overflow: hidden; }
+
 /* The theme switch at the foot of the side navigation (app.jsx ThemePick). */
 .nav-end { margin-top: auto; display: flex; flex-direction: column; }
 .theme-pick { display: flex; margin: 10px 12px; padding: 2px; border-radius: 6px; background: rgba(255, 255, 255, .06); }
