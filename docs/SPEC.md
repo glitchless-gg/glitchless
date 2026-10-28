@@ -1255,9 +1255,9 @@ permission (Owner, Admin).
 | route | does |
 | --- | --- |
 | `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store`, `revenuecat` (§3h) and `stripe` (§3i) |
-| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}` |
+| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}`. A new connection, another app or a new key syncs before answering (up to 15 seconds, counted as one of the hour's 6 syncs; a sync that fails shows as `status.errors` `[{part: 'sync'}]` and never fails the save) |
 | `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
-| `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour, within 20 seconds; the hourly sync does the rest) |
+| `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour with the syncs on connecting, within 20 seconds; the hourly sync does the rest) |
 | `GET`, `PUT`, `DELETE /api/projects/{p}/steam`, `POST …/steam/sync` | Steam's, as before the other stores: `{steam, status, data}` |
 | `POST /api/dev/stores/sync` (or `/api/dev/steam/sync`) | the dev server only: runs the hourly sync now |
 
