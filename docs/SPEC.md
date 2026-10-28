@@ -1083,9 +1083,13 @@ review or writes anything to a store.
 `up` is the thumbs-up (a rating of 4 or 5 where a store has stars; `rating` is then 1–5, else null); `version` is the
 game's version when the store says which one was reviewed (Google Play and the App Store do; Steam doesn't: the join
 finds it); `device` is the hardware the reviewer shows (`os`, `cpu`, `gpu`, `ram_mb`, or a phone's `model`); the text
-has BBCode and markup taken out and is cut to 500 characters. Its **topics** are found in the whole text first: `stutter`, `lag`, `fps`, `freeze`, `crash`, in
-English and the languages most reviews are written in (German, French, Spanish, Portuguese, Russian, Chinese,
-Japanese, Korean). What only one store has goes under its name: Steam's `steam: {playtime_min, deck_min, deck,
+has BBCode and markup taken out and is cut to 500 characters. Its **topics** are found in the whole text first: `stutter`, `lag`, `fps`, `freeze`, `crash`,
+`optimization`, in English and the languages most reviews are written in (German, French, Spanish, Portuguese, Italian,
+Polish, Czech, Russian, Ukrainian, Turkish, Chinese, Japanese, Korean). `optimization` is the most common complaint
+("unoptimized", 优化差, 최적화) and also takes a game that runs badly in general ("awful performance", "runs poorly");
+disconnects count as `lag` and a game that won't start or shows a black screen as `crash`; "fps" as the genre ("an
+FPS", "fps games") is not `fps`. Topics are found again in the kept text when reviews are read, so a review stored
+before a word was added picks it up; a day's hourly counts keep the topics found when its reviews were stored. What only one store has goes under its name: Steam's `steam: {playtime_min, deck_min, deck,
 refunded, early_access}` (`deck`: played mostly on Steam Deck; `deck_min`: Steam Deck playtime at review); Google
 Play's `google_play: {version_code, device, device_class}` (the device's code name, and Play's class: phone, tablet,
 Chromebook); the App Store's `app_store: {territory}`. The author (a Steam ID, a Play or App Store reviewer's name or

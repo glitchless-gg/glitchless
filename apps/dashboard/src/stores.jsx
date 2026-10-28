@@ -100,7 +100,7 @@ export function storeInfo(p) {
   const notes = p.notes ?? [];
   if (p.type === 'store_reviews')
     return [
-      `Reviews by ${p.bucket_ms === DAY ? 'day' : 'hour'}. ${fmtNum(p.perf_negative)} negative ${p.perf_negative === 1 ? 'review mentions' : 'reviews mention'} stutter, lag, fps, freezes or crashes.`,
+      `Reviews by ${p.bucket_ms === DAY ? 'day' : 'hour'}. ${fmtNum(p.perf_negative)} negative ${p.perf_negative === 1 ? 'review mentions' : 'reviews mention'} stutter, lag, fps, freezes, crashes or optimization.`,
       p.summary && `On ${p.store_name} overall: ${p.summary.desc} (${fmtNum(p.summary.positive)} positive, ${fmtNum(p.summary.negative)} negative).`,
       p.source && `${SOURCE[p.source]?.(p.store_name)}. Frame p95 and crash-free are what Glitchless measured on that build's version.`,
     ];
@@ -417,7 +417,7 @@ function Reviews({ p }) {
                 <th>Live from</th>
                 <th className="num">Reviews</th>
                 <th className="num">Positive</th>
-                <th className="num" title="Negative reviews that mention stutter, lag, fps, freezes or crashes, of all reviews written while this build was live">
+                <th className="num" title="Negative reviews that mention stutter, lag, fps, freezes, crashes or optimization, of all reviews written while this build was live">
                   About performance
                 </th>
                 {p.segment && (

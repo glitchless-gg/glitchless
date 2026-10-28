@@ -481,7 +481,7 @@ export function findings(ctx, maps = []) {
   // per hour played or a distribution that moved between the last two versions (board-findings.js).
   out.push(...boardFindings(ctx, vers, totalSessions));
 
-  // 9. Store reviews (Steam) about stutter, lag, fps, freezes or crashes rising after a build (ctx.stores, reviews.js).
+  // 9. Store reviews (Steam) about stutter, lag, fps, freezes, crashes or optimization rising after a build (ctx.stores, reviews.js).
   out.push(...storeFindings(ctx, out));
 
   return out

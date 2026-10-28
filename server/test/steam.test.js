@@ -68,6 +68,35 @@ test('topics are found in the languages reviews are written in, and not inside o
     '游戏卡顿，经常闪退': ['stutter', 'crash'],
     '컬렉션이 좋아요': [],
     'A flag and a plan': [],
+    // Optimization, the most common complaint, in the languages players write it in.
+    'Unoptimized piece of junk': ['optimization'],
+    'Optimization is quite bad': ['optimization'],
+    '优化差全靠拼好帧': ['optimization'],
+    '그래픽 최적화를 좀 더 신경써다오': ['optimization'],
+    'optimiser avec les pieds pour pc': ['optimization'],
+    'niezoptymalizowane wogule': ['optimization'],
+    'velmi špatně optimalizovaná': ['optimization'],
+    'Aboslutely god awful performance on an older GPU': ['optimization'],
+    'Looks and runs EXTREMELY poorly': ['optimization'],
+    'still so many bugs and performance issues': ['optimization'],
+    // Word forms and languages the first lists missed.
+    'os mods travam e o jogo não inicializa': ['freeze', 'crash'],
+    'игра виснет куча багов': ['freeze'],
+    'rx 7900 xtx kartla sürekli çöküyor': ['crash'],
+    "Can't even launch the game now.": ['crash'],
+    'Sometimes refuses to open': ['crash'],
+    '打不开': ['crash'],
+    'lagi na najniższych ustawieniach': ['lag'],
+    '游戏一直掉线，连不上大厅': ['lag'],
+    'You have to compile shaders every time you launch it.': ['stutter'],
+    // Not complaints: the genre, the verb, the character and praise.
+    '让手柄玩家在这玩nm的fps游戏': [],
+    "it's an FPS for people who like FPS games": [],
+    'a mental toll to not optimize while you can': [],
+    'You are frozen in place for a moment': [],
+    'Непонятно, но плюс что не лагает': [],
+    '一直进不去好朋友房间': [],
+    'leveling slows to a crawl': [],
   };
   for (const [text, topics] of Object.entries(cases)) assert.deepEqual(reviewTopics(text), topics, text);
 });

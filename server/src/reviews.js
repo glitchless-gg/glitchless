@@ -79,15 +79,48 @@ const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health']
 // ───────────────────────────── topics ─────────────────────────────
 
 // What a negative review about how the game runs mentions, in the languages most reviews are written in. Latin and
-// Cyrillic words match from the start of a word (Latin ones whole); CJK and Hangul as written.
+// Cyrillic words match from the start of a word (Latin ones whole); CJK and Hangul as written. `optimization` is the
+// complaint players make most ("unoptimized", 优化差, 최적화, "optimiser avec les pieds") and the catch-all for a game
+// that runs badly in general. A game that won't start or keeps disconnecting counts too: as a crash and as lag.
+// Checked on 300 thumbs-down Steam reviews in 18 languages, read by hand where the words and a language model
+// disagreed: these find 85 of the 88 that complain about how the game runs (the words before them found 39). On 300
+// more from five other games, before tuning on them, they found 30 of the 39 the model called complaints (before: 21).
+const NOT_A_LETTER = '(?<![\\p{L}])';
 export const TOPICS = {
-  stutter: [/\b(?:micro-?)?stutter\w*|\bhitch(?:es|ing|y)?\b|\bjudder\w*|\bframe ?drops?\b|\bframe ?pacing\b|\bchoppy\b|\bruckel\w*|\bruckler\b|\bsaccad\w*|\btirones\b|\bengasg\w*/i, /(?<![а-яё])(?:статтер|подтормаж)/i, /卡顿|掉帧|カクつ|カクカク|끊김|버벅/],
-  lag: [/\blag(?:s|gy|ging|ged)?\b|\binput delay\b/i, /(?<![а-яё])(?:лаг|тормоз)/i, /延迟|렉(?:이|걸|심|때)/],
-  fps: [/\bfps\b|\bframe ?rates?\b|\bframes per second\b/i, /帧数|帧率|フレームレート|프레임/],
-  freeze: [/\bfreez(?:e|es|ing)\b|\bfroze(?:n)?\b|\bnot responding\b|\bfriert\b|\beingefroren\b|\bcongel\w*|\bse traba\b|\btrava(?:ndo|mento|s|r|ou)?\b/i, /(?<![а-яё])(?:зависа|фриз)/i, /卡死|死机|フリーズ|固ま|멈춤|멈춰/],
-  crash: [/\bcrash(?:es|ed|ing|y)?\b|\bctd\b|\bcrashea\w*|\bcrasha\w*|\babst(?:u|ü)rz\w*|\bst(?:u|ü)rzt\b[^.!?]{0,30}\bab\b|\bplant(?:e|ent|age)\b|\bwon'?t (?:launch|start)\b|\bfails? to (?:launch|start)\b|\bse cierra\b|\bfecha sozinho\b/i, /(?<![а-яё])(?:вылет|краш)/i, /闪退|崩溃|クラッシュ|落ちる|튕(?:김|겨|기)/],
+  stutter: [
+    /\b(?:micro-?)?stutter\w*|\bhitch(?:es|ing|y)?\b|\bjudder\w*|\bframe ?drops?\b|\bframe ?pacing\b|\bchoppy\b|\bruckel\w*|\bruckler\b|\bnicht flüssig\b|\bsaccad\w*|\btirones\b|\bengasg\w*|\bprzycina\w*|\bzacina\w*|\bshaders? compil\w*|\bcompil\w* (?:the )?shaders?\b/i,
+    new RegExp(`${NOT_A_LETTER}kas(?:ıyor|ma|ıntı)`, 'iu'),
+    /(?<![а-яё])(?:статтер|подтормаж)/i,
+    /卡顿|掉帧|卡到|卡飞|很卡|太卡|好卡|卡成|カクつ|カクカク|끊김|버벅/,
+  ],
+  lag: [
+    /\blag(?:s|gy|ging|ged|i|uje)?\b|\binput delay\b|\bdisconnect\w*|\bdesync\w*|\brubber ?band\w*|\bhigh ping\b|\bping (?:alto|elevado)\b/i,
+    /(?<![а-яё])(?<!не\s)(?:лаг|тормоз)/i,
+    /延迟|掉线|断线|连不上|联机[^，。！!]{0,4}(?:不稳|卡)|렉(?:이|걸|심|때)/,
+  ],
+  // The number, not the genre: "an FPS", "fps games" and "fps游戏" are shooters.
+  fps: [/(?<!\ban\s|国产|國產)\bfps\b(?!\s*(?:games?\b|genre\b|shooters?\b|游戏|遊戲|게임|ゲーム))|\bframe ?rates?\b|\bframes per second\b/i, /帧数|帧率|\d+ ?帧|フレームレート|프레임/],
+  freeze: [
+    /\bfreez(?:e|es|ing)\b|\bfroze(?:n)?\b(?! in place)|\bnot responding\b|\bfriert\b|\beingefroren\b|\bcongel\w*|\bse traba\b|\btrava(?:ndo|mento|m|s|r|ou)?\b|\bbloque(?:a|ando|ándo)se\b|\bse (?:bloquea|cuelga)\b|\bzawies\w*/i,
+    new RegExp(`${NOT_A_LETTER}don(?:uyor|ma|du)`, 'iu'),
+    /(?<![а-яё])(?:завис(?:а|л[аои]|(?![а-яё]))|висн|фриз)/i,
+    /卡死|死机|フリーズ|固ま|멈춤|멈춰/,
+  ],
+  crash: [
+    /\bcrash(?:es|ed|ing|y|uje)?\b|\bctd\b|\bcrashea\w*|\bcrasha\w*|\babst(?:u|ü)rz\w*|\bst(?:u|ü)rzt\b[^.!?]{0,30}\bab\b|\bplant(?:e|ent|age)\b|\bwywala\w*|\bse cierra\b|\bfecha sozinho\b|\bblack screen\b|\bfails? to (?:launch|start)\b|\brefuses? to (?:open|launch|start|run)\b|\b(?:won'?t|will not|can'?t|cannot|could ?n'?t|does ?n'?t|did ?n'?t) (?:even )?(?:launch|start|boot|open|run)\b|\bdoes ?n'?t (?:even )?work (?:at all|on)\b|\bläuft nicht\b(?! flüssig)|\bn(?:ão|ao) (?:inicia\w*|abre)\b|\bn[io] (?:me )?deja abrir\w*|\bno (?:arranca|inicia)\b/i,
+    new RegExp(`${NOT_A_LETTER}çök`, 'iu'),
+    /(?<![а-яёіїєґ])(?:вылет|вилі|вилет|краш|не запуска)/i,
+    /闪退|崩溃|打不开|游戏[^，。！!]{0,4}进不去|进不去游戏|联机进不去|无法启动|启动不了|黑屏|クラッシュ|落ちる|튕(?:김|겨|기)|실행이? 안/,
+  ],
+  optimization: [
+    // Not the bare verb: players also "optimize" a build or a route.
+    /\b(?:un)?optimi[sz](?:ed|ation|ations)\b|\boptimi[sz]e (?:it|this|the game|their game|your game|anything)\b|\boptimis(?:er|ation|é)|\boptimiza(?:r|do|da|ción|cion)|\boptimizasyon\w*|\botimiz\w*|\bottimizz\w*|\boptimier\w*|\b(?:nie)?zoptymaliz\w*|\boptymaliz\w*|\boptimaliz\w*/i,
+    /\b(?:bad|awful|terrible|horrible|poor|shoddy|abysmal|atrocious|horrendous|dreadful|garbage|trash)\s+performance\b|\bperformance (?:is|was|has been|remains) (?:still |quite |really |very |so |just )?(?:bad|awful|terrible|horrible|poor|shoddy|abysmal|atrocious|horrendous|dreadful|garbage|trash)\b|\bruns? (?:\w+ )?(?:poorly|badly|terribly|horribly|like (?:shit|garbage|crap|ass|trash))\b|\bperformance (?:issues?|problems?)\b|\b(?:killed|kills|tanked|ruined|destroyed) (?:the |my )?performance\b|\bhard to run\b|\bresource[- ]heavy\b|\bloading (?:times?|screens?)\b|\b(?:forever|ages) to load\b|\bwait for it to load\b|\bfunciona (?:muy )?(?:fatal|mal)\b|\btarda\b[^.!?]{0,30}\bcargar\b/i,
+    /(?<![а-яёіїєґ])(?:оптимиз|оптиміз)/i,
+    /优化|優化|效能|最適化|動作が重|최적화|개적화|발적화/,
+  ],
 };
-const TOPIC_WORDS = { stutter: 'stutter', lag: 'lag', fps: 'fps', freeze: 'freezes', crash: 'crashes' };
+const TOPIC_WORDS = { stutter: 'stutter', lag: 'lag', fps: 'fps', freeze: 'freezes', crash: 'crashes', optimization: 'optimization' };
 
 export function reviewTopics(text) {
   return Object.keys(TOPICS).filter((t) => TOPICS[t].some((re) => re.test(text)));
@@ -102,6 +135,13 @@ export function reviewText(raw) {
 
 // Counted apart (Steam Deck on Steam).
 const inSegment = (r) => r.steam?.deck === true;
+
+// A stored review with its topics found again in its kept text, so a review stored before a word was added picks it
+// up. Only the kept 500 characters are read again; what was found in the whole text when it was stored stays.
+function withTopics(r) {
+  const now = reviewTopics(r.text ?? '');
+  return now.every((t) => r.topics?.includes(t)) ? r : { ...r, topics: [...new Set([...(r.topics ?? []), ...now])] };
+}
 
 // ───────────────────────────── stored data ─────────────────────────────
 
@@ -302,7 +342,7 @@ export function createStoreData(kv) {
       let capped = false;
       for (const prefix of dayPrefixes(recLo, to)) {
         for (const item of (await kv.query(key, prefix)).reverse()) {
-          for (const r of item.reviews ?? []) if (r.ts >= recLo && r.ts <= to) reviews.push(r);
+          for (const r of item.reviews ?? []) if (r.ts >= recLo && r.ts <= to) reviews.push(withTopics(r));
           if (item.extra?.length) capped = true;
         }
         if (reviews.length >= READ_REVIEWS) {
@@ -929,7 +969,7 @@ export function storeVitals(ctx, params = new URLSearchParams()) {
 
 // ── the finding (findings.js) ──
 
-// For each store: negative reviews about stutter, lag, fps, freezes or crashes rising after a build. The latest
+// For each store: negative reviews about stutter, lag, fps, freezes, crashes or optimization rising after a build. The latest
 // release in the last 30 days with 5+ reviews since it went live (on a store whose reviews name their version, 5+
 // reviews of it), whose share of such reviews is 10+ points and half again above the 30 days before it, with 3 or more
 // of them. With the build's frame-time p95 and crash-free sessions (and the version before's), the store's segment
@@ -1047,7 +1087,8 @@ const pick = (v) => ({ version: v.version, sessions: v.sessions, frame_p95: v.fr
 
 // The window's reviews of one store (`store`; default the game's first connected one), filtered: `build` (a build
 // ID, a version or a release's label), `sentiment` (positive or negative), `keyword` (a topic: stutter, lag, fps,
-// freeze, crash; or any text), `deck` (Steam: played mostly on Steam Deck), `device` (part of the GPU or device name;
+// freeze, crash, optimization; or any text), `deck` (Steam: played mostly on Steam Deck), `device` (part of the GPU
+// or device name;
 // `gpu` is the same), `limit` (default 20, at most 100). With counts by build, topic and device over what matched.
 export function storeReviews(ctx, params = new URLSearchParams()) {
   const get = (k) => params.get(k)?.trim() || null;
