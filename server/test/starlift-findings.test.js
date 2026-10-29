@@ -381,12 +381,17 @@ test("a failed connection to one of a host's addresses is not the game's error",
   }
 });
 
-// Two sessions on SDK 0.2.0 lasted 16.7 h and 7.6 h with 19 and 8 minutes of frames: the rest was the phone in the
-// background. A session's length leaves out time away beyond 5 minutes, and the median sits beside the average.
-test('a night in the background is not a long session, and the median is a stat', () => {
+// Two sessions on SDK 0.2.0 lasted 16.7 h and 7.6 h with 19 and 8 minutes on screen: 0.2.0 held a frame window open
+// through the night in the background (s_8m0tb91ph8nx4xs9: 3 frames over 7.5 hours), so that time counted as played.
+// A long window counts its frames at its longest frame time, a session's length leaves out time away beyond 5
+// minutes, and the median sits beside the average.
+test('a night in the background is not play, nor a long session, and the median is a stat', () => {
   const played = (id, minutes, wallHours) => {
-    const windows = Array.from({ length: minutes * 12 }, (_, w) => frames('voyage_1', T0 + 5000 * (w + 1), [16.7, 16.7]));
-    return session({ id, events: [...windows, { type: 'custom', name: 'app_resume', ts: T0 + wallHours * 3_600_000 }] });
+    const windows = Array.from({ length: minutes * 12 }, (_, w) => ({ ...frames('voyage_1', T0 + 5000 * (w + 1), [16.7, 16.7]), frames: 300, ft_max: 18 }));
+    const away = wallHours * 3600 - minutes * 60;
+    // The window open as the phone went to the background, sent when it came back.
+    const night = { ...frames('voyage_1', T0 + wallHours * 3_600_000, [16.7, 16.7, 17]), duration_s: away, frames: 3, ft_max: 17 };
+    return session({ id, events: [...windows, ...(away > 60 ? [night] : [{ type: 'custom', name: 'app_resume', ts: T0 + wallHours * 3_600_000 }])] });
   };
   const ctx = ctxOf([...played('s_b42jqywi3qdz6dyw', 19, 16.7), ...played('s_8m0tb91ph8nx4xs9', 8, 7.6), ...played('s_short', 2, 0.04), ...played('s_mid', 3, 0.06), ...played('s_tiny', 1, 0.03)]);
   const byId = Object.fromEntries([...ctx.sessions.values()].map((s) => [s.session_id, Math.round(s.duration_s)]));
@@ -394,9 +399,12 @@ test('a night in the background is not a long session, and the median is a stat'
   const o = overview(ctx);
   assert.equal(o.kpis.median_session_s, 216);
   assert.equal(o.kpis.avg_session_s, (1440 + 780 + 144 + 216 + 108) / 5);
-  assert.equal(o.kpis.hours_played, round((19 + 8 + 2 + 3 + 1) / 60, 2), 'hours played are frames already');
+  assert.equal(o.kpis.hours_played, round((19 + 8 + 2 + 3 + 1) / 60, 2), 'the nights are not hours played');
   const [stat] = evaluateBoard(ctx, { id: 'stop', panels: [{ type: 'stat', metric: 'median_session_s' }] });
   assert.deepEqual([stat.value, stat.unit], [216, 's']);
+  // A frozen frame is time on screen: a 90 s window of 40 frames, the longest 85 s, counts its 90 s.
+  const frozen = ctxOf(session({ id: 's_frozen', events: [{ ...frames('voyage_1', T0 + 90_000, [16.7]), duration_s: 90, frames: 40, ft_max: 85_000 }] }));
+  assert.equal(overview(frozen).kpis.hours_played, round(90 / 3600, 2));
   // A session with no frame windows (frame timing off) keeps its first-to-last length.
   const untimed = ctxOf(session({ id: 's_untimed', events: [{ type: 'custom', name: 'menu', ts: T0 + 3_600_000 }] }));
   assert.equal([...untimed.sessions.values()][0].duration_s, 3600);

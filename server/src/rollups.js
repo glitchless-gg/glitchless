@@ -122,7 +122,7 @@ export function addEvent(c, e) {
   if (isNum(e.frames)) c.frames += e.frames;
   if (isNum(e.hitches)) c.hitches += e.hitches;
   if (isNum(e.frozen)) c.frozen += e.frozen;
-  if (isNum(e.duration_s)) c.sec += fixed(e.duration_s, FIXED.sec);
+  if (isNum(e.duration_s)) c.sec += fixed(windowSeconds(e), FIXED.sec);
   if (e.ft) {
     c.ft.merge(e.ft);
     c.over += framesOver(Sketch.from(e.ft), isNum(e.budget_ms) && e.budget_ms ? e.budget_ms : 1000 / 60);
@@ -193,6 +193,17 @@ function addDisconnect(c, e) {
 // budget (budget_ms, where the SDK says it).
 export function newServerCell() {
   return { w: 0, sec: 0, ticks: 0, late: 0, over: 0, tick: new Sketch(), players: [0, 0], pmax: 0, cpu: [0, 0], mem: [0, 0], mmax: 0, rtt: [0, 0], objs: [0, 0], omax: 0, budgets: {} };
+}
+
+// A frame window's time on screen, which hours played and session length add up. An older SDK held a window open
+// through time in the background (Godot SDK 0.2.0: a window of 7.5 hours and a handful of frames). No window is on
+// screen longer than its frames at its longest frame time, so one over LONG_WINDOW_S counts that instead; any
+// shorter is as sent (a frozen frame is its own longest frame, and counts in full).
+const LONG_WINDOW_S = 60;
+export function windowSeconds(e) {
+  const d = e.duration_s;
+  if (!(d > LONG_WINDOW_S) || !isNum(e.frames) || !isNum(e.ft_max)) return d;
+  return Math.min(d, (e.frames * e.ft_max) / 1000);
 }
 
 // Whether a window's ticks were over budget: 5% or more of them late (its p95 over the budget).

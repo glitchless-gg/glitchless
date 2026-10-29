@@ -1661,11 +1661,13 @@ Glitchless's own billing).
   facts pair them; the level's frame-time finding names the counter in its evidence (`counter_bursts`): "hitches come
   in windows with 300 or so `kill` (a calm window: 40)".
 - **Session length** (`avg_session_s`, `median_session_s`, a session's `duration_s`): its first event to its last,
-  less time away. A game in the background draws no frames, so a session is at most its frame windows' `duration_s`
-  plus 5 minutes (the SDKs' session timeout: a player back within 5 minutes plays on in the same session). An older
+  less time away. A game in the background draws no frames, so a session is at most its time on screen (as hours
+  played count it) plus 5 minutes (the SDKs' session timeout: a player back within 5 minutes plays on in the same session). An older
   SDK kept a phone game's night in the background as one session (Starlift on Godot SDK 0.2.0: 16.7 hours, 19 minutes
   on screen, counted as 24 minutes). A session without frame windows (a server, frame timing off) keeps first to last.
-- **Hours played**: the frame windows' `duration_s` added up: the time the game was on screen drawing frames. The
+- **Hours played**: the frame windows' `duration_s` added up: the time the game was on screen drawing frames. A
+  window over a minute counts at most its `frames` at its `ft_max`: an older SDK held a window open through time in
+  the background (Godot SDK 0.2.0: 3 frames over 7.5 hours), and a frozen frame is its own longest frame. The
   cells keep it per minute, env, version and level, so it is exact over any range (daily rollups included), overall
   and by version and level; by a session split it comes from each session's own frame windows (31 days or less). A
   game in the background has none, so an idle game's time away isn't play: it sends that as a number

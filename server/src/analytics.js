@@ -9,7 +9,7 @@
 // per day; the functions below that read sessions answer from it (daily.js says what stays exact).
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
-import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, splitAttrKey, attrKey, FIXED } from './rollups.js';
+import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, splitAttrKey, attrKey, FIXED, windowSeconds } from './rollups.js';
 import { foldSessions, finalizeSession, sessionMs, MARK, FATAL_KINDS } from './session-state.js';
 import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysBySeen, valueQuantile, valueCount } from './facts.js';
 import { idCount } from './facts.js';
@@ -1841,7 +1841,7 @@ export function playtestSummary(ctx) {
     if (e.process_ms != null) updateMs.push(e.process_ms);
     if (e.level == null) continue;
     const l = (levels[e.level] ||= { seconds: 0, calls: [], renderMs: [], updateMs: [], sketch: new Sketch() });
-    l.seconds += e.duration_s || 0;
+    l.seconds += windowSeconds(e) || 0;
     if (e.draw_calls != null) l.calls.push(e.draw_calls);
     if (e.render_ms != null) l.renderMs.push(e.render_ms);
     if (e.process_ms != null) l.updateMs.push(e.process_ms);
