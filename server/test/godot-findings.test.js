@@ -157,6 +157,7 @@ test('Godot device-gap, slow-start and error findings give Godot advice', () => 
   assert.doesNotMatch(slow.summary, /Web portals/);
   assert.match(slow.suggestion, /ResourceLoader\.load_threaded_request\(\)/);
   assert.match(slow.suggestion, /Shader Baker/);
+  assert.match(slow.suggestion, /fresh install on a real device with user:\/\/shader_cache wiped/);
   assert.doesNotMatch(slow.suggestion, THREE_JS);
   assert.doesNotMatch(slow.suggestion, /Draco|Meshopt|Basis/);
 
