@@ -54,7 +54,7 @@ Hi Product Hunt! I'm Banjo. I make small mobile games, and once Starlift was out
 
 So I built Glitchless. An SDK in the game records how it runs and plays: frame times and stutters with their likely cause, errors, levels and deaths, and the moments you track, like modes or purchases. An MCP server hands the same data to your coding agent. Ask Claude Code "what's wrong with my game?" and it answers from real sessions, makes the fix, then runs bots to check it.
 
-On Starlift it caught a first launch of over 5 seconds; baking the shaders into the build made it 66% faster on iPhone. It also showed that almost nobody tried a mode besides Endless, so a Try card now suggests one, and Voyage went from 1 in 10 sessions to 1 in 6.
+On Starlift it showed Android players getting half the frame rate of iPhone ones, and a lighter look for slow phones took a Galaxy A15 from 17 to 53 fps. It showed that 1 in 4 players who skipped the tutorial left without playing, so a skip now starts a game. And few players tried a mode besides Endless, so Home now suggests one: 189 sessions saw the Voyage card, 19 tapped it and 15 played a Voyage.
 
 It works with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and GameMaker. It's open source and free to self-host, and the hosted version has a free plan.
 

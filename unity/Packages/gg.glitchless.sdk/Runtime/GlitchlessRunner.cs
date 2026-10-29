@@ -443,10 +443,12 @@ namespace GlitchlessSdk
         // ───────────────────────────── errors ─────────────────────────────
 
         // Unity calls this from whichever thread logged, so it only writes the entry down; the main thread
-        // takes the list every frame. Nothing here may log: that would come straight back in.
+        // takes the list every frame. Nothing here may log: that would come straight back in. The SDK's own
+        // warnings start with [glitchless] and aren't the game's.
         static void OnLog(string condition, string stack, LogType type)
         {
             if (type == LogType.Log) return;
+            if (condition != null && condition.StartsWith("[glitchless]", StringComparison.Ordinal)) return;
             lock (LogLock)
             {
                 if (Logs.Count < MaxPendingLogs) Logs.Add((condition, stack, type));

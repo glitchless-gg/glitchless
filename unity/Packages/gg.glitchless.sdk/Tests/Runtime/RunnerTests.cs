@@ -63,6 +63,27 @@ namespace GlitchlessSdk.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheSdksOwnWarningsAreNotTheGames()
+        {
+            var options = GlitchlessRunner.Core.Options;
+            var was = options.CaptureWarnings;
+            options.CaptureWarnings = true;
+            try
+            {
+                Debug.LogWarning("[glitchless] could not write /tmp/out.json: disk full");
+                Debug.LogWarning("Shop ran out of stock");
+                for (var i = 0; i < 3; i++) yield return null;
+                var messages = Queued("error").Select(e => (string)e["message"]).ToList();
+                CollectionAssert.Contains(messages, "Shop ran out of stock");
+                Assert.IsFalse(messages.Any(m => m.StartsWith("[glitchless]")), string.Join(" | ", messages));
+            }
+            finally
+            {
+                options.CaptureWarnings = was;
+            }
+        }
+
+        [UnityTest]
         public IEnumerator ScenesBecomeLevels()
         {
             var name = "level-7-" + Guid.NewGuid().ToString("N").Substring(0, 4);

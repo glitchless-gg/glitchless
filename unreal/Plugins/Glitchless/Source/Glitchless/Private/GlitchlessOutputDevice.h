@@ -8,7 +8,8 @@
 /**
  * Takes UE_LOG errors (and warnings, when asked) from GLog. Unreal logs from any thread, so a line is
  * only written down here; the game thread takes the list every frame. Ensures come in through the
- * same list. Nothing here may log: that would come straight back in.
+ * same list. Nothing here may log: that would come straight back in. Lines that name the Glitchless server are
+ * the HTTP module's word on the plugin's own requests (a failed send or health check while offline), not the game's.
  */
 class FGlitchlessOutputDevice : public FOutputDevice
 {
@@ -22,6 +23,8 @@ public:
 	};
 
 	void Configure(bool bInErrors, bool bInWarnings);
+	/** The server the plugin sends to: a line that names it is about the plugin's own requests. */
+	void SetIntake(const FString& InIntake);
 	bool CapturesErrors() const { return bErrors; }
 	/** Queues an error found elsewhere (an ensure), to be reported on the game thread. */
 	void Add(const FString& Kind, const FString& Message, const FString& Stack, const FString& Fn);
@@ -37,6 +40,7 @@ private:
 	FCriticalSection Lock;
 	TArray<FEntry> Pending;
 	FString Fatal;
+	FString Intake;
 	bool bErrors = true;
 	bool bWarnings = false;
 };

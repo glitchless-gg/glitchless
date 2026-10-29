@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- Product Hunt gallery 4, 1270 x 760: Starlift 1.1.1 against 1.1.2 on players' phones (glitchless_compare_versions) -->
+<!-- Product Hunt gallery 4, 1270 x 760: what changed in Starlift 1.1.2 because of Glitchless, with a week of players'
+     sessions on 1.1.1 and on 1.1.2 (glitchless_events funnels, glitchless_compare_versions) -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -7,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Outfit:wght@800&display=block" rel="stylesheet">
 <link href="_gallery.css" rel="stylesheet">
 <style>
-  .cards { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); bottom: 30px; }
+  .cards { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); bottom: 30px; }
   .card { display: flex; flex-direction: column; justify-content: space-between; }
   .label { font-size: 10.5px; line-height: 1.35; color: var(--fog); min-height: 2.7em; }
   .nums { display: flex; align-items: baseline; gap: 7px; font: 800 24px/1 Outfit, sans-serif; letter-spacing: -0.02em; }
@@ -18,17 +19,15 @@
 </style>
 </head>
 <body>
-  <h1>Then it <em>checks the fix</em> with real players</h1>
-  <div class="sub">Starlift 1.1.1 against 1.1.2, the build with that commit, on players' phones.</div>
+  <h1>Then it <em>checks the change</em> with real players</h1>
+  <div class="sub">Starlift 1.1.1 against 1.1.2, the release built from what Glitchless showed.</div>
   <div class="brand"><img src="../../../../../assets/brand/glitchless/logo/png/glitchless-icon-128.png" alt="">Glitchless</div>
   <div class="cards">
-    <div class="card"><div class="label">The slowest frames, 1 in 100</div><div class="nums"><span class="was">49 ms</span><span class="arrow">→</span><span class="now">19 ms</span></div><div class="what">frame time p99</div></div>
-    <div class="card"><div class="label">Stutters a minute</div><div class="nums"><span class="was">3.5</span><span class="arrow">→</span><span class="now">1.5</span></div><div class="what">hitches per minute</div></div>
-    <div class="card"><div class="label">The tutorial's first lesson, its slowest 5% of frames</div><div class="nums"><span class="was">58 ms</span><span class="arrow">→</span><span class="now">17 ms</span></div><div class="what">tutorial_1_up_and_down p95</div></div>
-    <div class="card"><div class="label">Sessions with no errors</div><div class="nums"><span class="was">94%</span><span class="arrow">→</span><span class="now">100%</span></div><div class="what">error-free sessions</div></div>
-    <div class="card"><div class="label">Taps on Home's try card, per session</div><div class="nums"><span class="was">0.10</span><span class="arrow">→</span><span class="now">0.24</span></div><div class="what">try card tapped</div></div>
-    <div class="card"><div class="label">First frame on a fresh install, iPhone 16 Pro Max</div><div class="nums"><span class="was">5.25 s</span><span class="arrow">→</span><span class="now">1.79 s</span></div><div class="what">measured for build 17</div></div>
+    <div class="card"><div class="label">Players who skipped the tutorial and then played a game</div><div class="nums"><span class="was">19 of 25</span><span class="arrow">→</span><span class="now">26 of 26</span></div><div class="what">a skip now starts Quick Play</div></div>
+    <div class="card"><div class="label">Home screen on a slow Android phone, Galaxy A15</div><div class="nums"><span class="was">17 fps</span><span class="arrow">→</span><span class="now">53 fps</span></div><div class="what">light look for slow GPUs, measured on the phone</div></div>
+    <div class="card"><div class="label">Sessions shown Home's Voyage card, and the ones that went on to play a Voyage</div><div class="nums"><span class="now">189</span><span class="arrow">→</span><span class="now">15</span></div><div class="what">the try card's reach, not yet a rise in Voyage play</div></div>
+    <div class="card"><div class="label">Sessions without a crash</div><div class="nums"><span class="was">99.5%</span><span class="arrow">→</span><span class="now">100%</span></div><div class="what">crash-free sessions</div></div>
   </div>
-  <div class="note">Last 7 days. 1.1.1: 192 sessions. 1.1.2: 34 sessions on its first day, a small sample so far.</div>
+  <div class="note">Players' sessions, October 22 to 29, 2026. 1.1.1: 206 sessions. 1.1.2: 181.</div>
 </body>
 </html>

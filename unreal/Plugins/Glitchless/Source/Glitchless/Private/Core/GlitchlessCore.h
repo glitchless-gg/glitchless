@@ -359,6 +359,8 @@ namespace Glitchless
 		const std::string& GetService() const { return Service; }
 		const std::string& GetEnv() const { return Env; }
 		const std::string& GetVersion() const { return Version; }
+		/** The server it sends to, with no slash at the end: Options.Intake, or -glitchless-intake. */
+		const std::string& GetIntake() const { return Intake; }
 		double GetBudgetMs() const { return BudgetMs; }
 		int GetFrameCount() const { return FrameCount; }
 		const FOptions& GetOptions() const { return Options; }

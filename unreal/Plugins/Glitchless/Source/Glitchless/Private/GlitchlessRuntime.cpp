@@ -493,6 +493,7 @@ void FGlitchlessRuntime::Init(const FGlitchlessOptions& Options)
 			bHaveOptions = true;
 		}
 		C.Init(O);
+		LogDevice->SetIntake(GlitchlessText::Tchar(C.GetIntake()));
 		if (C.IsEnabled())
 		{
 			UE_LOG(LogGlitchless, Log, TEXT("Glitchless %s: sending %s %s (%s) to %s"), FGlitchless::SdkVersion(), *GlitchlessText::Tchar(C.GetService()),

@@ -25,6 +25,12 @@ void FGlitchlessOutputDevice::Configure(bool bInErrors, bool bInWarnings)
 	bWarnings = bInWarnings;
 }
 
+void FGlitchlessOutputDevice::SetIntake(const FString& InIntake)
+{
+	FScopeLock Guard(&Lock);
+	Intake = InIntake;
+}
+
 void FGlitchlessOutputDevice::Add(const FString& Kind, const FString& Message, const FString& Stack, const FString& Fn)
 {
 	FScopeLock Guard(&Lock);
@@ -75,10 +81,12 @@ void FGlitchlessOutputDevice::Serialize(const TCHAR* V, ELogVerbosity::Type Verb
 		{
 			return;
 		}
-	}
-	if (FCString::Strstr(V, TEXT("/v1/intake")))
-	{
-		return; // a failed send of Glitchless's own, logged by the HTTP module
+		// The HTTP module's word on a request of Glitchless's own (a send or the health check that failed while
+		// offline): every such line names the URL, which starts with the server's.
+		if (!Intake.IsEmpty() && FCString::Strstr(V, *Intake))
+		{
+			return;
+		}
 	}
 	Add(bWarning ? TEXT("warning") : TEXT("log_error"), FString(V), FString(), Category.ToString());
 }
