@@ -92,6 +92,7 @@ export const STATS = {
   sessions: { label: 'Sessions' },
   players: { label: 'Players' },
   avg_session_s: { label: 'Average session', unit: 's' },
+  median_session_s: { label: 'Median session', unit: 's' },
   crash_free_pct: { label: 'Crash-free sessions', unit: '%' },
   error_free_pct: { label: 'Error-free sessions', unit: '%' },
   frame_p95: { label: 'Frame time p95', unit: 'ms' },
@@ -1236,7 +1237,7 @@ function cachedOverview(ctx) {
 
 function kpis(ctx) {
   const o = cachedOverview(ctx);
-  return { ...o.kpis, avg_session_s: o.kpis.sessions ? o.kpis.avg_session_s : null };
+  return { ...o.kpis, avg_session_s: o.kpis.sessions ? o.kpis.avg_session_s : null, median_session_s: o.kpis.sessions ? o.kpis.median_session_s : null };
 }
 
 function names(list, at) {

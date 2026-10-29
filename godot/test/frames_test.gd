@@ -1,6 +1,7 @@
 extends SceneTree
 ## Frame timing pieces of glitchless.gd without a running game: the refresh
-## rate read off the fast frames, and the causes a hitch gets. test/e2e.mjs runs it.
+## rate read off the fast frames, the causes a hitch gets, and engine errors
+## that aren't the game's. test/e2e.mjs runs it.
 ##   godot --headless --path godot --script res://test/frames_test.gd
 
 const Glitchless := preload("res://addons/glitchless/glitchless.gd")
@@ -56,6 +57,14 @@ func _init() -> void:
 	f.gpu = 0.0
 	f.dt = 1610.0
 	_check("a frozen frame nothing explains: gpu_or_os and frozen", g._causes(f) == ["gpu_or_os", "frozen"])
+	g.free()
+
+	# Errors. Each IPv6 address tried before IPv4 connects logs this from the engine: not the game's error.
+	g = _fresh()
+	g._report_error({"function": "connect_to_host", "file": "core/io/stream_peer_tcp.cpp", "line": 90, "code": "", "rationale": "Connection to remote host failed!", "type": 0, "frames": []})
+	_check("a failed connection to one of a host's addresses is not reported", g._queue.is_empty() and g.stats.errors == 0)
+	g._report_error({"function": "get_node", "file": "scene/main/node.cpp", "line": 1868, "code": "", "rationale": "Node not found: \"Player\".", "type": 0, "frames": []})
+	_check("another engine error is", g._queue.size() == 1 and g._queue[0].kind == "engine" and g.stats.errors == 1)
 	g.free()
 
 	print("frames tests: %d failed" % _failed)

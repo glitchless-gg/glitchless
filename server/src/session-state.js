@@ -11,7 +11,7 @@
 // rage_quit, crashed, p50/p95…), the same fields and values indexSessions always produced.
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
-import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, overBudget, MINUTE, OTHER, ATTRS } from './rollups.js';
+import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, overBudget, MINUTE, OTHER, ATTRS, FIXED } from './rollups.js';
 
 // 'script' is a Godot GDScript runtime error, an Unreal Blueprint runtime error, and 'exception' an
 // unhandled Unity exception: the function stops part way, like an uncaught JS exception.
@@ -23,6 +23,9 @@ const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception', 'crash'
 const HALT_KINDS = new Set(['game_loop_stopped', 'crash']);
 const RAGE_QUIT_WINDOW_MS = 20_000;
 const CRASH_WINDOW_MS = 10_000;
+// Time away a session's length keeps: the SDKs' session timeout, a player back within 5 minutes plays on in the
+// same session (sessionMs).
+const AWAY_MS = 5 * 60_000;
 const NODE_COUNTS = ['nodes', 'orphan_nodes'];
 // Custom events the SDKs send by themselves: not the game being played (see last_play).
 const SDK_CUSTOM = new Set(['rage_input', 'screen_change', 'app_resume', 'webgl_context_restored', 'annotation', 'assets_loaded']);
@@ -578,9 +581,8 @@ export function finalizeSession(s) {
   s.node_counts = Object.fromEntries(Object.entries(s.nodes).map(([k, n]) => [k, { first: n.first, last: n.last }]));
   // The session's properties as they stand at its end (A6): what splits and filters read.
   s.prop = Object.fromEntries(Object.entries(s.props || {}).filter(([, [v]]) => v != null).map(([k, [v]]) => [k, v]));
-  const start = s.start ?? s.first_ts;
   const end = s.end ?? s.last_ts;
-  s.duration_s = Math.max(0, (end - start) / 1000);
+  s.duration_s = sessionMs(s) / 1000;
   // The end has to come after the fail: a fail the game logged as it closed, after the session had ended (a
   // level torn down as the app quits), is not the player quitting in anger.
   s.rage_quit = !!(s.ended && s.last_fail && s.last_fail.ts <= end && end - s.last_fail.ts <= RAGE_QUIT_WINDOW_MS);
@@ -594,6 +596,16 @@ export function finalizeSession(s) {
   s.p95 = s.sketch.quantile(0.95);
   s.p50 = s.sketch.quantile(0.5);
   return s;
+}
+
+// A session's length in ms: its first event to its last, less time away. A game in the background draws no frames,
+// so time beyond its frame windows' and AWAY_MS was spent away: an older SDK kept a phone game's night in the
+// background as one session (Starlift on Godot SDK 0.2.0: 16.7 hours, 19 minutes of it on screen). Without frame
+// windows (a server, a game with frame timing off), first to last.
+export function sessionMs(s) {
+  const wall = Math.max(0, (s.end ?? s.last_ts) - (s.start ?? s.first_ts));
+  const sec = s.cell?.sec || 0;
+  return sec ? Math.min(wall, Math.round((sec / FIXED.sec) * 1000) + AWAY_MS) : wall;
 }
 
 // Fold events into one state per session (keyed by session_id), in the order given.

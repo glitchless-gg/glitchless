@@ -7,7 +7,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
-import { buildContext, performance, eventLift } from '../src/analytics.js';
+import { buildContext, performance, eventLift, overview, round } from '../src/analytics.js';
+import { evaluateBoard } from '../src/board.js';
 import { findings, versionFrames } from '../src/findings.js';
 import { evaluate, alertMessage, releaseStats } from '../src/alerts.js';
 import { versions } from '../src/analytics.js';
@@ -276,6 +277,7 @@ async function serve() {
       return fetch(`${base}/v1/intake?token=gl_pub_dev`, { method: 'POST', body: JSON.stringify(body) });
     },
     get: async (p) => (await fetch(base + p)).json(),
+    base,
     close: () => (server.closeAllConnections(), new Promise((r) => server.close(r))),
   };
 }
@@ -356,4 +358,69 @@ test('the release alert counts stutter, which more 60 Hz phones do not make', ()
   assert.deepEqual([loud.prev.stutter, loud.cur.stutter, loud.cur.units], [0, 25, 50]);
   const m = alertMessage({ ...loud, service: 'starlift', at: T0 });
   assert.equal(m.title, 'starlift 1.1 stutters for 5 in 10 players (1.0.1: none), most of all on quick.');
+});
+
+// ───────────── the week to 29 October 2026 (Starlift 1.1.2, Godot SDK 0.5.1 and 0.2.0) ─────────────
+
+// Starlift 1.1.2's top error was the SDK's own sends: api.glitchless.gg has 8 AAAA records, and on an iPhone network
+// with no IPv6 route Godot logs "Connection to remote host failed!" for each before IPv4 connects, 8 every 5 s.
+test("a failed connection to one of a host's addresses is not the game's error", async () => {
+  const app = await serve();
+  try {
+    const failed = { type: 'error', kind: 'engine', message: 'Connection to remote host failed!', fn: 'connect_to_host', source: 'stream_peer_tcp.cpp', line: 90, fingerprint: 'c0ffee01' };
+    const missing = { type: 'error', kind: 'engine', message: 'Node not found: "Player".', fn: 'get_node', source: 'node.cpp', line: 1868, fingerprint: 'c0ffee02' };
+    await app.send(live({ id: 's_ivt88mihcwt376m0', version: '1.1.2' }, [...Array.from({ length: 8 }, (_, i) => ({ ...failed, ts: 1000 + i })), { ...missing, ts: 2000 }]));
+    await app.send(live({ id: 's_clean', version: '1.1.2' }, Array.from({ length: 8 }, (_, i) => ({ ...failed, ts: 1000 + i }))));
+    const range = `service=starlift&from=${NOW - 7_200_000}&to=${NOW}`;
+    const o = await app.get(`/v1/query/overview?${range}`);
+    assert.equal(o.kpis.errors, 1);
+    assert.equal(o.kpis.error_free_pct, 50, 'the session that only connected is error-free');
+    assert.deepEqual((await app.get(`/v1/query/errors?${range}`)).issues.map((i) => i.message), ['Node not found: "Player".']);
+  } finally {
+    await app.close();
+  }
+});
+
+// Two sessions on SDK 0.2.0 lasted 16.7 h and 7.6 h with 19 and 8 minutes of frames: the rest was the phone in the
+// background. A session's length leaves out time away beyond 5 minutes, and the median sits beside the average.
+test('a night in the background is not a long session, and the median is a stat', () => {
+  const played = (id, minutes, wallHours) => {
+    const windows = Array.from({ length: minutes * 12 }, (_, w) => frames('voyage_1', T0 + 5000 * (w + 1), [16.7, 16.7]));
+    return session({ id, events: [...windows, { type: 'custom', name: 'app_resume', ts: T0 + wallHours * 3_600_000 }] });
+  };
+  const ctx = ctxOf([...played('s_b42jqywi3qdz6dyw', 19, 16.7), ...played('s_8m0tb91ph8nx4xs9', 8, 7.6), ...played('s_short', 2, 0.04), ...played('s_mid', 3, 0.06), ...played('s_tiny', 1, 0.03)]);
+  const byId = Object.fromEntries([...ctx.sessions.values()].map((s) => [s.session_id, Math.round(s.duration_s)]));
+  assert.deepEqual(byId, { s_b42jqywi3qdz6dyw: 19 * 60 + 300, s_8m0tb91ph8nx4xs9: 8 * 60 + 300, s_short: 144, s_mid: 216, s_tiny: 108 });
+  const o = overview(ctx);
+  assert.equal(o.kpis.median_session_s, 216);
+  assert.equal(o.kpis.avg_session_s, (1440 + 780 + 144 + 216 + 108) / 5);
+  assert.equal(o.kpis.hours_played, round((19 + 8 + 2 + 3 + 1) / 60, 2), 'hours played are frames already');
+  const [stat] = evaluateBoard(ctx, { id: 'stop', panels: [{ type: 'stat', metric: 'median_session_s' }] });
+  assert.deepEqual([stat.value, stat.unit], [216, 's']);
+  // A session with no frame windows (frame timing off) keeps its first-to-last length.
+  const untimed = ctxOf(session({ id: 's_untimed', events: [{ type: 'custom', name: 'menu', ts: T0 + 3_600_000 }] }));
+  assert.equal([...untimed.sessions.values()][0].duration_s, 3600);
+});
+
+// GET /v1/query/sessions?session_type=user still listed 9 bot and 6 tester sessions: the filter is `type`.
+test('a query keeps the session type asked for by either name, and refuses one it does not know', async () => {
+  const app = await serve();
+  try {
+    await app.send(live({ id: 's_player' }));
+    await app.send(live({ id: 's_bot', type: 'synthetic' }));
+    await app.send(live({ id: 's_tester', type: 'tester' }));
+    const range = `service=starlift&from=${NOW - 7_200_000}&to=${NOW}`;
+    for (const name of ['type', 'session_type']) {
+      const r = await app.get(`/v1/query/sessions?${range}&${name}=user`);
+      assert.deepEqual(r.sessions.map((s) => s.session_id), ['s_player'], name);
+      assert.equal(r.meta.type, 'user');
+    }
+    assert.equal((await app.get(`/v1/query/sessions?${range}`)).sessions.length, 3);
+    const bad = await fetch(`${app.base}/v1/query/sessions?${range}&session_type=player`);
+    assert.equal(bad.status, 400);
+    assert.match((await bad.json()).error, /no session type "player": use all, user, tester, synthetic, simulated/);
+    assert.equal((await fetch(`${app.base}/v1/query/sessions?${range}&type=user&session_type=synthetic`)).status, 400);
+  } finally {
+    await app.close();
+  }
 });

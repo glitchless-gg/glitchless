@@ -10,7 +10,7 @@
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, splitAttrKey, attrKey, FIXED } from './rollups.js';
-import { foldSessions, finalizeSession, MARK, FATAL_KINDS } from './session-state.js';
+import { foldSessions, finalizeSession, sessionMs, MARK, FATAL_KINDS } from './session-state.js';
 import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysBySeen, valueQuantile, valueCount } from './facts.js';
 import { idCount } from './facts.js';
 import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, dailyGaugeClimbs, dailyRetention, sessionTotal, approximate } from './daily.js';
@@ -285,6 +285,7 @@ export function overview(ctx) {
       // Hours played: the time the game was on screen drawing frames (SPEC §4), from every frame window's duration_s.
       hours_played: round(frameSeconds / 3600, 2),
       avg_session_s: meanSeconds(sessions),
+      median_session_s: quantile(sessions.map((s) => s.duration_s), 0.5),
       rage_quits: rageQuits,
       rage_quit_pct: pct(rageQuits, n),
       errors: total.n.error || 0,
@@ -1885,11 +1886,12 @@ export function avg(arr) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
 
-// Mean session length in seconds, from summed milliseconds (exact in any order, as daily rollups sum them).
+// Mean session length in seconds (sessionMs: less time away), from summed milliseconds (exact in any order, as
+// daily rollups sum them).
 export function meanSeconds(sessions) {
   if (!sessions.length) return null;
   let ms = 0;
-  for (const s of sessions) ms += Math.max(0, (s.end ?? s.last_ts) - (s.start ?? s.first_ts));
+  for (const s of sessions) ms += sessionMs(s);
   return round(ms / 1000 / sessions.length, 1);
 }
 

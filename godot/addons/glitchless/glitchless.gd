@@ -63,6 +63,11 @@ const HITCH_MS := 50.0  # one frame over 50 ms is a stutter a player sees
 const JANK_MS := 33.4  # two missed 60 Hz frames
 const FROZEN_MS := 700.0  # Android vitals' "frozen frame"
 const MAX_ERRORS_PER_FINGERPRINT := 25
+# Engine errors that aren't the game's: Godot logs "Connection to remote host
+# failed!" for each address of a host it can't reach before one works (an IPv6
+# address on a network with no IPv6 route, then IPv4 connects), so every batch
+# would report one per address. Whose request raised it can't be told.
+const ENGINE_NOISE := [["stream_peer_tcp.cpp", "Connection to remote host failed"]]
 const MAX_QUEUE := 2000
 const MAX_HITCH_EVENTS_PER_WINDOW := 3  # frame_window.hitches still counts every one
 const RAGE_INPUT_COUNT := 4  # the same key four times in a second
@@ -1750,6 +1755,9 @@ func _report_error(entry: Dictionary) -> void:
 	var frames: Array = entry.frames
 	if not frames.is_empty() and str(frames[0].file).begins_with(ADDON_DIR) and entry.get("kind") != "manual":
 		return  # raised inside Glitchless (a failed send, say): never report it, or it could feed itself
+	for noise in ENGINE_NOISE:
+		if str(entry.file).get_file() == noise[0] and (str(entry.rationale) + str(entry.code)).contains(noise[1]):
+			return
 	var kind := _kind_of(entry)
 	var message: String = entry.rationale if entry.rationale != "" else entry.code
 	message = _scrub(message).strip_edges().substr(0, 500)

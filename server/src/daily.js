@@ -35,7 +35,7 @@
 
 import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, meanOf, seconds, FIXED, OTHER } from './rollups.js';
 import { newFacts, addFactsCell } from './facts.js';
-import { MARK } from './session-state.js';
+import { MARK, sessionMs } from './session-state.js';
 import { sessionAttempts, attemptValues } from './levels.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
 import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, matchAttrs, stepLabel, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
@@ -172,7 +172,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
   else if (s.session_type === 'simulated') g.sim++;
   else if (s.session_type === 'tester') g.tst++;
   const start = s.start ?? s.first_ts;
-  g.ms += durationMs(s);
+  g.ms += sessionMs(s);
   const li = LENGTH_EDGES.findIndex((edge, k) => s.duration_s >= edge && s.duration_s < LENGTH_EDGES[k + 1]);
   if (li >= 0) g.len[li]++;
   g.dur.add(s.duration_s);
@@ -786,12 +786,14 @@ export function dailyOverview(ctx) {
   const o = overview(plain(ctx));
   const g = ctx.daily.all;
   const n = g.n || 1;
+  approximate(ctx, 'median_session_s', g.dur.approx);
   Object.assign(o.kpis, {
     sessions: g.n,
     players: playerCount(ctx, g),
     crash_free_pct: pct(g.n - g.crashed, n),
     error_free_pct: pct(g.n - g.errored, n),
     avg_session_s: avgDuration(g),
+    median_session_s: g.dur.quantile(0.5),
     rage_quits: g.rage,
     rage_quit_pct: pct(g.rage, n),
     synthetic_sessions: g.syn,
@@ -1155,10 +1157,6 @@ export function dailyVersionStats(ctx) {
         ];
       }),
   );
-}
-
-function durationMs(s) {
-  return Math.max(0, (s.end ?? s.last_ts) - (s.start ?? s.first_ts));
 }
 
 function medianOf(arr) {

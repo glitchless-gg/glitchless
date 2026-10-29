@@ -410,7 +410,9 @@ string (at most 4,000 characters; Chrome, Firefox and Safari write it differentl
 top frame's function is a minified name that changes from build to build; when the build's source maps are
 uploaded (§3d) the server stores the original `fn`, `source`, `line` and `col` instead, with a fingerprint on the
 original function, and keeps what the SDK sent as `minified: {fingerprint, fn, source, line, col}`. The SDK
-doesn't change.
+doesn't change. Intake drops an engine error that isn't the game's: Godot's "Connection to remote host failed!"
+from `stream_peer_tcp.cpp`, logged for each address tried before one connects, which the Godot SDK to 0.6.0 sent
+with every batch on a network without an IPv6 route (§5).
 
 **`bug_report`.** A player's report from inside the game. Reports are off until the game turns them on: in the
 browser, `bugReports` in init options adds a hotkey (F8) and an overlay button that open a short form (a
@@ -451,8 +453,9 @@ sessions to compute exact-within-2% global percentiles (never average percentile
 `GET {api}/v1/query/{name}?service=zoomies&from={ms}&to={ms}[&version=][&env=][&level=][&steam_branch=]…`
 Header `x-glitchless-api-key: …` when the server has a read key configured. Every query reads only the project
 its key belongs to (§6); `service` picks a game inside that project. `type` keeps one session type (`user`, `tester`,
-`synthetic`, `simulated`; `all`, the default, keeps every session): `type=tester` finds the TestFlight testers that
-players' numbers leave out. Each Steam fact (§4c: `steam_branch`,
+`synthetic`, `simulated`; `all`, the default, keeps every session; `session_type` is the same filter): `type=tester` finds
+the TestFlight testers that players' numbers leave out. Another type answers 400, rather than every session, and
+`meta.type` says which type was kept. Each Steam fact (§4c: `steam_branch`,
 `steam_build`, `steam_hardware`, `steam_controller`, `steam_language`, `proton`, `big_picture`, `family_shared`,
 `timed_trial`) is a filter too: `steam_branch=beta` keeps only the sessions that ran the beta (`meta.where` says so).
 So is each session property (§2 `props`): `prop.<key>=<value>[,<value>…]` keeps the sessions with one of those
@@ -535,7 +538,7 @@ the images in Edit pages → Look.
 
 | panel `type` | fields | shows |
 | --- | --- | --- |
-| `stat` | `metric` (sessions, players, avg_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now, hours_played, runs, ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct, servers_now, server_tick_p95, server_crash_free_pct, players_per_server) or `event`, optional `per`, optional `sum`, or `rate` (with `expect`), `avg`, or `of` with `quantile` (and `unit`) | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). Per `$hours`, a count or sum per hour played (below); the `deaths` and `errors` metrics take it too. `rate` and `avg`, the event's rate (with its interval) or average (below); `of` with `quantile`, one percentile of a numeric attribute (the median match, below). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
+| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now, hours_played, runs, ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct, servers_now, server_tick_p95, server_crash_free_pct, players_per_server) or `event`, optional `per`, optional `sum`, or `rate` (with `expect`), `avg`, or `of` with `quantile` (and `unit`) | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). Per `$hours`, a count or sum per hour played (below); the `deaths` and `errors` metrics take it too. `rate` and `avg`, the event's rate (with its interval) or average (below); `of` with `quantile`, one percentile of a numeric attribute (the median match, below). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
 | `series` | `event`, optional `by`, `limit`, `sum`, `rate` or `avg`, `per` (`$hours`) | the event's count (or its `sum`, rate or average) over time, split by an attribute's top values; `by` can also be `$version`, `$level`, or the sessions' `$platform`, `$browser` or `$device_tier` (below; counts only) |
 | `breakdown` | `event`, `by`, `limit`, `sum`, or `rate` or `avg` with `min`, `expect` and `order`; `per` (`$hours`) | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item), each value's rate or average (below), or each row per hour played; `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), with `(none)` for sessions without it, or the sessions' `$platform`, `$browser` or `$device_tier` (below). By a list attribute, a row per element (below) |
 | `distribution` | `event`, `of`, optional `by`, `limit` (rows, at most 8, default 5), `bins` (bars, 2 to 40, default 20), `unit` | how a numeric attribute spreads: percentiles and a histogram, and with `by` a row per value (below) |
@@ -1657,6 +1660,11 @@ Glitchless's own billing).
   calm ones (medians, 3 or more windows with hitches). A window's counts and its frame window share a `ts`, so the
   facts pair them; the level's frame-time finding names the counter in its evidence (`counter_bursts`): "hitches come
   in windows with 300 or so `kill` (a calm window: 40)".
+- **Session length** (`avg_session_s`, `median_session_s`, a session's `duration_s`): its first event to its last,
+  less time away. A game in the background draws no frames, so a session is at most its frame windows' `duration_s`
+  plus 5 minutes (the SDKs' session timeout: a player back within 5 minutes plays on in the same session). An older
+  SDK kept a phone game's night in the background as one session (Starlift on Godot SDK 0.2.0: 16.7 hours, 19 minutes
+  on screen, counted as 24 minutes). A session without frame windows (a server, frame timing off) keeps first to last.
 - **Hours played**: the frame windows' `duration_s` added up: the time the game was on screen drawing frames. The
   cells keep it per minute, env, version and level, so it is exact over any range (daily rollups included), overall
   and by version and level; by a session split it comes from each session's own frame windows (31 days or less). A
@@ -1920,7 +1928,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 | `frame_window` | adds `gpu_ms` (Vulkan and Direct3D 12 only: Godot doesn't time the GPU on Metal or OpenGL), `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. The top-level counts are the values when the window closed; `ctx` holds each gauge's highest value in the window, so a leak check compares like with like (the top-level counts, or ctx's maxima). `hz` and `budget_ms` are measured from the frames: the 20th percentile of frame times under 100 ms (a frame can take longer than the screen's interval, never less), a first guess after 30 frames, the answer at 120, a look every 480 frames that only ever goes faster, and lowered when the OS says the screen slowed down (Low Power Mode). A window never spans two levels |
 | `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
 | `load` | `ts` is the first frame; `ttff_ms` counts from the engine's start; `first_launch` from `user://glitchless/launched` (the version that last ran) |
-| `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events) |
+| `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events). Not sent: errors raised inside the addon, and the engine's "Connection to remote host failed!" (`stream_peer_tcp.cpp`), logged for each address of a host tried before one connects (an IPv6 address on a network with no IPv6 route, then IPv4), whoever's request it was; intake drops that one from older SDKs too (§2) |
 | `death` | `x`, `y`, `z` only when positions are on (full mode or `positions: true`); the server leaves unplaced deaths off heatmaps and hotspots |
 | `session_end` | `reason`: `background`, `close`, `quit`, `measure` |
 | `level_abandon` | `level_abandon()`; sent by itself, with `reason` `background`, `close` or `quit`, before `session_end` when a level is open (§2) |

@@ -12,6 +12,12 @@ import { DISCONNECT_REASONS } from '../../packages/sdk/src/net.js';
 
 const MAX_DECODED_BODY = 8_000_000; // a gzipped body may unpack to at most this much (guards against gzip bombs)
 
+// Engine errors that aren't the game's, dropped at intake: Godot logs "Connection to remote host failed!" for each
+// address of a host it can't reach before one works (an IPv6 address on a network with no IPv6 route, then IPv4), so
+// the Godot SDK (to 0.6.0) sent one per address with every batch it sent. Whose request raised it can't be told.
+const ENGINE_NOISE = [{ source: 'stream_peer_tcp.cpp', message: 'Connection to remote host failed' }];
+const isNoise = (e) => ENGINE_NOISE.some((n) => e.source === n.source && typeof e.message === 'string' && e.message.startsWith(n.message));
+
 // The browser SDK gzips its batches but keeps Content-Type: text/plain (no CORS preflight), so the
 // body is recognised by gzip's magic bytes rather than a Content-Encoding header. Plain JSON passes through.
 export function decodeBody(buf) {
@@ -139,6 +145,7 @@ export function normalize({ envelope, events }, now = Date.now()) {
     // Clamp client clocks: anything more than 1h in the future or 7d in the past is "now".
     if (typeof e.ts !== 'number' || e.ts > now + 3_600_000 || e.ts < now - 7 * 86_400_000) e.ts = now;
     if (e.type === 'map' && (typeof e.image !== 'string' || e.image.length > 120_000)) continue;
+    if (e.type === 'error' && isNoise(e)) continue;
     // A report keeps the player's note even when its screenshot is too big or not an image.
     if (e.type === 'bug_report' && e.screenshot != null && (typeof e.screenshot !== 'string' || !e.screenshot.startsWith('data:image/') || e.screenshot.length > 200_000)) delete e.screenshot;
     if (e.type === 'session_start' && e.device && typeof e.device === 'object') e.device = distributionDevice(steamDevice(e.device));

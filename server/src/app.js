@@ -47,6 +47,12 @@ const SERVER_QUERIES = new Set(['overview', 'findings', 'board', 'servers', 'mat
 // Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
 // their panels, finding, queries.
 const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
+// The session types a query can keep: `type`, or `session_type` as the sessions call it (§3). One it doesn't know is
+// an error rather than every session, so a script asking for players never counts bots by mistake.
+const SESSION_TYPES = ['all', 'user', 'tester', 'synthetic', 'simulated'];
+class QueryError extends Error {
+  status = 400;
+}
 // meta.note for an answer from a game in anonymous mode (playersAreSessions).
 const PLAYERS_ARE_SESSIONS = 'no session sent a player ID (anonymous mode), so every players count here is a count of sessions';
 const MIME = {
@@ -305,7 +311,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p, staticRoutes);
       return json(res, 404, { error: 'not found' });
     } catch (err) {
-      if (err instanceof IntakeError || err instanceof AuthError || err instanceof BoardError) return json(res, err.status, { error: err.message });
+      if (err instanceof IntakeError || err instanceof AuthError || err instanceof BoardError || err instanceof QueryError) return json(res, err.status, { error: err.message });
       logger.error('[glitchless]', err);
       return json(res, 500, { error: err.message });
     }
@@ -341,7 +347,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (saved) return dashboardBody({ service }, saved, saved);
     }
     const ids = params.get('sessions')?.split(',').map((s) => s.trim()).filter(Boolean);
-    const q = { service, from, to, env: params.get('env') || null, version: params.get('version') || null, type: params.get('type') || 'all', sessions: ids?.length ? new Set(ids) : null, plan: reader.plan ?? null };
+    const [type, sessionType] = [params.get('type'), params.get('session_type')];
+    if (type && sessionType && type !== sessionType) throw new QueryError(`type=${type} and session_type=${sessionType} disagree: send one`);
+    if (!SESSION_TYPES.includes(type || sessionType || 'all')) throw new QueryError(`no session type "${type || sessionType}": use ${SESSION_TYPES.join(', ')}`);
+    const q = { service, from, to, env: params.get('env') || null, version: params.get('version') || null, type: type || sessionType || 'all', sessions: ids?.length ? new Set(ids) : null, plan: reader.plan ?? null };
     // A share link shows players: the sessions of people (no bots, playtests, store test phones or TestFlight testers) on
     // the game's prod environment when it has one (no dev builds), as findings read them.
     if (reader.share) {
@@ -392,13 +401,13 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     if (stores && STORE_QUERIES.has(name)) ctx.stores = await storesOf(projectId, service, ctx, name === 'store_reviews' ? ctx.from : null, services);
     // A store's own notes (ctx.meta): resolution 'day' and what is approximate, for long ranges.
     const where = q.where || q.props ? { ...q.where, ...Object.fromEntries(Object.entries(q.props || {}).map(([k, v]) => [`prop.${k}`, v])) } : null;
-    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(where ? { where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
+    const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(q.type !== 'all' ? { type: q.type } : {}), ...(where ? { where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
     // A game in anonymous mode sends no player IDs, so every players count in the answer is a count of sessions.
     if (playersAreSessions(ctx)) Object.assign(meta, { players_are_sessions: true, note: [meta.note, PLAYERS_ARE_SESSIONS].filter(Boolean).join('; ') });
     // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
     // production sessions of players (not dev builds, bots or testers) when it has any, and meta says which they read.
     const findingsContext = async () => {
-      if (params.get('env') || params.get('type') || q.sessions) return ctx;
+      if (params.get('env') || params.get('type') || params.get('session_type') || q.sessions) return ctx;
       const env = services.find((s) => s.service === service)?.envs?.includes('prod') ? 'prod' : null;
       const players = await contextFor({ ...q, env, type: 'user' });
       players.stores = ctx.stores;
