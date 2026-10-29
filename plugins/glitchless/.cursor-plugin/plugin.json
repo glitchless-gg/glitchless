@@ -2,7 +2,7 @@
   "name": "glitchless",
   "displayName": "Glitchless",
   "version": "1.0.0",
-  "description": "Game observability for Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and GameMaker: ranked findings, frame times, errors, where players die, store reviews and each game's own dashboard, from what real players' sessions measured. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
+  "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Game observability for Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and GameMaker: ranked findings, frame times, errors, where players die, store reviews and each game's own dashboard, from real players' sessions. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
   "author": {
     "name": "Glitchless",
     "email": "support@glitchless.gg"

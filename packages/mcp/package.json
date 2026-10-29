@@ -2,7 +2,7 @@
   "name": "glitchless-mcp",
   "version": "0.10.2",
   "mcpName": "io.github.glitchless-gg/glitchless",
-  "description": "Game observability and analytics MCP server for Unity, Godot, Unreal, Three.js, Phaser and GameMaker games. Coding agents (Claude Code, Codex, Cursor and others) read your players' stutters, crashes, custom metrics and ranked findings, build the game's own dashboard, and run playtest bots.",
+  "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. The MCP server for Glitchless, game observability for coding agents: Claude Code, Codex, Cursor and others read real players' stutters, crashes, custom metrics and ranked findings in Unity, Godot, Unreal, Three.js, Phaser and GameMaker games, build the game's own dashboard, and run playtest bots.",
   "keywords": [
     "mcp",
     "mcp-server",

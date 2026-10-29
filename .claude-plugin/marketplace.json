@@ -1,12 +1,12 @@
 {
   "name": "glitchless",
   "owner": { "name": "Glitchless" },
-  "metadata": { "description": "Observability for vibe-coded games" },
+  "metadata": { "description": "Game observability for coding agents" },
   "plugins": [
     {
       "name": "glitchless",
       "source": "./plugin/glitchless",
-      "description": "Instrument Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot and Unreal games with Glitchless and let Claude triage and fix performance, stability and design problems from real player telemetry."
+      "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Claude adds Glitchless to a Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker game, then finds and fixes what real players hit: stutters, crashes and where they quit."
     }
   ]
 }

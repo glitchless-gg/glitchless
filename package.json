@@ -2,7 +2,7 @@
   "name": "glitchless-monorepo",
   "private": true,
   "type": "module",
-  "description": "Glitchless — observability for vibe-coded games",
+  "description": "Glitchless: game observability for coding agents. Coding agents can build a game. They can't see anyone play it. Glitchless lets them.",
   "workspaces": [
     "packages/*",
     "apps/*",

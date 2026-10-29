@@ -7,7 +7,11 @@
 
 # Glitchless
 
-**Game observability for coding agents.** Glitchless shows you how your game plays for real players, and gives your coding agent the same data so it can fix what they hit and check the fix. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops.
+**Coding agents can build a game. They can't see anyone play it. Glitchless lets them.**
+
+Glitchless is game observability for coding agents. Your agent adds it to the game, sees what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops. Use it free on [Glitchless Cloud](https://www.glitchless.gg/pricing.html) (5,000 play sessions a month), or run it yourself: it's open source (MIT).
+
+On Starlift, a Godot game on iPhone and Android, Glitchless showed that 1 in 4 players who skipped the tutorial quit without playing. The agent made a skip start a game, and all 26 who skipped since then played ([the case study](https://www.glitchless.gg/starlift-case-study.html)). In a web game the SDK adds 33.7 KB gzipped and about 0.6 µs of work a frame, with no measurable change in frame time ([measured](https://www.glitchless.gg/glitchless-sdk-overhead.html)).
 
 - **Stutter.** Every frame is timed on every player's device, and each hitch comes with its likely cause: a long script, a shader compile, garbage collection or an asset load.
 - **Crashes.** Errors are grouped into issues, each with the gameplay just before it.

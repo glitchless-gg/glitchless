@@ -5,14 +5,14 @@
     "email": "support@glitchless.gg"
   },
   "metadata": {
-    "description": "Glitchless for Cursor: game observability from real players' sessions",
+    "description": "Glitchless for Cursor: game observability for coding agents",
     "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "glitchless",
       "source": "./plugins/glitchless",
-      "description": "Find what's wrong in your game from what real players' sessions measured, add Glitchless to a game, and design its dashboard.",
+      "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Find what's wrong in your game from real players' sessions, add Glitchless to a game, and design its dashboard.",
       "category": "developer-tools",
       "tags": ["games", "gamedev", "observability", "performance", "crashes", "analytics", "mcp"]
     }

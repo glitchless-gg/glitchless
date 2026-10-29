@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "glitchless",
   "version": "1.0.0",
-  "description": "Game observability: ranked findings, frame times, errors, where players die, store reviews, revenue and each game's own dashboard, from what real players' sessions measured. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
+  "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Ranked findings, frame times, errors, where players die, store reviews, revenue and each game's own dashboard, from real players' sessions. Skills add Glitchless to a game, design its dashboard and fix what players hit.",
   "author": {
     "name": "Glitchless",
     "email": "support@glitchless.gg",
