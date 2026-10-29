@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1
+
+- The SDK's own warnings are no longer sent as the game's errors. With `CaptureWarnings` on, a warning the SDK logged itself (they start with `[glitchless]`, such as a `--glitchless-out` file it couldn't write, or a bug report callback that threw) came back through Unity's log and was sent as one of the game's errors. Nothing new is sent.
+
 ## 0.6.0
 
 - The player's off switch. `Glitchless.SetEnabled(on)` is for a "Share performance data" toggle in the game's settings. Off saves the choice first, then stops Glitchless at once: nothing more is measured or sent (not even `GET /v1/health`), everything waiting is dropped, the outbox on the device included, and the session ends without a `session_end` or `level_abandon`. The bug report form doesn't open, `ReportBug` answers `(false, "off")`, and measuring says Glitchless is off. On starts a new session in the same launch, with the properties and groups still set; the level attempt that was going gets no outcome. A call that changes nothing does nothing, and every call is safe before `Init`.

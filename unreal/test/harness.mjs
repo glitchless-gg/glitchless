@@ -15,7 +15,7 @@ import { Sketch } from '../../packages/sdk/src/sketch.js';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const PROJECT = path.join(ROOT, 'unreal/test/GlitchlessTest/GlitchlessTest.uproject');
 export const SERVICE = 'glitchless-unreal-test';
-export const SDK = 'glitchless-unreal/0.5.0';
+export const SDK = 'glitchless-unreal/0.5.1';
 export const WINDOWS = process.platform === 'win32';
 export const UE_ROOT = process.env.UE_ROOT || (WINDOWS ? 'C:/Program Files/Epic Games/UE_5.8' : '/Users/Shared/Epic Games/UE_5.8');
 // SERVER_ROOT: another checkout whose server to play against (one with newer server work than this one).

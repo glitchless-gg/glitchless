@@ -1,6 +1,6 @@
 # Unity Asset Store listing: Glitchless for Unity
 
-Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.6.0. Rule numbers are the
+Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.6.1. Rule numbers are the
 [Asset Store Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines), read 26 October
 2026. The description's first paragraph is required there (1.4.a, 1.4.c, 1.5.c): it must come first.
 
@@ -25,7 +25,7 @@ Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.6
 | Unity versions | **6000.3** (Unity 6.3 LTS) and later. Uploaded from and tested on 6000.3.27f1 |
 | Render pipelines | **Built-in, URP and HDRP**: the SDK draws nothing but its optional IMGUI bug-report form |
 | Platforms | All: pure C# on Unity's own modules, with no native plugins |
-| Release notes | `0.6.0: first Asset Store release.` |
+| Release notes | `0.6.1: first Asset Store release.` |
 | Documentation | https://github.com/glitchless-gg/glitchless/blob/main/unity/Packages/gg.glitchless.sdk/README.md (the same README is in the package) |
 
 ## Summary
