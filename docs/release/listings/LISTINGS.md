@@ -11,14 +11,14 @@ The sources AI trusted, by question:
 - **Godot crash reporting and analytics**: the Godot Asset Library and the Godot forum, where Sentry and Bugnet are.
 - **"MCP server for game analytics"**: GameAnalytics' own MCP server, then lobehub, mcp.so and Glama.
 
-Order: mcp.so (minutes), AlternativeTo, Toolradar, then the Godot Asset Library (it needs a small repo first).
+Order: mcp.so (minutes), AlternativeTo, Toolradar, then the Godot Asset Library.
 
 | Status | Where | Effort |
 | --- | --- | --- |
 |  | mcp.so | 2 fields |
 |  | AlternativeTo | a form, then mark it as an alternative to 3 apps |
 |  | Toolradar | a form, reviewed within 48 hours |
-|  | Godot Asset Library | a small repo with the addon at its root, then a form; reviewed in a few days |
+|  | Godot Asset Library | a form (the repo is ready); reviewed in a few days |
 |  | LobeHub | check whether it already lists Glitchless from the MCP Registry |
 |  | Bing Webmaster Tools | check it's verified for www.glitchless.gg: ChatGPT's search leans on Bing |
 
@@ -76,15 +76,15 @@ Submit at https://toolradar.com/company/submit (free, reviewed within 48 hours).
 
 ## Godot Asset Library
 
-The Asset Library links to a Git repository and installs the commit's zip into the project, so the addon has to sit
-at `addons/glitchless/` from the repository's root. In this repo it's under `godot/`, which would install to
-`res://godot/addons/glitchless` and break the autoload. So it needs a small public repo,
-`glitchless-gg/glitchless-godot`, with `addons/glitchless/`, `LICENSE` (MIT, the Asset Library requires one by that
-name), a short README and a `.gitattributes` that leaves the README out of the zip. It's copied from
-`godot/addons/glitchless` at each Godot release, the way `scripts/export-skills.mjs` fills the skills repo. Making
-that repo is the owner's call.
+The Asset Library links to a Git repository and installs a commit's zip into the project, so the addon has to sit at
+`addons/glitchless/` from the repository's root. In this repo it's under `godot/`, so it has a repo of its own:
+[glitchless-gg/glitchless-godot](https://github.com/glitchless-gg/glitchless-godot), with the MIT `LICENSE` the library
+requires and a `.gitattributes` that keeps everything but `addons/` out of the zip. `node scripts/export-godot-addon.mjs`
+refreshes it at each Godot release (then commit, tag `v<version>`, push). The 0.6.0 commit's zip was checked on
+29 October 2026: it holds only `addons/glitchless/`, and the addon loads with no errors in a new Godot 4.7.2 project, in
+the editor with the plugin on and in a game run.
 
-Then, signed in at https://godotengine.org/asset-library/asset/submit:
+Submit it signed in at https://godotengine.org/asset-library/asset/submit:
 
 - **Asset name:** `Glitchless: game observability for coding agents`
 - **Category:** Tools (Misc if it asks for an add-on category).
@@ -92,7 +92,7 @@ Then, signed in at https://godotengine.org/asset-library/asset/submit:
 - **Version:** `0.6.0` (the addon's `plugin.cfg`).
 - **Repository host and URL:** GitHub, `https://github.com/glitchless-gg/glitchless-godot`
 - **Issues URL:** `https://github.com/glitchless-gg/glitchless/issues`
-- **Download commit:** the mirror's commit for 0.6.0.
+- **Download commit:** `0f1cc569c5c088541c312a078caaf0afd5fec672` (tag `v0.6.0`).
 - **Icon URL:** `https://raw.githubusercontent.com/glitchless-gg/glitchless/main/assets/brand/glitchless/logo/png/glitchless-icon-256.png`
   (square, at least 128 px).
 - **License:** MIT.
