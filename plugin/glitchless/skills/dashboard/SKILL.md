@@ -36,6 +36,7 @@ stage is too hard?", "Does it stutter on phones?". Leave out what nobody would a
 | how many are playing right now | automatic | `stat: players_now` |
 | who wins: a hero, weapon, card, heat or difficulty that wins too often or too rarely | one event at the end of each match or run with the outcome as a boolean (`match_end` with `hero` and `won: true`) | `breakdown` by `hero` with `rate: "won"` (each row's win rate with its likely range, next to all of them), `stat` with `rate` |
 | how long, how far, how many: match length, time in queue, placement, floors reached, pulls to a top unit | a number on that one event (`duration_s`, `wait_s`, `floor`) | `distribution` (half under, 1 in 10 over, a histogram), `stat` with `of` and `quantile: 50` (the median) |
+| each run, match or day one by one: today's daily runs and their scores, the last matches with their seed | one `track` per run with what describes it (`daily_run` with `day_label`, `score`, `attempt`) | `table`: a row per event, grouped by `day_label`, best score first (below) |
 | what a match or run used: a deck, items, a build, boons | a list attribute (`deck: [...]`) | `breakdown` by the list (each card a row), with `rate` for the win rate of decks with each card |
 | how fast players earn or play: gold, XP or kills per hour, matches per hour | the event (with its `amount`) | `stat` or `breakdown` with `per: "$hours"` (per hour played), and a `versions` panel to catch an economy that jumps |
 | a stream: shots, hits, kills, gold pickups, taps (many a second) | `count(name, attrs)`: summed on the device, sent once every 5 s, never a `track` per hit | like any event by its name: `stat` per `$hours`, `breakdown` by its words, `sum` of its numbers (no distribution) |
@@ -124,6 +125,7 @@ dashboard (Edit pages → Look); `glitchless_dashboard` says whether the game ha
 | `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat's `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe's `refunds`, `customers` (new paying customers) and `by_product`. `store`: `revenuecat` or `stripe` (default: the first connected). Real revenue from RevenueCat or the game's own Stripe account, for a game connected to it in Glitchless Cloud |
 | `store_score` | `store` (`app_store`, `google_play` or `steam`): a store's rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple's own rating on the App Store. Google Play has no API for its overall rating, so its panel is the reviews' average and says so |
 | `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
+| `table` | `event` (required), `columns` (up to 12: attributes, `$time`, `$version`, `$platform`, `$level`, `$session`; `{ "key": "duration_s", "unit": "s" }` for a unit; default the event's own attributes, up to 8), `group_by` (an attribute, `$version`, `$level` or `$platform`), `sort` (`"-score"`: highest first; default newest first), `of` (a number whose lowest, average and highest each group shows), `limit` (rows a group, up to 100; default 20). The event's events one by one, size `l` |
 
 An event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. A list matches when it
 has the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_spirit` when it has all of them:
@@ -146,6 +148,21 @@ and the game itself can poll that link to draw everyone's deaths without a backe
 positions panel per level, a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_…&days=30`
 about once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so
 every player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.
+
+**Reading events one by one.** Every other panel adds events up. When the developer wants to read each run, match
+or day ("26 Oct was Ferrum, Downpour, Boosters, Slow Burn: 6 runs in 5 sessions, best 171,230"), send one event per
+run with what describes it and give it a `table`:
+
+```json
+{ "type": "table", "title": "Daily runs by day", "event": "daily_run", "group_by": "day_label",
+  "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "limit": 20, "size": "l" }
+```
+
+Each day gets a header with its runs, the sessions they came from and the lowest, average and highest score, the
+newest day first, and runs without a `day_label` go under "(none)". `glitchless_dashboard` returns the same groups
+and rows to read. Only `track()` events have rows (`count()` sends totals), a session keeps its first 16 of each
+event, and in anonymous mode a session is a session, never a player: say so rather than calling them players. A
+share link numbers sessions instead of showing them.
 
 Saving checks every page and answers with each panel as it looks over the last week; a panel without data says
 why ("No "buy" events in this window"), and `glitchless_dashboard` with `page` shows one board's numbers. Show the

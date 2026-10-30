@@ -31,6 +31,11 @@ A mobile game with modes, stops and a paywall:
       { "type": "levels", "label": "Stop", "title": "Stops won and lost", "size": "l" },
       { "type": "breakdown", "event": "difficulty", "by": "what", "title": "Difficulty picked", "size": "m" }
     ] },
+    { "id": "daily", "title": "Daily", "icon": "clock", "panels": [
+      { "type": "stat", "event": "daily_run", "title": "Daily runs", "size": "s" },
+      { "type": "stat", "event": "daily_run", "of": "score", "quantile": 50, "title": "Median daily score", "size": "s" },
+      { "type": "table", "event": "daily_run", "group_by": "day_label", "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "title": "Daily runs by day", "size": "l" }
+    ] },
     { "id": "purchases-live", "title": "Purchases, live", "view": "live", "options": { "events": ["paywall", "buy"] } },
     { "view": "events" },
     { "view": "sessions" },

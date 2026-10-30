@@ -167,6 +167,13 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 /* Long headers (a store's vitals) wrap instead of widening the table. */
 .dt.wrap-th th { white-space: normal; vertical-align: bottom; min-width: 64px; }
 .tablewrap { overflow: auto; max-height: 520px; }
+/* A table panel (Board.jsx TableBody): a row per group above its events. The group's line stays in view, wrapped to the
+   screen, when a wide table scrolls sideways inside its panel. */
+.dt.evtable td { white-space: nowrap; }
+.dt.evtable tr.tgroup td { background: var(--bg); padding: 9px 10px 6px; border-bottom: 1px solid var(--border); white-space: normal; }
+.dt.evtable tr.tmore td { color: var(--muted); font-size: 11.5px; padding: 4px 10px 9px; white-space: normal; }
+.dt.evtable .tg { position: sticky; left: 10px; display: block; max-width: calc(100vw - 72px); }
+.dt.evtable tr.tgroup b { color: var(--text); font-weight: 600; margin-right: 10px; }
 
 /* ─── charts ─── */
 .chart { position: relative; width: 100%; }

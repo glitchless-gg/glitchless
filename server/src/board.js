@@ -66,6 +66,9 @@
 //   positions   where players died on one `level`, and with `show` 'path' or 'both' where they went, as
 //               counts per `bin` world units (analytics.js levelPositions); counts only, so a game can read
 //               it through a share link and draw its own dead (`show` defaults to 'deaths')
+//   table       one `event`'s occurrences one by one (tables.js): `columns` (its attributes, $time, $version,
+//               $platform, $level, $session), grouped `group_by` an attribute with each group's events, sessions and
+//               the lowest, average and highest `of`, in `sort` order ("-score"), `limit` rows a group
 //
 // Events are written as funnel steps are (analytics.js parseFunnel): "name", "name=value" or "name:key=value"; a
 // list matches when it has the value, and "name:key=a+b" when it has all of them.
@@ -84,8 +87,9 @@ import { STORE_PANELS, storePanel, storePages, storePanelFields } from './review
 import { hoursPlayed, hoursBy, hoursSeries, perHour, hoursRound, measureOf, measureProblem, measureBy, rateOf, avgOf, misses, MIN_EVENTS, MIN_HOURS } from './rates.js';
 import { distributionOf, percentileOf, BINS, ROWS } from './distributions.js';
 import { eachOccurrence, occurrenceGroups, bucketOf } from './occurrences.js';
+import { tablePanel, validTablePanel, forShareTable, TABLE_BUILTINS } from './tables.js';
 
-export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'distribution', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention', 'positions', 'net', 'servers'];
+export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'distribution', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention', 'positions', 'net', 'servers', 'table'];
 export const SIZES = { s: 3, m: 6, l: 12 };
 // Built-in numbers a stat panel can show, from the overview's KPIs.
 export const STATS = {
@@ -482,6 +486,11 @@ function validatePanel(p, at) {
     case 'live':
       if (p.events != null) out.events = names(p.events, `${at}.events`);
       break;
+    // One event's occurrences listed (tables.js): columns, group_by, sort, of, limit.
+    case 'table':
+      out.event = event('event');
+      Object.assign(out, validTablePanel(p, at, BoardError));
+      break;
     case 'positions':
       out.level = need('level');
       if (p.show != null) {
@@ -553,12 +562,12 @@ const SHARED_FINDING = ['id', 'severity', 'category', 'title', 'summary', 'sugge
 const SHARED_POSITIONS = ['level', 'axis', 'bounds', 'bin', 'deaths', 'total', 'truncated'];
 const SHARED_PATH = ['bin', 'cells', 'samples', 'truncated'];
 function forShare(p, ctx, board, maps, currency, shared) {
-  const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings' || p.type === 'positions';
+  const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings' || p.type === 'positions' || p.type === 'table';
   if (!SHARED_AS_IS.has(p.type) && !redacted) return { empty: true, why: `${p.type === 'live' ? 'Live events are' : 'This panel is'} not shown on a shared board.` };
   const sums = shared?.sums === true;
   if (p.sum && !sums) return { empty: true, why: 'Sums such as revenue are not shown on this shared board.' };
   // An average or a spread of money adds back up to revenue (the mean times the count): hidden with the sums.
-  if ((p.avg || p.of) && !sums && moneyEvent(ctx, p.event)) return { empty: true, why: 'Amounts such as prices are not shown on this shared board.' };
+  if ((p.avg || p.of) && p.type !== 'table' && !sums && moneyEvent(ctx, p.event)) return { empty: true, why: 'Amounts such as prices are not shown on this shared board.' };
   const data = panelData(ctx, p, board, maps, currency);
   if (p.type === 'versions' && !data.empty && !sums) {
     const hidden = data.columns.map((c) => !!c.sum || (!!(c.avg || c.of) && moneyEvent(ctx, c.event)));
@@ -568,6 +577,8 @@ function forShare(p, ctx, board, maps, currency, shared) {
   if (p.type === 'sessions') return { sessions: data.sessions.map((s) => ({ ...pick(s, SHARED_SESSION), rage: s.rage ? { level: s.rage.level } : null })) };
   if (p.type === 'errors') return { issues: data.issues.map((i) => pick(i, SHARED_ISSUE)) };
   if (p.type === 'positions') return { ...pick(data, SHARED_POSITIONS), ...(data.path ? { path: pick(data.path, SHARED_PATH) } : {}) };
+  // Sessions numbered, never their IDs; an event that carries money without its amounts unless the link shows sums.
+  if (p.type === 'table') return forShareTable(data, { money: moneyEvent(ctx, p.event), sums });
   // An error's summary names its breadcrumbs and its suggested fix its code location, and a bug report's
   // quotes what players typed: say how often instead.
   return {
@@ -762,6 +773,8 @@ function panelData(ctx, p, board, maps, currency) {
     }
     case 'positions':
       return levelPositions(ctx, p.level, maps, { show: p.show || 'deaths', bin: p.bin ?? null });
+    case 'table':
+      return tablePanel(ctx, p);
     case 'net':
       return netPanel(ctx, p);
     case 'servers':
@@ -1158,7 +1171,7 @@ function columnUnit(s) {
 function defaultSize(p) {
   if (STORE_PANELS[p.type]) return typeof STORE_PANELS[p.type].size === 'function' ? STORE_PANELS[p.type].size(p) : STORE_PANELS[p.type].size;
   if (p.type === 'stat') return 's';
-  if (['levels', 'events', 'sessions', 'versions', 'live'].includes(p.type)) return 'l';
+  if (['levels', 'events', 'sessions', 'versions', 'live', 'table'].includes(p.type)) return 'l';
   return 'm';
 }
 
@@ -1208,6 +1221,8 @@ function defaultTitle(p) {
       return p.by ? `By ${STEAM_LABELS[p.by.slice(1)] ?? p.by.slice(1)}` : 'By version';
     case 'live':
       return 'Live';
+    case 'table':
+      return `${p.event}${p.group_by ? ` by ${TABLE_BUILTINS[p.group_by]?.toLowerCase() ?? p.group_by}` : ''}`;
     case 'positions':
       return `${p.show === 'path' ? 'Where players went' : p.show === 'both' ? 'Where players went and died' : 'Where players died'} on ${p.level}`;
     case 'net':

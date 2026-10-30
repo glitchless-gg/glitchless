@@ -194,6 +194,16 @@ export function panelCsv(p) {
       // By a property (A6), each value's D1, D7 and D30; else the cohorts.
       if (p.split?.rows) return [[p.split.key, 'New players', 'D1 %', 'D7 %', 'D30 %'], ...p.split.rows.map((r) => [r.value, r.new_players, r.d1, r.d7, r.d30])];
       return retentionCsv(p);
+    case 'table': {
+      // One row per event as the panel lists it, its group first; times as ISO dates, sessions as the panel names them
+      // (an ID, or its number on a shared board), lists joined.
+      const cols = p.columns.map((c, i) => ({ ...c, i })).filter((c) => !c.hidden);
+      const cell = (c, v) => (v == null ? '' : c.key === '$time' ? iso(v) : c.numbered ? `#${v}` : Array.isArray(v) ? v.join(', ') : v);
+      return [
+        [...(p.group_by ? [p.group_by.replace(/^\$/, '')] : []), ...cols.map((c) => (c.unit ? `${c.label} (${c.unit})` : c.label))],
+        ...p.groups.flatMap((g) => g.rows.map((r) => [...(p.group_by ? [g.value] : []), ...cols.map((c) => cell(c, r[c.i]))])),
+      ];
+    }
     case 'positions': {
       // One row per bin: its centre on the level's plane and how many fell in it.
       const b = p.axis === 'xy' ? 'y' : 'z';

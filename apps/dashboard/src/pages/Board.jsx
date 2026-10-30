@@ -227,7 +227,7 @@ function BoardEditor({ board, onSaved }) {
     setBusy(false);
   };
   return (
-    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, distribution, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live, reports, retention, positions, net, servers">
+    <Widget span={12} title={`Panels of ${board.title}`} sub="stat, series, breakdown, distribution, funnel, levels, frame_time, errors, deaths, events, findings, sessions, versions, live, reports, retention, positions, net, servers, table">
       <textarea className="board-editor" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} />
       {error && <div className="err">{error}</div>}
       <div className="row" style={{ marginTop: 8 }}>
@@ -268,7 +268,9 @@ function Panel({ p }) {
       ? `${pageOf('heatmaps')}?level=${encodeURIComponent(p.level)}`
       : p.type === 'net'
         ? `${pageOf('performance')}?section=network`
-        : MORE_VIEW[p.type] && pageOf(MORE_VIEW[p.type]);
+        : p.type === 'table'
+          ? `${pageOf('events')}?name=${encodeURIComponent(p.event.split(/[:=]/)[0])}`
+          : MORE_VIEW[p.type] && pageOf(MORE_VIEW[p.type]);
   return (
     <Widget
       span={span}
@@ -276,7 +278,7 @@ function Panel({ p }) {
       sub={p.empty ? null : panelLine(p)}
       info={info}
       warn={warn}
-      flush={['sessions', 'versions', 'reports', 'retention'].includes(p.type) && !p.empty && !p.split?.rows}
+      flush={['sessions', 'versions', 'reports', 'retention', 'table'].includes(p.type) && !p.empty && !p.split?.rows}
       actions={
         (csv || (more && !f.readOnly)) && (
           <>
@@ -319,6 +321,7 @@ function panelLine(p) {
   // Levels split by an attempt's attribute, a property or a split, or counting runs (SPEC §3b levels).
   if (p.type === 'levels' && (p.by || p.count)) return [p.by && `by ${byWords(p.by)}`, p.count === 'runs' && 'each run counted once at each level it reached'].filter(Boolean).join(' · ');
   if (p.type === 'distribution') return `Half under ${fmtUnit(p.p50, p.unit)}, 1 in 10 over ${fmtUnit(p.p90, p.unit)} (${plural(p.count, 'event')})`;
+  if (p.type === 'table') return `${fullCount(p.events, 'event')} from ${fullCount(p.sessions, 'session')}${p.group_by ? ` in ${fullCount(p.groups.length + p.more_groups, 'group')}` : ''}`;
   return null;
 }
 
@@ -374,6 +377,7 @@ function panelInfo(p) {
   }
   if (p.type === 'levels' && p.rows?.some((r) => r.disconnects)) out.push('Disconnects: attempts that ended because the connection dropped. They count as abandons, never as fails or rage quits.');
   if (p.type === 'levels' && p.count === 'runs') out.push('Runs: each run (setGroup("run")) counted once at each level it reached, however many sessions it took.');
+  if (p.type === 'table') out.push(...tableInfo(p));
   if (p.type === 'positions') out.push(`${p.axis === 'xy' ? 'Side view' : 'Seen from above'}, ${p.bin} ${p.bin === 1 ? 'unit' : 'units'} a bin${p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}.${p.truncated ? ` Deaths: the ${fmtNum(p.deaths.length)} places with the most.` : ''}`);
   return [...out, ...leftOut(p)];
 }
@@ -553,6 +557,8 @@ function PanelBody({ p }) {
     }
     case 'reports':
       return <ReportList reports={p.reports} compact />;
+    case 'table':
+      return <TableBody p={p} />;
     case 'positions':
       return (
         <>
@@ -620,6 +626,110 @@ function PanelBody({ p }) {
       );
   }
   return null;
+}
+
+// A table panel (SPEC §3b Tables): one table, a row per event in each group's sort order, under a row per group that says
+// its events, its sessions and the lowest, average and highest of its `of`. Numbers are written in full (171,230), times
+// with their date, and a session opens its replay; on a share link sessions are numbered instead (#1, #2), never named.
+function TableBody({ p }) {
+  const cols = p.columns.map((c, i) => ({ ...c, i })).filter((c) => !c.hidden);
+  const numeric = new Set(cols.filter((c) => !c.key.startsWith('$') && p.groups.some((g) => g.rows.some((r) => typeof r[c.i] === 'number'))).map((c) => c.i));
+  const of = p.of && p.columns.find((c) => c.key === p.of);
+  // An average of whole scores reads as one (98,380), a small one keeps its decimals (2.35).
+  const avg = (v) => tableNum(Math.abs(v) >= 100 ? Math.round(v) : v, of?.unit);
+  const head = (g) => [`${fullCount(g.events, 'event')} from ${fullCount(g.sessions, 'session')}`, p.of && g.min != null && `${p.of}: lowest ${tableNum(g.min, of?.unit)}, average ${avg(g.avg)}, highest ${tableNum(g.max, of?.unit)}`].filter(Boolean).join(' · ');
+  return (
+    <div className="tablewrap" style={{ maxHeight: 640 }}>
+      <table className="dt evtable">
+        <thead>
+          <tr>
+            {cols.map((c) => (
+              <th key={c.key} className={numeric.has(c.i) ? 'num' : undefined}>
+                {c.label}
+                {c.unit && <span className="muted"> ({c.unit})</span>}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {p.groups.map((g, k) => (
+          <tbody key={`${k}:${g.value}`}>
+            {(p.group_by || p.groups.length > 1 || (p.of && g.min != null)) && (
+              <tr className="tgroup">
+                <td colSpan={cols.length}>
+                  <div className="tg">
+                    {p.group_by && <b>{g.value}</b>}
+                    <span className="muted">{head(g)}</span>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {g.rows.map((r, j) => (
+              <tr key={j}>
+                {cols.map((c) => (
+                  <td key={c.key} className={numeric.has(c.i) ? 'num' : undefined}>
+                    <TableCell c={c} v={r[c.i]} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {g.more > 0 && (
+              <tr className="tmore">
+                <td colSpan={cols.length}>
+                  <div className="tg">{`${fmtFull(g.more)} more`}</div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        ))}
+        {p.more_groups > 0 && (
+          <tbody>
+            <tr className="tmore">
+              <td colSpan={cols.length}>
+                <div className="tg">{fullCount(p.more_groups, 'more group')}</div>
+              </td>
+            </tr>
+          </tbody>
+        )}
+      </table>
+    </div>
+  );
+}
+
+function TableCell({ c, v }) {
+  if (v == null || v === '') return <span className="muted">–</span>;
+  if (c.key === '$time') return fmtTime(v, true);
+  if (c.key === '$version') return <span className="tag">{v}</span>;
+  if (c.key === '$session') return c.numbered ? `#${v}` : <a href={`#/sessions/${encodeURIComponent(v)}`} title={v}>{String(v).slice(0, 8)}</a>;
+  // A word unit ("pts") is in the column's heading; seconds and percentages read as such in each cell.
+  if (typeof v === 'number') return tableNum(v, c.unit === 's' || c.unit === '%' ? c.unit : null);
+  if (Array.isArray(v)) return v.join(', ');
+  return String(v);
+}
+
+// A number in full with thousands separators (171,230), in its column's unit: seconds as minutes or hours when large.
+function tableNum(v, unit = null) {
+  if (v == null) return '–';
+  if (unit === 's') return fmtDuration(v);
+  const n = fmtFull(v);
+  return unit === '%' ? `${n}%` : unit ? `${n} ${unit}` : n;
+}
+
+function fmtFull(v) {
+  return v == null ? '–' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+const fullCount = (n, one) => `${fmtFull(n)} ${n === 1 ? one : `${one}s`}`;
+
+// What a table's rows are, and what it leaves out, for its info icon.
+function tableInfo(p) {
+  const out = [`Each row is one ${p.event} event${p.group_by ? `, under its ${p.group_by.replace(/^\$/, '')}` : ''}; ${p.sort ? `sorted by ${p.sort.replace(/^-/, '').replace(/^\$/, '')}${p.sort.startsWith('-') ? ', highest first' : ''}` : 'the newest first'}.${p.group_by ? ' The newest group is on top.' : ''}`];
+  if (p.columns.some((c) => c.numbered)) out.push('Sessions are numbered in the order they first appear here, so you can tell which rows came from the same session; a shared board never shows their IDs.');
+  else if (p.columns.some((c) => c.key === '$session')) out.push('A session is one launch of the game, not a player.');
+  if (p.columns.some((c) => c.hidden)) out.push('Amounts are not shown on this shared board.');
+  if (p.groups.some((g) => g.more > 0)) out.push(`At most ${fmtFull(p.limit ?? 20)} rows a group (the panel's limit, up to 100); the rest are counted as "more".`);
+  if (p.unlisted?.events) out.push(`${plural(p.unlisted.events, 'event')} not listed: ${plural(p.unlisted.sessions, 'session')} sent more than ${p.unlisted.keep}, and Glitchless keeps the first ${p.unlisted.keep} of each event a session sends.`);
+  if (p.counted) out.push(`${plural(p.counted, 'event')} sent with count() ${p.counted === 1 ? "isn't" : "aren't"} listed: count() sends totals, not each event.`);
+  return out;
 }
 
 // A breakdown's rates (or averages): each row a bar, its whisker the range the rate likely sits in, and a line for

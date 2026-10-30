@@ -557,6 +557,7 @@ the images in Edit pages → Look.
 | `versions` | `by` | the board's own stat panels, version by version in release order (§4; rows `{version, sessions, first_seen, first_seen_ever, values}`); with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build; with `by` a session property (`$class`), value by value |
 | `live` | `events` | events as they arrive, optionally only these names or types |
 | `positions` | `level`, `show` (`deaths`, `path` or `both`; default `deaths`), `bin` | where players died on one level, and where they went, as counts per bin (below) |
+| `table` | `event`, `columns`, `group_by`, `sort`, `of`, `limit` | one event's events one by one, each a row of its attributes (and its time, version, platform, level or session), under one header per value of `group_by` with that group's events, sessions and the lowest, average and highest `of`; rows in `sort` order, at most `limit` a group (below) |
 
 A board page can carry `where`: session properties (§2 `props`) its sessions must have, a value or a list of up to 20
 each (`"where": { "$rank": ["diamond", "master", "grandmaster"] }`, at most 4 properties). Every panel on the page reads
@@ -671,6 +672,53 @@ captured map's, else the data's rounded out to whole bins. Nothing in the answer
 or time. A level with nothing to place says why (`{empty: true, why}`). Stores that keep summaries read the paths
 apart, for the levels a board draws paths of (Glitchless Cloud: the last 31 days of a longer range, which
 `meta.note` says).
+
+**Tables** (`server/src/tables.js`). Every other panel adds events up; a `table` lists them, so a game can read each
+one: Starlift's Daily Launch, each run under its day with the best score first.
+
+```json
+{ "type": "table", "title": "Daily runs by day", "event": "daily_run", "group_by": "day_label",
+  "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "limit": 20, "size": "l" }
+```
+
+- `event` (required) is one event, filtered as any panel's (`daily_run:world=ferrum`).
+- `columns`: up to 12, in order: attributes of the event, or `$time`, `$version`, `$platform` (as the
+  `$platform` split names it), `$level` or `$session` (the session's ID, opening its replay on the board). A
+  column can be `{ "key": "duration_s", "unit": "s" }` to give it a unit. Default: the event's own attributes in the
+  order the game first sent them, up to 8, without `group_by`'s.
+- `group_by`: an attribute, `$version`, `$level` or `$platform`. Rows go under one group per value (a list's
+  elements joined, `a, b`), the group with the newest event first; events without one go under `(none)`, last.
+  At most 30 groups; `more_groups` counts the rest.
+- `sort`: an attribute or a built-in other than `$session`, `-` first for the highest first (`-score`; numbers as
+  numbers, text in natural order); default `-$time`, the newest first. Events without the value go last either
+  way; ties go newest first.
+- `of`: a numeric attribute; each group adds its lowest, average and highest, over all its events, not only the
+  rows shown.
+- `limit`: rows a group, 1 to 100 (default 20); each group's `more` counts the rest.
+
+The answer, next to the spec's fields (`columns` is replaced by what each row's values are):
+
+```json
+{ "columns": [{ "key": "score", "label": "score", "unit": null }, { "key": "$version", "label": "Version", "unit": null }],
+  "groups": [{ "value": "26 Oct · Ferrum · Downpour · Boosters · Slow Burn", "events": 6, "sessions": 5,
+               "min": 30620, "avg": 95046.67, "max": 171230,
+               "rows": [[171230, "1.4.0"], [127610, "1.4.0"]], "more": 0 }],
+  "more_groups": 0, "events": 33, "sessions": 29,
+  "unlisted": { "events": 4, "sessions": 1, "keep": 16 }, "counted": 12 }
+```
+
+Each row is its values in the columns' order: `$time` in ms (the MCP tool writes it as an ISO date), a list as a
+list, `null` where the event has no such attribute. Without `group_by` there is one group, whose `value` is null.
+The rows are the occurrences sessions keep (below: the first 16 of each event a session sends, with up to 12
+attributes, text up to 64 characters), so a table costs what a breakdown by an attribute does and every store
+answers the same; `unlisted` counts a session's events past its 16th, which are not listed. Only `track()` events
+have rows: `count()` sends totals per window (§1), so `counted` says how many were left out, and an event sent only
+with `count()` says so instead of showing an empty table. The page's window and filters (env, version, session type,
+Steam facts, properties, a page's `where`) apply as to every panel. A table shows only what the events carry: no
+player IDs, and a session is a session, never a player. Over more than 31 days it asks for 31 days or less (longer
+ranges are answered by day, without each event). The board writes numbers in full with thousands separators
+(171,230), times with their date, seconds (`unit: "s"`) as minutes and hours, and another unit after the column's
+name; its CSV has every row shown, its group first. On a share link sessions are numbered (§3c).
 
 Custom events are counted in the per-minute cells (by name, and by name, attribute and value; a list's elements apart,
 by name, list and element) and in the session states (the first 16 occurrences of each name with their attributes
@@ -880,12 +928,17 @@ says (so only share links'), keyed on the query string, cookies and the share, k
   or suggested fix, and a bug-report finding's becomes its counts, without the players' notes
 - positions panels: anything but `level`, `axis`, `bounds`, `bin`, `deaths`, `total`, `truncated` and `path`
   (`bin`, `cells`, `samples`, `truncated`): counts per bin, never a session, player, version or time
+- table panels: session IDs. A `$session` column numbers sessions 1, 2, 3 in the order the table first shows them
+  (the column says `numbered: true`), so a reader still sees which rows came from one session but never which session
+  it was; the board writes `#1`. Groups keep only `value`, `events`, `sessions`, `min`, `avg`, `max`, `rows` and
+  `more`. For an event that carries money, its number columns are `hidden` (their values null) and each group's
+  lowest, average and highest are null, unless the link shows sums; what was bought and when stay
 - live panels, and any panel type not listed as safe. Stat, series, breakdown, funnel, levels, frame_time, deaths,
   events, versions and retention panels show counts and the game's own event names (retention: new players and
   returns per day, never an id; a breakdown or series by `$platform`, `$browser` or `$device_tier`: counts per group), and pass as they are; a
   new panel type stays off shared boards until it is added there. Store panels follow §3f (reviews, vitals, players
   online and store scores as counts and stars, never what players wrote) and §3h (RevenueCat's panels, installs and
-  countries among them, only with sums).
+  countries among them, only with sums). Tables pass with their sessions numbered (above).
 - sums (revenue, revenue per player, revenue by item), unless the link was made with `sums: true`: a panel with
   `sum` says it isn't shown, and a versions panel marks its sum columns `hidden` and leaves their values out. So do
   an average (`avg`) or a spread (`of`: a distribution, a percentile) of an event that carries money (a `currency`),
