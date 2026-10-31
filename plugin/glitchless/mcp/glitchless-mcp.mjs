@@ -37371,7 +37371,13 @@ var init_core3 = __esm({
           return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, []);
         }
         const intake = workspaceIntake();
-        return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) }));
+        const rows = list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) });
+        if (list.every((g) => g.demo)) {
+          const who = await agent("GET", "/whoami").catch(() => null);
+          const add = who?.scopes?.includes("manage") ? "To add the person's own game, glitchless_create_game with its name." : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games.`;
+          return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add} Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, rows);
+        }
+        return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, rows);
       }
       const { services } = await query("services");
       return reply(`${services.length} game(s) reporting to ${base()}`, services.map((s) => ({ ...s, last_seen: new Date(s.last_seen).toISOString() })));

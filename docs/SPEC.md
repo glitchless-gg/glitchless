@@ -1385,12 +1385,23 @@ from inside a chat.
 
 **The demo game** is Zoomies (demo), a week of Zoomies' sample play (about 180 sessions, with the planted level-2
 hitch and velocity error, and Zoomies' dashboard), so someone who connects an app before they have a game can try every
-tool on something real. A workspace has one; it takes no room from the plan's games, its sessions aren't the plan's,
-and games list it with `demo: true`. On the lake its data is readable about five minutes after it's made. In a
-workspace with no games, `glitchless_list_games` says how to make one (with the demo game when the key may `manage`,
-otherwise where in the dashboard and how to connect again with that scope), and a game that hasn't sent data gets a
-`next_step`: its client token, the intake and the setup steps (`docs/agent-setup-prompt.md`). The approval page
-(`#/connect`) asks for the first game, or offers the demo game, when the workspace has none.
+tool on something real. Every new workspace starts with it: a first sign-in (not one through an invitation) makes it in
+the person's own workspace (`GLITCHLESS_SEED_DEMO=0` turns that off), and it isn't counted as a game made. A workspace
+has one; it takes no room from the plan's games, its sessions aren't the plan's, and games list it with `demo: true`.
+On the lake its data is readable about five minutes after it's made. When the demo is a workspace's only game,
+`glitchless_list_games` says it's sample play and how the person's own game gets in (with `glitchless_create_game`
+when the key may `manage`, otherwise where in the dashboard). In a workspace with no games at all (one from before),
+it says how to make one (with the demo game when the key may `manage`, otherwise where in the dashboard and how to
+connect again with that scope), and a game that hasn't sent data gets a `next_step`: its client token, the intake and
+the setup steps (`docs/agent-setup-prompt.md`).
+
+**Connecting an app by URL** (`#/connect?request=…`, oauth.js) is one page and one button: where connecting goes back
+to, and what the app can do, every scope it asked for on (the person can turn any off: "Change what it can do"). An app
+going back to claude.ai, claude.com, chatgpt.com or chat.openai.com is named by that address; any other shows the full
+redirect address, and one whose details nobody publishes gets the warning that it named itself. The workspace menu
+shows only to someone in more than one. An app in a browser then gets one more page before going back: try the demo
+game (with the question to ask), or add the person's own game, with the sentence to say in Claude Code in its folder.
+That page's button approves the request, because the code that takes the person back lives two minutes.
 
 Every other `/v1/` route (queries, `/v1/dashboard`, source maps) takes the same key with the game named in
 `x-glitchless-project` (or `?project=`). `/v1/agent/` reads no cookies and sends no CORS headers: it's for programs,
