@@ -32,13 +32,13 @@ tool('glitchless_list_games', 'List the games: with a workspace key, every game 
 
 tool(
   'glitchless_triage',
-  "Ranked findings for a game: performance spikes per level (with the gauges, counter bursts and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots, walls (a level, or one value of a level start's attribute such as a tier), version regressions, settings that run slow (a session property), the network (a whole lobby lagging at once: the server; one kind of connection, platform or region lagging; disconnects rising in a release) and the game's dedicated servers (falling behind when full, a crash that ends matches, memory that keeps climbing) — ranked by severity and player impact, each with evidence and a suggested fix, and naming a session property when most of a problem falls on one value. Start here when asked 'what's wrong with my game?'.",
+  "Ranked findings for a game: performance spikes per level (with the gauges, counter bursts and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots, walls (a level, or one value of a level start's attribute such as a tier), version regressions, settings that run slow (a session property), the network (a whole lobby lagging at once: the server; one kind of connection, platform or region lagging; disconnects rising in a release) and the game's dedicated servers (falling behind when full, a crash that ends matches, memory that keeps climbing) — ranked by severity and player impact, each with evidence and a suggested fix, and naming a session property when most of a problem falls on one value. Findings the game's owner marked known (glitchless_mark_known) come after the rest with `known` and its note: accepted, not new. One that got worse since has `came_back` instead. Start here when asked 'what's wrong with my game?'.",
   { ...common },
   async ({ service, hours, ...f }) => {
     const svc = await resolveService(service);
     const { version } = f;
     const { findings, meta } = await query('findings', { service: svc, ...filters(f), ...range(hours) });
-    const brief = findings.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.title}`).join('\n');
+    const brief = findings.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}${f.known ? ', KNOWN' : ''}] ${f.title}${f.known ? ` (known: ${f.known.note})` : f.came_back ? ` (marked known, back: ${f.came_back.why})` : ''}`).join('\n');
     return reply(`Findings for ${svc} (${hours || 24}h${version ? `, ${version}` : ''}):\n${brief || 'Nothing unusual.'}\n\nFull findings with evidence (window ${new Date(meta?.from).toISOString()} → now):`, findings);
   },
 );

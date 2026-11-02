@@ -117,7 +117,7 @@ for (const [kind, make] of Object.entries(STORES)) {
       const weekWorse = await weeklySummary(made.store, P, { service: 'worse', now: R + HOUR });
       const fix = weekWorse.fixes.find((x) => x.id.startsWith('version-'));
       assert.equal(fix.id, `version-${OLD}-${NEW}`);
-      assert.equal(fix.text, `${NEW} does worse than ${OLD} for players.`);
+      assert.equal(fix.text, `${NEW} does worse than ${OLD} for players: more freezes.`);
     } finally {
       await app.close();
       await made.close?.();

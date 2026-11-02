@@ -1090,14 +1090,46 @@ once a week from the same 15-minute check, the first one on or after Monday 14:0
 on before that week began (claimed as `W#<service>#<monday>`, so no new schedule). It covers last week (Monday to
 Sunday, UTC) against the week before: players (or sessions) and sessions, the share of players who crashed, revenue
 (RevenueCat's when connected, §3h, else the game's own `purchase` events' `amount`), and **Worth fixing**: the top
-three standing findings (critical, high or medium), each as one plain sentence with its paste line. A service with
-no sessions in either week gets none. It goes to the game's channels like an alert.
+three standing findings (critical, high or medium) that aren't known (below), each as one plain sentence with its
+paste line, and "Left out: N findings marked as known." when any were (the agent part lists their ids). A service with
+no sessions in either week gets none. It goes to the game's channels like an alert. A version finding (§4) reads as what
+players feel: "1.1.3 does worse than 1.1.2 for players: more crashes and slower frames.", or, when some measures got
+better and some worse (verdict `mixed`), "1.1.3 is better than 1.1.2 in some ways and worse in others: fewer freezes,
+but more errors." (its evidence has `verdict` and `changes: [{name, worse}]`).
+
+**Known findings** ([`server/src/known.js`](../server/src/known.js), Glitchless Cloud): the standing findings a game's
+owner has looked at and accepts, such as a slow first launch they chose, kept with the alert settings so the weekly
+summary stops listing them every Monday. Each entry is `{id, note, by, at, until?, worse?, was?}`:
+
+- `id` is a finding's id or the start of one (`load-ttff`; `perf-level-tutorial_1_` covers every finding on those
+  levels), 3 to 200 characters. A finding's entry is the longest that matches it.
+- `note` says why, in 200 characters at most; `by` and `at` are who set it and when (an entry saved again unchanged
+  keeps them).
+- `until` (`YYYY-MM-DD`, today or later) is the last day it is known, in UTC; from the day after, the finding is back.
+- `worse: true` is "until it gets worse": `was` keeps what each finding it matches measured when it was marked (its
+  severity, impact and key number: `p95` for `perf-level-*`, `hitches_per_min` for `hitches-level-*`, `ttff_p95` for
+  `load-ttff`), read as the weekly summary reads them over the last 7 days on each of the game's services (the most
+  recently active one's when two have the finding). A finding is back when its severity is higher, its impact 1.25× as
+  much and 5 points more, or its key number 1.25× as much. A quarter, because a small game's weekly numbers move by a
+  tenth or so on their own (Starlift's slow-start p95: 9.6 to 10.6 s). A finding the entry matches that wasn't there
+  then is back too, as there is nothing to compare it with; marking one this way is refused when nothing matches now.
+  A new note keeps `was`.
+
+A game keeps 50 entries at most. Every list of findings the game's own readers get (the findings query, so
+`glitchless_triage`, the overview's six and a board's findings panel) keeps the known ones, each with `known: {id, note,
+by, at, until?, until_worse?}`, after all the others: each part keeps its order, so the first findings are always ones
+nobody has accepted, and none is hidden. Severity and impact stay what they measure. A share link's reader gets no
+`known` (the notes are the team's) and the usual order. A finding an entry matches that is back carries
+`came_back: {known, note, why, new?}` instead, stays in its place, and its weekly sentence adds "It was marked as known,
+and has got worse since." (or that it is new since findings like it were). A self-hosted server keeps none.
 
 **Glitchless Cloud.** Settings → Alerts, per game: a webhook URL, email to every active member of the workspace,
-which rules, the weekly summary and an env. Changing them, and the test button, needs the exporters' permission
-(Owner, Admin). Discord (`discord.com/api/webhooks/…`) and Slack (`hooks.slack.com/services/…`) URLs are
-recognised; any other public https URL takes the format chosen (Slack's suits Mattermost, Discord's Guilded). The
-URL is sealed like an exporter's secrets (KMS, encryption context `{project}`) and never returned: the dashboard
+which rules, the weekly summary, an env, and the known findings (each saved at once, its finding suggested from the
+last 7 days' findings). Changing them, and the test button, needs the exporters' permission
+(Owner, Admin). An agent reads them with `glitchless_alerts` and changes all but the webhook URL with
+`glitchless_set_alerts` and `glitchless_mark_known` (§3g's `/v1/agent/games/{game}/alerts` and `…/known`).
+Discord (`discord.com/api/webhooks/…`) and Slack (`hooks.slack.com/services/…`) URLs are recognised; any other public
+https URL takes the format chosen (Slack's suits Mattermost, Discord's Guilded). The URL is sealed like an exporter's secrets (KMS, encryption context `{project}`) and never returned: the dashboard
 gets the host and its last four characters. Sends go through the exporters' guarded fetch: https, no redirects,
 and no private, loopback, link-local or metadata address after DNS. A send's result is `HTTP <status>` or why it
 could not connect, never the URL. Links open the game: `https://app.glitchless.gg/?ws=<workspace>&game=<project>#/<page>`.
@@ -1109,8 +1141,8 @@ when there are none). Spike protection keeps its own email; the plan notice says
 
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/alerts` | `{alerts: {on, onSince, webhook: {format, host, hint} \| null, email, emailRecipients, rules, weekly, env}, log, defaults, mail, permissions}`; `log` is the last 20 sends, tests included, each with what every channel answered |
-| `PATCH /api/projects/{p}/alerts` | any of `{webhookUrl, webhookFormat, email, rules: {rule: bool}, weekly, env}`; `webhookUrl: null` removes the webhook. Alerts are on when there is a channel and a rule or the weekly summary |
+| `GET /api/projects/{p}/alerts` | `{alerts: {on, onSince, webhook: {format, host, hint} \| null, email, emailRecipients, rules, weekly, env, known}, log, defaults, mail, permissions}`; `log` is the last 20 sends, tests included, each with what every channel answered |
+| `PATCH /api/projects/{p}/alerts` | any of `{webhookUrl, webhookFormat, email, rules: {rule: bool}, weekly, env, known: {id: {note, until?, worse?} \| null}}`; `webhookUrl: null` removes the webhook, and `known` merges by id (`null` removes one). Alerts are on when there is a channel and a rule or the weekly summary; known findings turn nothing on |
 | `POST /api/projects/{p}/alerts/test` | sends a test alert to every channel → `{sent: [{channel, ok, to?, error?}]}`; 10 an hour |
 | `POST /api/dev/alerts/check` | the dev server only: runs the check now |
 
@@ -1382,6 +1414,11 @@ from inside a chat.
 | `GET /v1/agent/games/{game}/shares` | Its share links | manage |
 | `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, from?, to? }` → the link (shown once) | manage |
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
+| `GET /v1/agent/games/{game}/known` | Its known findings (§3e) | read |
+| `POST /v1/agent/games/{game}/known` | `{ finding, note, until?, until_worse? }` marks one known; `{ finding, clear: true }` clears it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_mark_known`) | manage |
+| `GET /v1/agent/games/{game}/alerts` | Its alert settings, the last 20 sends and the defaults, as `GET /api/projects/{p}/alerts` answers them (§3e; `glitchless_alerts`) | read |
+| `POST /v1/agent/games/{game}/alerts` | Any of `{ rules: {rule: bool}, weekly, email, env, webhook: null }`, as the dashboard's `PATCH` takes them; `webhook: null` removes the webhook. A webhook URL is refused (`WEBHOOK_IN_SETTINGS`): the person pastes it in Settings → Alerts, so it never passes through a chat. Owner or Admin (`glitchless_set_alerts`) | manage |
+| `POST /v1/agent/games/{game}/alerts/test` | A test alert to every channel → `{ sent }`, 10 an hour (`glitchless_set_alerts` with `test: true`) | manage |
 
 **The demo game** is Zoomies (demo), a week of Zoomies' sample play (about 180 sessions, with the planted level-2
 hitch and velocity error, and Zoomies' dashboard), so someone who connects an app before they have a game can try every

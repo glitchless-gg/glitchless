@@ -79,7 +79,9 @@ const MIME = {
 // so a big map gets a clear 413 rather than the host's own error).
 // stores: { read(projectId, service, { from, to, recordsFrom }) } → the game's store data by store ({ steam: … },
 // reviews.js), or null when it is connected to none; a host without stores leaves it out.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, clientAddress = (req) => req.socket?.remoteAddress }) {
+// known: (projectId) → the game's known findings (known.js), which its findings are marked with; a host that keeps
+// none leaves it out.
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -370,6 +372,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     q.by = name === 'versions' && (STEAM_DIMENSIONS.includes(by) || propertyKey(`$${by}`)) ? by : null;
     let versionsSeen;
     let dashboardSaved;
+    let knownSaved;
     const contextFor = async (q) => {
       let ctx;
       if (store.context) {
@@ -389,6 +392,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (VERSION_QUERIES.has(name) && store.versionsFirstSeen) ctx.versionsFirstSeen = await (versionsSeen ??= store.versionsFirstSeen(projectId, service));
       // Findings read the rates, per-hour sums and distributions on the game's saved boards (board-findings.js).
       if (FINDING_QUERIES.has(name)) ctx.dashboard = await (dashboardSaved ??= store.getDashboard(projectId, service));
+      // Findings the game's owner marked known come last, with their note; a share link's reader sees no notes.
+      if (FINDING_QUERIES.has(name) && known && !reader.share) ctx.known = { entries: (await (knownSaved ??= known(projectId))) ?? [], now: Date.now() };
       // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
       // sessions aren't players': the same env and session type, never the players' property filters.
       if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });

@@ -1,6 +1,6 @@
 // A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
-// OAuth over HTTP): sign in, create a game, and make or revoke share links. Listing games, reading any of them and
-// saving their dashboards are the other tools, with `game`.
+// OAuth over HTTP): sign in, create a game, make or revoke share links, mark findings known, and read and change a
+// game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
 import { define, base, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
 import { startSignIn, CLOUD_URL } from '../login.js';
@@ -92,6 +92,100 @@ act(
     return reply('Share links:', (await agent('GET', `/games/${pid}/shares`)).shares);
   },
   { annotations: { readOnlyHint: true, idempotentHint: true } },
+);
+
+act(
+  'glitchless_mark_known',
+  "Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with `known` and the note. finding is a finding's id from glitchless_triage, or the start of one (\"perf-level-tutorial_1_\" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do.",
+  {
+    finding: z.string().optional().describe('A finding id from glitchless_triage, e.g. "load-ttff", or the start of one, e.g. "perf-level-tutorial_1_"'),
+    note: z.string().optional().describe('Why it is accepted, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted"'),
+    until: z.string().optional().describe('YYYY-MM-DD: known through that day, listed again from the day after'),
+    until_worse: z.boolean().optional().describe('Known only while it is no worse than it is now'),
+    clear: z.boolean().optional().describe('Remove the mark, so the weekly summary lists it again'),
+  },
+  async ({ finding, note, until, until_worse, clear, game }) => {
+    const pid = await projectFor(game);
+    if (!finding) {
+      const { known } = await agent('GET', `/games/${pid}/known`);
+      return reply(known.length ? `${known.length} known finding(s), left out of the weekly summary:` : 'No known findings: the weekly summary lists every finding worth fixing.', known);
+    }
+    if (!clear && !note) throw new Error('say why it is known in note (a few words), or pass clear: true to remove the mark');
+    const { known } = await agent('POST', `/games/${pid}/known`, clear ? { finding, clear: true } : { finding, note, until, until_worse });
+    return reply(clear ? `${finding} is no longer known: the weekly summary lists it again when it is worth fixing.` : `Marked ${finding} as known. The weekly summary leaves it out; glitchless_triage shows it after the rest, with the note. Known findings:`, known);
+  },
+  // It replaces an entry's note, and clear removes one.
+  { title: 'Mark finding known', annotations: { destructiveHint: true, idempotentHint: true } },
+);
+
+// What each alert rule tells the team (server/src/alerts.js ALERT_RULES).
+const RULES = {
+  crashes: 'more players crash in the last 6 hours than usual for those hours',
+  new_error: 'a new error is spreading',
+  release: 'the newest version stutters or crashes for more players than the one before',
+  quiet: 'the game went quiet (and a note when sessions are back)',
+  store: "a store limit that cuts the game's visibility (Google Play's bad-behaviour thresholds)",
+  plan: "the plan's play sessions for the month reach 80% and 100%",
+};
+
+// A game's alert settings (GET /v1/agent/games/:game/alerts) in a few lines.
+function alertLines({ alerts: a, log = [] }) {
+  const channels = [a.webhook && `${a.webhook.format} webhook (${a.webhook.host}, ${a.webhook.hint})`, a.email && `email to ${a.emailRecipients} member(s)`].filter(Boolean);
+  const rules = Object.keys(RULES).map((r) => `  ${a.rules[r] ? 'on ' : 'off'} ${r}: ${RULES[r]}`);
+  const sent = log.slice(0, 5).map((x) => `  ${x.at ? new Date(x.at).toISOString().slice(0, 16).replace('T', ' ') : '?'} ${x.test ? '(test) ' : ''}${x.title} → ${(x.sent ?? []).map((s) => `${s.channel} ${s.ok ? 'ok' : `failed: ${s.error ?? '?'}`}`).join(', ') || 'nowhere'}`);
+  return [
+    `Alerts are ${a.on ? 'on' : 'off'}${a.on ? '' : channels.length ? ': every rule and the weekly summary are off' : ': nowhere to send yet (a webhook is added in Settings → Alerts; email: glitchless_set_alerts email: true)'}.`,
+    `Channels: ${channels.join(' and ') || 'none'}.`,
+    `Rules:\n${rules.join('\n')}`,
+    `Weekly summary (Mondays, the findings worth fixing): ${a.weekly ? 'on' : 'off'}. Sessions counted: ${a.env ? `env ${a.env}` : 'any env'}. Known findings left out of it: ${a.known?.length ?? 0} (glitchless_mark_known).`,
+    `Last sends:\n${sent.join('\n') || '  none yet'}`,
+  ].join('\n');
+}
+
+define(
+  'glitchless_alerts',
+  {
+    title: 'Alerts',
+    description:
+      "A game's alerts: where they go (a Discord or Slack webhook, email to the workspace's members), which rules are on (crashes, new_error, release, quiet, store, plan), the weekly summary of findings worth fixing, the env they count, how many findings are marked known, and the last sends with what each channel answered. glitchless_set_alerts changes them.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true, idempotentHint: true },
+  },
+  async ({ game }) => {
+    const pid = await projectFor(game);
+    const view = await agent('GET', `/games/${pid}/alerts`);
+    return reply(alertLines(view), view);
+  },
+);
+
+act(
+  'glitchless_set_alerts',
+  "Change a game's alerts: turn rules on or off (crashes: more players crash than usual; new_error: a new error spreading; release: the newest version worse than the one before; quiet: the game went quiet; store: a store limit that cuts visibility; plan: the plan's play sessions running out), the weekly summary, email to the workspace's members, the env alerts count (\"\" for any), remove the webhook, or send a test alert to every channel. Only what you pass changes. A webhook URL can't be added here: the person pastes it in Settings → Alerts, as it's a secret. To stop the weekly summary listing one finding, use glitchless_mark_known instead of turning it off. Ask the person before changing their alerts. Needs an Owner's or Admin's key.",
+  {
+    rules: z
+      .object(Object.fromEntries(Object.entries(RULES).map(([r, what]) => [r, z.boolean().optional().describe(what)])))
+      .partial()
+      .optional()
+      .describe('Rules to turn on (true) or off (false); the rest stay as they are'),
+    weekly: z.boolean().optional().describe('The weekly summary on Mondays: how the week went and the findings worth fixing'),
+    email: z.boolean().optional().describe("Email every active member of the workspace"),
+    env: z.string().optional().describe('Count only sessions from this env (as the game passes it to init, e.g. "prod"); "" for any'),
+    remove_webhook: z.boolean().optional().describe('Remove the Discord or Slack webhook'),
+    test: z.boolean().optional().describe('Then send a test alert to every channel, to check they arrive'),
+  },
+  async ({ rules, weekly, email, env, remove_webhook, test, game }) => {
+    const pid = await projectFor(game);
+    const change = { ...(rules && Object.keys(rules).length ? { rules } : {}), ...(weekly !== undefined ? { weekly } : {}), ...(email !== undefined ? { email } : {}), ...(env !== undefined ? { env } : {}), ...(remove_webhook ? { webhook: null } : {}) };
+    if (!Object.keys(change).length && !test) throw new Error('pass what to change (rules, weekly, email, env, remove_webhook) or test: true; glitchless_alerts reads the settings');
+    const view = Object.keys(change).length ? await agent('POST', `/games/${pid}/alerts`, change) : await agent('GET', `/games/${pid}/alerts`);
+    if (!test) return reply(`Saved.\n${alertLines(view)}`, view);
+    const { sent } = await agent('POST', `/games/${pid}/alerts/test`);
+    // Read again, so the last sends include the test.
+    const after = await agent('GET', `/games/${pid}/alerts`);
+    return reply(`${Object.keys(change).length ? 'Saved, and sent' : 'Sent'} a test alert: ${sent.map((s) => `${s.channel} ${s.ok ? 'ok' : `failed (${s.error ?? '?'})`}`).join(', ')}.\n${alertLines(after)}`, { ...after, sent });
+  },
+  // It replaces settings, removes a webhook, and a test posts to Discord, Slack or email.
+  { title: 'Change alerts', annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: true } },
 );
 
 act(

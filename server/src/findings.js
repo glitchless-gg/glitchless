@@ -13,6 +13,7 @@ import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './fac
 import { reportFindings } from './reports.js';
 import { storeFindings } from './reviews.js';
 import { boardFindings } from './board-findings.js';
+import { markKnown } from './known.js';
 import { WEB_ENGINES, WEB_ENGINE_FATAL_WORDS, WEB_ENGINE_QUALITY_TIPS, WEB_ENGINE_SLOW_START_TIPS, webEngineErrorSuggestion, webEnginePerfSuggestion } from './web-engine-advice.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -415,7 +416,7 @@ export function findings(ctx, maps = []) {
         category: 'release',
         title: `${cur.version} vs ${prev.version}: ${verdict} — ${(worse[0] || changes[0]).text}`,
         summary: changes.map((c) => c.text).join('; ') + '.' + mixNote + (fewest.sessions < CONFIDENT_SESSIONS ? ` Only ${fewest.sessions} sessions on ${fewest.version}, so this could be chance.` : ''),
-        evidence: { previous: prev, current: cur, ...(mixGap >= BUDGET_MIX_GAP ? { frames_compared_at_budget_ms: frames?.budget ?? null, previous_frames: frames?.prev ?? null, current_frames: frames?.cur ?? null } : {}) },
+        evidence: { previous: prev, current: cur, verdict, changes: changes.map(({ name, worse }) => ({ name, worse })), ...(mixGap >= BUDGET_MIX_GAP ? { frames_compared_at_budget_ms: frames?.budget ?? null, previous_frames: frames?.prev ?? null, current_frames: frames?.cur ?? null } : {}) },
         suggestion:
           verdict === 'improved'
             ? 'Ship it. Keep the monitor on p95 frame time so this improvement is protected.'
@@ -484,9 +485,11 @@ export function findings(ctx, maps = []) {
   // 9. Store reviews (Steam) about stutter, lag, fps, freezes, crashes or optimization rising after a build (ctx.stores, reviews.js).
   out.push(...storeFindings(ctx, out));
 
-  return out
+  const ranked = out
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.impact - a.impact)
     .map((f) => ({ ...f, impact: round(f.impact, 3), impact_pct: pct(f.impact, 1) }));
+  // The ones the game's owner marked known (known.js) keep their place among themselves, after the rest.
+  return ctx.known ? markKnown(ranked, ctx.known) : ranked;
 }
 
 // Gauges whose median during this level's hitches is far above their median in its calm frame windows.

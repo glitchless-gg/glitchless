@@ -9,7 +9,7 @@
 //   store      a store limit that cuts the game's visibility: Google Play's bad-behaviour thresholds
 //   plan       the plan's play sessions for the month (Glitchless Cloud only, which knows the plan)
 // Standing problems (findings) aren't alerts: a weekly summary lists the few worth fixing (weeklySummary,
-// weeklyMessage). The rules, the check, the messages and their Discord and Slack formats are here; where settings and
+// weeklyMessage), leaving out the ones the game's owner marked known (known.js). The rules, the check, the messages and their Discord and Slack formats are here; where settings and
 // state live and how a message is sent, email included, is the host's (Glitchless Cloud keeps them per game; a
 // self-hosted server uses GLITCHLESS_ALERT_WEBHOOK).
 //
@@ -631,18 +631,29 @@ function weekOf(ctx, lo, hi) {
   return { sessions: real.length, players: players.size, crashed: crashed.size, days, purchases: g?.events ? { sum: round(g.sum, 2), currency: sums.currency ?? null } : null };
 }
 
+const WORTH_FIXING = ['critical', 'high', 'medium'];
+
 // Last week (Monday to Sunday, UTC) of one service against the week before, and the standing findings most worth
 // fixing (paste lines name the game `name`, else its service). revenue: the host's revenue source for the two weeks ({ source, currency, last, before }), else the game's
-// own purchase events are summed.
-export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null }) {
+// own purchase events are summed. known: the game's known findings (known.js), left out of the three and counted.
+export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null, known = [] }) {
   const end = weekStart(now);
   const q = { service, env, plan };
   const [last, before] = await Promise.all([contextFor(store, projectId, { ...q, from: end - 7 * DAY, to: end }), contextFor(store, projectId, { ...q, from: end - 14 * DAY, to: end - 7 * DAY })]);
   const w = weekOf(last, end - 7 * DAY, end);
   const b = weekOf(before, end - 14 * DAY, end - 7 * DAY);
   const own = w.purchases || b.purchases ? { source: null, currency: w.purchases?.currency ?? b.purchases?.currency ?? null, last: w.purchases?.sum ?? 0, before: b.purchases?.sum ?? 0 } : null;
-  const found = findings(last, store.getMaps ? await store.getMaps(projectId, service) : []).filter((f) => ['critical', 'high', 'medium'].includes(f.severity));
-  return { service, from: end - 7 * DAY, to: end, units: playersAreSessions(last) ? 'sessions' : 'players', last: w, before: b, revenue: revenue ?? own, fixes: found.slice(0, 3).map((f) => ({ id: f.id, severity: f.severity, ...plainFinding(f, clean(name ?? service, 80)) })) };
+  if (known?.length) last.known = { entries: known, now };
+  const found = findings(last, store.getMaps ? await store.getMaps(projectId, service) : []).filter((f) => WORTH_FIXING.includes(f.severity));
+  const open = found.filter((f) => !f.known);
+  return { service, from: end - 7 * DAY, to: end, units: playersAreSessions(last) ? 'sessions' : 'players', last: w, before: b, revenue: revenue ?? own, fixes: open.slice(0, 3).map((f) => ({ id: f.id, severity: f.severity, ...plainFinding(f, clean(name ?? service, 80)) })), known: found.filter((f) => f.known).map((f) => f.id) };
+}
+
+// The standing findings of one service over the `days` before `now`, read as the weekly summary reads them: what a
+// finding marked known "until it gets worse" is compared with later.
+export async function recentFindings(store, projectId, { service, env = null, plan = null, now, days = 7 }) {
+  const ctx = await contextFor(store, projectId, { service, env, plan, from: now - days * DAY, to: now });
+  return findings(ctx, store.getMaps ? await store.getMaps(projectId, service) : []);
 }
 
 // A finding as one plain sentence, and the line to paste.
@@ -659,14 +670,34 @@ export function plainFinding(f, game) {
   else if (id.startsWith('error-')) text = `An error hits ${f.impact_pct}% of sessions${ev.levels?.length ? ` on ${clean(ev.levels[0], 40)}` : ''}: "${clean(f.title, 80)}".`;
   else if (id.startsWith('design-wall-')) text = `Players get stuck on ${level}: only ${ev.completion_pct}% of the sessions that reach it get through.`;
   else if (id.startsWith('design-hotspot-')) text = `Most deaths on ${level} happen at one spot: look at what kills players there.`;
-  else if (id.startsWith('version-')) text = `${clean(ev.current?.version, 40)} does worse than ${clean(ev.previous?.version, 40)} for players.`;
+  else if (id.startsWith('version-')) text = versionSentence(f);
   else if (id === 'device-gap-low-tier') text = 'Players on low-end graphics chips get a much choppier game than everyone else.';
   else if (id === 'load-ttff') text = `The game is slow to start: ${ev.slow_sessions_pct ?? f.impact_pct}% of sessions wait more than 4 seconds for the first frame.`;
   else if (id.startsWith('reports-')) text = `Players sent ${ev.reports} bug reports from ${level}.`;
   else if (id.startsWith('store-reviews-')) text = 'Store reviews about how the game runs went up after the latest update.';
   else text = `${clean(f.title, 140)}.`;
+  // One the owner marked known that is back (known.js): say why it is in the list again.
+  if (f.came_back) text += f.came_back.new ? " It's new since findings like it were marked as known." : ' It was marked as known, and has got worse since.';
   return { text, paste: `Use glitchless_triage on ${game}, then look at finding ${clean(id, 200)}.` };
 }
+
+// The changes the version finding measures (findings.js), as players feel them.
+const BETTER = { 'frame time': 'smoother frames', hitches: 'fewer freezes', 'crash-free sessions': 'fewer crashes', 'error-free sessions': 'fewer errors', 'level completion': 'more players finishing levels', 'rage quits': 'fewer players quitting right after losing' };
+const WORSE = { 'frame time': 'slower frames', hitches: 'more freezes', 'crash-free sessions': 'more crashes', 'error-free sessions': 'more errors', 'level completion': 'fewer players finishing levels', 'rage quits': 'more players quitting right after losing' };
+
+// A version finding as one sentence. A mixed one (some measures better, some worse) says which went which way.
+function versionSentence(f) {
+  const ev = f.evidence ?? {};
+  const [a, b] = [clean(ev.previous?.version, 40), clean(ev.current?.version, 40)];
+  const verdict = ev.verdict ?? /: (improved|regressed|mixed) —/.exec(f.title ?? '')?.[1];
+  const said = (worse, names) => (ev.changes ?? []).filter((c) => c.worse === worse).map((c) => names[c.name]).filter(Boolean);
+  const [better, worse] = [said(false, BETTER), said(true, WORSE)];
+  if (verdict === 'mixed') return `${b} is better than ${a} in some ways and worse in others${better.length && worse.length ? `: ${words(better)}, but ${words(worse)}` : ''}.`;
+  if (verdict === 'improved') return `${b} does better than ${a} for players${better.length ? `: ${words(better)}` : ''}.`;
+  return `${b} does worse than ${a} for players${worse.length ? `: ${words(worse)}` : ''}.`;
+}
+
+const words = (list) => (list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : (list[0] ?? ''));
 
 // The weekly summary in every channel's terms, as alertMessage's (key, rule 'weekly', title, big, lines, fixes, …).
 export function weeklyMessage(w, { link = () => null, name = null } = {}) {
@@ -683,6 +714,7 @@ export function weeklyMessage(w, { link = () => null, name = null } = {}) {
     ...(w.units === 'players' ? [`Sessions: ${whole(w.last.sessions)}${w.before.sessions ? ` (${whole(w.before.sessions)})` : ''}.`] : []),
     `Crashes: ${w.last.crashed ? `${oneIn(share(w.last))} ${unit}s had one` : `no ${unit} crashed`}${w.before.players ? ` (the week before: ${w.before.crashed ? oneIn(share(w.before)) : 'none'})` : ''}.`,
     ...(money ? [`Revenue: ${amount(money.last, money.currency)}${money.before ? ` (${amount(money.before, money.currency)})` : ''}, ${money.source ? `from ${money.source}` : "from the game's purchase events"}.`] : []),
+    ...(w.known?.length ? [`Left out: ${count(w.known.length, 'finding')} marked as known.`] : []),
   ];
   const range = shortDay(w.from).slice(0, 3) === shortDay(w.to - DAY).slice(0, 3) ? `${shortDay(w.from)}–${new Date(w.to - DAY).getUTCDate()}` : `${shortDay(w.from)}–${shortDay(w.to - DAY)}`;
   const fixing = w.fixes.length ? `${w.fixes.length === 1 ? 'One thing' : `${w.fixes.length} things`} worth fixing.` : 'Nothing standing out to fix.';
@@ -699,7 +731,7 @@ export function weeklyMessage(w, { link = () => null, name = null } = {}) {
     todo: w.fixes.length ? 'Paste one into your coding agent when you have an hour.' : null,
     fixes: w.fixes.map((f) => ({ text: f.text, paste: f.paste })),
     paste: null,
-    agent: w.fixes.length ? [`Findings ${w.fixes.map((f) => `${f.id} (${f.severity})`).join(', ')}, from glitchless_triage over ${range}.`] : [],
+    agent: [...(w.fixes.length ? [`Findings ${w.fixes.map((f) => `${f.id} (${f.severity})`).join(', ')}, from glitchless_triage over ${range}.`] : []), ...(w.known?.length ? [`Left out as known: ${w.known.map((id) => clean(id, 200)).join(', ')}.`] : [])],
     link: link('overview'),
     figure: {
       kind: 'Your week',

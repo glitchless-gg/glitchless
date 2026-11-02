@@ -13,7 +13,7 @@ You have two sources of truth:
 
 ## Loop
 
-1. **Rank.** Call `glitchless_triage` (24h by default). Pick the top finding, or the one the user named. Say in one line which one and why (severity × share of players affected).
+1. **Rank.** Call `glitchless_triage` (24h by default). Pick the top finding, or the one the user named. Say in one line which one and why (severity × share of players affected). Findings marked `known` come last: the team has accepted them, so skip them unless the user asks. When the user says a finding is accepted and shouldn't come back in the weekly summary, offer `glitchless_mark_known` with their reason as the note.
 2. **Get the evidence.** Drill in by category:
    - performance → `glitchless_performance` with `level`: look at `hitch_context` (which gauges spike during hitches, which events precede them) and `slowest_recent_hitches[].loaf` (script attribution).
    - memory → `glitchless_performance` `memory` + `by_level.geometries_max`.

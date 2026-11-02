@@ -215,6 +215,8 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .finding.critical, .finding.high { border-left-color: var(--alert-solid); }
 .finding.info { border-left-color: var(--info); }
 .finding.low { border-left-color: var(--quiet); }
+.finding.known { border-left-color: var(--quiet); }
+.finding .fk { margin-top: 4px; font-size: 12px; color: var(--text-2); }
 .finding .ft { display: flex; gap: 8px; align-items: center; font-weight: 600; }
 .finding .fs { color: var(--text-2); margin-top: 4px; font-size: 12.5px; }
 .finding .fx { margin-top: 6px; padding: 7px 9px; background: var(--panel-2); border-radius: 3px; font-size: 12px; color: var(--text-2); display: none; }

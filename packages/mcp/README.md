@@ -94,6 +94,8 @@ above go in its environment.
 | `glitchless_create_game` | A new game in the workspace, with its client token and intake URL; `demo: true` makes the demo game (a week of sample play) |
 | `glitchless_share_board` | A read-only link to one board page, for a dev log, Discord or a game's "Live stats" link; `glitchless_list_share_links` and `glitchless_revoke_share_link` manage them |
 | `glitchless_triage` | Ranked findings: stutter per level and what it correlates with, leaks, top errors, difficulty spikes. Start here |
+| `glitchless_mark_known` | Mark a finding the game's owner accepts as known, so the weekly summary stops listing it (triage shows it last, with the note); `clear: true` removes the mark |
+| `glitchless_alerts` | A game's alerts: where they go, which rules are on, the weekly summary, the env, and the last sends; `glitchless_set_alerts` turns rules, the weekly summary and email on or off, sets the env, removes the webhook and sends a test (a webhook URL is added in Settings → Alerts) |
 | `glitchless_overview` | Headline numbers: sessions, players, crash-free sessions, frame time against the budget, rage quits |
 | `glitchless_performance` | Frame time per level, with draw calls, geometry counts and game gauges |
 | `glitchless_get_error` | One error issue, with its stack and the gameplay before it |

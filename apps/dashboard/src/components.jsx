@@ -471,18 +471,39 @@ export function Segmented({ options, value, onChange }) {
   );
 }
 
+// A finding the game's owner marked known (Settings → Alerts): their note, and when it comes back. One that came back
+// says why it is listed again.
+function KnownLine({ f }) {
+  const day = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  if (f.known) {
+    const k = f.known;
+    const back = [k.until && `until ${day(k.until)}`, k.until_worse && 'until it gets worse'].filter(Boolean).join(', ');
+    return (
+      <div className="fk">
+        Known: {k.note}
+        <span className="muted">{[k.by, back].filter(Boolean).map((x) => ` · ${x}`).join('')}</span>
+      </div>
+    );
+  }
+  if (f.came_back) return <div className="fk">Marked known ({f.came_back.note}), {f.came_back.new ? 'but this one is new since' : 'but it has got worse since'}.</div>;
+  return null;
+}
+
 export function Findings({ findings, onOpen, compact }) {
   const [open, setOpen] = useState(null);
   if (!findings?.length) return <div className="muted" style={{ padding: '8px 0' }}>Nothing unusual found in this range.</div>;
   return (
     <div className="findings">
       {findings.map((f) => (
-        <div key={f.id} className={`finding ${f.severity} ${open === f.id ? 'open' : ''}`} onClick={() => setOpen(open === f.id ? null : f.id)}>
+        <div key={f.id} className={`finding ${f.severity} ${f.known ? 'known' : ''} ${open === f.id ? 'open' : ''}`} onClick={() => setOpen(open === f.id ? null : f.id)}>
           <div className="ft">
             <Status kind={f.severity}>{f.severity}</Status>
+            {f.known && <Status kind="neutral">known</Status>}
+            {f.came_back && <Status kind="alert">{f.came_back.new ? 'new' : 'worse'}</Status>}
             <span>{f.title}</span>
             <span className="cat">{f.category}</span>
           </div>
+          <KnownLine f={f} />
           {!compact && <div className="fs">{f.summary}</div>}
           <div className="fx">
             {compact && <div style={{ marginBottom: 6 }}>{f.summary}</div>}

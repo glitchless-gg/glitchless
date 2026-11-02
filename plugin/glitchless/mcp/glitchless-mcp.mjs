@@ -27417,9 +27417,9 @@ var init_ajvProvider_DyjnscPj = __esm({
         return false;
       }
       exports.schemaHasRules = schemaHasRules;
-      function schemaHasRulesButRef(schema, RULES) {
+      function schemaHasRulesButRef(schema, RULES2) {
         if (typeof schema == "boolean") return !schema;
-        for (const key in schema) if (key !== "$ref" && RULES.all[key]) return true;
+        for (const key in schema) if (key !== "$ref" && RULES2.all[key]) return true;
         return false;
       }
       exports.schemaHasRulesButRef = schemaHasRulesButRef;
@@ -28609,15 +28609,15 @@ var init_ajvProvider_DyjnscPj = __esm({
       }
       function schemaKeywords(it, types, typeErrors, errsCount) {
         const { gen, schema, data, allErrors, opts, self } = it;
-        const { RULES } = self;
-        if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES))) {
-          gen.block(() => keywordCode(it, "$ref", RULES.all.$ref.definition));
+        const { RULES: RULES2 } = self;
+        if (schema.$ref && (opts.ignoreKeywordsWithRef || !(0, util_1.schemaHasRulesButRef)(schema, RULES2))) {
+          gen.block(() => keywordCode(it, "$ref", RULES2.all.$ref.definition));
           return;
         }
         if (!opts.jtd) checkStrictTypes(it, types);
         gen.block(() => {
-          for (const group of RULES.rules) groupKeywords(group);
-          groupKeywords(RULES.post);
+          for (const group of RULES2.rules) groupKeywords(group);
+          groupKeywords(RULES2.post);
         });
         function groupKeywords(group) {
           if (!(0, applicability_1.shouldUseGroup)(schema, group)) return;
@@ -30403,10 +30403,10 @@ var init_ajvProvider_DyjnscPj = __esm({
           return typeof rule == "object" ? rule.definition : !!rule;
         }
         removeKeyword(keyword) {
-          const { RULES } = this;
-          delete RULES.keywords[keyword];
-          delete RULES.all[keyword];
-          for (const group of RULES.rules) {
+          const { RULES: RULES2 } = this;
+          delete RULES2.keywords[keyword];
+          delete RULES2.all[keyword];
+          for (const group of RULES2.rules) {
             const i = group.rules.findIndex((rule) => rule.keyword === keyword);
             if (i >= 0) group.rules.splice(i, 1);
           }
@@ -30552,9 +30552,9 @@ var init_ajvProvider_DyjnscPj = __esm({
       }
       const KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
       function checkKeyword(keyword, def) {
-        const { RULES } = this;
+        const { RULES: RULES2 } = this;
         (0, util_1.eachItem)(keyword, (kwd) => {
-          if (RULES.keywords[kwd]) throw new Error(`Keyword ${kwd} is already defined`);
+          if (RULES2.keywords[kwd]) throw new Error(`Keyword ${kwd} is already defined`);
           if (!KEYWORD_NAME.test(kwd)) throw new Error(`Keyword ${kwd} has invalid name`);
         });
         if (!def) return;
@@ -30564,16 +30564,16 @@ var init_ajvProvider_DyjnscPj = __esm({
         var _a3;
         const post = definition === null || definition === void 0 ? void 0 : definition.post;
         if (dataType && post) throw new Error('keyword with "post" flag cannot have "type"');
-        const { RULES } = this;
-        let ruleGroup = post ? RULES.post : RULES.rules.find(({ type: t }) => t === dataType);
+        const { RULES: RULES2 } = this;
+        let ruleGroup = post ? RULES2.post : RULES2.rules.find(({ type: t }) => t === dataType);
         if (!ruleGroup) {
           ruleGroup = {
             type: dataType,
             rules: []
           };
-          RULES.rules.push(ruleGroup);
+          RULES2.rules.push(ruleGroup);
         }
-        RULES.keywords[keyword] = true;
+        RULES2.keywords[keyword] = true;
         if (!definition) return;
         const rule = {
           keyword,
@@ -30585,7 +30585,7 @@ var init_ajvProvider_DyjnscPj = __esm({
         };
         if (definition.before) addBeforeRule.call(this, ruleGroup, rule, definition.before);
         else ruleGroup.rules.push(rule);
-        RULES.all[keyword] = rule;
+        RULES2.all[keyword] = rule;
         (_a3 = definition.implements) === null || _a3 === void 0 || _a3.forEach((kwd) => this.addKeyword(kwd));
       }
       function addBeforeRule(ruleGroup, rule, before) {
@@ -37384,13 +37384,13 @@ var init_core3 = __esm({
     });
     tool(
       "glitchless_triage",
-      "Ranked findings for a game: performance spikes per level (with the gauges, counter bursts and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots, walls (a level, or one value of a level start's attribute such as a tier), version regressions, settings that run slow (a session property), the network (a whole lobby lagging at once: the server; one kind of connection, platform or region lagging; disconnects rising in a release) and the game's dedicated servers (falling behind when full, a crash that ends matches, memory that keeps climbing) \u2014 ranked by severity and player impact, each with evidence and a suggested fix, and naming a session property when most of a problem falls on one value. Start here when asked 'what's wrong with my game?'.",
+      "Ranked findings for a game: performance spikes per level (with the gauges, counter bursts and events they correlate with), memory leaks, top errors, difficulty spikes / rage-quit hotspots, walls (a level, or one value of a level start's attribute such as a tier), version regressions, settings that run slow (a session property), the network (a whole lobby lagging at once: the server; one kind of connection, platform or region lagging; disconnects rising in a release) and the game's dedicated servers (falling behind when full, a crash that ends matches, memory that keeps climbing) \u2014 ranked by severity and player impact, each with evidence and a suggested fix, and naming a session property when most of a problem falls on one value. Findings the game's owner marked known (glitchless_mark_known) come after the rest with `known` and its note: accepted, not new. One that got worse since has `came_back` instead. Start here when asked 'what's wrong with my game?'.",
       { ...common },
       async ({ service, hours, ...f }) => {
         const svc = await resolveService(service);
         const { version: version2 } = f;
         const { findings, meta: meta3 } = await query("findings", { service: svc, ...filters(f), ...range(hours) });
-        const brief = findings.map((f2, i) => `${i + 1}. [${f2.severity.toUpperCase()}] ${f2.title}`).join("\n");
+        const brief = findings.map((f2, i) => `${i + 1}. [${f2.severity.toUpperCase()}${f2.known ? ", KNOWN" : ""}] ${f2.title}${f2.known ? ` (known: ${f2.known.note})` : f2.came_back ? ` (marked known, back: ${f2.came_back.why})` : ""}`).join("\n");
         return reply(`Findings for ${svc} (${hours || 24}h${version2 ? `, ${version2}` : ""}):
 ${brief || "Nothing unusual."}
 
@@ -38056,7 +38056,21 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
 });
 
 // src/tools/workspace.js
-var act, signingIn;
+function alertLines({ alerts: a, log = [] }) {
+  const channels = [a.webhook && `${a.webhook.format} webhook (${a.webhook.host}, ${a.webhook.hint})`, a.email && `email to ${a.emailRecipients} member(s)`].filter(Boolean);
+  const rules = Object.keys(RULES).map((r) => `  ${a.rules[r] ? "on " : "off"} ${r}: ${RULES[r]}`);
+  const sent = log.slice(0, 5).map((x) => `  ${x.at ? new Date(x.at).toISOString().slice(0, 16).replace("T", " ") : "?"} ${x.test ? "(test) " : ""}${x.title} \u2192 ${(x.sent ?? []).map((s) => `${s.channel} ${s.ok ? "ok" : `failed: ${s.error ?? "?"}`}`).join(", ") || "nowhere"}`);
+  return [
+    `Alerts are ${a.on ? "on" : "off"}${a.on ? "" : channels.length ? ": every rule and the weekly summary are off" : ": nowhere to send yet (a webhook is added in Settings \u2192 Alerts; email: glitchless_set_alerts email: true)"}.`,
+    `Channels: ${channels.join(" and ") || "none"}.`,
+    `Rules:
+${rules.join("\n")}`,
+    `Weekly summary (Mondays, the findings worth fixing): ${a.weekly ? "on" : "off"}. Sessions counted: ${a.env ? `env ${a.env}` : "any env"}. Known findings left out of it: ${a.known?.length ?? 0} (glitchless_mark_known).`,
+    `Last sends:
+${sent.join("\n") || "  none yet"}`
+  ].join("\n");
+}
+var act, signingIn, RULES;
 var init_workspace = __esm({
   "src/tools/workspace.js"() {
     init_zod();
@@ -38146,6 +38160,77 @@ ${out.url}`, out.share);
         return reply("Share links:", (await agent("GET", `/games/${pid}/shares`)).shares);
       },
       { annotations: { readOnlyHint: true, idempotentHint: true } }
+    );
+    act(
+      "glitchless_mark_known",
+      "Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with `known` and the note. finding is a finding's id from glitchless_triage, or the start of one (\"perf-level-tutorial_1_\" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do.",
+      {
+        finding: external_exports.string().optional().describe('A finding id from glitchless_triage, e.g. "load-ttff", or the start of one, e.g. "perf-level-tutorial_1_"'),
+        note: external_exports.string().optional().describe('Why it is accepted, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted"'),
+        until: external_exports.string().optional().describe("YYYY-MM-DD: known through that day, listed again from the day after"),
+        until_worse: external_exports.boolean().optional().describe("Known only while it is no worse than it is now"),
+        clear: external_exports.boolean().optional().describe("Remove the mark, so the weekly summary lists it again")
+      },
+      async ({ finding, note, until, until_worse, clear, game }) => {
+        const pid = await projectFor(game);
+        if (!finding) {
+          const { known: known2 } = await agent("GET", `/games/${pid}/known`);
+          return reply(known2.length ? `${known2.length} known finding(s), left out of the weekly summary:` : "No known findings: the weekly summary lists every finding worth fixing.", known2);
+        }
+        if (!clear && !note) throw new Error("say why it is known in note (a few words), or pass clear: true to remove the mark");
+        const { known } = await agent("POST", `/games/${pid}/known`, clear ? { finding, clear: true } : { finding, note, until, until_worse });
+        return reply(clear ? `${finding} is no longer known: the weekly summary lists it again when it is worth fixing.` : `Marked ${finding} as known. The weekly summary leaves it out; glitchless_triage shows it after the rest, with the note. Known findings:`, known);
+      },
+      // It replaces an entry's note, and clear removes one.
+      { title: "Mark finding known", annotations: { destructiveHint: true, idempotentHint: true } }
+    );
+    RULES = {
+      crashes: "more players crash in the last 6 hours than usual for those hours",
+      new_error: "a new error is spreading",
+      release: "the newest version stutters or crashes for more players than the one before",
+      quiet: "the game went quiet (and a note when sessions are back)",
+      store: "a store limit that cuts the game's visibility (Google Play's bad-behaviour thresholds)",
+      plan: "the plan's play sessions for the month reach 80% and 100%"
+    };
+    define(
+      "glitchless_alerts",
+      {
+        title: "Alerts",
+        description: "A game's alerts: where they go (a Discord or Slack webhook, email to the workspace's members), which rules are on (crashes, new_error, release, quiet, store, plan), the weekly summary of findings worth fixing, the env they count, how many findings are marked known, and the last sends with what each channel answered. glitchless_set_alerts changes them.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, idempotentHint: true }
+      },
+      async ({ game }) => {
+        const pid = await projectFor(game);
+        const view = await agent("GET", `/games/${pid}/alerts`);
+        return reply(alertLines(view), view);
+      }
+    );
+    act(
+      "glitchless_set_alerts",
+      `Change a game's alerts: turn rules on or off (crashes: more players crash than usual; new_error: a new error spreading; release: the newest version worse than the one before; quiet: the game went quiet; store: a store limit that cuts visibility; plan: the plan's play sessions running out), the weekly summary, email to the workspace's members, the env alerts count ("" for any), remove the webhook, or send a test alert to every channel. Only what you pass changes. A webhook URL can't be added here: the person pastes it in Settings \u2192 Alerts, as it's a secret. To stop the weekly summary listing one finding, use glitchless_mark_known instead of turning it off. Ask the person before changing their alerts. Needs an Owner's or Admin's key.`,
+      {
+        rules: external_exports.object(Object.fromEntries(Object.entries(RULES).map(([r, what]) => [r, external_exports.boolean().optional().describe(what)]))).partial().optional().describe("Rules to turn on (true) or off (false); the rest stay as they are"),
+        weekly: external_exports.boolean().optional().describe("The weekly summary on Mondays: how the week went and the findings worth fixing"),
+        email: external_exports.boolean().optional().describe("Email every active member of the workspace"),
+        env: external_exports.string().optional().describe('Count only sessions from this env (as the game passes it to init, e.g. "prod"); "" for any'),
+        remove_webhook: external_exports.boolean().optional().describe("Remove the Discord or Slack webhook"),
+        test: external_exports.boolean().optional().describe("Then send a test alert to every channel, to check they arrive")
+      },
+      async ({ rules, weekly, email: email3, env, remove_webhook, test, game }) => {
+        const pid = await projectFor(game);
+        const change2 = { ...rules && Object.keys(rules).length ? { rules } : {}, ...weekly !== void 0 ? { weekly } : {}, ...email3 !== void 0 ? { email: email3 } : {}, ...env !== void 0 ? { env } : {}, ...remove_webhook ? { webhook: null } : {} };
+        if (!Object.keys(change2).length && !test) throw new Error("pass what to change (rules, weekly, email, env, remove_webhook) or test: true; glitchless_alerts reads the settings");
+        const view = Object.keys(change2).length ? await agent("POST", `/games/${pid}/alerts`, change2) : await agent("GET", `/games/${pid}/alerts`);
+        if (!test) return reply(`Saved.
+${alertLines(view)}`, view);
+        const { sent } = await agent("POST", `/games/${pid}/alerts/test`);
+        const after = await agent("GET", `/games/${pid}/alerts`);
+        return reply(`${Object.keys(change2).length ? "Saved, and sent" : "Sent"} a test alert: ${sent.map((s) => `${s.channel} ${s.ok ? "ok" : `failed (${s.error ?? "?"})`}`).join(", ")}.
+${alertLines(after)}`, { ...after, sent });
+      },
+      // It replaces settings, removes a webhook, and a test posts to Discord, Slack or email.
+      { title: "Change alerts", annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: true } }
     );
     act(
       "glitchless_revoke_share_link",

@@ -84,6 +84,9 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 | `glitchless_share_board` | Share board | manage | no | no | no | yes: a share link is public |
 | `glitchless_list_share_links` | List share links | manage | yes | no | yes | no |
 | `glitchless_revoke_share_link` | Revoke share link | manage | no | yes | yes | no |
+| `glitchless_mark_known` | Mark finding known | manage | no | yes: it replaces a note, and clears one | yes | no |
+| `glitchless_alerts` | Alerts | read | yes | no | yes | no |
+| `glitchless_set_alerts` | Change alerts | manage | no | yes: it replaces settings and removes a webhook | no | yes: a test alert posts to Discord, Slack or email |
 
 An app sees only the tools its scopes allow. Every tool takes `game` (a name or id). Not served by URL, because they
 act on the computer the server runs on: `glitchless_sign_in` (OAuth replaces it), `glitchless_playtest` (plays the game
