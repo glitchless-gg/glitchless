@@ -12,7 +12,7 @@
     {
       "name": "glitchless",
       "source": "./plugins/glitchless",
-      "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Find what's wrong in your game from real players' sessions, add Glitchless to a game, and design its dashboard.",
+      "description": "Let your agent understand your players. Find what's wrong in your game from real players' sessions, add Glitchless to a game, and design its dashboard.",
       "category": "developer-tools",
       "tags": ["games", "gamedev", "observability", "performance", "crashes", "analytics", "mcp"]
     }

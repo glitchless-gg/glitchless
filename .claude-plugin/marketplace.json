@@ -6,7 +6,7 @@
     {
       "name": "glitchless",
       "source": "./plugin/glitchless",
-      "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Claude adds Glitchless to a Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker game, then finds and fixes what real players hit: stutters, crashes and where they quit."
+      "description": "Let your agent understand your players. Claude adds Glitchless to a Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker game, then finds and fixes what real players hit: stutters, crashes and where they quit."
     }
   ]
 }

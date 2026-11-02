@@ -3,17 +3,7 @@
   "mcpServers": {
     "glitchless": {
       "type": "streamable-http",
-      "url": "https://api.glitchless.gg/mcp",
-      "extensions": {
-        "com.openai": {
-          "auth": {
-            "type": "oauth",
-            "client": {
-              "mode": "cimd"
-            }
-          }
-        }
-      }
+      "url": "https://api.glitchless.gg/mcp"
     }
   }
 }

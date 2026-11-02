@@ -25,7 +25,10 @@ const openai = plugin.extensions['com.openai'];
 openai.interface.developerName = submission.developerName;
 openai.review = submission.review;
 openai.publication = submission.publication;
+// The package's mcp.json stays plain, so Cursor, Antigravity (agy plugin validate --strict) and Devin read it without
+// warnings. OpenAI's sign-in setting (OAuth with a client ID metadata document) goes on the uploaded copy only.
 const mcp = JSON.parse(fs.readFileSync(path.join(pkg, 'mcp.json'), 'utf8'));
+for (const s of Object.values(mcp.mcpServers ?? {})) s.extensions = { ...s.extensions, 'com.openai': { auth: { type: 'oauth', client: { mode: 'cimd' } } } };
 const ui = openai.interface;
 const review = openai.review ?? {};
 const publication = openai.publication ?? {};
@@ -180,6 +183,7 @@ for (const f of files) {
   fs.copyFileSync(path.join(pkg, f), path.join(stage, f));
 }
 fs.writeFileSync(path.join(stage, 'plugin.json'), `${JSON.stringify(plugin, null, 2)}\n`);
+fs.writeFileSync(path.join(stage, 'mcp.json'), `${JSON.stringify(mcp, null, 2)}\n`);
 fs.mkdirSync(out, { recursive: true });
 fs.rmSync(zip, { force: true });
 execFileSync('zip', ['-q', '-X', '-r', zip, 'plugin.json', ...files], { cwd: stage });
