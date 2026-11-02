@@ -287,6 +287,24 @@ fill in the interest form linked from https://antigravity.google/docs/marketplac
 `agy plugin validate plugins/glitchless` passes (3 skills, 1 server). Until it's listed, people install it from a
 clone, as the README shows: `agy plugin install` takes a folder or a repo whose root is a plugin.
 
+## DeepSeek Harness: dsh-plugin.org
+
+DeepSeek Harness (DSH) has no OAuth in its MCP client, so it doesn't use the hosted URL: its plugin is
+[`plugins/dsh`](../plugins/dsh), the npm package `glitchless-dsh`, a DSH bundle that runs `glitchless-mcp` over stdio
+(the agent signs in with `glitchless_sign_in`) and registers the three skills as `glitchless-setup`,
+`glitchless-dashboard` and `glitchless-triage`, the names their skills.sh copies have. dsh-plugin.org is a community
+directory, not DeepSeek's: it lists public repos with the `dsh-plugin` topic whose root holds the package, and only
+packages on npm appear in DSH's in-app Plugin Hub. So:
+
+1. `node scripts/export-dsh-plugin.mjs` copies the plugin to `../glitchless-dsh`; create
+   `glitchless-gg/glitchless-dsh` (public, MIT, topic `dsh-plugin`), commit, tag `v<version>` and push.
+2. Publish it from the mirror: `npm publish` (2FA). Check it in DSH:
+   `dsh plugin --profile web add glitchless-dsh`, restart, and see `/glitchless-setup` in the slash menu.
+3. Open an issue at https://github.com/dshplugin/dsh-plugin-hub titled
+   `[Plugin submission] glitchless-gg/glitchless-dsh — <one-line value>`, with the body sections the hub's
+   [submit page](https://dsh-plugin.org/submit) fills in, category Integrations & Connections. Listings start
+   "unconfirmed" until the hub checks them by hand.
+
 ## Other directories
 
 - **Meta Muse:** https://platform.muse.ai → Submit a connector (a Meta sign-in): the hosted MCP endpoint and OAuth.

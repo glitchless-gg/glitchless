@@ -1,0 +1,20 @@
+# Glitchless for DeepSeek Harness: the bundle patch DSH applies to a profile when this package is installed. It mounts
+# two rows. `glitchless` is this package (index.js), which adds the skills. `glitchless-mcp` is DSH's own MCP client
+# running the glitchless-mcp server over stdio; its tools show up as mcp__glitchless__*. The server needs no key in
+# this file: the agent calls glitchless_sign_in, the person approves a code in the browser, and the server keeps a
+# workspace key in ~/.config/glitchless/credentials.json. DSH doesn't pass keys from its own environment to the
+# server, so a self-hosted server's GLITCHLESS_URL and GLITCHLESS_API_KEY go in this row's config.env.
+- insert:
+    - id: glitchless
+      name: glitchless-dsh
+    - id: glitchless-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: glitchless
+        transport: stdio
+        command: npx
+        args: ['-y', 'glitchless-mcp']
+        cwd: !!js process.cwd()
+        # A playtest runs bots through the game for a few minutes.
+        toolCallTimeoutMs: 600000
+        failOnStartupError: false

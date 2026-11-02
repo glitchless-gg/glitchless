@@ -52,6 +52,7 @@ Read more: [a five-second first launch, found in player data and fixed](https://
 | [`packages/sourcemaps`](packages/sourcemaps) | `glitchless-sourcemaps`: a CLI and a Vite plugin that upload a web build's source maps, so errors from minified builds show the original function, file and line |
 | [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard`, `/glitchless:triage` and `/glitchless:deck` skills + both MCP servers |
 | [`plugins/glitchless`](plugins/glitchless) | The same instrument, dashboard and triage skills with the hosted MCP server, packaged for Codex and ChatGPT, Cursor and Antigravity |
+| [`plugins/dsh`](plugins/dsh) | `glitchless-dsh`: the same skills and the MCP server as a DeepSeek Harness plugin |
 | [`datadog`](datadog) | Datadog dashboard + monitors JSON and a setup script |
 | [`scripts/seed.js`](scripts/seed.js) | Simulated player history generated from the game's real level data (tagged `simulated`) |
 | [`docs`](docs) | [Technical spec](docs/SPEC.md), [set-up prompt for any coding agent](docs/agent-setup-prompt.md) |
@@ -264,6 +265,8 @@ codex plugin add glitchless@glitchless
 # Antigravity
 git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
 agy plugin install ~/.glitchless/plugins/glitchless
+# DeepSeek Harness (the agent signs in with a code; plugins/dsh)
+dsh plugin --profile web add glitchless-dsh
 # Claude Code, the hosted server alone
 claude mcp add --transport http glitchless https://api.glitchless.gg/mcp
 ```

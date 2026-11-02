@@ -1,7 +1,7 @@
 # Set-up prompt for any coding agent
 
 The prompt below is what a developer pastes into their coding agent (Claude Code, Codex, Cursor,
-Antigravity, OpenClaw, Pi, Hermes or any other) to add Glitchless to a game. The Claude Code plugin does
+Antigravity, DeepSeek Harness, OpenClaw, Pi, Hermes or any other) to add Glitchless to a game. The Claude Code plugin does
 the same in two commands; this prompt is for every other agent, and works in Claude Code too.
 
 The hosted service's Get started page shows the text between the two

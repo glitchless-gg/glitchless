@@ -1,0 +1,57 @@
+{
+  "name": "glitchless-dsh",
+  "version": "0.1.0",
+  "description": "Let your agent understand your players. Glitchless for DeepSeek Harness: game observability tools over MCP (ranked findings, frame times, errors, where players quit, each game's own dashboard) and skills that add Glitchless to a game in Unity, Godot, Unreal, Three.js and more, design its dashboard and fix what players hit.",
+  "icon": "./icon.svg",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "glitchless",
+    "mcp",
+    "skills",
+    "gamedev",
+    "game-development",
+    "observability",
+    "unity",
+    "godot",
+    "unreal",
+    "threejs"
+  ],
+  "homepage": "https://www.glitchless.gg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless-dsh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues",
+    "email": "support@glitchless.gg"
+  },
+  "author": "Glitchless <support@glitchless.gg> (https://www.glitchless.gg)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22",
+    "dsh": ">=0.2.1-rc.5"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -25,7 +25,9 @@ agy plugin install ~/.glitchless/plugins/glitchless
 ```
 
 In Cursor, add `"glitchless": { "url": "https://api.glitchless.gg/mcp" }` under `mcpServers` in `.cursor/mcp.json`.
-In Claude Code, the [Claude Code plugin](../../plugin/glitchless) has the same skills plus a local server.
+In Claude Code, the [Claude Code plugin](../../plugin/glitchless) has the same skills plus a local server. In
+DeepSeek Harness, `dsh plugin --profile web add glitchless-dsh` installs [its plugin](../dsh), the same skills with
+`glitchless-mcp`.
 
 ## What's here
 
