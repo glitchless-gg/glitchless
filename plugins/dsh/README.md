@@ -7,9 +7,10 @@ the stutter on level 2.
 
 This plugin adds Glitchless to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH):
 
-- **27 tools** from the `glitchless-mcp` server, shown to the model as `mcp__glitchless__*`: ranked findings, frame
+- **30 tools** from the `glitchless-mcp` server, shown to the model as `mcp__glitchless__*`: ranked findings, frame
   times by level and device, errors, one session's timeline, your game's own events and funnels, bug reports players
-  sent, store reviews and revenue, each game's dashboard, playtest bots, and share links.
+  sent, store reviews and revenue, each game's dashboard, playtest bots, share links, and its alerts (which rules are
+  on, the weekly summary, and findings you accept as known).
 - **3 skills**, also as slash commands:
 
 | Skill | What it does |
