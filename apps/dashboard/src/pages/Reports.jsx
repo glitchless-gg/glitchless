@@ -160,7 +160,7 @@ function ReportDrawer({ id, onClose, onDeleted, onShot }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  const browser = !r?.sdk || /^glitchless-(browser|phaser)\//.test(r.sdk);
+  const browser = !/^glitchless-(godot|unity|unreal|gamemaker)\//.test(r?.sdk || '');
   const prompt = `Use the glitchless MCP tools to read bug report ${id} in the "${f.service}" game (glitchless_bug_reports with id "${id}" and screenshot: true), and the session it came from (glitchless_session). Find the cause in this repo and fix it, then ${browser ? 'reproduce it in the running game over WebMCP' : 'run the game and play to the same place'} to confirm it is gone.`;
   return (
     <div className="drawer">

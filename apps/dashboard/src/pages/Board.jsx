@@ -11,7 +11,7 @@ import { useShell } from '../shell.js';
 import { useQuery } from '../api.js';
 import { saveDashboard, withPage } from '../dashboard.js';
 import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../components.jsx';
-import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor } from '../format.js';
+import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor, budgetLines } from '../format.js';
 import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
 import { StorePanelBody, STORE_TYPES, REVENUE_STATS, revenueStat, storeLine, storeInfo } from '../stores.jsx';
@@ -369,7 +369,11 @@ function panelInfo(p) {
     if (p.counts === 'sessions') out.push(`Sessions playing at the time, by their ${p.split}.`);
     if (p.spread > 0) out.push(`${fmtNum(p.spread)} of these events came from sessions that sent more than 16: Glitchless keeps when the first 16 were sent, and spreads the rest over the minutes those sessions played.`);
   }
-  if (p.type === 'frame_time') out.push(`Half the frames took under ${fmtNum(p.kpis.p50, 1)} ms (p50) and 95% under ${fmtNum(p.kpis.p95, 1)} ms (p95). The green line is the frame budget, ${fmtNum(p.budget_ms, 1)} ms.`);
+  if (p.type === 'frame_time') {
+    const lines = budgetLines(p.budgets, p.budget_ms);
+    const over = p.kpis.pct_over_budget != null ? ` ${fmtNum(p.kpis.pct_over_budget, 1)}% of frames were over their own screen's budget.` : '';
+    out.push(`Half the frames took under ${fmtNum(p.kpis.p50, 1)} ms (p50) and 95% under ${fmtNum(p.kpis.p95, 1)} ms (p95). ${lines.length > 1 ? `The green lines are the frame budgets of players' screens: ${lines.map((l) => `${fmtNum(l.value, 1)} ms at ${l.hz} Hz`).join(', ')}.` : `The green line is the frame budget, ${fmtNum(p.budget_ms, 1)} ms.`}${over}`);
+  }
   if (p.type === 'net') out.push(...netInfo(p));
   if (p.type === 'servers') out.push(...serversInfo(p));
   if ((p.type === 'levels' || p.type === 'deaths') && typeof p.by === 'string') {
@@ -481,7 +485,7 @@ function PanelBody({ p }) {
     case 'frame_time':
       return (
         <>
-          <TimeSeries ts={p.ts} height={160} unit="ms" series={[{ label: 'p50', values: p.p50, color: '#3d8cf5' }, { label: 'p95', values: p.p95, color: '#ff6b57' }]} thresholds={[{ value: p.budget_ms, color: '#1fae84', label: 'budget' }]} />
+          <TimeSeries ts={p.ts} height={160} unit="ms" series={[{ label: 'p50', values: p.p50, color: '#3d8cf5' }, { label: 'p95', values: p.p95, color: '#ff6b57' }]} thresholds={budgetLines(p.budgets, p.budget_ms)} />
         </>
       );
     case 'errors':
@@ -492,7 +496,7 @@ function PanelBody({ p }) {
               {p.issues.map((i) => (
                 <tr key={i.fingerprint} className={f.readOnly ? undefined : 'click'} onClick={f.readOnly ? undefined : () => f.go(`errors/${i.fingerprint}`)}>
                   <td>
-                    {i.message}
+                    {i.came_back && <Status kind="alert">came back</Status>} {i.resolved && <Status kind="neutral">resolved</Status>} {i.message}
                     {i.location && (
                       <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }}>
                         {i.location}

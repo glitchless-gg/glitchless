@@ -1,6 +1,6 @@
 // A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
-// OAuth over HTTP): sign in, create a game, make or revoke share links, mark findings known, and read and change a
-// game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
+// OAuth over HTTP): sign in, create a game, make, list and revoke share links, mark findings known, resolve errors,
+// and read and change a game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
 import { define, base, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
 import { startSignIn, CLOUD_URL } from '../login.js';
@@ -64,34 +64,30 @@ act(
 );
 
 act(
-  'glitchless_share_board',
-  "Make a read-only share link to one board page of a game: for a dev log, Discord, a publisher, or a game's own \"Live stats\" link. Anyone with it sees that board and nothing else, signed out. No expiry unless days is set; sums (revenue, totals) show only with sums: true. The link is shown once.",
+  'glitchless_share_links',
+  "A game's read-only share links to its boards: for a dev log, Discord, a publisher, or a game's own \"Live stats\" link. With page: makes one to that board page, which anyone with it sees, and nothing else, signed out; no expiry unless days is set; sums (revenue, totals) show only with sums: true; the link is shown once. With revoke: that link stops working at once, for everyone who has it. With neither: lists them, with the page each shows, when it expires, when it was last opened (to about ten minutes) and whether it's revoked. Ask the person before making or revoking one.",
   {
-    service: z.string().optional().describe("The game's service (default: its most recently active one)"),
-    page: z.string().describe("The board page's id (glitchless_dashboard lists them)"),
-    name: z.string().optional().describe('What the link is for, e.g. "Dev log"'),
-    days: z.number().optional().describe('Expire after 1, 7, 30, 90 or 365 days'),
-    sums: z.boolean().optional().describe('Show sums such as revenue'),
+    page: z.string().optional().describe("Make a link to this board page (glitchless_dashboard lists their ids)"),
+    service: z.string().optional().describe("With page: the game's service (default: its most recently active one)"),
+    name: z.string().optional().describe('With page: what the link is for, e.g. "Dev log"'),
+    days: z.number().optional().describe('With page: expire after 1, 7, 30, 90 or 365 days'),
+    sums: z.boolean().optional().describe('With page: show sums such as revenue'),
+    revoke: z.string().optional().describe("Revoke the link with this id (from the list)"),
   },
-  async ({ service, page, name, days, sums, game }) => {
+  async ({ page, service, name, days, sums, revoke, game }) => {
     const pid = await projectFor(game);
+    if (page && revoke) throw new Error('make a link (page) or revoke one (revoke), not both at once');
+    if (revoke) {
+      await agent('DELETE', `/games/${pid}/shares/${encodeURIComponent(revoke)}`);
+      return reply(`Revoked ${revoke}: it stopped working for everyone who has it.`, {});
+    }
+    if (!page) return reply('Share links:', (await agent('GET', `/games/${pid}/shares`)).shares);
     const svc = await resolveService(service);
     const out = await agent('POST', `/games/${pid}/shares`, { service: svc, page, name, days, sums: sums === true });
     return reply(`Share link to ${svc}'s "${page}" page (shown once):\n${out.url}`, out.share);
   },
-  // Anyone with the link sees the board, signed out: it publishes beyond the workspace.
-  { annotations: { openWorldHint: true } },
-);
-
-act(
-  'glitchless_list_share_links',
-  "A game's share links: which page each shows, when it expires, when it was last opened (lastUsedAt, to about ten minutes), and whether it's revoked.",
-  {},
-  async ({ game }) => {
-    const pid = await projectFor(game);
-    return reply('Share links:', (await agent('GET', `/games/${pid}/shares`)).shares);
-  },
-  { annotations: { readOnlyHint: true, idempotentHint: true } },
+  // A link is public, signed out (it publishes beyond the workspace), and revoking one ends it for everyone.
+  { title: 'Share links', annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: true } },
 );
 
 act(
@@ -118,6 +114,31 @@ act(
   { title: 'Mark finding known', annotations: { destructiveHint: true, idempotentHint: true } },
 );
 
+act(
+  'glitchless_resolve_error',
+  "Resolve an error issue, as in Sentry: the game's owner has fixed it or accepts it (a GPU driver's error on test phones, one the newest build fixed). The Errors page hides it, glitchless_get_error lists it apart, and glitchless_triage, the overview and the weekly summary leave it out. It comes back by itself if it fires again in a version later than the newest it had been seen in (any_version: in any version, the old builds included), first in the list and new to the new_error alert. fingerprint is the issue's from glitchless_get_error or glitchless_triage (error-<fingerprint>), or the start of one. Resolving one again (one that came back) starts over from now. clear: true unresolves it. Without fingerprint, lists the game's resolved errors. Only the person's say-so resolves an error: ask before resolving one. Needs an Owner's or Admin's key, as alert settings do.",
+  {
+    fingerprint: z.string().optional().describe('The issue\'s fingerprint, e.g. "9803ec1a", or the start of one'),
+    note: z.string().optional().describe('Why, in a few words (200 characters at most), e.g. "Google Play\'s test phones on SwiftShader"'),
+    any_version: z.boolean().optional().describe('Come back if it fires again in any version, not only a later one'),
+    clear: z.boolean().optional().describe('Unresolve it'),
+  },
+  async ({ fingerprint, note, any_version, clear, game }) => {
+    const pid = await projectFor(game);
+    if (!fingerprint) {
+      const { resolved } = await agent('GET', `/games/${pid}/resolved`);
+      return reply(resolved.length ? `${resolved.length} resolved error(s), hidden on the Errors page and left out of triage until they come back:` : 'No resolved errors.', resolved);
+    }
+    const fp = fingerprint.replace(/^error-/, '');
+    const { resolved } = await agent('POST', `/games/${pid}/resolved`, clear ? { fingerprint: fp, clear: true } : { fingerprint: fp, note, any_version });
+    if (clear) return reply(`${fp} is open again: the Errors page and glitchless_triage show it.`, resolved);
+    const e = resolved.find((x) => x.fingerprint.startsWith(fp));
+    return reply(`Resolved ${e.fingerprint}. It comes back if it fires again ${e.any ? 'in any version' : e.version ? `in a version after ${e.version}` : 'at all'}. Resolved errors:`, resolved);
+  },
+  // Resolving again starts it over, and clear unresolves one.
+  { title: 'Resolve error', annotations: { destructiveHint: true, idempotentHint: false } },
+);
+
 // What each alert rule tells the team (server/src/alerts.js ALERT_RULES).
 const RULES = {
   crashes: 'more players crash in the last 6 hours than usual for those hours',
@@ -137,7 +158,7 @@ function alertLines({ alerts: a, log = [] }) {
     `Alerts are ${a.on ? 'on' : 'off'}${a.on ? '' : channels.length ? ': every rule and the weekly summary are off' : ': nowhere to send yet (a webhook is added in Settings → Alerts; email: glitchless_set_alerts email: true)'}.`,
     `Channels: ${channels.join(' and ') || 'none'}.`,
     `Rules:\n${rules.join('\n')}`,
-    `Weekly summary (Mondays, the findings worth fixing): ${a.weekly ? 'on' : 'off'}. Sessions counted: ${a.env ? `env ${a.env}` : 'any env'}. Known findings left out of it: ${a.known?.length ?? 0} (glitchless_mark_known).`,
+    `Weekly summary (Mondays, the findings worth fixing): ${a.weekly ? 'on' : 'off'}. Sessions counted: ${a.env ? `env ${a.env}` : 'any env'}. Known findings left out of it: ${a.known?.length ?? 0} (glitchless_mark_known); resolved errors: ${a.resolved?.length ?? 0} (glitchless_resolve_error).`,
     `Last sends:\n${sent.join('\n') || '  none yet'}`,
   ].join('\n');
 }
@@ -186,16 +207,4 @@ act(
   },
   // It replaces settings, removes a webhook, and a test posts to Discord, Slack or email.
   { title: 'Change alerts', annotations: { destructiveHint: true, idempotentHint: false, openWorldHint: true } },
-);
-
-act(
-  'glitchless_revoke_share_link',
-  'Revoke a share link: it stops working at once, for everyone who has it.',
-  { id: z.string().describe("The link's id from glitchless_list_share_links") },
-  async ({ id, game }) => {
-    const pid = await projectFor(game);
-    await agent('DELETE', `/games/${pid}/shares/${encodeURIComponent(id)}`);
-    return reply(`Revoked ${id}.`, {});
-  },
-  { annotations: { destructiveHint: true, idempotentHint: true } },
 );

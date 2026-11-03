@@ -9,22 +9,19 @@ import { fmtNum, fmtTime, timeAgo } from '../format.js';
 // (stores, revenue, workspaces and share links).
 const MCP_GROUPS = [
   ['Find what players hit', [
-    ['glitchless_triage', 'ranked findings with their evidence and a suggested fix: start here'],
-    ['glitchless_overview', 'sessions, players, crash-free sessions, frame time against the budget'],
+    ['glitchless_triage', 'the headline numbers, then ranked findings with their evidence and a suggested fix: start here'],
     ['glitchless_get_error', 'one error: its stack and what the player did just before'],
     ['glitchless_performance', 'frame time by level, GPU tier and version, and what causes hitches'],
     ['glitchless_bug_reports', 'what players reported from inside the game, with screenshots'],
   ]],
   ['Players and the game\'s own moments', [
     ['glitchless_events', 'whatever the game sends with track(): counts, breakdowns, funnels'],
-    ['glitchless_player_funnel', 'per level: starts, completions, deaths, rage quits'],
-    ['glitchless_death_hotspots', 'where players die on a level'],
+    ['glitchless_player_funnel', 'per level: starts, completions, deaths, rage quits, and where players die on one'],
     ['glitchless_session', 'one play session, event by event'],
     ['glitchless_compare_versions', 'versions side by side, to confirm a fix with real players'],
   ]],
   ['Stores and revenue', [
-    ['glitchless_store_reviews', 'what players wrote on Steam, Google Play or the App Store, by build'],
-    ['glitchless_store_vitals', 'what the store measured of each version, next to Glitchless'],
+    ['glitchless_store', 'what players wrote on Steam, Google Play or the App Store by build, and what the store measured of each version'],
     ['glitchless_revenue', 'real revenue from RevenueCat or Stripe, per player and per version'],
   ], { hosted: true }],
   ['Dashboards, games and sharing', [
@@ -32,12 +29,11 @@ const MCP_GROUPS = [
     ['glitchless_set_dashboard', 'design and save the game\'s own dashboard'],
     ['glitchless_list_games', 'the games reporting, with their versions'],
     ['glitchless_create_game', 'a new game and its client token', { hosted: true }],
-    ['glitchless_share_board', 'a read-only link to a board, and listing and revoking them', { hosted: true }],
+    ['glitchless_share_links', 'a read-only link to a board, and listing and revoking them', { hosted: true }],
   ]],
   ['Testing', [
     ['glitchless_playtest', 'bots play the game and compare with a saved baseline'],
-    ['glitchless_deck_send', 'build the game and send it to a paired Steam Deck'],
-    ['glitchless_deck_measure', 'measure a build on the Steam Deck'],
+    ['glitchless_deck', 'build the game, send it to a paired Steam Deck, and measure it there'],
   ]],
 ];
 

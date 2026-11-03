@@ -38,7 +38,7 @@ import { newFacts, addFactsCell } from './facts.js';
 import { MARK, sessionMs } from './session-state.js';
 import { sessionAttempts, attemptValues } from './levels.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, matchAttrs, stepLabel, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, displayOf, displayRows, matchAttrs, stepLabel, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -144,7 +144,7 @@ function newGroup(env, version, caps) {
     tex: { n: 0, g: q(), f: q(), l: q() }, // texture growth per level load, first, last
     ga: new Map(), // context gauge → { n: sessions that followed it, c: sessions it only climbed in, f, l: their first and last }
     nodes: { n: 0, og: q(), of: q(), ol: q(), ng: q(), nf: q(), nl: q() }, // orphan and live node growth, first, last
-    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map(), sb: new Map(), sv: new Map() }, // GPU tier, browser, GPU, platform, Steam branch and build → { n, cell }
+    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map(), sb: new Map(), sv: new Map(), hz: new Map() }, // GPU tier, browser, GPU, platform, Steam branch and build, screen → { n, cell }
     fwl: new Map(), // level (or '(menu)') → sessions that sent frame windows there
     lv: new Map(), // level → funnel row
     dc: {}, // death causes
@@ -235,6 +235,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
       [g.dev.p, platformOf(dev)],
       [g.dev.sb, dev.steam_branch == null ? null : String(dev.steam_branch)],
       [g.dev.sv, dev.steam_build == null ? null : String(dev.steam_build)],
+      [g.dev.hz, displayOf(s)],
     ]) {
       if (key == null) continue;
       let x = map.get(key);
@@ -601,7 +602,8 @@ function groupFromJSON(o) {
     tex: o.tex ? qs(o.tex) : { n: 0, g: q(), f: q(), l: q() },
     ga: new Map((o.ga || []).map(([k, n, c, f, l]) => [k, { n, c, f: q(f), l: q(l) }])),
     nodes: qs(o.nodes),
-    dev: { p: new Map(), sb: new Map(), sv: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
+    // Days stored before screens were kept have none.
+    dev: { p: new Map(), sb: new Map(), sv: new Map(), hz: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
     // Days stored before clear times were kept have none.
     lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl), dq: l.dq ? q(l.dq) : q(), ...(l.by ? { by: byFromJSON(l.by, q) } : {}) }])),
@@ -699,7 +701,7 @@ function mergeGroup(into, g) {
     y.f.merge(x.f);
     y.l.merge(x.l);
   }
-  for (const k of ['t', 'b', 'g', 'p', 'sb', 'sv']) {
+  for (const k of ['t', 'b', 'g', 'p', 'sb', 'sv', 'hz']) {
     for (const [key, x] of g.dev[k]) {
       const y = into.dev[k].get(key);
       if (!y) into.dev[k].set(key, { n: x.n, cell: mergeCell(newCell(), x.cell) });
@@ -809,7 +811,7 @@ export function dailyOverview(ctx) {
     .filter(([, v]) => v.n)
     .map(([version, v]) => ({ version, ts: v.start }))
     .sort((a, b) => a.ts - b.ts);
-  o.top_errors = errorIssues(ctx).slice(0, 5);
+  o.top_errors = errorIssues(ctx).filter((i) => !i.resolved).slice(0, 5);
   o.funnel = funnel(ctx);
   return o;
 }
@@ -848,6 +850,7 @@ export function dailyPerformance(ctx) {
   p.by_platform = list(g.dev.p).sort((a, b) => b.sessions - a.sessions);
   p.by_steam_branch = list(g.dev.sb).sort((a, b) => b.sessions - a.sessions);
   p.by_steam_build = list(g.dev.sv).sort((a, b) => Number(a.key) - Number(b.key));
+  p.by_display = displayRows(byDevice([...g.dev.hz]).map(([key, x]) => [summarize(key, x), x.cell.fw]));
   approximate(ctx, 'gpus', g.cut.has('gpus'));
   for (const l of p.by_level) l.sessions = g.fwl.get(l.key) || 0;
   for (const v of p.by_version) v.sessions = ctx.daily.byVersion.get(v.key)?.fw || 0;

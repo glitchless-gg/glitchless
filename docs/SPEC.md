@@ -466,19 +466,19 @@ the sessions, so over 31 days or less (Glitchless Cloud reads a longer range's l
 | name | returns |
 | --- | --- |
 | `services` | `{services:[{service, versions[], envs[], last_seen, server?}], max_range_days}`: the longest range this store answers for the reader (the plan's retention on Glitchless Cloud; `null`: no limit). A game's servers (its companion service, A9) go under it as `server: {service, versions, envs, last_seen}`; a companion whose game sent nothing yet is listed with `server_of`. Without `service=`, queries read the game that sent last, never a companion |
-| `overview` | `{kpis, series, top_errors, funnel, findings}`; `kpis.hours_played` is the hours the game was on screen (§4) |
-| `performance` | `{distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, by_zone?, hitches, memory, load, network?}`; the Steam breakdowns hold only sessions that sent the fact (§4c). `network` (A8, a game with network data): `{kpis: {ping_p50, ping_p95, lag_pct, loss_pct, jitter_ms, connected_h, disconnects, disconnect_reasons, reconnects, disconnects_per_hour, hours, disconnect_pct}, by_level, by_version, by_platform, by_link}`, each row `{key, …the same, sessions}`. `by_prop=<key>` adds `by_prop: {key, rows: [{key: value, sessions, all_sessions, p50, p95, p99, pct_over_budget, hitches_per_min, crash_free_pct, …}]}`: frame time and hitches per value of a session property from the sessions' own frame windows, crash-free sessions from every session with it, and `network.by_prop` the same network rows per value (ping by `region`) |
-| `errors` | `{issues:[{fingerprint, message, kind, location, fn, source, line, count, sessions, players, first_seen, last_seen, first_version, versions, levels, stack, sample_session, breadcrumbs}]}`; for a web build with source maps (§3d), original frames with `frames` and `minified` |
+| `overview` | `{kpis, series, top_errors, funnel, findings}`; `kpis.hours_played` is the hours the game was on screen (§4); `kpis.pct_frames_over_budget` the share of frames over their own screen's budget and `kpis.frame_budgets` the share of frame windows at each budget (`{"8.33": 60, "16.67": 40}`; §4 Frame budget) |
+| `performance` | `{kpis, distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, by_display, by_zone?, hitches, memory, load, network?}`; the Steam breakdowns hold only sessions that sent the fact (§4c). Every row's `pct_over_budget` (and `kpis.pct_frames_over_budget`) is the share of its frames over their own screen's budget; `kpis.frame_budget_ms` is the median window's, for reference (§4 Frame budget). `by_display` has a row per screen players had, the fastest first: `{key: "120 Hz", hz, budget_ms, windows_pct, sessions, p50, p95, p99, pct_over_budget, …}`, each session under the median of its windows' budgets and `windows_pct` its rate's share of the frame windows (over 31 days, from the days stored since screens were kept). `network` (A8, a game with network data): `{kpis: {ping_p50, ping_p95, lag_pct, loss_pct, jitter_ms, connected_h, disconnects, disconnect_reasons, reconnects, disconnects_per_hour, hours, disconnect_pct}, by_level, by_version, by_platform, by_link}`, each row `{key, …the same, sessions}`. `by_prop=<key>` adds `by_prop: {key, rows: [{key: value, sessions, all_sessions, p50, p95, p99, pct_over_budget, hitches_per_min, crash_free_pct, …}]}`: frame time and hitches per value of a session property from the sessions' own frame windows, crash-free sessions from every session with it, and `network.by_prop` the same network rows per value (ping by `region`) |
+| `errors` | `{issues:[{fingerprint, message, kind, location, fn, source, line, count, sessions, players, first_seen, last_seen, first_version, versions, levels, stack, sample_session, breadcrumbs, resolved?, came_back?}], engine}`; for a web build with source maps (§3d), original frames with `frames` and `minified`. An issue the game's owner resolved has `resolved` and comes last, one back since `came_back` and comes first (§3e). `engine` is the SDK most of the range's sessions came from (`godot`, `unity`, `unreal`, `gamemaker`, `phaser`, `babylon`, `playcanvas` or `web`): an issue's agent prompt checks a fix over WebMCP in a browser game and with a `--glitchless-measure` run in an engine's |
 | `players` | `{kpis, funnel, session_length, death_causes, rage_quits, retention}`. `funnel: [{level, sessions, players, completed, completion_pct, attempts, deaths, deaths_per_session, fails, abandons, abandoned, avg_complete_s, p50_complete_s, p90_complete_s, death_causes, rage_quits, rage_quit_pct}]`: `abandons` counts the attempts the player left (§2 `level_abandon`), `abandoned` the sessions that left the level without completing, failing or dying on it; `p50_complete_s` and `p90_complete_s` are the median and the slowest 1 in 10 of completed attempts' `duration_s` (clear times). `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range). `by_prop=<key>` adds `retention.by: {key, rows: [{value, new_players, d1, d7, d30}]}`: each player in the value of the first session they started on their first-seen day (31 days or less). `by=` (an attribute of the level starts, `$<property>` or a session split), `level=` and `count=runs` add `funnel_by`: the `levels` panel's answer (§3b) |
 | `players_now` | `{players_now, window_s, servers_now?}`: sessions of the game that sent anything in the last two minutes (§4), whatever the range; a game with servers adds `servers_now: {servers, players}` (its companion's live sessions and the players their latest windows had connected) |
 | `servers` | A game's servers (A9), from its companion service: `{servers_now, players_on_servers, kpis: {servers, crashed, crash_free_pct, budget_ms, windows, hours, tick_p50, tick_p95, over_budget_pct, late_pct, tick_hz, players, players_max, cpu_pct, mem_mb, mem_max_mb, net_objects, rtt_p95}, series: {ts, tick_p50, tick_p95, players, servers}, by_level, by_version, by_players: [{value, lo, hi, windows, over_budget_pct, late_pct}], crashes: [{…error issue, crashed_servers, matches_ended, players_dropped}], memory, climbing, sessions}`; `by_players` in tenths of the servers' `max_players`. Any other query reads the companion itself with `service=<game>.server` |
 | `matches` | The range's matches (A7): `{matches:[{id, from, to, duration_s, sessions, level, attrs, outcomes:{complete, fail, abandon, disconnect}, disconnects, disconnect_reasons, ping_p50, ping_p95, lag_pct, server:{sessions, tick_p95, players_max} \| null}], total, sort}`, the most recent first, or `sort=lag` (worst ping p95 first) or `sort=disconnects`; `limit` (at most 200). `id=` gives one: `{match:{…as listed, slot_s: 30, slots:[t], sessions:[{session_id, version, platform, props, level, outcome, from_s, to_s, disconnects:[{t, reason}], ping_p50, ping_p95, slots:[{t, fps, frame_p95, ping_p50, ping_p95, loss_pct, hitches, spike?}]}], server:[{session_id, slots:[{t, tick_p95, late, players, net_objects}]}], lobby_spikes:[t], events:[{t, session_id, type, level, name, reason?}]}}`, `t` in seconds from the match's first event. A slot is a `spike` for a session whose ping was twice its own median and 50 ms over it; a lobby spike when 60% of the sessions with network data (4 or more) spiked at once (§4). Read from raw events, the game's and its servers' (§6); Glitchless Cloud reads a longer range's last 31 days |
 | `heatmap` | `{level, map, deaths:[{x,y,z,cause,version}], density:{…}, stats}` (requires `level`); `stats` is the level's funnel row plus `no_win`, true for a game nobody wins (§4), which has runs rather than a completion rate |
-| `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports) |
+| `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports). Each session has its `p50`, `p95`, `budget_ms` (its screen's: the median of its windows') and `pct_over_budget` (§4 Frame budget) |
 | `reports` | Players' bug reports, newest first (at most 500): `{reports:[{id, ts, session_id, level, version, env, note, position: {x, y, z} \| null, device (one line), has_screenshot}]}`. Filters: `env`, `version`, `type`, `sessions`, the Steam facts |
 | `report` | One bug report: `id=` → `{report:{…as listed, sdk, recent, frames, screenshot}}` (`screenshot=0` leaves the picture out), from any time the store still keeps; `{error}` if there is none |
-| `versions` | `{versions:[{version, sessions, first_seen, first_seen_ever, crash_free_pct, frame_p95, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. Versions come oldest first in release order (§4), so the last two are the newest and the one before it whatever the range; `first_seen` is a version's first session start in the range, `first_seen_ever` when the store first saw it (null when it can't say). `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; a rate is `%` (and carries `rate`), an average carries `avg`, a percentile `of` and `quantile` (in the panel's `unit`), and a count or sum per hour played is `per hour`, each over the version's own hours; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact; builds come in build order, branches in the order the range first saw them. `by=<property key>` compares the values of a session property (class against class), the most sessions first, each value's rates, averages, percentiles and counts per hour played from its own sessions |
-| `findings` | Ranked findings with evidence — what the MCP server hands to coding agents |
+| `versions` | `{versions:[{version, sessions, first_seen, first_seen_ever, crash_free_pct, frame_p95, pct_frames_over_budget, frame_budgets, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. Versions come oldest first in release order (§4), so the last two are the newest and the one before it whatever the range; `first_seen` is a version's first session start in the range, `first_seen_ever` when the store first saw it (null when it can't say). `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; a rate is `%` (and carries `rate`), an average carries `avg`, a percentile `of` and `quantile` (in the panel's `unit`), and a count or sum per hour played is `per hour`, each over the version's own hours; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact; builds come in build order, branches in the order the range first saw them. `by=<property key>` compares the values of a session property (class against class), the most sessions first, each value's rates, averages, percentiles and counts per hour played from its own sessions |
+| `findings` | Ranked findings with evidence — what the MCP server hands to coding agents. With `kpis=1`, the overview's `kpis` and `deployments` too, for the same range and filters (`glitchless_triage` gives them first) |
 | `events` | The game's own metrics (`custom` events and counters): `{ts, sessions, hours, events:[{name, counted?, count, sessions, players, per_session, series, attrs:[{key, list?, values:[{value, count, sessions}], avg, p50?, p90?, p99?}], sums:[{attr, currency, sum, events}]}]}`. `counted: true` marks a name sent with `count()` (§2 `counts`): its numbers have sums and averages but no percentiles. `hours` is the hours played in the range (§4), to turn any count into a rate per hour. `properties: [{key, values: [{value, sessions, players}], identifier_like}]` lists the sessions' properties (§2 `props`), the top 40 values each; `identifier_like: true` marks one with more than 200 values on a day, which is an ID and splits as `(too many values)`. A list attribute says `list: true` and counts each element as a value (the events that have it, so they add up to more than `count`); a numeric one has its `p50`, `p90` and `p99` (§3b distributions). `sums` adds up each numeric attribute, per currency (null for events sent without one, §3b), the most sent first. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]`. With `name=` (or `event=`, the same event with a filter such as `match_end:mode=ranked`) and `rate=` (`won`, or `result=win`) or `avg=` (a numeric attribute), it adds `measure`: the stat panel's answer, or with `by=` (and `min=`, `limit=`) the breakdown panel's rows; with `of=` (a numeric attribute, and optionally `by=`, `bins=`, `limit=`), `distribution`: the distribution panel's answer (§3b). A field that can't be read is a 400 saying what to fix |
 | `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{currency?, pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
@@ -1065,7 +1065,7 @@ most 2,000 a service. A check sends at most 5 alerts a service; the rest wait fo
 | `big` | `{value, label, normal}`: the number of players, and what's normal next to it ("Usually about 2 a day") |
 | `quote` | the game's own text the alert is about (a new error's message), shown as code |
 | `todo` | one line on what to do |
-| `paste` | the line to paste into a coding agent: `Use glitchless_triage on <game>, then look at finding <id>.` (a new error adds `(glitchless_get_error with fingerprint <fp> has its stack)`; a release starts with `glitchless_compare_versions`; quiet with `glitchless_overview`; store with `glitchless_store_vitals`); none for the plan |
+| `paste` | the line to paste into a coding agent: `Use glitchless_triage on <game>, then look at finding <id>.` (a new error adds `(glitchless_get_error with fingerprint <fp> has its stack)`; a release starts with `glitchless_compare_versions`; quiet with `glitchless_triage`; store with `glitchless_store` and `show: "vitals"`); none for the plan |
 | `agent` | "For your agent": the measurements behind it (counts and shares, the usual, z or p, frame times, the Play metric and day, finding ids), small at the bottom |
 | `link`, `figure` | the dashboard page, and for a channel that draws a card `{kind, headline, series, stats}` (crashed players or sessions per hour over the last day; a new error's counts) |
 
@@ -1123,11 +1123,37 @@ nobody has accepted, and none is hidden. Severity and impact stay what they meas
 `came_back: {known, note, why, new?}` instead, stays in its place, and its weekly sentence adds "It was marked as known,
 and has got worse since." (or that it is new since findings like it were). A self-hosted server keeps none.
 
+**Resolved errors** ([`server/src/resolved.js`](../server/src/resolved.js), Glitchless Cloud): error issues a game's
+owner has dealt with or accepts, as in Sentry (a GPU driver's error on test phones, one the newest build fixed), kept
+beside the known findings with the alert settings. Each entry is `{fingerprint, note, by, at, version, any?}`:
+
+- `fingerprint` is the issue's (resolving takes the start of one, 4 characters or more, when only one issue has it).
+- `note` (optional) says why, in 200 characters at most; `by` and `at` are who resolved it and when.
+- `version` is the newest version the issue had been seen in when it was resolved, over the last 90 days of every
+  service of the game, in release order (§4: the store's first sighting of each version, else their numbers); null when
+  it came with none. Resolving one again (one that came back) starts it over: a new `at` and `version`.
+- `any: true` brings it back if it fires again in any version, the old builds included.
+
+A game keeps 200 entries at most. It is **back** once it fires after `at` in a version later than `version` in release
+order (a version whose order can't be told, a name without a sighting, counts when the issue first fired in it after
+`at`); with `any`, once it fires after `at` at all; with no `version`, once it fires after `at`. Stragglers on the old
+builds don't bring it back. The errors query (§3a), and so `glitchless_get_error` and a board's errors panel, mark each
+resolved issue `resolved: {at, version, any_version?, note, by}` and put it after the others, and one that is back
+`came_back: {version, since (the first time it fired in that version, in the range), resolved: {…}}` before them; a share
+link's reader gets the same marks without `note` and `by`. The findings, so `glitchless_triage`, the overview's six and
+the weekly summary, and the overview's top errors leave a resolved issue out; one that came back has its `error-*`
+finding again, with `came_back: {resolved (the fingerprint), note, version, why}`, and its weekly sentence adds "It was
+resolved, and came back in 1.1.3." The new_error rule skips a resolved issue and treats one that came back as new, from
+when it came back, once per version it is back in (key `error-<fingerprint>-back-<version>`): "An error you resolved in
+1.1.2 came back in Starlift 1.1.3: 12 players hit it in the last day." A self-hosted server keeps none.
+
 **Glitchless Cloud.** Settings → Alerts, per game: a webhook URL, email to every active member of the workspace,
 which rules, the weekly summary, an env, and the known findings (each saved at once, its finding suggested from the
 last 7 days' findings). Changing them, and the test button, needs the exporters' permission
 (Owner, Admin). An agent reads them with `glitchless_alerts` and changes all but the webhook URL with
-`glitchless_set_alerts` and `glitchless_mark_known` (§3g's `/v1/agent/games/{game}/alerts` and `…/known`).
+`glitchless_set_alerts`, `glitchless_mark_known` and `glitchless_resolve_error` (§3g's `/v1/agent/games/{game}/alerts`,
+`…/known` and `…/resolved`). The Errors page resolves an issue (Resolve, with an optional note and whether any version
+brings it back), lists the resolved ones apart, and unresolves them; changing any of these answers afresh at once.
 Discord (`discord.com/api/webhooks/…`) and Slack (`hooks.slack.com/services/…`) URLs are recognised; any other public
 https URL takes the format chosen (Slack's suits Mattermost, Discord's Guilded). The URL is sealed like an exporter's secrets (KMS, encryption context `{project}`) and never returned: the dashboard
 gets the host and its last four characters. Sends go through the exporters' guarded fetch: https, no redirects,
@@ -1246,8 +1272,8 @@ version before's; else medium. Its summary counts the topics, the segment's shar
 reviewers show, then what Glitchless measured on the version and the one before; `evidence` has the counts,
 `segment`, `devices`, `version`, `previous_version`, the performance findings to start with (`related_findings`) and up
 to three short examples. The suggestion names `glitchless_compare_versions`, `glitchless_performance` with that
-version, `glitchless_deck_measure` when most of these reviewers are on a Deck, `glitchless_store_reviews` for the
-build, and `glitchless_store_vitals` on a store that reports vitals.
+version, `glitchless_deck` with `measure: true` when most of these reviewers are on a Deck, `glitchless_store` for the
+build, and `glitchless_store` with `show: "vitals"` on a store that reports vitals.
 
 **Query** `store_reviews`: one store's reviews in the range (`store`, default the first connected), newest first,
 filtered by `build` (a build ID, a version or a release's label), `sentiment` (`positive` or `negative`), `keyword` (a
@@ -1256,14 +1282,15 @@ topic, or any text), `deck=1` (Steam), `device` (part of the GPU or device name;
 matched, negative, segment?, topics, devices, builds, reviews:[{…review, build, version}], texts_from, capped}`.
 `builds` are the panel's rows. Texts are read for the range (other queries read the last 62 days), at most the latest
 3,000; counts are always complete. An unknown build answers `{error, releases}`. The MCP tool
-`glitchless_store_reviews` reads it.
+`glitchless_store` reads it.
 
 **Query** `store_vitals`: one store's vitals (`store`, default the first connected one that reports vitals; `version`,
 a version name or build number) → `{connected, store, store_name, stores, app_id, synced_at, columns:[{key, metric,
 percentile, label, unit}], rows:[{version, build, latest, store: {<key>: value}, glitchless: {sessions, frame_p95,
 hitches_per_min, crash_free_pct, crashed_pct, slow20_pct, slow30_pct, ttff_p50} | null, notes}], notes:[{version,
 metric, store_value, glitchless_value, says}], devices, hangs}`, or `{empty, why}` before any. A column's `key` is the
-metric, with `:p50` or `:p90` where the store gives percentiles. The MCP tool `glitchless_store_vitals` reads it.
+metric, with `:p50` or `:p90` where the store gives percentiles. The MCP tool `glitchless_store` reads it with
+`show: "vitals"`.
 
 **Stored** (a pk/sk store: Glitchless Cloud's control table), under `STORE#<project>#<store>`: `R#<day>` (that day's
 reviews, up to 300 KB of UTF-8: past that a review is counted but its text not kept), `RH#<month>` (review counts per
@@ -1416,6 +1443,8 @@ from inside a chat.
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
 | `GET /v1/agent/games/{game}/known` | Its known findings (§3e) | read |
 | `POST /v1/agent/games/{game}/known` | `{ finding, note, until?, until_worse? }` marks one known; `{ finding, clear: true }` clears it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_mark_known`) | manage |
+| `GET /v1/agent/games/{game}/resolved` | Its resolved errors (§3e) | read |
+| `POST /v1/agent/games/{game}/resolved` | `{ fingerprint, note?, any_version? }` resolves one (404 `ERROR_NOT_FOUND` when no issue has it over the last 90 days); `{ fingerprint, clear: true }` unresolves it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_resolve_error`) | manage |
 | `GET /v1/agent/games/{game}/alerts` | Its alert settings, the last 20 sends and the defaults, as `GET /api/projects/{p}/alerts` answers them (§3e; `glitchless_alerts`) | read |
 | `POST /v1/agent/games/{game}/alerts` | Any of `{ rules: {rule: bool}, weekly, email, env, webhook: null }`, as the dashboard's `PATCH` takes them; `webhook: null` removes the webhook. A webhook URL is refused (`WEBHOOK_IN_SETTINGS`): the person pastes it in Settings → Alerts, so it never passes through a chat. Owner or Admin (`glitchless_set_alerts`) | manage |
 | `POST /v1/agent/games/{game}/alerts/test` | A test alert to every channel → `{ sent }`, 10 an hour (`glitchless_set_alerts` with `test: true`) | manage |
@@ -1734,6 +1763,26 @@ Glitchless's own billing).
   come and go between waves; a leak only grows. A gauge that climbs in 60% of the sessions that report it (3 or
   more) is a memory finding, unless it is a progress counter by name (score, time, kills, wave and the like).
 - **Hitch**: a single frame > 50ms. **Jank**: a frame > 33.3ms (misses two 60Hz vsyncs).
+- **Frame budget**: a frame window's `budget_ms`, 1000 over the refresh rate of the screen it was drawn on (8.33 ms at
+  120 Hz, 16.67 ms at 60 Hz; the SDKs measure the rate and round it to a usual one). Frame time is judged frame by frame
+  against each window's own budget, never against one budget for the game: a frame is over budget when it takes over
+  1.15× its window's, and `pct_over_budget` (`pct_frames_over_budget` in KPIs and versions) is the share of frames that
+  do. So a game played on 120 Hz and 60 Hz phones whose 60 Hz phones draw every frame on time (16.7 ms) has none over,
+  while its median budget (`frame_budget_ms`, 8.33 ms) would call them all late. The cells count each window's frames
+  over its own budget, so this is exact over any range, daily rollups included.
+  - **Colours.** The dashboard colours a frame time by it: a p95 is green while under 5% of the frames are over budget
+    (its p95 on time on players' own screens), red from 15% or once the p95 is over 33.4 ms (janky on any screen), and
+    yellow between; a p50 is green under 50% and red from there, a p99 green under 1% and red from 3% (or over 33.4 ms).
+    That holds for the Performance page's KPIs, tables and bars and the Versions and Sessions views; a board's
+    `frame_time` panel gives the share in its info (`kpis.pct_over_budget`).
+  - **Screens.** When two or more refresh rates each have 10% or more of the frame windows, the Performance page
+    splits its p50, p95 and p99 by screen (`by_display`: "8.5 ms at 120 Hz, 16.8 ms at 60 Hz", each coloured against
+    its own budget), and frame-time charts (the Performance page's, a board's `frame_time` panel, whose answer carries
+    `budgets`, the overview's `frame_budgets`) draw a budget line per screen.
+  - **Findings.** A level gets a frame-time finding (`perf-level-<level>`, "Frame-time spikes on pit_80: p95 34ms, 18%
+    of frames over budget") when 5% or more of its frames are over budget and its p95 is 22 ms or more (under 45 fps:
+    slow on any screen); it is critical from a p95 of 50 ms, high from 33.3 ms. The low-tier GPU gap
+    (`device-gap-low-tier`) and a slow setting (below) need the slow group's frames over budget the same way.
 - **Lag**: the share of a connected player's time with a round trip over 150 ms, from each window's sketch.
 - **Lobby spike** (finding `net-lobby-<level>`): each match is cut into 30-second slots; a slot is a lobby spike when at
   least 60% of the match's sessions with network data in it (4 or more) have ping at least twice their own median for
@@ -1803,8 +1852,9 @@ Glitchless's own billing).
   share_pct, all_pct}`; "Most of it falls on class necromancer: 82% of the sessions it hit, against 30% of all
   sessions"). Over 31 days or less.
 - **Slow setting** (finding `perf-prop-<key>`): a session property with 2 to 10 values, each with 20+ sessions that drew
-  frames, where one value's frame p95 is 1.5× the rest's and over the frame budget ("Frame time on preset ultra is 41
-  ms for the slowest 5% of frames, against 18 ms on the rest").
+  frames, where one value's frame p95 is 1.5× the rest's and late on its own screens (5% or more of its frames over
+  budget, Frame budget above: a phone model on 60 Hz screens is slower than one on 120 Hz without being late) ("Frame
+  time on preset ultra is 41 ms for the slowest 5% of frames, against 18 ms on the rest").
 - **Platform**: Valve's hardware named by Steamworks (`steam_hardware`: Steam Deck, Steam Machine, Steam Frame, §4c),
   else a Steam Deck (`steam_deck`), whatever OS the build is for, else the OS. Performance breaks frame times down by
   it (`by_platform`).

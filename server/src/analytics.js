@@ -20,6 +20,7 @@ import { propertyKey, propertySplit, propOf, sessionPasses, NONE } from './prope
 import { measureOf, measureBy, rateOf, avgOf } from './rates.js';
 import { percentileFromOccurrences } from './distributions.js';
 import { linkOf, networkView, NET_METRICS } from './network.js';
+import { resolvedMark, resolvedIndex, resolvedOrder } from './resolved.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
 // A first frame later than this is a slow start (the slow-start finding, and the share of sessions it hits).
@@ -206,6 +207,9 @@ export function sessionSummary(s) {
     hitches: s.hitches,
     p50: round(s.p50, 1),
     p95: round(s.p95, 1),
+    // Its screen's frame budget (the median of its windows') and its frames over 1.15× their own window's budget.
+    budget_ms: s.cell ? budgetMedian(s.cell.budgets) : null,
+    pct_over_budget: s.cell?.ft.n ? round((s.cell.over / s.cell.ft.n) * 100, 1) : null,
     crashed: s.crashed,
     rage_quit: s.rage_quit,
     rage: s.rage,
@@ -279,6 +283,8 @@ export function overview(ctx) {
       frame_p95: round(all.quantile(0.95), 2),
       frame_p99: round(all.quantile(0.99), 2),
       frame_budget_ms: round(budget, 2),
+      // The screens players had: the share of frame windows at each budget (1000 / refresh rate, in ms).
+      frame_budgets: budgetShares(total.budgets),
       pct_frames_over_budget: all.n ? round((total.over / all.n) * 100, 1) : 0,
       avg_fps: frameSeconds ? round(total.frames / frameSeconds, 1) : null,
       hitches_per_min: frameSeconds ? round(total.hitches / (frameSeconds / 60), 2) : null,
@@ -296,7 +302,7 @@ export function overview(ctx) {
     },
     series,
     deployments: deployments(ctx),
-    top_errors: errorIssues(ctx).slice(0, 5),
+    top_errors: errorIssues(ctx).filter((i) => !i.resolved).slice(0, 5),
     funnel: funnel(ctx),
   };
 }
@@ -325,6 +331,7 @@ export function performance(ctx, { byProp = null } = {}) {
   const byBranch = new Map();
   const byBuild = new Map();
   const byZone = new Map();
+  const byDisplay = new Map();
   const bucketSketch = Array.from({ length: nb }, () => new Sketch());
   const bucketCalls = Array.from({ length: nb }, () => [0, 0]);
   const bucketGeo = Array.from({ length: nb }, () => [0, 0]);
@@ -364,8 +371,9 @@ export function performance(ctx, { byProp = null } = {}) {
   // known from its session_start), in the order the sessions' first frame windows arrived.
   for (const s of sessionsByFirstWindow(ctx)) {
     const dev = s.device || {};
-    // Steam branches and builds only for the sessions that read them from Steamworks.
-    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)], [byBranch, steamValue(s, 'steam_branch')], [byBuild, steamValue(s, 'steam_build')]]) {
+    // Steam branches and builds only for the sessions that read them from Steamworks; screens for the sessions whose
+    // SDK sends a frame budget.
+    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)], [byBranch, steamValue(s, 'steam_branch')], [byBuild, steamValue(s, 'steam_build')], [byDisplay, displayOf(s)]]) {
       if (key == null) continue;
       const g = group(map, key);
       mergeCell(g, s.cell);
@@ -449,6 +457,7 @@ export function performance(ctx, { byProp = null } = {}) {
     by_platform: [...byPlatform.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_branch: [...byBranch.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_build: [...byBuild.values()].map(summarize).sort((a, b) => Number(a.key) - Number(b.key)),
+    by_display: displayRows([...byDisplay.values()].map((g) => [summarize(g), g.fw])),
     // Sessions per zone aren't known from the cells (they carry no session IDs): null, not zero.
     ...(byZone.size ? { by_zone: naturalSortBy([...byZone.values()].map((g) => ({ ...summarize(g), sessions: null })), 'key') } : {}),
     hitch_causes: { ...mergedFacts(ctx).hc },
@@ -490,6 +499,25 @@ function propRows(ctx, key, summarize) {
     g.sessions.add(s.session_id);
   }
   return [...groups.values()].map((g) => ({ ...summarize(g), all_sessions: g.all, crash_free_pct: pct(g.all - g.crashed, g.all) })).sort((a, b) => b.all_sessions - a.all_sessions || (a.key < b.key ? -1 : 1));
+}
+
+// A session's screen ("120 Hz"): its refresh rate, from the median of its windows' frame budgets (the SDKs measure
+// it and round it to a usual rate), or null for a session whose SDK sends no budget. by_display groups by it.
+export function displayOf(s) {
+  const budget = budgetMedian(s.cell.budgets);
+  return budget ? `${Math.round(1000 / budget)} Hz` : null;
+}
+
+// by_display rows from [summarized group, its frame windows]: each refresh rate with its frame budget and its share of
+// the frame windows, the fastest screen first. A game played on 120 Hz and 60 Hz phones reads each apart.
+export function displayRows(list) {
+  const windows = list.reduce((n, [, fw]) => n + fw, 0);
+  return list
+    .map(([row, fw]) => {
+      const hz = parseInt(row.key, 10);
+      return { ...row, hz, budget_ms: round(1000 / hz, 2), windows_pct: pct(fw, windows) };
+    })
+    .sort((a, b) => b.hz - a.hz);
 }
 
 // Groups in the order their first frame window arrived, as iterating the raw events would give them.
@@ -658,8 +686,10 @@ export function errorIssues(ctx) {
 }
 
 // Issues by fingerprint, most sessions first, without breadcrumbs (a store fetches those for the
-// samples listed here when it has no raw events).
+// samples listed here when it has no raw events). With ctx.resolved (resolved.js), each resolved issue is marked
+// `resolved` or `came_back`, the ones back first and the resolved last.
 export function errorList(ctx) {
+  const resolved = ctx.resolved?.entries?.length ? resolvedIndex(ctx.resolved.entries) : null;
   const errors = {};
   const series = new Map();
   const totalSessions = sessionCount(ctx) || 1;
@@ -703,9 +733,11 @@ export function errorList(ctx) {
         series,
         sessions_pct: pct(sessions, totalSessions),
         fatal: FATAL_KINDS.has(e.kind),
+        ...(resolved ? resolvedMark(x, resolved.get(x.fp), { seen: ctx.versionsFirstSeen, share: ctx.resolved.share }) : {}),
       };
     });
-  return list.sort((a, b) => b.sessions - a.sessions || b.count - a.count);
+  list.sort((a, b) => b.sessions - a.sessions || b.count - a.count);
+  return resolved ? resolvedOrder(list) : list;
 }
 
 // The six game events a session sent up to `ts` (not frames, positions, errors, maps or loads).
@@ -1663,6 +1695,16 @@ function compareVersionNumbers(a, b) {
   return 0;
 }
 
+// Whether version a comes after version b in release order, as releaseOrder puts them: by the store's first sighting
+// of each (seen: a Map or an object, version → time) when it has both, else by their numbers. null when neither
+// tells (a name, a commit hash).
+export function versionNewer(a, b, seen = null) {
+  if (a == null || b == null || a === b) return false;
+  const at = (v) => (seen instanceof Map ? seen.get(v) : seen?.[v]);
+  if (at(a) != null && at(b) != null && at(a) !== at(b)) return at(a) > at(b);
+  return versionParts(a) && versionParts(b) ? compareVersionNumbers(a, b) > 0 : null;
+}
+
 // A board stat's metric as a version summary names it.
 const VERSION_METRIC = { errors: 'errors_per_session', deaths: 'deaths_per_session' };
 
@@ -1761,6 +1803,8 @@ function summarize(sessions, cells) {
     frame_p50: round(sketch.quantile(0.5), 2),
     frame_p95: round(sketch.quantile(0.95), 2),
     frame_p99: round(sketch.quantile(0.99), 2),
+    // Frames over 1.15× their own window's budget: each screen against its own refresh rate.
+    pct_frames_over_budget: sketch.n ? round((total.over / sketch.n) * 100, 1) : null,
     hitches_per_min: frameSeconds ? round(st.hitches / (frameSeconds / 60), 2) : null,
     // Renderer cost per frame: on fast GPUs vsync hides a perf bug in frame time, these don't.
     draw_calls: total.calls[1] ? Math.round(meanOf(total.calls, FIXED.calls)) : null,

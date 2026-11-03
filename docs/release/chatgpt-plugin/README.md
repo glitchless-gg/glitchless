@@ -49,22 +49,17 @@ OpenAI's own examples carry it), delete that line from the zip's `mcp.json` and 
 | Tool | Read-only | Open world | Destructive |
 | --- | --- | --- | --- |
 | `glitchless_list_games` | true: lists the games in the person's workspace | false: reaches only the person's own Glitchless workspace | false: changes nothing |
-| `glitchless_triage` | true: reads findings from the game's data | false: reads only the person's own game data | false: changes nothing |
-| `glitchless_overview` | true: reads the game's headline numbers | false: reads only the person's own game data | false: changes nothing |
+| `glitchless_triage` | true: reads the game's headline numbers and findings | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_performance` | true: reads frame-time measurements | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_get_error` | true: reads error reports the game sent | false: reads only the person's own game data | false: changes nothing |
-| `glitchless_player_funnel` | true: reads level progress and retention | false: reads only the person's own game data | false: changes nothing |
-| `glitchless_death_hotspots` | true: reads where players died | false: reads only the person's own game data | false: changes nothing |
+| `glitchless_player_funnel` | true: reads level progress, retention and where players died | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_session` | true: reads one play session | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_events` | true: reads the game's own events | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_compare_versions` | true: reads two versions' numbers | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_dashboard` | true: reads the game's dashboard and its numbers | false: reads only the person's own workspace | false: changes nothing |
 | `glitchless_bug_reports` | true: reads bug reports players sent | false: reads only the person's own game data | false: changes nothing |
-| `glitchless_store_reviews` | true: reads store reviews already synced into Glitchless | false: calls no store; reads what the workspace already holds | false: changes nothing |
-| `glitchless_store_vitals` | true: reads store vitals already synced into Glitchless | false: calls no store; reads what the workspace already holds | false: changes nothing |
+| `glitchless_store` | true: reads store reviews and vitals already synced into Glitchless | false: calls no store; reads what the workspace already holds | false: changes nothing |
 | `glitchless_revenue` | true: reads revenue already synced into Glitchless | false: calls no payment provider; reads what the workspace already holds | false: changes nothing |
-| `glitchless_list_share_links` | true: lists the game's share links | false: reaches only the person's own workspace | false: changes nothing |
 | `glitchless_set_dashboard` | false: saves the game's dashboard | false: the dashboard stays in the person's workspace | true: it replaces the saved pages, and `reset` deletes them |
 | `glitchless_create_game` | false: adds a game to the workspace | false: the game stays in the person's workspace | false: adds a game and removes nothing |
-| `glitchless_share_board` | false: creates a share link | true: anyone with the link can see that board, signed out | false: adds a link and changes no data |
-| `glitchless_revoke_share_link` | false: revokes a share link | false: acts on a link in the person's own workspace | true: the link stops working for everyone who has it, and can't be restored |
+| `glitchless_share_links` | false: creates, lists and revokes share links | true: anyone with a link can see that board, signed out | true: a revoked link stops working for everyone who has it, and can't be restored |

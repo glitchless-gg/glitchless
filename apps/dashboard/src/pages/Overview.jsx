@@ -13,8 +13,9 @@ export function NoGame() {
   );
 }
 
-export function IssuesTable({ issues, onClick, selected }) {
-  if (!issues?.length) return <div className="empty">No errors in this time range.</div>;
+// came_back and resolved: the game's owner resolved it (server/src/resolved.js), and whether it fired again since.
+export function IssuesTable({ issues, onClick, selected, empty = 'No errors in this time range.' }) {
+  if (!issues?.length) return <div className="empty">{empty}</div>;
   return (
     <div className="tablewrap">
       <table className="dt">
@@ -34,12 +35,14 @@ export function IssuesTable({ issues, onClick, selected }) {
             <tr key={i.fingerprint} className={`click ${selected === i.fingerprint ? 'sel' : ''}`} onClick={() => onClick?.(i)}>
               <td style={{ maxWidth: 460 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <Status kind={i.fatal ? 'alert' : 'warn'}>{i.kind}</Status>
+                  {i.came_back && <Status kind="alert">came back</Status>}
+                  <Status kind={i.resolved ? 'neutral' : i.fatal ? 'alert' : 'warn'}>{i.kind}</Status>
                   <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.message}</b>
                 </div>
                 <div className="muted mono" style={{ fontSize: 11.5, marginTop: 2 }} title={i.minified ? `minified: ${i.minified.location}` : undefined}>
                   {i.location}
                 </div>
+                {(i.resolved ?? i.came_back?.resolved)?.note && <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Resolved: {(i.resolved ?? i.came_back.resolved).note}</div>}
               </td>
               <td>{i.levels.map((l) => <span className="tag" key={l}>{l}</span>)}</td>
               <td className="num">{fmtNum(i.count)}</td>

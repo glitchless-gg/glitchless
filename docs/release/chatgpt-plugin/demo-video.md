@@ -30,12 +30,12 @@ The URL goes in `submission.json` as `review.demo_recording_url`.
 | 4 | Glitchless sign-in | Install, and ChatGPT opens Glitchless. Sign in with the review account (pause for the password) | The Glitchless sign-in page | 0:10 |
 | 5 | Glitchless approval page | Hold for a second on "An app calling itself ChatGPT…" and "Connecting sends you back to…". Keep the workspace "Glitchless Review", tick **Design and save dashboards** and **Create games and share links**, then Connect | The app's name, the address it returns to, the three choices | 0:15 |
 | 6 | New ChatGPT chat | Type `@`, choose Glitchless, ask: **What's wrong with Zoomies this week?** Open the tool call | `glitchless_triage`; findings ranked, with the level 2 difficulty spike at the vacuum, the TypeError reading 'velocity', and the level 2 stutter that 1.1.0 removed | 0:25 |
-| 7 | Same chat | **Where do players die most on level 2 of Zoomies, and what kills them?** | `glitchless_death_hotspots`; around x 38 to 43, about two thirds of the level's deaths, the vacuum | 0:15 |
+| 7 | Same chat | **Where do players die most on level 2 of Zoomies, and what kills them?** | `glitchless_player_funnel` with hotspots; around x 38 to 43, about two thirds of the level's deaths, the vacuum | 0:15 |
 | 8 | Same chat | **Which error hits the most Zoomies sessions, and what happened right before it?** | `glitchless_get_error`; the TypeError in Player.update, about a fifth of sessions, the events before it | 0:15 |
 | 9 | Same chat | **Show me Zoomies' dashboard.** | `glitchless_dashboard`; its pages and the board's numbers | 0:15 |
 | 10 | Same chat | **Compare Zoomies 1.0.0 and 1.1.0 over the past week. Did 1.1.0 fix the level 2 stutter?** | `glitchless_compare_versions`; level 2's hitches from several a minute to none | 0:15 |
-| 11 | Same chat, then a new tab | **Make a share link to Zoomies' Zoomies board.** Confirm if ChatGPT asks. Open the link in a new tab | `glitchless_share_board`; the read-only board, signed out | 0:20 |
-| 12 | Back in the chat | **Revoke that share link.** Confirm. Reload the link's tab | `glitchless_revoke_share_link`; the link no longer opens | 0:15 |
+| 11 | Same chat, then a new tab | **Make a share link to Zoomies' Zoomies board.** Confirm if ChatGPT asks. Open the link in a new tab | `glitchless_share_links`; the read-only board, signed out | 0:20 |
+| 12 | Back in the chat | **Revoke that share link.** Confirm. Reload the link's tab | `glitchless_share_links` with revoke; the link no longer opens | 0:15 |
 | 13 | New chat, no @ | **What's the weather in Seattle tomorrow?** | An answer with no Glitchless tool call | 0:10 |
 | **Codex** | | | | |
 | 14 | Terminal | `codex plugin marketplace add glitchless-gg/glitchless`, then `codex plugin add glitchless@glitchless`, then start `codex` and sign in to Glitchless the same way (scenes 4 and 5). If Codex doesn't open the sign-in by itself, run `codex mcp login glitchless` | The plugin installed; the approval page naming Codex | 0:30 |

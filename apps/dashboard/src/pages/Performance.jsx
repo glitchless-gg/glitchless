@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, QueryValue, TimeSeries, BarList, Histogram, Status, GroupTitle, Segmented } from '../components.jsx';
-import { fmtNum, fmtMs, fmtPct, frameStatus, pctStatus, timeAgo, PALETTE } from '../format.js';
+import { fmtNum, fmtMs, fmtPct, frameStatus, commonScreens, budgetLines, pctStatus, timeAgo, PALETTE } from '../format.js';
 import { NoGame } from './Overview.jsx';
 import { fmtPing, fmtPerHour, pingKind, reasonWords } from '../genre.jsx';
 
+const STATUS_COLOR = { ok: '#1fae84', warn: '#f2a93b', alert: '#ff6b57', neutral: 'var(--ink)' };
 const CAUSE_LABEL = { script: 'Long script (LoAF)', shader_compile: 'Shader compile', gc: 'GC pause', asset_load: 'Asset loading', texture_upload: 'Texture uploads', geometry_upload: 'Geometry uploads', object_spawn: 'Object spawn', scene_change: 'Scene change', render: 'Long render', frozen: 'Frozen frame', unattributed: 'Unattributed' };
 
 export function Performance({ route }) {
@@ -27,28 +28,33 @@ export function Performance({ route }) {
   if (!data) return <div className="loading-bar" />;
   const k = data.kpis;
   const budget = k.frame_budget_ms || 16.67;
+  // Players' screens, when more than one refresh rate is common (120 Hz and 60 Hz phones): the headline reads each
+  // apart, and every frame is judged against its own screen's budget (pct_over_budget) wherever it is coloured.
+  const screens = commonScreens(data.by_display);
+  const over = k.pct_frames_over_budget;
+  const lines = budgetLines(Object.fromEntries(screens.map((r) => [r.budget_ms, r.windows_pct])), budget);
   const s = data.series;
   const versionSeries = Object.entries(s.p95_by_version || {}).map(([v, values], i) => ({ label: `p95 · ${v}`, values, color: PALETTE[i % PALETTE.length] }));
-  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, version: data.by_version, steam_branch: data.by_steam_branch, steam_build: data.by_steam_build };
+  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, version: data.by_version, steam_branch: data.by_steam_branch, steam_build: data.by_steam_build, display: data.by_display };
   // Steam branches and builds only for a game whose sessions read them from Steamworks (SPEC §4c).
-  const segments = [{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, { value: 'version', label: 'Version' }, ...(data.by_steam_branch?.length ? [{ value: 'steam_branch', label: 'Steam branch' }] : []), ...(data.by_steam_build?.length ? [{ value: 'steam_build', label: 'Steam build' }] : [])];
+  const segments = [{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, { value: 'version', label: 'Version' }, ...(data.by_display?.length > 1 ? [{ value: 'display', label: 'Screen' }] : []), ...(data.by_steam_branch?.length ? [{ value: 'steam_branch', label: 'Steam branch' }] : []), ...(data.by_steam_build?.length ? [{ value: 'steam_build', label: 'Steam build' }] : [])];
   const gauges = data.hitch_context?.gauges || [];
   const preceding = data.hitch_context?.preceding_events || [];
 
   return (
     <div className="grid">
-      <QueryValue label="p50 frame time" value={k.frame_p50?.toFixed(1)} unit="ms" status={frameStatus(k.frame_p50, budget)} />
-      <QueryValue label="p95 frame time" value={k.frame_p95?.toFixed(1)} unit="ms" status={frameStatus(k.frame_p95, budget)} sub={`budget ${budget.toFixed(1)}ms`} />
-      <QueryValue label="p99 frame time" value={k.frame_p99?.toFixed(1)} unit="ms" status={frameStatus(k.frame_p99, budget)} />
+      <QueryValue label="p50 frame time" value={screens.length ? <ByScreen rows={screens} field="p50" q={0.5} /> : k.frame_p50?.toFixed(1)} unit={screens.length ? null : 'ms'} status={frameStatus(over, k.frame_p50, 0.5)} sub={screens.length ? `play: ${screens.map((r) => `${fmtPct(r.windows_pct, 0)} at ${r.hz} Hz`).join(' · ')}` : null} />
+      <QueryValue label="p95 frame time" value={screens.length ? <ByScreen rows={screens} field="p95" q={0.95} /> : k.frame_p95?.toFixed(1)} unit={screens.length ? null : 'ms'} status={frameStatus(over, k.frame_p95)} sub={screens.length ? `${fmtPct(over)} of frames over their screen's budget` : `budget ${budget.toFixed(1)}ms · ${fmtPct(over)} of frames over it`} />
+      <QueryValue label="p99 frame time" value={screens.length ? <ByScreen rows={screens} field="p99" q={0.99} /> : k.frame_p99?.toFixed(1)} unit={screens.length ? null : 'ms'} status={frameStatus(over, k.frame_p99, 0.99)} />
       <QueryValue label="Hitches / min" value={fmtNum(k.hitches_per_min, 2)} status={pctStatus(k.hitches_per_min, 1, 4, false)} sub={`${fmtNum(k.hitches)} total · ${k.frozen_frames} frozen`} />
       <QueryValue label="Avg draw calls" value={fmtNum(k.draw_calls)} sub={`render CPU ${fmtMs(k.render_cpu_ms, 2)}/frame`} status={pctStatus(k.draw_calls, 300, 800, false)} />
       <QueryValue label="Time to first frame" value={k.ttff_p50 != null ? (k.ttff_p50 / 1000).toFixed(2) : null} unit="s" sub={`p95 ${k.ttff_p95 != null ? (k.ttff_p95 / 1000).toFixed(2) + 's' : '–'}`} status={pctStatus(k.ttff_p95, 3000, 8000, false)} />
 
       <Widget span={8} title="p95 frame time by version" sub="deployments compared on the same time axis">
-        <TimeSeries ts={s.ts} height={220} unit="ms" series={versionSeries} thresholds={[{ value: budget, color: '#1fae84', label: 'budget' }, { value: 33.3, color: '#ff6b57', label: 'jank (30fps)' }]} />
+        <TimeSeries ts={s.ts} height={220} unit="ms" series={versionSeries} thresholds={[...lines, { value: 33.3, color: '#ff6b57', label: 'jank (30fps)' }]} />
       </Widget>
       <Widget span={4} title="Frame time distribution" sub="share of all frames">
-        <Histogram edges={data.distribution.edges} counts={data.distribution.counts} budget={budget} />
+        <Histogram edges={data.distribution.edges} counts={data.distribution.counts} budget={screens.length ? Math.max(...screens.map((r) => r.budget_ms)) : budget} />
       </Widget>
 
       <Widget span={12} title={where === 'zone' ? 'By zone' : 'By level'} sub="where the frame budget goes" actions={data.by_zone?.length ? <Segmented value={where} onChange={setWhere} options={[{ value: 'level', label: 'Level' }, { value: 'zone', label: 'Zone' }]} /> : null} info={where === 'zone' ? 'A zone is a region inside a level the game names with setZone (a district, a dungeon floor). Frames count under the zone they were drawn in; sessions are left out, since one session crosses many zones.' : null} flush>
@@ -78,7 +84,7 @@ export function Performance({ route }) {
                   <td className="num">{fmtNum(l.sessions)}</td>
                   <td className="num">{fmtMs(l.p50)}</td>
                   <td className="num">
-                    <Status kind={frameStatus(l.p95, budget)}>{fmtMs(l.p95)}</Status>
+                    <Status kind={frameStatus(l.pct_over_budget, l.p95)}>{fmtMs(l.p95)}</Status>
                   </td>
                   <td className="num">{fmtMs(l.p99)}</td>
                   <td className="num">{fmtPct(l.pct_over_budget)}</td>
@@ -189,7 +195,7 @@ export function Performance({ route }) {
       <GroupTitle>Devices</GroupTitle>
       <Widget span={6} title="p95 frame time by segment" actions={<Segmented value={dim} onChange={setDim} options={segments} />}>
         <BarList
-          rows={(dims[dim] || []).map((g) => ({ label: `${g.key} (${g.sessions})`, value: g.p95, display: fmtMs(g.p95), color: frameStatus(g.p95, budget) === 'ok' ? '#1fae84' : frameStatus(g.p95, budget) === 'warn' ? '#f2a93b' : '#ff6b57', title: `${g.sessions} sessions` }))}
+          rows={(dims[dim] || []).map((g) => ({ label: `${g.key} (${g.sessions})`, value: g.p95, display: fmtMs(g.p95), color: STATUS_COLOR[frameStatus(g.pct_over_budget, g.p95)], title: `${g.sessions} sessions · ${fmtPct(g.pct_over_budget)} of frames over their screen's budget` }))}
         />
       </Widget>
       <Widget span={6} title="Scene memory" sub="avg renderer geometries & JS heap — growth that never drops is a leak">
@@ -210,8 +216,23 @@ export function Performance({ route }) {
           ))}
         </div>
       </Widget>
-      {f.properties?.length > 0 && <ByProperty data={data} prop={prop} setProp={setProp} keys={f.properties.map((p) => p.key)} budget={budget} />}
+      {f.properties?.length > 0 && <ByProperty data={data} prop={prop} setProp={setProp} keys={f.properties.map((p) => p.key)} />}
     </div>
+  );
+}
+
+// A headline percentile per screen when players' screens differ ("8.5 ms at 120 Hz", "16.8 ms at 60 Hz"), each
+// coloured against its own screen's budget.
+function ByScreen({ rows, field, q }) {
+  return (
+    <span className="byscreen">
+      {rows.map((r) => (
+        <span key={r.key} className={`${frameStatus(r.pct_over_budget, r[field], q)}-t`}>
+          {fmtNum(r[field], 1)}
+          <small>ms at {r.hz} Hz</small>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -283,7 +304,7 @@ function Network({ n, anchor }) {
 }
 
 // Frame time and crashes by a session property (A6): each value of the picked key (a class, a graphics preset).
-function ByProperty({ data, prop, setProp, keys, budget }) {
+function ByProperty({ data, prop, setProp, keys }) {
   const rows = data.by_prop?.key === prop ? data.by_prop.rows : null;
   return (
     <Widget
@@ -330,7 +351,7 @@ function ByProperty({ data, prop, setProp, keys, budget }) {
                   <td className="num">{fmtNum(r.all_sessions ?? r.sessions)}</td>
                   <td className="num">{fmtMs(r.p50)}</td>
                   <td className="num">
-                    <Status kind={frameStatus(r.p95, budget)}>{fmtMs(r.p95)}</Status>
+                    <Status kind={frameStatus(r.pct_over_budget, r.p95)}>{fmtMs(r.p95)}</Status>
                   </td>
                   <td className="num">{fmtPct(r.pct_over_budget)}</td>
                   <td className="num">{fmtNum(r.hitches_per_min, 2)}</td>

@@ -42,6 +42,8 @@ const RETENTION_QUERIES = new Set(['players', 'board', 'store_revenue']);
 const VERSION_QUERIES = new Set(['overview', 'versions', 'findings', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
 // Queries that make findings, which read the game's saved boards.
 const FINDING_QUERIES = new Set(['overview', 'findings', 'board']);
+// Queries that list error issues or findings made from them, which a game's resolved errors mark (resolved.js).
+const RESOLVED_QUERIES = new Set(['errors', 'overview', 'findings', 'board']);
 // Queries that read the game's servers too (A9): its companion service's sessions, as ctx.server (servers.js).
 const SERVER_QUERIES = new Set(['overview', 'findings', 'board', 'servers', 'matches']);
 // Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
@@ -81,7 +83,9 @@ const MIME = {
 // reviews.js), or null when it is connected to none; a host without stores leaves it out.
 // known: (projectId) → the game's known findings (known.js), which its findings are marked with; a host that keeps
 // none leaves it out.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, clientAddress = (req) => req.socket?.remoteAddress }) {
+// resolved: (projectId) → the game's resolved errors (resolved.js), which its issues are marked with and its findings
+// leave out; a host that keeps none leaves it out.
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -373,6 +377,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     let versionsSeen;
     let dashboardSaved;
     let knownSaved;
+    let resolvedSaved;
     const contextFor = async (q) => {
       let ctx;
       if (store.context) {
@@ -394,6 +399,13 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (FINDING_QUERIES.has(name)) ctx.dashboard = await (dashboardSaved ??= store.getDashboard(projectId, service));
       // Findings the game's owner marked known come last, with their note; a share link's reader sees no notes.
       if (FINDING_QUERIES.has(name) && known && !reader.share) ctx.known = { entries: (await (knownSaved ??= known(projectId))) ?? [], now: Date.now() };
+      // Errors the game's owner resolved are marked, and come back in a later version (release order); a share link's
+      // reader sees which, without the note.
+      if (RESOLVED_QUERIES.has(name) && resolved) {
+        const entries = (await (resolvedSaved ??= resolved(projectId))) ?? [];
+        if (entries.length) ctx.resolved = { entries, share: Boolean(reader.share) };
+        if (entries.length && !ctx.versionsFirstSeen && store.versionsFirstSeen) ctx.versionsFirstSeen = await (versionsSeen ??= store.versionsFirstSeen(projectId, service));
+      }
       // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
       // sessions aren't players': the same env and session type, never the players' property filters.
       if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });
@@ -429,7 +441,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // by_prop=<key>: frame time, hitches and crash-free sessions per value of a session property (A6).
         return { meta, ...performance(ctx, { byProp: propertyKey(`$${params.get('by_prop')}`) }) };
       case 'errors':
-        return { meta, issues: errorIssues(ctx) };
+        // engine: how the dashboard tells an agent to check a fix (WebMCP in a browser, a measure run in an engine).
+        return { meta, issues: errorIssues(ctx), engine: gameEngine(ctx) };
       case 'players':
         // by_prop=<key>: retention per value of a session property too (A6).
         // by=<attribute of the starts, $property or $platform> (and level=, count=runs): the level funnel per value (A7).
@@ -495,8 +508,11 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // Only meaningful for an explicit set of sessions (the ones a playtest run produced).
         if (!q.sessions) return { meta, error: 'playtest needs sessions=<comma-separated session ids>' };
         return { meta, summary: playtestSummary(ctx) };
-      case 'findings':
-        return { meta, findings: findings(await findingsContext(), await store.getMaps(projectId, service)) };
+      case 'findings': {
+        // kpis=1: the overview's headline numbers and deployments too, as glitchless_triage gives them.
+        const head = params.get('kpis') === '1' ? overview(ctx) : null;
+        return { meta, ...(head ? { kpis: head.kpis, deployments: head.deployments } : {}), findings: findings(await findingsContext(), await store.getMaps(projectId, service)) };
+      }
       case 'servers':
         // The game's servers (A9): ticks, players, crashes and memory, from its companion service (servers.js).
         return { meta: { ...meta, companion }, ...serversView(ctx, hasServers ? await serversNow(projectId, service) : null) };
@@ -510,10 +526,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return { meta, ...matchList(ctx, { sort: params.get('sort') || 'recent', limit: Math.min(200, Number(params.get('limit')) || 100) }) };
       }
       case 'store_reviews':
-        // A store's reviews of the game in the range, filtered (reviews.js storeReviews): what glitchless_store_reviews reads.
+        // A store's reviews of the game in the range, filtered (reviews.js storeReviews): what glitchless_store reads.
         return { meta, ...storeReviews(ctx, params) };
       case 'store_vitals':
-        // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store_vitals.
+        // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store with show "vitals".
         return { meta, ...storeVitals(ctx, params) };
       case 'store_revenue':
         // Real revenue from a revenue source (RevenueCat, Stripe) by day and version, next to the sessions and players measured
@@ -608,6 +624,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     return true;
   }
 
+  // The host changed what this project's answers depend on (its known findings, resolved errors): answer afresh.
+  handle.forget = (projectId) => clearCache(projectId);
   return handle;
 }
 

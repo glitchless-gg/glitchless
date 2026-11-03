@@ -8,12 +8,14 @@ import { attributeWalls } from './levels.js';
 import { netFindings } from './network.js';
 import { serverFindings } from './servers.js';
 import { MARK } from './session-state.js';
+import { LATE_FRAMES_PCT } from './rollups.js';
 import { dailySdks } from './daily.js';
 import { inFirstSeenOrder, valueQuantile, valueCount, addValueMaps } from './facts.js';
 import { reportFindings } from './reports.js';
 import { storeFindings } from './reviews.js';
 import { boardFindings } from './board-findings.js';
 import { markKnown } from './known.js';
+import { cameBackLine } from './resolved.js';
 import { WEB_ENGINES, WEB_ENGINE_FATAL_WORDS, WEB_ENGINE_QUALITY_TIPS, WEB_ENGINE_SLOW_START_TIPS, webEngineErrorSuggestion, webEnginePerfSuggestion } from './web-engine-advice.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
@@ -57,6 +59,10 @@ function budgetGap(a = {}, b = {}) {
 function hz(budget) {
   return Math.round(1000 / Number(budget));
 }
+// Frame time is judged frame by frame against each window's own budget (rollups.js LATE_FRAMES_PCT), never against one
+// budget for the game. A level gets a frame-time finding when its p95 is late on players' own screens and is also
+// SLOW_P95_MS or more (under 45 fps: slow on any screen).
+const SLOW_P95_MS = 22;
 
 // The frame times of two versions, compared like with like. Versions that ran on much the same screens compare as
 // they are ({ prev, cur, budget: null }); versions whose screens differ compare at the commonest refresh rate both
@@ -80,14 +86,13 @@ const LOGGED_WITH_MS = 100;
 export function findings(ctx, maps = []) {
   const out = [];
   const perf = performance(ctx);
-  const budget = perf.kpis.frame_budget_ms || 16.67;
   const totalSessions = sessionCount(ctx) || 1;
 
-  // 1. Frame-time spikes per level, with correlated gauges and preceding events.
+  // 1. Frame-time spikes per level, with correlated gauges and preceding events: frames late on players' own screens.
   const levels = perf.by_level.filter((l) => l.frames > 300 && l.key !== '(menu)');
   const best = levels.reduce((b, l) => (l.p95 != null && (!b || l.p95 < b.p95) ? l : b), null);
   for (const l of levels) {
-    if (l.p95 == null || l.p95 < Math.max(budget * 1.5, 22)) continue;
+    if (l.p95 == null || l.pct_over_budget < LATE_FRAMES_PCT || l.p95 < SLOW_P95_MS) continue;
     const severity = l.p95 >= 50 ? 'critical' : l.p95 >= 33.3 ? 'high' : 'medium';
     const facts = levelFacts(ctx, l.key);
     const corr = correlateGauges(facts);
@@ -106,9 +111,9 @@ export function findings(ctx, maps = []) {
       id: `perf-level-${l.key}`,
       severity,
       category: 'performance',
-      title: `Frame-time spikes on ${l.key}: p95 ${l.p95}ms vs ${round(budget, 1)}ms budget`,
+      title: `Frame-time spikes on ${l.key}: p95 ${l.p95}ms, ${l.pct_over_budget}% of frames over budget`,
       summary:
-        `${l.key} misses the frame budget on ${l.pct_over_budget}% of frames (${l.hitches_per_min} hitches/min${best && best.key !== l.key ? `; ${best.key} p95 is ${best.p95}ms` : ''}).` +
+        `${l.key} misses the frame budget on ${l.pct_over_budget}% of frames, each against its own screen's refresh rate (${l.hitches_per_min} hitches/min${best && best.key !== l.key ? `; ${best.key} p95 is ${best.p95}ms` : ''}).` +
         (evidenceBits.length ? ` Evidence: ${evidenceBits.join('; ')}.` : ''),
       evidence: { level: l.key, p50: l.p50, p95: l.p95, p99: l.p99, hitches_per_min: l.hitches_per_min, draw_calls_avg: l.draw_calls, draw_calls_max: l.draw_calls_max, correlated_gauges: corr.slice(0, 3), carried_over_gauges: carried.slice(0, 3), preceding_events: preceding.slice(0, 3), ...(bursts.length ? { counter_bursts: bursts.slice(0, 3) } : {}), hitch_causes: causes, sessions: l.sessions },
       suggestion: perfSuggestion(corr.length ? corr : carried, preceding, causes, l, engine),
@@ -257,10 +262,10 @@ export function findings(ctx, maps = []) {
   // 3. Errors, ranked by sessions affected. An issue logged with another one from the same source file every time
   // (as many times, in as many sessions, first in the same session within LOGGED_WITH_MS) is the same failure's
   // second log line, such as Godot's "Method/function failed." after the shader link error it follows: it goes in
-  // the first one's finding.
+  // the first one's finding. One the game's owner resolved has none, unless it came back (resolved.js).
   const issues = [];
   const loggedWith = new Map();
-  for (const issue of errorIssues(ctx)) {
+  for (const issue of errorIssues(ctx).filter((i) => !i.resolved)) {
     const lead = issues.find((l) => l.source && l.source === issue.source && l.kind === issue.kind && l.count === issue.count && l.sessions === issue.sessions && l.sample_session === issue.sample_session && Math.abs(issue.sample_ts - l.sample_ts) <= LOGGED_WITH_MS);
     if (lead) loggedWith.get(lead.fingerprint).push(issue);
     else {
@@ -289,6 +294,7 @@ export function findings(ctx, maps = []) {
       suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs, errorWhen(ctx, issue)),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
+      ...(issue.came_back ? { came_back: { resolved: issue.fingerprint, note: issue.came_back.resolved.note ?? null, version: issue.came_back.version, why: cameBackLine(issue.came_back) } } : {}),
     });
   }
 
@@ -430,7 +436,9 @@ export function findings(ctx, maps = []) {
   // 6. Device gap: low-tier GPUs far worse than high-tier.
   const hi = perf.by_gpu_tier.find((t) => t.key === 'high' || t.key === 'mid');
   const lo = perf.by_gpu_tier.find((t) => t.key === 'low');
-  if (hi && lo && lo.sessions >= 3 && lo.p95 > Math.max(hi.p95 * 2, 25)) {
+  // Low-tier phones on 60 Hz screens are slower than high-tier ones on 120 Hz without being late: only frames late on
+  // their own screens count.
+  if (hi && lo && lo.sessions >= 3 && lo.p95 > Math.max(hi.p95 * 2, 25) && lo.pct_over_budget >= LATE_FRAMES_PCT) {
     out.push({
       id: 'device-gap-low-tier',
       severity: 'medium',
@@ -445,7 +453,7 @@ export function findings(ctx, maps = []) {
   }
 
   // 6b. One setting runs slow (finding 14, A6): a value of a session property whose frame p95 is 1.5× the rest's.
-  out.push(...slowSettings(ctx, budget, totalSessions));
+  out.push(...slowSettings(ctx, totalSessions));
 
   // 7. Slow first frame. It hits the sessions that waited longer than SLOW_START_MS, not every session.
   if (perf.kpis.ttff_p95 && perf.kpis.ttff_p95 > SLOW_START_MS) {

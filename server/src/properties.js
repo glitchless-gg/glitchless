@@ -14,7 +14,7 @@
 //             finding 14 a setting that runs slow (perf-prop-<key>).
 
 import { propKeyProblem } from '../../packages/sdk/src/props.js';
-import { newCell, mergeCell } from './rollups.js';
+import { newCell, mergeCell, LATE_FRAMES_PCT } from './rollups.js';
 
 export const NONE = '(none)';
 export const OTHER = '(other)';
@@ -170,11 +170,12 @@ export function propertyLean(ctx, hit) {
 }
 
 // Finding 14, one setting runs slow (perf-prop-<key>): for a property with 2 to 10 values, each with 20 or more sessions
-// that drew frames, the value whose frame p95 is 1.5 times the rest's (and over the frame budget): "Frame time on the
-// ultra preset is 41 ms for the slowest 5% of frames, against 18 ms on high". From the sessions' own frame windows.
+// that drew frames, the value whose frame p95 is 1.5 times the rest's and late on its players' own screens (LATE_FRAMES_PCT:
+// a value that means 60 Hz phones is slower than 120 Hz ones without being late): "Frame time on the ultra preset is
+// 41 ms for the slowest 5% of frames, against 18 ms on high". From the sessions' own frame windows.
 const SETTING_VALUES = 10;
 const SETTING_SESSIONS = 20;
-export function slowSettings(ctx, budget, totalSessions) {
+export function slowSettings(ctx, totalSessions) {
   if (ctx.daily) return [];
   const out = [];
   for (const stats of propertyStats(ctx).values()) {
@@ -195,8 +196,9 @@ export function slowSettings(ctx, budget, totalSessions) {
       for (const [other, h] of eligible) if (other !== value) mergeCell(rest, h.cell);
       const p95 = g.cell.ft.quantile(0.95);
       const others = rest.ft.quantile(0.95);
-      if (p95 == null || others == null || p95 < others * 1.5 || p95 < budget * 1.15) continue;
-      if (!worst || p95 / others > worst.p95 / worst.others) worst = { value, p95, others, sessions: g.sessions, best: eligible.filter(([v]) => v !== value).sort((a, b) => a[1].cell.ft.quantile(0.95) - b[1].cell.ft.quantile(0.95))[0] };
+      const late = (g.cell.over / g.cell.ft.n) * 100;
+      if (p95 == null || others == null || p95 < others * 1.5 || late < LATE_FRAMES_PCT) continue;
+      if (!worst || p95 / others > worst.p95 / worst.others) worst = { value, p95, others, late, sessions: g.sessions, best: eligible.filter(([v]) => v !== value).sort((a, b) => a[1].cell.ft.quantile(0.95) - b[1].cell.ft.quantile(0.95))[0] };
     }
     if (!worst) continue;
     const [bestValue, best] = worst.best;
@@ -206,8 +208,8 @@ export function slowSettings(ctx, budget, totalSessions) {
       severity: 'medium',
       category: 'performance',
       title: `Frame time on ${stats.key} ${worst.value} is ${ms(worst.p95)} ms for the slowest 5% of frames, against ${ms(worst.others)} ms on the rest`,
-      summary: `${worst.sessions} sessions with ${stats.key} ${worst.value} spend their slowest 5% of frames over ${ms(worst.p95)} ms; the other values of ${stats.key} stay under ${ms(worst.others)} ms (${bestValue}: ${ms(best.cell.ft.quantile(0.95))} ms). The frame budget is ${ms(budget)} ms.`,
-      evidence: { key: stats.key, value: worst.value, sessions: worst.sessions, frame_p95: ms(worst.p95), rest_frame_p95: ms(worst.others), values: eligible.map(([v, g]) => ({ value: v, sessions: g.sessions, frame_p95: ms(g.cell.ft.quantile(0.95)) })) },
+      summary: `${worst.sessions} sessions with ${stats.key} ${worst.value} spend their slowest 5% of frames over ${ms(worst.p95)} ms; the other values of ${stats.key} stay under ${ms(worst.others)} ms (${bestValue}: ${ms(best.cell.ft.quantile(0.95))} ms). With ${stats.key} ${worst.value}, ${ms(worst.late)}% of frames miss their own screen's frame budget.`,
+      evidence: { key: stats.key, value: worst.value, sessions: worst.sessions, frame_p95: ms(worst.p95), rest_frame_p95: ms(worst.others), pct_over_budget: ms(worst.late), values: eligible.map(([v, g]) => ({ value: v, sessions: g.sessions, frame_p95: ms(g.cell.ft.quantile(0.95)) })) },
       suggestion: `Find what ${stats.key} ${worst.value} turns on (effects, draw distance, shadows, resolution, a heavier mode) and profile a session with it: the Performance view's by_prop=${stats.key} shows frame time, hitches and crash-free sessions per value. Lower its cost, or pick it only on hardware that keeps up.`,
       link: { page: 'performance', by_prop: stats.key },
       impact: worst.sessions / (totalSessions || 1),

@@ -9,7 +9,7 @@ description: Send a game build to the user's Steam Deck over the local network, 
 
 Run it with `npx -y glitchless-deck <command>` (Node 20+), or `glitchless-deck <command>` if it is installed globally. `glitchless-deck guide` prints the full reference.
 
-The MCP tools `glitchless_deck_send` and `glitchless_deck_measure` do the same as `send` and `measure` when the Glitchless MCP server is connected.
+The MCP tool `glitchless_deck` does the same as `send`, and with `measure: true` as `measure`, when the Glitchless MCP server is connected.
 
 ## 1. Check the Deck
 

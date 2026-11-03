@@ -9,7 +9,7 @@
 //   store      a store limit that cuts the game's visibility: Google Play's bad-behaviour thresholds
 //   plan       the plan's play sessions for the month (Glitchless Cloud only, which knows the plan)
 // Standing problems (findings) aren't alerts: a weekly summary lists the few worth fixing (weeklySummary,
-// weeklyMessage), leaving out the ones the game's owner marked known (known.js). The rules, the check, the messages and their Discord and Slack formats are here; where settings and
+// weeklyMessage), leaving out the ones the game's owner marked known (known.js) and the errors they resolved (resolved.js). The rules, the check, the messages and their Discord and Slack formats are here; where settings and
 // state live and how a message is sent, email included, is the host's (Glitchless Cloud keeps them per game; a
 // self-hosted server uses GLITCHLESS_ALERT_WEBHOOK).
 //
@@ -27,6 +27,7 @@ import { sumsBy } from './sums.js';
 import { reportsOf } from './reports.js';
 import { DEFAULT_PROJECT } from './auth.js';
 import { isCompanion } from './ingest.js';
+import { cameBackLine } from './resolved.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -195,9 +196,11 @@ export function releaseStats(ctx, real = realSessions(ctx), vers = versions(ctx)
 
 // What the rules read about one service: its last day, and (seed) its last LIMITS.profileDays for the profile of
 // what's usual, (history) with the errors of its last LIMITS.seedDays.
-export async function measure(store, projectId, { service, env = null, plan = null, now, seed = false, history = false }) {
+export async function measure(store, projectId, { service, env = null, plan = null, now, seed = false, history = false, resolved = [] }) {
   const q = { service, env, plan };
   const ctx = await contextFor(store, projectId, { ...q, from: now - DAY, to: now });
+  // Errors the game's owner resolved (resolved.js) are marked: the new_error rule skips them, unless they came back.
+  if (resolved?.length) ctx.resolved = { entries: resolved };
   const long = seed || history ? await contextFor(store, projectId, { ...q, from: now - LIMITS.profileDays * DAY, to: now }) : null;
   const to = Math.min(now, (ctx.to ?? now) + 1); // summaries are complete up to here
   const real = realSessions(ctx);
@@ -337,12 +340,15 @@ export function evaluate({ now, to = now, units = 'players', errors = [], histor
 
   if (rules.new_error) {
     for (const issue of errors) {
-      const key = `error-${issue.fingerprint}`;
-      const first = next.get(issue.fingerprint)[0];
+      // One the game's owner resolved isn't new; one that came back is, from when it did, once per version it's back in.
+      if (issue.resolved) continue;
+      const back = issue.came_back;
+      const key = back ? `error-${issue.fingerprint}-back-${back.version}` : `error-${issue.fingerprint}`;
+      const first = back ? back.since : next.get(issue.fingerprint)[0];
       const fresh = first >= enabledAt && now - first <= LIMITS.newForMs;
       const players = issue.players ?? issue.sessions;
       const spread = players >= LIMITS.spreadPlayers || (issue.sessions_pct >= LIMITS.spreadPct && issue.sessions >= LIMITS.spreadPctMin);
-      signals.push({ key, rule: 'new_error', finding: key, holds: active.has(key) || (fresh && spread), issue, first, units, players });
+      signals.push({ key, rule: 'new_error', finding: `error-${issue.fingerprint}`, holds: active.has(key) || (fresh && spread), issue, first, units, players });
     }
   }
 
@@ -408,7 +414,7 @@ export async function checkService({ store, state, projectId, service, settings 
   const stored = await state.seen(service);
   const baseline = !stored || !(stored.baselineAt >= enabledAt) || stored.v !== STATE_VERSION;
   const seed = !stored?.hours || !(now - stored.hoursAt <= LIMITS.profileStaleMs);
-  const measured = await read(store, projectId, { service, env: settings.env || null, plan, now, seed, history: !stored });
+  const measured = await read(store, projectId, { service, env: settings.env || null, plan, now, seed, history: !stored, resolved: settings.resolved ?? [] });
   const oldest = Math.floor((now - LIMITS.profileDays * DAY) / HOUR);
   const hours = Object.fromEntries(Object.entries({ ...(seed ? {} : stored.hours), ...measured.hours }).filter(([h]) => +h >= oldest));
   const versionsSeen = { ...stored?.versions };
@@ -500,11 +506,16 @@ export function alertMessage(s, { link = () => null, name = null } = {}) {
     const since = ago(s.at - s.first);
     const players = s.players ?? i.sessions;
     const where = [level && `on ${level}`, version && `in ${version}`].filter(Boolean).join(' ');
+    // One the game's owner resolved, back in a later version (resolved.js).
+    const back = i.came_back;
+    const was = back?.resolved.version ? clean(back.resolved.version, 40) : null;
     return {
       ...base,
       severity: i.fatal ? 'high' : 'medium',
-      title: `A new error is spreading in ${game}: ${count(players, unit)} in ${since}${where ? `, ${where}` : ''}.`,
-      big: { value: whole(players), label: `${players === 1 ? unit : `${unit}s`} hit it in ${since}`, normal: `None before ${clock(s.first)} UTC` },
+      title: back
+        ? `An error you resolved${was ? ` in ${was}` : ''} came back in ${game}${back.version ? ` ${clean(back.version, 40)}` : ''}: ${count(players, unit)} hit it in the last day.`
+        : `A new error is spreading in ${game}: ${count(players, unit)} in ${since}${where ? `, ${where}` : ''}.`,
+      big: back ? { value: whole(players), label: `${players === 1 ? unit : `${unit}s`} hit it in the last day`, normal: `Resolved on ${String(back.resolved.at).slice(0, 10)}${back.resolved.note ? `: "${clean(back.resolved.note, 120)}"` : ''}` } : { value: whole(players), label: `${players === 1 ? unit : `${unit}s`} hit it in ${since}`, normal: `None before ${clock(s.first)} UTC` },
       quote: clean(i.message, 160),
       todo: `Fix it before more ${unit}s hit it: its page has the stack and what ${unit}s did just before.`,
       paste: `Use glitchless_triage on ${game}, then look at finding error-${clean(i.fingerprint, 80)} (glitchless_get_error with fingerprint ${clean(i.fingerprint, 80)} has its stack).`,
@@ -512,6 +523,7 @@ export function alertMessage(s, { link = () => null, name = null } = {}) {
         `${i.fatal ? 'Fatal ' : ''}${clean(i.kind, 40)}${i.location ? ` at ${clean(i.location, 160)}` : ''}; ${count(i.count, 'time')} in ${count(i.sessions, 'session')} (${i.sessions_pct}% of sessions) in the last day, first at ${clock(s.first)} UTC.`,
         ...(i.levels?.length > 1 ? [`Levels: ${i.levels.slice(0, 6).map((l) => clean(l, 40)).join(', ')}.`] : []),
         `Finding error-${clean(i.fingerprint, 80)}.`,
+        ...(back ? [`It ${clean(cameBackLine(back), 200)}.`] : []),
         ...(counted ? [counted] : []),
       ],
       link: link('errors', { fingerprint: i.fingerprint }),
@@ -552,7 +564,7 @@ export function alertMessage(s, { link = () => null, name = null } = {}) {
       title: `${game} has gone quiet: ${s.sessions ? count(s.sessions, 'session') : 'no sessions'} in the last 3 hours (usually about ${whole(usual)}).`,
       big: { value: whole(s.sessions), label: 'sessions in the last 3 hours', normal: `Usually about ${whole(usual)}` },
       todo: 'Check that the game still starts and reaches Glitchless: its servers, its store page, and the latest build.',
-      paste: `Use glitchless_overview on ${game}: sessions all but stopped in the last 3 hours${s.lastStart ? ` (the last started at ${clock(s.lastStart)} UTC)` : ''}. Look at the errors and sessions just before.`,
+      paste: `Use glitchless_triage on ${game}: sessions all but stopped in the last 3 hours${s.lastStart ? ` (the last started at ${clock(s.lastStart)} UTC)` : ''}. Look at the errors and sessions just before.`,
       agent: [`${s.sessions} sessions in the last 3 hours; the same hours over the last ${s.usualDays} days averaged ${round(s.perHour, 1)} an hour.`, ...(s.lastStart ? [`The latest session started at ${new Date(s.lastStart).toISOString().slice(0, 16).replace('T', ' ')} UTC.`] : [])],
       link: link('sessions'),
       figure: { kind: 'Gone quiet', headline: `Players stopped reaching ${game}`, series: s.series, stats: s.lastStart ? [{ label: 'Last session started', value: `${clock(s.lastStart)} UTC`, hot: true }] : [] },
@@ -567,7 +579,7 @@ export function alertMessage(s, { link = () => null, name = null } = {}) {
       title: `${game}'s sessions are back: ${count(s.lastHour, 'session')} in the last hour (usually about ${whole(usual)}).`,
       big: { value: whole(s.lastHour), label: 'sessions in the last hour', normal: `Usually about ${whole(usual)}` },
       todo: `Nothing to do. It was quiet for about ${ago(s.at - s.quietSince + LIMITS.quietMs)}.`,
-      paste: `Use glitchless_overview on ${game} for the last day: sessions stopped, then came back. Look at the errors just before the gap.`,
+      paste: `Use glitchless_triage on ${game} for the last day: sessions stopped, then came back. Look at the errors just before the gap.`,
       agent: [`${s.lastHour} sessions in the last hour; that hour averaged ${round(s.lastPerHour, 1)} over the last days.`],
       link: link('overview'),
       figure: { kind: 'Back', headline: `Players are reaching ${game} again`, stats: [] },
@@ -583,7 +595,7 @@ export function alertMessage(s, { link = () => null, name = null } = {}) {
       title: crash ? `${game} is over Google Play's crash limit: ${rate} of Android players crash in a day (the limit is ${s.limit}%).` : `${game} is over Google Play's freeze limit: ${rate} of Android players see it stop responding in a day (the limit is ${s.limit}%).`,
       big: { value: rate, label: `of Android players a day ${crash ? 'crash' : 'see it freeze'}, over the last 28 days`, normal: `Google Play's limit: ${s.limit}%` },
       todo: `Fix the top Android ${crash ? 'crashes' : 'freezes'}: while the 28-day average is over ${s.limit}%, Play may show ${game} to fewer people and warn them on its page.`,
-      paste: `Use glitchless_store_vitals on ${game} with store "google_play", then glitchless_triage: Play's ${crash ? 'user-perceived crash rate' : 'user-perceived ANR rate'} is ${rate}, over its ${s.limit}% bad-behaviour threshold.`,
+      paste: `Use glitchless_store on ${game} with show "vitals" and store "google_play", then glitchless_triage: Play's ${crash ? 'user-perceived crash rate' : 'user-perceived ANR rate'} is ${rate}, over its ${s.limit}% bad-behaviour threshold.`,
       agent: [`Play Developer Reporting API, ${crash ? 'userPerceivedCrashRate28dUserWeighted' : 'userPerceivedAnrRate28dUserWeighted'}${s.day ? ` for ${s.day}` : ''}: ${rate}${s.users ? ` of ${whole(s.users)} users` : ''}. Bad-behaviour threshold ${s.limit}% overall (8% on any one phone model).`],
       link: link('stores'),
       figure: { kind: 'Store limit', headline: `Google Play may show ${game} to fewer people`, stats: [] },
@@ -636,7 +648,8 @@ const WORTH_FIXING = ['critical', 'high', 'medium'];
 // Last week (Monday to Sunday, UTC) of one service against the week before, and the standing findings most worth
 // fixing (paste lines name the game `name`, else its service). revenue: the host's revenue source for the two weeks ({ source, currency, last, before }), else the game's
 // own purchase events are summed. known: the game's known findings (known.js), left out of the three and counted.
-export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null, known = [] }) {
+// resolved: the game's resolved errors (resolved.js), whose findings are left out unless they came back.
+export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null, known = [], resolved = [] }) {
   const end = weekStart(now);
   const q = { service, env, plan };
   const [last, before] = await Promise.all([contextFor(store, projectId, { ...q, from: end - 7 * DAY, to: end }), contextFor(store, projectId, { ...q, from: end - 14 * DAY, to: end - 7 * DAY })]);
@@ -644,6 +657,7 @@ export async function weeklySummary(store, projectId, { service, name = null, en
   const b = weekOf(before, end - 14 * DAY, end - 7 * DAY);
   const own = w.purchases || b.purchases ? { source: null, currency: w.purchases?.currency ?? b.purchases?.currency ?? null, last: w.purchases?.sum ?? 0, before: b.purchases?.sum ?? 0 } : null;
   if (known?.length) last.known = { entries: known, now };
+  if (resolved?.length) last.resolved = { entries: resolved };
   const found = findings(last, store.getMaps ? await store.getMaps(projectId, service) : []).filter((f) => WORTH_FIXING.includes(f.severity));
   const open = found.filter((f) => !f.known);
   return { service, from: end - 7 * DAY, to: end, units: playersAreSessions(last) ? 'sessions' : 'players', last: w, before: b, revenue: revenue ?? own, fixes: open.slice(0, 3).map((f) => ({ id: f.id, severity: f.severity, ...plainFinding(f, clean(name ?? service, 80)) })), known: found.filter((f) => f.known).map((f) => f.id) };
@@ -677,7 +691,7 @@ export function plainFinding(f, game) {
   else if (id.startsWith('store-reviews-')) text = 'Store reviews about how the game runs went up after the latest update.';
   else text = `${clean(f.title, 140)}.`;
   // One the owner marked known that is back (known.js): say why it is in the list again.
-  if (f.came_back) text += f.came_back.new ? " It's new since findings like it were marked as known." : ' It was marked as known, and has got worse since.';
+  if (f.came_back) text += f.came_back.resolved ? ` It was resolved, and came back in ${clean(f.came_back.version ?? 'a newer version', 40)}.` : f.came_back.new ? " It's new since findings like it were marked as known." : ' It was marked as known, and has got worse since.';
   return { text, paste: `Use glitchless_triage on ${game}, then look at finding ${clean(id, 200)}.` };
 }
 

@@ -13,12 +13,12 @@ You have two sources of truth:
 
 ## Loop
 
-1. **Rank.** Call `glitchless_triage` (24h by default). Pick the top finding, or the one the user named. Say in one line which one and why (severity × share of players affected). Findings marked `known` come last: the team has accepted them, so skip them unless the user asks. When the user says a finding is accepted and shouldn't come back in the weekly summary, offer `glitchless_mark_known` with their reason as the note.
+1. **Rank.** Call `glitchless_triage` (24h by default). Pick the top finding, or the one the user named. Say in one line which one and why (severity × share of players affected). Findings marked `known` come last: the team has accepted them, so skip them unless the user asks. When the user says a finding is accepted and shouldn't come back in the weekly summary, offer `glitchless_mark_known` with their reason as the note. When an `error-*` finding is fixed in a release or isn't worth fixing (test devices, a driver bug), offer `glitchless_resolve_error` with their reason: it leaves triage until it fires again in a newer version. A finding with `came_back` is a resolved error that's back: say which version brought it back.
 2. **Get the evidence.** Drill in by category:
    - performance → `glitchless_performance` with `level`: look at `hitch_context` (which gauges spike during hitches, which events precede them) and `slowest_recent_hitches[].loaf` (script attribution).
    - memory → `glitchless_performance` `memory` + `by_level.geometries_max`.
    - stability → `glitchless_get_error` with the fingerprint: stack, `location`, breadcrumbs.
-   - design → `glitchless_death_hotspots` for the level, then `glitchless_player_funnel`.
+   - design → `glitchless_player_funnel` with the level and `hotspots: true` for where players die, then without it for the level's funnel.
    - the game's own metrics (plays, purchases, the paywall, whatever it sends with `track`) → `glitchless_events`,
      with a `funnel` for drop-off between steps; `glitchless_dashboard` shows the pages and panels this game cares about.
 3. **Find the code.** Use the evidence as search keys: event names from `preceding_events` (e.g. the `glitchless.track('powerup')` call site), gauge names passed to `glitchless.setContext`, the error's function/file, level data near the hotspot's x range.

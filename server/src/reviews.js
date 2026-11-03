@@ -1042,10 +1042,10 @@ function finding(ctx, st, rel, prev, after, before, others) {
   const tips = [];
   if (rel.version && (old || cur)) tips.push(`Compare ${old ? `${old.version} and ${rel.version}` : rel.version} with glitchless_compare_versions, then read glitchless_performance with version ${rel.version}: its hitch causes are what these players feel.`);
   if (related.length) tips.push(`Start with ${related.map((f) => f.id).join(', ')}.`);
-  if (segment === 'Steam Deck' && segShare >= 0.4) tips.push("Most of these players are on a Steam Deck: measure the build there (glitchless_deck_measure), at the Deck's resolution and with its GPU tier.");
+  if (segment === 'Steam Deck' && segShare >= 0.4) tips.push("Most of these players are on a Steam Deck: measure the build there (glitchless_deck with measure: true), at the Deck's resolution and with its GPU tier.");
   if (topics.crash) tips.push('For the crashes, glitchless_get_error lists the errors and crashes of that version.');
-  if (STORES[st.store]?.vitals.length) tips.push(`glitchless_store_vitals with store "${st.store}" has what ${name} itself measured of ${rel.version ?? 'it'}.`);
-  tips.push(`glitchless_store_reviews with store "${st.store}", build "${rel.build_id ?? rel.version ?? rel.key}" and sentiment negative lists what they wrote.`);
+  if (STORES[st.store]?.vitals.length) tips.push(`glitchless_store with show "vitals" and store "${st.store}" has what ${name} itself measured of ${rel.version ?? 'it'}.`);
+  tips.push(`glitchless_store with store "${st.store}", build "${rel.build_id ?? rel.version ?? rel.key}" and sentiment negative lists what they wrote.`);
   const since = versioned ? `of ${rel.label}` : `since ${rel.label} went live`;
   return {
     id: `store-reviews-${st.store}-${slug(rel.key)}`,
@@ -1083,7 +1083,7 @@ function finding(ctx, st, rel, prev, after, before, others) {
 
 const pick = (v) => ({ version: v.version, sessions: v.sessions, frame_p95: v.frame_p95, hitches_per_min: v.hitches_per_min, crash_free_pct: v.crash_free_pct, first_seen: v.first_seen });
 
-// ── the reviews query (app.js store_reviews, the glitchless_store_reviews MCP tool) ──
+// ── the reviews query (app.js store_reviews, the glitchless_store MCP tool) ──
 
 // The window's reviews of one store (`store`; default the game's first connected one), filtered: `build` (a build
 // ID, a version or a release's label), `sentiment` (positive or negative), `keyword` (a topic: stutter, lag, fps,

@@ -120,7 +120,7 @@ export function Versions() {
                   ))}
                   {has.frames && (
                     <td className="num">
-                      <Status kind={frameStatus(v.frame_p95)}>{fmtMs(v.frame_p95)}</Status>
+                      <Status kind={frameStatus(v.pct_frames_over_budget, v.frame_p95)}>{fmtMs(v.frame_p95)}</Status>
                     </td>
                   )}
                   <td className="num">{fmtPct(v.error_free_pct)}</td>

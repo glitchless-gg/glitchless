@@ -12,7 +12,7 @@
         {
           "description": "Where players die on a level",
           "prompt": "Where do players die most on level 2 of Zoomies, and what kills them?",
-          "tools_triggered": "glitchless_death_hotspots",
+          "tools_triggered": "glitchless_player_funnel",
           "expected_behavior": "Names the spot around x 38 to 43 on level 2 where most deaths happen, its share of the level's deaths (about two thirds), the vacuum as what kills players there, and the level's completion rate."
         },
         {

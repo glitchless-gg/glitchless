@@ -46,9 +46,9 @@ Read more: [a five-second first launch, found in player data and fixed](https://
 | [`apps/phaser-demo`](apps/phaser-demo) | **Fetch!**, a small Phaser runner (Phaser 3 or 4) with planted bugs, an autoplay bot and a playtest config (`npm run game:phaser`) |
 | [`apps/babylon-demo`](apps/babylon-demo) | **Comet Garden**, a small Babylon.js game with planted bugs (a shader per shard, a crash that stops the render loop), an autoplay bot and a playtest config (`npm run game:babylon`) |
 | [`apps/playcanvas-demo`](apps/playcanvas-demo) | **Spark Run**, a small PlayCanvas runner with planted bugs (a mesh per spark, a script error), an autoplay bot and a playtest config (`npm run game:playcanvas`) |
-| [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_death_hotspots`, `glitchless_compare_versions`, `glitchless_bug_reports`, … |
+| [`packages/mcp`](packages/mcp) | Glitchless MCP server: `glitchless_triage`, `glitchless_performance`, `glitchless_get_error`, `glitchless_player_funnel`, `glitchless_compare_versions`, `glitchless_bug_reports`, … |
 | [`packages/playtest`](packages/playtest) | `glitchless-playtest`: autoplay bots play every change and Glitchless compares it with a saved baseline. Also the `glitchless_playtest` MCP tool |
-| [glitchless-deck](https://github.com/glitchless-gg/glitchless-deck) (its own repo) | `glitchless-deck`: send a Godot, Unity, Unreal or web build from macOS, Windows or Linux to a Steam Deck on your network, start it, and measure it there against a saved baseline. Also the `glitchless_deck_send` and `glitchless_deck_measure` MCP tools and the `/glitchless:deck` skill |
+| [glitchless-deck](https://github.com/glitchless-gg/glitchless-deck) (its own repo) | `glitchless-deck`: send a Godot, Unity, Unreal or web build from macOS, Windows or Linux to a Steam Deck on your network, start it, and measure it there against a saved baseline. Also the `glitchless_deck` MCP tool and the `/glitchless:deck` skill |
 | [`packages/sourcemaps`](packages/sourcemaps) | `glitchless-sourcemaps`: a CLI and a Vite plugin that upload a web build's source maps, so errors from minified builds show the original function, file and line |
 | [`plugin/glitchless`](plugin/glitchless) | Claude Code plugin: `/glitchless:instrument`, `/glitchless:dashboard`, `/glitchless:triage` and `/glitchless:deck` skills + both MCP servers |
 | [`plugins/glitchless`](plugins/glitchless) | The same instrument, dashboard and triage skills with the hosted MCP server, packaged for Codex and ChatGPT, Cursor and Antigravity |
@@ -129,7 +129,7 @@ hit and check that the fix worked.
      every game I have, so name this game in its tools (game: "<the game's name>"). Signed in, you
      can do the rest of this setup yourself with its tools: glitchless_create_game makes a game and
      returns its client token, glitchless_set_dashboard saves its dashboard, and
-     glitchless_share_board makes a read-only link to a board. If I'd rather give you a secret key
+     glitchless_share_links makes a read-only link to a board. If I'd rather give you a secret key
      for this one game, it's GLITCHLESS_API_KEY in my environment: set that instead. Never put a key
      in the game, in a file that gets committed, or in your reply.
    - webmcp, for a game that runs in a browser (Three.js, Phaser, Babylon.js, PlayCanvas): command
@@ -166,7 +166,7 @@ hit and check that the fix worked.
 7. Tell me what you changed, file by file, the events you track, the properties you set, and
    anything you weren't sure about. If I use Glitchless Cloud, also tell me I can turn on alerts
    (Discord, Slack or email) in Settings → Alerts, and that you can make a read-only link to any
-   board with glitchless_share_board, for a dev log or a "Live stats" button. On my own server,
+   board with glitchless_share_links, for a dev log or a "Live stats" button. On my own server,
    alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
 ```
 <!-- setup-prompt:end -->

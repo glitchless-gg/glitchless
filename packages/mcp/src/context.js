@@ -9,7 +9,7 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-export const VERSION = '0.12.0';
+export const VERSION = '0.13.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
@@ -212,7 +212,7 @@ export function toolList({ remote = false, scopes = null } = {}) {
   return tools.filter((t) => !(remote && t.local) && (!scopes || scopes.includes(t.scope))).map((t) => ({ name: t.name, title: titleOf(t), description: t.config.description, annotations: t.config.annotations, scope: t.scope, local: t.local }));
 }
 
-// "glitchless_store_reviews" → "Store reviews", unless the tool names its own title.
+// "glitchless_get_error" → "Get error", unless the tool names its own title.
 const titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}`;
 
 // Every tool takes `game` (by name or id): with a workspace key it picks the game, with a game key it's ignored.
@@ -247,13 +247,13 @@ function instructions(remote) {
   return [
     'Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.',
     remote
-      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_board makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else."
-      : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_board makes a read-only link to a board.",
-    'Start with glitchless_triage to get ranked, evidence-backed findings for a game, then drill in with glitchless_performance, glitchless_get_error, glitchless_death_hotspots or glitchless_session.',
+      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_links makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else."
+      : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_links makes a read-only link to a board.",
+    'Start with glitchless_triage for a game\'s headline numbers and ranked, evidence-backed findings, then drill in with glitchless_performance, glitchless_get_error, glitchless_player_funnel (levels, and with hotspots where players die on one) or glitchless_session.',
     'When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.',
     'For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.',
     'For a multiplayer game, glitchless_network gives ping, packet loss and disconnects by level, region, platform, kind of connection and version; glitchless_match lists matches or opens one from every side, telling a whole lobby lagging (the server) from one player lagging (their connection); and glitchless_servers reads the game\'s dedicated servers (tick time against its budget by players connected, crashes that ended matches, memory that climbs).',
-    'For a game connected to a store (Steam, Google Play, the App Store), glitchless_store_reviews reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and glitchless_store_vitals what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version.',
+    'For a game connected to a store (Steam, Google Play, the App Store), glitchless_store reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, and with show "vitals" what the store itself measured (slow rendering, crashes, ANRs, hangs) next to Glitchless, version by version.',
     "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to.",
     "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
     ...(remote
@@ -265,8 +265,9 @@ function instructions(remote) {
   ].join(' ');
 }
 
+// An issue in a list: with `resolved` or `came_back` when the game's owner resolved it (glitchless_resolve_error).
 export function slimIssue(i) {
-  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString() };
+  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString(), ...(i.resolved ? { resolved: i.resolved } : {}), ...(i.came_back ? { came_back: i.came_back } : {}) };
 }
 
 export function slimGroup(g) {

@@ -12,6 +12,9 @@ export const DEFAULT_SHELL = {
   servicesEmpty: 'No games yet',
   className: '',
   boardActions: null, // a component ({ board }) for more buttons on a board, such as the hosted service's Share
+  // async (changes) → saves the game's resolved errors ({ [fingerprint]: { note, any } | null }), for someone who may;
+  // the Errors page offers Resolve and Unresolve when it's set (server/src/resolved.js)
+  resolveErrors: null,
 };
 
 export const Shell = createContext(DEFAULT_SHELL);

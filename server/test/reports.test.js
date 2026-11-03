@@ -220,6 +220,8 @@ test('Godot, Unity and Unreal games: the reports finding says how to reproduce t
     const listed = await app.get('reports');
     assert.deepEqual(listed.reports, []);
     assert.equal(listed.engine, 'godot');
+    // And the Errors view's agent prompt from the errors query.
+    assert.equal((await app.get('errors')).engine, 'godot');
   } finally {
     await app.close();
   }

@@ -55,12 +55,39 @@ export function fmtTime(ts, withDate = false) {
   return withDate ? `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${t}` : t;
 }
 
-// Frame-time grading against a frame budget (conditional formatting).
-export function frameStatus(ms, budget = 16.67) {
-  if (ms == null) return 'neutral';
-  if (ms <= budget * 1.15) return 'ok';
-  if (ms <= 33.4) return 'warn';
-  return 'alert';
+// Frame-time grading (conditional formatting), each frame against its own screen's budget: `over` is the share of
+// frames (in %) slower than 1.15× their own window's budget (a row's pct_over_budget), so a 60 Hz phone drawing every
+// frame on time reads green next to 120 Hz ones. A percentile `ms` (p95 by default; `q` says which) is green while
+// fewer than its tail of frames are over (p95: under 5%), red once three times that are (p95: 15%; p50: half of them)
+// or once it is janky on any screen (over 33.4 ms, two 60 Hz frames), yellow between. SPEC §4 "Frame budget".
+export function frameStatus(over, ms = null, q = 0.95) {
+  if (over == null) return 'neutral';
+  const tail = Math.round((1 - q) * 1000) / 10;
+  if (over < tail) return 'ok';
+  if (over >= Math.min(tail * 3, 50) || ms > 33.4) return 'alert';
+  return 'warn';
+}
+
+// A screen is common when it has this share (in %) or more of the frame windows: the Performance page splits its
+// headline by screen, and frame-time charts draw a budget line for each, once two or more are.
+export const COMMON_SCREEN_PCT = 10;
+
+// The common screens of a performance answer's by_display rows (fastest first), or none when players' screens are
+// one refresh rate.
+export function commonScreens(rows) {
+  const common = (rows || []).filter((r) => r.windows_pct >= COMMON_SCREEN_PCT);
+  return common.length > 1 ? common : [];
+}
+
+// A frame-time chart's budget lines: one per common screen, from frame_budgets ({ budget_ms: % of frame windows }),
+// labelled with its refresh rate, or the one budget when players' screens are one rate.
+export function budgetLines(budgets, budget) {
+  const common = Object.entries(budgets || {})
+    .filter(([, share]) => share >= COMMON_SCREEN_PCT)
+    .map(([b]) => Number(b))
+    .sort((a, b) => a - b);
+  if (common.length < 2) return budget ? [{ value: budget, color: '#1fae84', label: 'budget' }] : [];
+  return common.map((b) => ({ value: b, color: '#1fae84', label: `${Math.round(1000 / b)} Hz budget`, hz: Math.round(1000 / b) }));
 }
 
 export function pctStatus(v, ok, warn, higherIsBetter = true) {

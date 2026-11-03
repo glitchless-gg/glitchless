@@ -66,31 +66,27 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 | --- | --- | --- | --- | --- | --- | --- |
 | `glitchless_list_games` | List games | read | yes | no | yes | no |
 | `glitchless_triage` | Triage | read | yes | no | yes | no |
-| `glitchless_overview` | Overview | read | yes | no | yes | no |
 | `glitchless_performance` | Performance | read | yes | no | yes | no |
 | `glitchless_get_error` | Get error | read | yes | no | yes | no |
 | `glitchless_player_funnel` | Player funnel | read | yes | no | yes | no |
-| `glitchless_death_hotspots` | Death hotspots | read | yes | no | yes | no |
 | `glitchless_session` | Session | read | yes | no | yes | no |
 | `glitchless_events` | Events | read | yes | no | yes | no |
 | `glitchless_compare_versions` | Compare versions | read | yes | no | yes | no |
 | `glitchless_dashboard` | Dashboard | read | yes | no | yes | no |
 | `glitchless_bug_reports` | Bug reports | read | yes | no | yes | no |
-| `glitchless_store_reviews` | Store reviews | read | yes | no | yes | no |
-| `glitchless_store_vitals` | Store vitals | read | yes | no | yes | no |
+| `glitchless_store` | Store | read | yes | no | yes | no |
 | `glitchless_revenue` | Revenue | read | yes | no | yes | no |
 | `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages | yes | no |
 | `glitchless_create_game` | Create game | manage | no | no | no | no |
-| `glitchless_share_board` | Share board | manage | no | no | no | yes: a share link is public |
-| `glitchless_list_share_links` | List share links | manage | yes | no | yes | no |
-| `glitchless_revoke_share_link` | Revoke share link | manage | no | yes | yes | no |
+| `glitchless_share_links` | Share links | manage | no | yes: it revokes a link | no | yes: a share link is public |
 | `glitchless_mark_known` | Mark finding known | manage | no | yes: it replaces a note, and clears one | yes | no |
+| `glitchless_resolve_error` | Resolve error | manage | no | yes: it hides an issue, and unresolves one | no: resolving again starts it over | no |
 | `glitchless_alerts` | Alerts | read | yes | no | yes | no |
 | `glitchless_set_alerts` | Change alerts | manage | no | yes: it replaces settings and removes a webhook | no | yes: a test alert posts to Discord, Slack or email |
 
 An app sees only the tools its scopes allow. Every tool takes `game` (a name or id). Not served by URL, because they
 act on the computer the server runs on: `glitchless_sign_in` (OAuth replaces it), `glitchless_playtest` (plays the game
-in Chrome on that computer), `glitchless_deck_send` and `glitchless_deck_measure` (a Steam Deck on that network).
+in Chrome on that computer) and `glitchless_deck` (a Steam Deck on that network).
 
 ## For MCP client developers
 

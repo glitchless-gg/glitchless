@@ -43,7 +43,7 @@ test('comparing versions that sent nothing in the window says so instead of fail
 
 test('every read tool passes env and session_type on to the API', async (t) => {
   t.after(() => api.close());
-  const reads = { glitchless_triage: 'findings', glitchless_overview: 'overview', glitchless_performance: 'performance', glitchless_get_error: 'errors', glitchless_player_funnel: 'players', glitchless_events: 'events', glitchless_compare_versions: 'versions', glitchless_dashboard: 'dashboard' };
+  const reads = { glitchless_triage: 'findings', glitchless_performance: 'performance', glitchless_get_error: 'errors', glitchless_player_funnel: 'players', glitchless_events: 'events', glitchless_compare_versions: 'versions', glitchless_dashboard: 'dashboard' };
   for (const [tool, name] of Object.entries(reads)) {
     seen.length = 0;
     const r = await client.callTool({ name: tool, arguments: { env: 'prod', session_type: 'user' } });

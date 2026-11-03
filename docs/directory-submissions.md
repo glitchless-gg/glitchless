@@ -120,33 +120,28 @@ tool.
 | Tool | Title | Read-only | Destructive | Idempotent | Open world | Why the hints |
 | --- | --- | --- | --- | --- | --- | --- |
 | `glitchless_list_games` | List games | yes | no | yes | no | Reads the workspace's games |
-| `glitchless_triage` | Triage | yes | no | yes | no | Reads findings |
-| `glitchless_overview` | Overview | yes | no | yes | no | Reads headline numbers |
+| `glitchless_triage` | Triage | yes | no | yes | no | Reads headline numbers and findings |
 | `glitchless_performance` | Performance | yes | no | yes | no | Reads frame times |
 | `glitchless_get_error` | Get error | yes | no | yes | no | Reads error issues |
-| `glitchless_player_funnel` | Player funnel | yes | no | yes | no | Reads level funnels and retention |
-| `glitchless_death_hotspots` | Death hotspots | yes | no | yes | no | Reads death positions |
+| `glitchless_player_funnel` | Player funnel | yes | no | yes | no | Reads level funnels, retention and death positions |
 | `glitchless_session` | Session | yes | no | yes | no | Reads one session |
 | `glitchless_events` | Events | yes | no | yes | no | Reads the game's own events |
 | `glitchless_compare_versions` | Compare versions | yes | no | yes | no | Reads versions side by side |
 | `glitchless_dashboard` | Dashboard | yes | no | yes | no | Reads the dashboard and one board |
 | `glitchless_bug_reports` | Bug reports | yes | no | yes | no | Reads players' bug reports |
-| `glitchless_store_reviews` | Store reviews | yes | no | yes | no | Reads store reviews Glitchless already synced; calls no store |
-| `glitchless_store_vitals` | Store vitals | yes | no | yes | no | Reads synced store vitals |
+| `glitchless_store` | Store | yes | no | yes | no | Reads store reviews and vitals Glitchless already synced; calls no store |
 | `glitchless_revenue` | Revenue | yes | no | yes | no | Reads synced revenue |
 | `glitchless_match` | Match | yes | no | yes | no | Reads a multiplayer game's matches |
 | `glitchless_network` | Network | yes | no | yes | no | Reads ping, packet loss and disconnects |
 | `glitchless_servers` | Servers | yes | no | yes | no | Reads the game's dedicated servers |
-| `glitchless_list_share_links` | List share links | yes | no | yes | no | Reads a game's share links |
 | `glitchless_set_dashboard` | Save dashboard | no | yes | yes | no | Replaces the saved dashboard (reset: true deletes it); saving the same pages twice changes nothing |
 | `glitchless_create_game` | Create game | no | no | no | no | Adds a game inside the workspace; each call adds another |
-| `glitchless_share_board` | Share board | no | no | no | yes | Publishes a board to anyone who has the link, signed out |
-| `glitchless_revoke_share_link` | Revoke share link | no | yes | yes | no | Ends a link for everyone who has it |
+| `glitchless_share_links` | Share links | no | yes | no | yes | Publishes a board to anyone who has the link, signed out; lists them; revoking one ends it for everyone who has it |
 
 The four that write need the `dashboard` or `manage` scope, and so does listing share links; a person who grants only
 `read` gives the app the other 18 reads.
 Tools that act on the computer the server runs on (`glitchless_sign_in`, `glitchless_playtest`,
-`glitchless_deck_send`, `glitchless_deck_measure`) exist only in the stdio server and are never listed here.
+`glitchless_deck`) exist only in the stdio server and are never listed here.
 
 ## Claude: Connectors Directory
 
@@ -232,7 +227,7 @@ they hold. `extensions["com.openai"].interface` in `plugin.json`:
 | # | Prompt | Tools | Expected |
 | --- | --- | --- | --- |
 | 1 | What's wrong with Zoomies this week? | `glitchless_triage` | Ranked findings with evidence: the difficulty spike at the vacuum on level 2, the TypeError in about a fifth of sessions, and over the week level 2's shader-compile stutter that 1.1.0 removed |
-| 2 | Where do players die most on level 2 of Zoomies, and what kills them? | `glitchless_death_hotspots` | Around x 38 to 43, about two thirds of the level's deaths, the vacuum |
+| 2 | Where do players die most on level 2 of Zoomies, and what kills them? | `glitchless_player_funnel` (hotspots) | Around x 38 to 43, about two thirds of the level's deaths, the vacuum |
 | 3 | Which error hits the most Zoomies sessions, and what happened right before it? | `glitchless_get_error` | The TypeError reading 'velocity' in Player.update, about a fifth of sessions, and the events before it |
 | 4 | Show me Zoomies' dashboard. | `glitchless_dashboard` | The pages and the Zoomies board's numbers |
 | 5 | Compare Zoomies 1.0.0 and 1.1.0 over the past week. Did 1.1.0 fix the level 2 stutter? | `glitchless_compare_versions` | Level 2's hitches went from several a minute to none |

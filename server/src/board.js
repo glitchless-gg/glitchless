@@ -45,7 +45,7 @@
 //   funnel      sessions that went through `steps` in order ("paywall,buy=tapped,buy=done")
 //   levels      starts, completions, fails and deaths per level, with clear times; `label` is what the game
 //               calls a level
-//   frame_time  frame-time p50 and p95 over time against the frame budget
+//   frame_time  frame-time p50 and p95 over time against the frame budgets of players' screens
 //   errors      the top error issues (`limit`)
 //   deaths      deaths by level and cause
 //   events      every custom event the game sends, with counts and sessions
@@ -725,11 +725,12 @@ function panelData(ctx, p, board, maps, currency) {
     case 'frame_time': {
       const o = cachedOverview(ctx);
       if (o.kpis.frame_p95 == null) return { empty: true, why: 'No frame times in this window.' };
-      return { ts: o.series.ts, p50: o.series.p50, p95: o.series.p95, budget_ms: o.kpis.frame_budget_ms, kpis: { p50: o.kpis.frame_p50, p95: o.kpis.frame_p95, avg_fps: o.kpis.avg_fps } };
+      return { ts: o.series.ts, p50: o.series.p50, p95: o.series.p95, budget_ms: o.kpis.frame_budget_ms, budgets: o.kpis.frame_budgets, kpis: { p50: o.kpis.frame_p50, p95: o.kpis.frame_p95, avg_fps: o.kpis.avg_fps, pct_over_budget: o.kpis.pct_frames_over_budget } };
     }
     case 'errors': {
+      // Resolved ones after the rest, marked (resolved.js; a share link's without the note), and ones back first.
       const issues = errorIssues(ctx).slice(0, p.limit || 5);
-      return issues.length ? { issues: issues.map(({ fingerprint, message, kind, location, count, sessions, last_seen, levels }) => ({ fingerprint, message, kind, location, count, sessions, last_seen, levels })) } : { empty: true, why: 'No errors in this window.' };
+      return issues.length ? { issues: issues.map(({ fingerprint, message, kind, location, count, sessions, last_seen, levels, resolved, came_back }) => ({ fingerprint, message, kind, location, count, sessions, last_seen, levels, ...(resolved ? { resolved } : {}), ...(came_back ? { came_back } : {}) })) } : { empty: true, why: 'No errors in this window.' };
     }
     case 'deaths': {
       if (p.by || p.level) {

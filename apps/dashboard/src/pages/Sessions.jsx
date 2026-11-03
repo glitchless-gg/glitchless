@@ -163,7 +163,7 @@ export function SessionsTable({ rows, all = rows, maxHeight }) {
               <td className="num">{fmtDuration(s.duration_s)}</td>
               {has.frames && (
                 <td className="num">
-                  <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
+                  <Status kind={frameStatus(s.pct_over_budget, s.p95)}>{fmtMs(s.p95)}</Status>
                 </td>
               )}
               {has.deaths && <td className="num">{s.deaths}</td>}
@@ -359,7 +359,7 @@ export function SessionDetail({ route }) {
               <div className="muted" style={{ fontSize: 11 }}>
                 P95 FRAME
               </div>
-              <Status kind={frameStatus(s.p95)}>{fmtMs(s.p95)}</Status>
+              <Status kind={frameStatus(s.pct_over_budget, s.p95)}>{fmtMs(s.p95)}</Status>
             </div>
           )}
           {s.props && Object.keys(s.props).length > 0 && (
@@ -492,7 +492,7 @@ export function SessionDetail({ route }) {
             { label: 'p95 frame (ms)', values: frames.map((fr) => fr.p95), color: 'var(--ink)', width: 2 },
             { label: 'worst frame (ms)', values: frames.map((fr) => fr.max), color: '#ff6b57', dash: [3, 3] },
           ]}
-          thresholds={[{ value: 16.7, color: '#1fae84', label: 'budget' }]}
+          thresholds={[{ value: s.budget_ms ?? 16.7, color: '#1fae84', label: s.budget_ms ? `${Math.round(1000 / s.budget_ms)} Hz budget` : 'budget' }]}
           markers={markers}
           onPick={(i) => !playing && frames[i] && setT(Math.max(t0, Math.min(t1, frames[i].ts)))}
         />

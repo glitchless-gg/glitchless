@@ -149,7 +149,7 @@ test('the finding: negative reviews about stutter rose after 1.4.2, with what Gl
     assert.match(f.summary, /played mostly on Steam Deck/);
     assert.match(f.summary, /frame-time p95 [\d.]+ms \(1\.4\.1: [\d.]+ms\), crash-free sessions [\d.]+% \(1\.4\.1: [\d.]+%\)/);
     assert.match(f.suggestion, /glitchless_compare_versions/);
-    assert.match(f.suggestion, /glitchless_store_reviews with store "steam", build "1\.4\.2"/);
+    assert.match(f.suggestion, /glitchless_store with store "steam", build "1\.4\.2"/);
     assert.deepEqual(f.link, { page: 'steam' });
     const triage = await g.get('overview');
     assert.ok(triage.findings.some((x) => x.id === f.id), 'in the overview, which glitchless_triage reads');

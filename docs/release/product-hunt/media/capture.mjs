@@ -39,7 +39,7 @@ const browser = await chromium.launch({ channel: 'chrome' });
 const made = [];
 try {
   for (const b of BOARDS) {
-    const text = await call('glitchless_share_board', { game: GAME, page: b.page, name: 'Product Hunt capture (temporary, revoke)', days: 1 });
+    const text = await call('glitchless_share_links', { game: GAME, page: b.page, name: 'Product Hunt capture (temporary, revoke)', days: 1 });
     const url = text.match(/https:\/\/\S*gl_share_[A-Za-z0-9_-]+\S*/)?.[0]?.replace(/[)".,]+$/, '');
     const id = text.match(/share_[a-z0-9]{8,}/)?.[0];
     if (id) made.push(id);
@@ -65,7 +65,7 @@ try {
   console.log('› engines.png: www.glitchless.gg/engines.html');
 } finally {
   for (const id of made) {
-    await call('glitchless_revoke_share_link', { game: GAME, id }).catch((err) => console.error(`revoke ${id} by hand: ${err.message}`));
+    await call('glitchless_share_links', { game: GAME, revoke: id }).catch((err) => console.error(`revoke ${id} by hand: ${err.message}`));
     console.log(`› revoked ${id}`);
   }
   await browser.close();

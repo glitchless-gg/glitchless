@@ -10,6 +10,11 @@
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 
 export const MINUTE = 60_000;
+// Frame time is judged frame by frame against each window's own budget (budget_ms: its screen's refresh rate), never
+// against one budget for the game: a 60 Hz phone drawing every frame on time (16.7 ms) is on time next to 120 Hz ones
+// (8.3 ms). A frame is over budget past 1.15× its window's (a cell's `over`), and a group of frames (a level, a GPU
+// tier, a version) has its p95 late on players' own screens once this share of them (in %) or more is.
+export const LATE_FRAMES_PCT = 5;
 
 // Fixed-point scales for summed fields: integers add exactly in any order.
 export const FIXED = { sec: 1e6, render: 1e6, heap: 1e6, calls: 1e3, tris: 1, geo: 1, ev: 1e3, net: 1e3 };
