@@ -751,6 +751,33 @@ export function errorFacts(ctx) {
   return errors;
 }
 
+// The same context's errors as its players hit them (session type user, on `env` when given), from what it already
+// read: each minute's error facts keep only players' sessions, and drop an error none of them hit in that minute. Its
+// errorList and errorFacts answer as a players-only read would, to the minute, with no second read: the alerts check
+// can't read raw events, which session-type filters otherwise need on Glitchless Cloud. A minute that mixed players and
+// test sessions counts the players' share of its occurrences. null when the facts keep no session IDs (day rollups).
+export function playersView(ctx, env = null) {
+  const player = (id) => {
+    const s = ctx.sessions.get(id);
+    return s?.session_type === 'user' && (!env || s.env === env);
+  };
+  const facts = [];
+  for (const { m, c } of factsOf(ctx)) {
+    const er = {};
+    for (const [key, x] of Object.entries(c.er)) {
+      if (!x.sessions || typeof x.sessions.count === 'function') return null;
+      const all = Object.keys(x.sessions);
+      const ids = all.filter(player);
+      if (!ids.length) continue;
+      const players = Object.fromEntries(ids.map((id) => [ctx.sessions.get(id).player_id, 1]));
+      er[key] = ids.length === all.length ? x : { ...x, n: Math.max(ids.length, Math.round((x.n * ids.length) / all.length)), sessions: Object.fromEntries(ids.map((id) => [id, 1])), players };
+    }
+    facts.push({ m, c: { er } });
+  }
+  const sessions = new Map([...ctx.sessions].filter(([id]) => player(id)));
+  return { ...ctx, sessions, facts, merged: undefined, playerErrors: undefined };
+}
+
 // An issue no player hit: its sessions by kind (synthetic: bots, playtests and store test phones; tester; simulated;
 // dev_builds: a player's session type on another env), or {} when the range keeps no IDs.
 function testKinds(ctx, ids) {

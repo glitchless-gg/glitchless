@@ -20,7 +20,7 @@
 // starts to hold and its key isn't active: the key is claimed with a conditional write, so it fires once however
 // many checks run. It stays active while the signal holds at a lower bar, and clears only after it has not held for
 // a day, so an alert never flaps. SPEC §3e has every number.
-import { buildContext, errorList, errorFacts, versions, cellsOf, playersAreSessions, round } from './analytics.js';
+import { buildContext, errorList, errorFacts, playersView, versions, cellsOf, playersAreSessions, round } from './analytics.js';
 import { findings } from './findings.js';
 import { seconds } from './rollups.js';
 import { sumsBy } from './sums.js';
@@ -104,6 +104,8 @@ export function alertRules(saved = {}) {
 
 // The context the rules read: what query `name` gets from app.js, with no drill-downs, and versions in release order
 // (the store's first sighting of each, analytics.js releaseOrder), so "the newest" is the newest whatever the day.
+// Every session type unless q.type says one: on Glitchless Cloud a session-type filter reads raw events, which only its
+// web function can (when an error is resolved), never its alerts check, which reads players with playersView instead.
 export async function contextFor(store, projectId, q) {
   const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: q.type || 'all', sessions: null, plan: q.plan ?? null };
   let ctx;
@@ -118,8 +120,11 @@ export async function contextFor(store, projectId, q) {
 
 const realSessions = (ctx) => [...ctx.sessions.values()].filter((s) => !BOTS.has(s.session_type));
 // Players, as findings read them: session type user, on prod when the game sent from prod (no dev builds, bots, testers
-// or store test phones). The errors rules read them.
-const playersOf = (q, ctx) => ({ ...q, env: q.env ?? ([...ctx.sessions.values()].some((s) => s.env === 'prod') ? 'prod' : null), type: 'user' });
+// or store test phones). The errors rules read them from what was read (analytics.js playersView): the alerts check on
+// Glitchless Cloud reads summaries only, never the raw events a session-type filter would need. A range whose facts
+// keep no session IDs (none of the ones here, which are 31 days or less) is read whole.
+const playersEnv = (env, ctx) => env ?? ([...ctx.sessions.values()].some((s) => s.env === 'prod') ? 'prod' : null);
+const playersOnly = (ctx, env) => playersView(ctx, playersEnv(env, ctx)) ?? ctx;
 const who = (s) => s.player_id ?? s.session_id;
 
 // A session stutters when it has LIMITS.stutterPerMin hitches a minute over a minute of frames or more.
@@ -205,11 +210,9 @@ export async function measure(store, projectId, { service, env = null, plan = nu
   // The new_error rule reads players' errors: an error only test phones, bots or testers hit isn't one players have.
   // Errors the game's owner resolved (resolved.js) are marked: the rule skips them, unless they came back, among
   // players or, for one resolved for every session (all_sessions), in any session.
-  const pq = playersOf(q, ctx);
-  const players = await contextFor(store, projectId, { ...pq, from: now - DAY, to: now });
+  const players = playersOnly(ctx, env);
   if (resolved?.length) players.resolved = { entries: resolved };
   const everyone = resolved?.filter((e) => e.all_sessions) ?? [];
-  if (everyone.length) ctx.resolved = { entries: everyone };
   const long = seed || history ? await contextFor(store, projectId, { ...q, from: now - LIMITS.profileDays * DAY, to: now }) : null;
   const to = Math.min(now, (ctx.to ?? now) + 1); // summaries are complete up to here
   const real = realSessions(ctx);
@@ -221,9 +224,9 @@ export async function measure(store, projectId, { service, env = null, plan = nu
   return {
     to,
     units: playersAreSessions(real.length || !long ? ctx : long) ? 'sessions' : 'players',
-    history: history ? errorList(await contextFor(store, projectId, { ...pq, from: now - LIMITS.seedDays * DAY, to: now })) : null,
+    history: history ? errorList(playersOnly(await contextFor(store, projectId, { ...q, from: now - LIMITS.seedDays * DAY, to: now }), env)) : null,
     errors: errorList(players),
-    back: everyone.length ? errorList(ctx).filter((i) => i.came_back) : [],
+    back: everyone.length ? errorList({ ...ctx, resolved: { entries: everyone } }).filter((i) => i.came_back) : [],
     hours: { ...(long ? hourCounts(longReal, long.from, to) : {}), ...hourCounts(real, ctx.from, to) },
     versionsSeen,
     recent: {
@@ -673,7 +676,8 @@ export async function weeklySummary(store, projectId, { service, name = null, en
   if (resolved?.length) {
     // A resolved error comes back when players hit it again (resolved.js), so players' errors are read too.
     last.resolved = { entries: resolved };
-    last.playerErrors = errorFacts(await contextFor(store, projectId, { ...playersOf(q, last), from: end - 7 * DAY, to: end }));
+    const players = playersView(last, playersEnv(env, last));
+    if (players) last.playerErrors = errorFacts(players);
   }
   const found = findings(last, store.getMaps ? await store.getMaps(projectId, service) : []).filter((f) => WORTH_FIXING.includes(f.severity));
   const open = found.filter((f) => !f.known);

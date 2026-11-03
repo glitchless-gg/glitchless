@@ -8,7 +8,7 @@ import http from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildContext, errorList, errorFacts, overview, versionNewer } from '../src/analytics.js';
+import { buildContext, errorList, errorFacts, playersView, overview, versionNewer } from '../src/analytics.js';
 import { findings } from '../src/findings.js';
 import { resolvedMark } from '../src/resolved.js';
 import { weeklySummary, weeklyMessage, evaluate, alertMessage, weekStart, measure } from '../src/alerts.js';
@@ -115,6 +115,18 @@ test("Google Play's test phones on a new upload leave it resolved; players there
   assert.equal(all.came_back.version, '1.2');
   assert.equal(all.came_back.resolved.all_sessions, true);
   assert.deepEqual(findings(withPlayers(phones)).filter((f) => f.id === `error-${SHADER}`), [], 'and no finding');
+});
+
+test("players' errors from what was read answer as a players-only read does, with no second read", () => {
+  // The alerts check reads summaries only (no raw events, so no session-type filter): it filters what it read.
+  const evs = [...week(), ...others(900, '1.2', { type: 'synthetic' }, 3), ...others(950, '1.2', { env: 'dev' }, 2), ...session(990, '1.2', NOW - 2 * HOUR, [SHADER, OTHER])];
+  const pick = (list) => list.map((i) => [i.fingerprint, i.count, i.sessions, i.players, i.versions, i.first_seen, i.last_seen, i.sessions_pct]);
+  const read = buildContext(evs, { service: 'starlift', from: NOW - 7 * DAY, to: NOW, env: 'prod', type: 'user' });
+  assert.deepEqual(pick(errorList(playersView(ctxOf(evs, null), 'prod'))), pick(errorList(read)));
+  assert.deepEqual(errorFacts(playersView(ctxOf(evs, null), 'prod')), errorFacts(read));
+  // Marked the same way: back in 1.2 from the player, not the phones.
+  assert.equal(errorList(withPlayers(evs)).find((i) => i.fingerprint === SHADER).came_back.version, '1.2');
+  assert.equal(errorList(Object.assign(ctxOf(evs), { playerErrors: errorFacts(playersView(ctxOf(evs, null), 'prod')) })).find((i) => i.fingerprint === SHADER).came_back.version, '1.2');
 });
 
 test('an issue no player hit says so, with its sessions by kind', () => {

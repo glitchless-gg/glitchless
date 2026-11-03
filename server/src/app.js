@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody, FEATURES, companionOf, isCompanion, gameOf, withServers } from './ingest.js';
-import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount, errorFacts } from './analytics.js';
+import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount, errorFacts, playersView } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
 import { validateDashboard, autoDashboard, evaluateBoard, eventQuery, versionColumns, dashboardStats, pathLevels, levelRows, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
@@ -408,7 +408,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       }
       // The same range's players, as findings read them: a resolved error comes back only when they hit it again, and
       // the errors query says which issues no player hit (store test phones, bots, testers, dev builds).
-      if ((name === 'errors' || (RESOLVED_QUERIES.has(name) && ctx.resolved)) && !(q.type === 'user' && q.env === playersQuery.env)) ctx.playerErrors = errorFacts(await playersContext());
+      // A read of every session type on the players' env (or every env) has them already (playersView); else, or when
+      // its facts keep no session IDs (day rollups), they're read.
+      if ((name === 'errors' || (RESOLVED_QUERIES.has(name) && ctx.resolved)) && !(q.type === 'user' && q.env === playersQuery.env)) {
+        const view = q.type === 'all' && (!q.env || q.env === playersQuery.env) ? playersView(ctx, playersQuery.env) : null;
+        ctx.playerErrors = errorFacts(view ?? (await playersContext()));
+      }
       // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
       // sessions aren't players': the same env and session type, never the players' property filters.
       if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });
