@@ -402,6 +402,143 @@ namespace GlitchlessSdk.Tests
             Assert.AreEqual(first.PlayerId, replayed["player_id"]);
         }
 
+        // A session cut in two by the outbox (SPEC §2 session_start.continued). In anonymous mode the next launch sends an
+        // earlier session's batches under a new ID; when its first batch, with session_start, had gone, the rest arrived
+        // with none, and the server took a test phone's leftovers for a player's session with no device.
+        static List<Dictionary<string, object>> Bodies(IEnumerable<string> sent) => sent.Select(b => (Dictionary<string, object>)Json.Parse(b)).ToList();
+        static List<Dictionary<string, object>> EventsOf(Dictionary<string, object> body) => ((List<object>)body["events"]).Cast<Dictionary<string, object>>().ToList();
+
+        [Test]
+        public void TheRestOfASessionWhoseFirstBatchWentGetsItsStartAgainFirst()
+        {
+            var first = NewCore("--glitchless-synthetic");
+            first.Init(Options());
+            first.Track("bone_collected", null);
+            first.Flush(); // the first batch goes, session_start in it
+            Assert.AreEqual("session_start", EventsOf(Bodies(transport.Sent)[0])[0]["type"]);
+            transport.Status = 0; // then the network goes, and the game closes with the rest waiting
+            first.Track("powerup", null);
+            first.Shutdown("quit");
+            var file = File.ReadAllText(Path.Combine(dir, "outbox.json"));
+            var saved = (Dictionary<string, object>)Json.Parse(file);
+            Assert.IsFalse(((List<object>)saved["batches"]).Cast<Dictionary<string, object>>().Any(b => EventsOf(b).Any(e => (string)e["type"] == "session_start")), "the rest is saved without its session_start");
+            var starts = ((List<object>)saved["starts"]).Cast<Dictionary<string, object>>().ToList();
+            Assert.AreEqual(1, starts.Count, "its session_start is saved beside it");
+            var savedStart = (Dictionary<string, object>)starts[0]["event"];
+            Assert.AreEqual("session_start", savedStart["type"]);
+            Assert.AreEqual("synthetic", savedStart["session_type"]);
+            StringAssert.DoesNotContain(first.SessionId, file);
+            StringAssert.DoesNotContain("\"sid\"", file);
+
+            transport.Status = 202;
+            var sentBefore = transport.Sent.Count;
+            now += 60_000; // a later launch: its session starts at a time of its own
+            var second = NewCore();
+            second.Init(Options());
+            second.Flush();
+            var bodies = Bodies(transport.Sent.Skip(sentBefore));
+            var rest = bodies.FindIndex(b => EventsOf(b).Any(e => (string)e["type"] == "custom" && (string)e["name"] == "powerup"));
+            Assert.Greater(rest, 0);
+            var again = bodies[rest - 1];
+            var start = EventsOf(again).Single();
+            Assert.AreEqual("session_start", start["type"], "sent first, alone in its own batch");
+            Assert.AreEqual(true, start["continued"]);
+            Assert.AreEqual("synthetic", start["session_type"], "with the session's own type");
+            CollectionAssert.AreEquivalent(DeviceInfo.Collect(false).Keys, ((Dictionary<string, object>)start["device"]).Keys, "and its device");
+            Assert.AreEqual(bodies[rest]["session_id"], again["session_id"], "under the same new ID as the rest");
+            Assert.AreNotEqual(first.SessionId, again["session_id"]);
+            Assert.AreNotEqual(second.SessionId, again["session_id"]);
+            Assert.AreNotEqual(bodies[rest]["batch_id"], again["batch_id"], "with a batch ID of its own");
+            var mine = bodies.Where(b => (string)b["session_id"] == second.SessionId).SelectMany(EventsOf).Single(e => (string)e["type"] == "session_start");
+            Assert.IsFalse(mine.ContainsKey("continued"), "this launch's own session_start isn't continued");
+            Assert.AreEqual("user", mine["session_type"]);
+            Assert.IsFalse(File.Exists(Path.Combine(dir, "outbox.json")));
+        }
+
+        [Test]
+        public void ASessionCutAgainOnTheNextLaunchStillGetsItsStart()
+        {
+            var first = NewCore("--glitchless-synthetic");
+            first.Init(Options());
+            first.Flush(); // the first batch goes
+            transport.Status = 0;
+            first.Track("powerup", null);
+            first.Shutdown("quit");
+
+            // The next launch sends the start again, then loses the network before the rest goes.
+            transport.Hold = true;
+            now += 60_000; // a later launch: its session starts at a time of its own
+            var second = NewCore();
+            second.Init(Options());
+            Frames(second, 1);
+            Assert.AreEqual(1, transport.Pending.Count);
+            var held = Bodies(transport.Sent).Last();
+            Assert.AreEqual(true, EventsOf(held).Single()["continued"]);
+            transport.Pending[0](202);
+            transport.Pending[1](0);
+            transport.Hold = false;
+            second.Shutdown("quit");
+            var saved = (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(dir, "outbox.json")));
+            Assert.IsTrue(saved.ContainsKey("starts"), "the earlier session's start is saved again with the rest");
+
+            transport.Status = 202;
+            var sentBefore = transport.Sent.Count;
+            now += 60_000; // a later launch: its session starts at a time of its own
+            var third = NewCore();
+            third.Init(Options());
+            third.Flush();
+            var bodies = Bodies(transport.Sent.Skip(sentBefore));
+            var rest = bodies.FindIndex(b => EventsOf(b).Any(e => (string)e["type"] == "custom" && (string)e["name"] == "powerup"));
+            Assert.Greater(rest, 0);
+            var start = EventsOf(bodies[rest - 1]).Single();
+            Assert.AreEqual("session_start", start["type"]);
+            Assert.AreEqual(true, start["continued"]);
+            Assert.AreEqual("synthetic", start["session_type"]);
+            Assert.AreEqual(bodies[rest]["session_id"], bodies[rest - 1]["session_id"]);
+            Assert.AreNotEqual(held["session_id"], bodies[rest]["session_id"], "a third ID: nothing on the device ties the launches");
+        }
+
+        [Test]
+        public void ASessionSavedWholeGetsNoStartAdded()
+        {
+            var first = NewCore();
+            first.Init(Options());
+            transport.Status = 0; // nothing goes
+            first.Track("bone_collected", null);
+            first.Shutdown("quit");
+            transport.Status = 202;
+            var sentBefore = transport.Sent.Count;
+            now += 60_000; // a later launch: its session starts at a time of its own
+            var second = NewCore();
+            second.Init(Options());
+            second.Flush();
+            var starts = Bodies(transport.Sent.Skip(sentBefore)).Where(b => (string)b["session_id"] != second.SessionId).SelectMany(EventsOf).Where(e => (string)e["type"] == "session_start").ToList();
+            Assert.AreEqual(1, starts.Count, "its one session_start, from its own batch");
+            Assert.IsFalse(starts[0].ContainsKey("continued"));
+        }
+
+        [Test]
+        public void InstallModeSavesNoStartsAndAddsNone()
+        {
+            var first = NewCore();
+            first.Init(Options(Privacy.Install));
+            first.Flush(); // the first batch goes
+            transport.Status = 0;
+            first.Track("powerup", null);
+            first.Shutdown("quit");
+            var saved = (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(dir, "outbox.json")));
+            Assert.IsFalse(saved.ContainsKey("starts"), "the session ID is saved: the rest keeps its session");
+            transport.Status = 202;
+            var sentBefore = transport.Sent.Count;
+            now += 60_000; // a later launch: its session starts at a time of its own
+            var second = NewCore();
+            second.Init(Options(Privacy.Install));
+            second.Flush();
+            var replayed = Bodies(transport.Sent.Skip(sentBefore)).Where(b => (string)b["session_id"] == first.SessionId).ToList();
+            Assert.IsNotEmpty(replayed);
+            Assert.IsFalse(replayed.SelectMany(EventsOf).Any(e => (string)e["type"] == "session_start"), "nothing added");
+        }
+
         [Test]
         public void IdStorageKeepsTheIdWhereThereIsNoFolder()
         {

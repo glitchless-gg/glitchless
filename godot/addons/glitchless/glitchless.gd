@@ -48,7 +48,7 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.6.1"
+const SDK_VERSION := "0.6.2"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -2482,9 +2482,10 @@ func _save_outbox() -> void:
 			saved.pid = b.pid
 		out.append(saved)
 		groups[b.group] = true
-	# Only the starts of the sessions still waiting, and this one's.
+	# Only the starts of the sessions still waiting, and this one's. An earlier launch's group is a String, this
+	# one's an int: is_same compares them without an error.
 	for group: Variant in _starts.keys():
-		if not groups.has(group) and group != _started_at:
+		if not groups.has(group) and not is_same(group, _started_at):
 			_starts.erase(group)
 	if out.is_empty():
 		if FileAccess.file_exists(_outbox_path()):
@@ -2521,14 +2522,20 @@ func _load_outbox() -> void:
 		return
 	var oldest := _now() - MAX_OUTBOX_AGE_MS
 	var fresh_ids := {}
-	# A session whose saved batches have no session_start gets its saved one again, marked continued, before them.
+	# Each earlier session's session_start, from its saved batches or saved beside them. A session whose saved
+	# batches have none gets its saved one again, marked continued, before them.
 	var starts := {}
+	var in_batches := {}
 	for s: Variant in data.get("starts", []):
 		if s is Dictionary and s.get("event") is Dictionary and s.event.get("type") == "session_start" and s.event.has("ts") and float(s.event.ts) >= oldest:
 			starts[str(s.get("group", ""))] = s.event
 	for saved: Variant in data.batches:
-		if saved is Dictionary and saved.get("events") is Array and saved.events.any(func(e: Variant) -> bool: return e is Dictionary and e.get("type") == "session_start"):
-			starts.erase(str(saved.get("group", "")))
+		if saved is Dictionary and saved.get("events") is Array:
+			for e: Variant in saved.events:
+				if e is Dictionary and e.get("type") == "session_start":
+					in_batches[str(saved.get("group", ""))] = true
+					if e.has("ts"):
+						starts[str(saved.get("group", ""))] = e
 	for saved: Variant in data.batches:
 		if not saved is Dictionary or not saved.get("events") is Array:
 			continue
@@ -2547,14 +2554,17 @@ func _load_outbox() -> void:
 				if starts.has(group):
 					var start: Dictionary = starts[group]
 					start.ts = int(start.ts)
-					start.continued = true
-					var first: Array[Dictionary] = [start]
-					_outbox.append({
-						"id": _next_batch_id, "bid": _new_id("b_", 16), "service": str(saved.get("service", _service)),
-						"env": str(saved.get("env", _env)), "version": str(saved.get("version", _version)),
-						"sid": fresh_ids[group], "pid": "", "group": group, "events": first,
-					})
-					_next_batch_id += 1
+					if not in_batches.has(group):
+						start.continued = true
+						var first: Array[Dictionary] = [start]
+						_outbox.append({
+							"id": _next_batch_id, "bid": _new_id("b_", 16), "service": str(saved.get("service", _service)),
+							"env": str(saved.get("env", _env)), "version": str(saved.get("version", _version)),
+							"sid": fresh_ids[group], "pid": "", "group": group, "events": first,
+						})
+						_next_batch_id += 1
+					# Kept for this launch's saves too: it may send the session's first batch and not the rest.
+					_starts[group] = start
 			sid = fresh_ids[group]
 		var bid := str(saved.get("bid", ""))
 		var b := {

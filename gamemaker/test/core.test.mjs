@@ -345,6 +345,9 @@ test('offline, the outbox keeps the session without any ID; online, it goes unde
     assert.match(s.browser, /^GameMaker 2026\./);
     assert.equal(s.session_type, 'synthetic');
     assert.equal(s.player_id, s.session_id, 'anonymous sessions carry no player ID');
+    const starts = rawEvents().filter((e) => e.session_id === s.session_id && e.type === 'session_start');
+    assert.equal(starts.length, 1, 'a session saved whole keeps its one session_start: none is added');
+    assert.ok(!('continued' in starts[0]));
   }
 });
 
@@ -385,7 +388,7 @@ test('frame windows: the server reads the GML sketch back, a window never spans 
     const s = Sketch.from(w.ft);
     assert.equal(s.n, w.frames);
     assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
-    assert.equal(w.sdk, 'glitchless-gamemaker/0.4.0');
+    assert.equal(w.sdk, 'glitchless-gamemaker/0.4.1');
     assert.equal(w.hz, 60);
     assert.equal(typeof w.process_ms, 'number');
     assert.equal(typeof w.render_ms, 'number');
@@ -462,6 +465,12 @@ test('a crash is written to the outbox as the game stops and sent on the next la
   const fresh = (await sessionsNow()).filter((s) => !before.has(s.session_id));
   const dead = fresh.find((s) => s.crashed);
   assert.ok(dead, JSON.stringify(fresh));
+  // Its first batch went in level 1: the crash goes under a new ID after its session_start again (SPEC §2
+  // session_start.continued), so the session still says what it was and what it ran on.
+  assert.equal(dead.session_type, 'synthetic');
+  assert.match(dead.browser, /^GameMaker 2026\./);
+  const again = rawEvents().filter((e) => e.session_id === dead.session_id && e.type === 'session_start');
+  assert.deepEqual(again.map((e) => e.continued), [true]);
   const { issues } = await query('errors');
   const crash = issues.find((i) => i.kind === 'crash');
   assert.equal(crash.message, 'Unable to find instance for object index 7');
@@ -502,7 +511,7 @@ test('bug reports: from code straight away, through the form, and an offline one
   assert.ok(reports.some((r) => r.note === 'the bonus on rm_level_1 never paid out' && r.session_id !== game.g.session_id), 'the offline run\'s report arrived');
   const one = (await query('report', { id: reports.find((r) => r.session_id === game.g.session_id && r.note.startsWith('sparks')).id })).report;
   assert.equal(one.screenshot, 'data:image/png;base64,' + PNG_1PX);
-  assert.equal(one.sdk, 'glitchless-gamemaker/0.4.0');
+  assert.equal(one.sdk, 'glitchless-gamemaker/0.4.1');
   assert.equal(one.level, 'rm_level_2');
   assert.match(one.device, /^GameMaker 2026\./);
   assert.ok(one.recent.some((e) => e.type === 'level_start' && e.level === 'rm_level_2'), JSON.stringify(one.recent));
@@ -626,12 +635,110 @@ test('a batch the server took as the game ended goes again on the next launch, a
   const next = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS });
   next.state.timer += 1_234_567; // a real launch's clock is never where the last one's was: new IDs
   next.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, next.struct({}));
-  assert.equal(next.g.outbox[0].batch_id, saved[0].batch_id);
+  // The session's first batch went at 2 s, so its session_start goes again first (SPEC §2 session_start.continued).
+  assert.equal(next.g.outbox[0].events[0].continued, true);
+  assert.equal(next.g.outbox[1].batch_id, saved[0].batch_id);
   await next.frames(200);
   await next.settle();
   assert.ok(!fs.existsSync(outbox(save)) || !fs.readFileSync(outbox(save), 'utf8').includes(saved[0].batch_id), 'answered, so gone');
   const ends = rawEvents().filter((e) => e.type === 'session_end' && e.reason === 'quit' && e.ts === saved[0].events.find((x) => x.type === 'session_end')?.ts);
   assert.equal(ends.length, 1, 'the ending batch is stored once, not again under the replay\'s new session ID');
+});
+
+// Starlift 1.1.3's Google Play test phones counted as players. In anonymous mode the next launch sends an earlier
+// session's saved batches under a new ID; when the session's first batch, with its session_start, had gone, the rest
+// arrived with none, and the server took it for a player's session with no device. The outbox now keeps each waiting
+// session's session_start (it holds no ID), and the next launch sends it first, marked continued (SPEC §2).
+
+// Passes the first `n` intake requests on to the server, then fails the rest as a dropped network does.
+function intakeCut(n) {
+  let sent = 0;
+  return (url, init) => (url.includes('/v1/intake') && ++sent > n ? Promise.reject(new TypeError('fetch failed')) : fetch(url, init));
+}
+
+// A launch whose first batch goes and whose rest is saved: an error in it, then quit with no network.
+async function cutRun(save, { args = ['-glitchless', '-glitchless-synthetic'], later = 0, sends = 1 } = {}) {
+  const game = launch({ saveDir: save, args, rooms: ROOMS, fetchImpl: intakeCut(sends), later });
+  game.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, game.struct({}));
+  game.roomGoto(1);
+  await game.frames(150); // the first batch goes at 2 s
+  await game.settle();
+  game.call('glitchless_error', 'active uniforms exceed GL_MAX_FRAGMENT_UNIFORM_VECTORS (261)', game.struct({}));
+  await game.frames(10);
+  game.call('glitchless_quit');
+  for (let i = 0; i < 200 && !game.state.ended; i++) await game.frame();
+  await game.settle();
+  return game;
+}
+
+test('a session cut by the outbox: the next launch sends its session_start again first, continued, and the server keeps its type and device', async () => {
+  const save = newSave();
+  const first = await cutRun(save);
+  const text = fs.readFileSync(outbox(save), 'utf8');
+  const saved = JSON.parse(text);
+  assert.ok(saved.batches.length > 0 && saved.batches.every((b) => !b.events.some((e) => e.type === 'session_start')), 'the rest is saved without its session_start');
+  assert.equal(saved.starts?.length, 1, 'its session_start is saved beside it');
+  assert.equal(saved.starts[0].event.type, 'session_start');
+  assert.equal(saved.starts[0].event.session_type, 'synthetic');
+  assert.ok(!text.includes(first.g.session_id) && !/"(sid|pid|session_id|player_id)"/.test(text), 'and still no ID on disk');
+
+  const next = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS, later: 60_000 });
+  next.state.timer += 1_234_567;
+  next.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, next.struct({}));
+  const [again, rest] = next.g.outbox;
+  assert.deepEqual(Array.from(again.events, (e) => e.type), ['session_start'], 'sent first, alone in its own batch');
+  assert.equal(again.events[0].continued, true);
+  assert.equal(again.sid, rest.sid, 'under the same new ID as the rest');
+  assert.notEqual(again.sid, first.g.session_id);
+  assert.notEqual(again.batch_id, rest.batch_id);
+  await next.frames(200);
+  await next.settle();
+  assert.ok(!fs.existsSync(outbox(save)) || !fs.readFileSync(outbox(save), 'utf8').includes(rest.batch_id), 'sent');
+  const session = (await sessionsNow()).find((s) => s.session_id === again.sid);
+  assert.ok(session, 'no session under the new ID');
+  assert.equal(session.session_type, 'synthetic', 'a test phone\'s leftovers are not a player\'s session');
+  assert.match(session.browser, /^GameMaker 2026\./);
+  const stored = rawEvents().filter((e) => e.session_id === again.sid);
+  assert.deepEqual(stored.filter((e) => e.type === 'session_start').map((e) => e.continued), [true]);
+  assert.ok(stored.some((e) => e.type === 'error'), 'the rest followed it');
+  const own = rawEvents().filter((e) => e.session_id === next.g.session_id && e.type === 'session_start');
+  assert.deepEqual(own.map((e) => [e.session_type, 'continued' in e]), [['user', false]], 'this launch\'s own start is not continued');
+});
+
+test('a session cut again on the next launch still gets its session_start on the one after', async () => {
+  const save = newSave();
+  await cutRun(save);
+  // The next launch sends the start again, then loses the network before the rest goes.
+  const second = await cutRun(save, { args: ['-glitchless'], later: 60_000 });
+  const saved = JSON.parse(fs.readFileSync(outbox(save), 'utf8'));
+  assert.ok(saved.starts?.some((s) => s.event.session_type === 'synthetic' && s.event.continued === true), JSON.stringify(saved.starts));
+  const third = launch({ saveDir: save, args: ['-glitchless'], rooms: ROOMS, later: 120_000 });
+  third.state.timer += 7_654_321;
+  third.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, third.struct({}));
+  const first = third.g.outbox.findIndex((b) => b.events.some((e) => e.type === 'session_start' && e.session_type === 'synthetic'));
+  const again = third.g.outbox[first];
+  assert.deepEqual(Array.from(again.events, (e) => [e.type, e.continued]), [['session_start', true]]);
+  const rest = third.g.outbox.filter((b) => b.sid === again.sid);
+  assert.ok(rest.length > 1 && rest.slice(1).some((b) => b.events.some((e) => e.type === 'error')), 'the rest follows it, under its ID');
+  assert.equal(third.g.outbox.findIndex((b) => b.sid === again.sid), first, 'first');
+  assert.notEqual(again.sid, second.g.session_id);
+  await third.frames(200);
+  await third.settle();
+  const session = (await sessionsNow()).find((s) => s.session_id === again.sid);
+  assert.equal(session?.session_type, 'synthetic');
+});
+
+test('install mode saves the session ID, so the rest keeps its session: no start is saved or added', async () => {
+  const save = newSave();
+  const first = await cutRun(save, { args: ['-glitchless', '-glitchless-privacy=install'] });
+  const saved = JSON.parse(fs.readFileSync(outbox(save), 'utf8'));
+  assert.ok(saved.batches.every((b) => b.sid === first.g.session_id));
+  assert.ok(!('starts' in saved));
+  const next = launch({ saveDir: save, args: ['-glitchless', '-glitchless-privacy=install'], rooms: ROOMS, later: 60_000 });
+  next.call('glitchless_init', SERVICE, '1.2.0', 'dev', `http://127.0.0.1:${port}`, next.struct({}));
+  const replayed = next.g.outbox.filter((b) => b.sid === first.g.session_id);
+  assert.equal(replayed.length, saved.batches.length);
+  assert.ok(!next.g.outbox.some((b) => b.events.some((e) => e.type === 'session_start')), 'nothing added');
 });
 
 test('quitting mid-level sends an abandon before the end, and drops a fail the game sends for that level after it', async () => {

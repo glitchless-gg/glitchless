@@ -25,7 +25,9 @@ function __glitchless_flush(_g) {
         return;
     }
     if (!_g.session_start_sent) {
-        array_insert(_g.queue, 0, __glitchless_session_start_event(_g));
+        var _start = __glitchless_session_start_event(_g);
+        _g.starts[$ string(_g.started_at)] = _start;
+        array_insert(_g.queue, 0, _start);
         _g.session_start_sent = true;
     }
     // Once a launch, with the first batch after the first frame: a batch can go before it (the window lost focus
@@ -287,9 +289,14 @@ function __glitchless_gzip_works() {
 /// batches go under a new random ID, so nothing written to the device ties two sessions together. Every
 /// mode saves each batch's own ID, so a batch the server took just before the game closed is not stored
 /// twice when the next launch sends it.
+/// Anonymous mode also saves each of those sessions' session_start (it holds no ID): when its first batch
+/// went out before the game closed or crashed (or the server stored it but its reply was lost), the next
+/// launch sends it again first, marked continued, so the rest of the session, a crash included, still says
+/// what device and kind of session it was (SPEC §2 session_start.continued).
 function __glitchless_save_outbox(_g) {
     if (!_g.enabled) return;
     var _out = [];
+    var _waiting = {}; // each group still waiting → its group as saved
     for (var _i = 0; _i < array_length(_g.outbox); _i++) {
         var _b = _g.outbox[_i];
         var _saved = { batch_id: _b.batch_id, service: _b.service, env: _b.env, version: _b.version, group: _b.group, events: _b.events };
@@ -298,13 +305,29 @@ function __glitchless_save_outbox(_g) {
             _saved.pid = _b.pid;
         }
         array_push(_out, _saved);
+        _waiting[$ string(_b.group)] = _b.group;
+    }
+    // Only the starts of the sessions still waiting, and this one's.
+    var _groups = variable_struct_get_names(_g.starts);
+    for (var _i = 0; _i < array_length(_groups); _i++) {
+        if (is_undefined(_waiting[$ _groups[_i]]) && _groups[_i] != string(_g.started_at)) variable_struct_remove(_g.starts, _groups[_i]);
     }
     if (array_length(_out) == 0) {
         if (file_exists(__GLITCHLESS_OUTBOX)) file_delete(__GLITCHLESS_OUTBOX);
         return;
     }
+    var _data = { v: 1, batches: _out };
+    if (!_g.keeps_ids) {
+        var _starts = [];
+        var _keys = variable_struct_get_names(_waiting);
+        for (var _i = 0; _i < array_length(_keys); _i++) {
+            var _start = _g.starts[$ _keys[_i]];
+            if (!is_undefined(_start)) array_push(_starts, { group: _waiting[$ _keys[_i]], event: _start });
+        }
+        if (array_length(_starts) > 0) _data.starts = _starts;
+    }
     var _tmp = __GLITCHLESS_OUTBOX + ".tmp";
-    __glitchless_write_text(_tmp, json_stringify({ v: 1, batches: _out }));
+    __glitchless_write_text(_tmp, json_stringify(_data));
     if (file_exists(__GLITCHLESS_OUTBOX)) file_delete(__GLITCHLESS_OUTBOX);
     file_rename(_tmp, __GLITCHLESS_OUTBOX);
 }
@@ -329,6 +352,27 @@ function __glitchless_load_outbox(_g) {
     var _oldest = __glitchless_now(_g) - __GLITCHLESS_MAX_OUTBOX_AGE_MS;
     var _fresh_ids = {};
     var _batches = _data.batches;
+    // Each earlier session's session_start, from its saved batches or saved beside them. One saved beside them
+    // goes again first, marked continued: the session's first batch had gone.
+    var _start_of = {};
+    var _in_batches = {};
+    var _saved_starts = _data[$ "starts"];
+    if (is_array(_saved_starts)) {
+        for (var _i = 0; _i < array_length(_saved_starts); _i++) {
+            var _s = _saved_starts[_i];
+            if (is_struct(_s) && __glitchless_is_start(_s[$ "event"], _oldest)) _start_of[$ string(_s[$ "group"])] = _s.event;
+        }
+    }
+    for (var _i = 0; _i < array_length(_batches); _i++) {
+        var _saved = _batches[_i];
+        if (!is_struct(_saved) || !is_array(_saved[$ "events"])) continue;
+        for (var _j = 0; _j < array_length(_saved.events); _j++) {
+            if (__glitchless_is_start(_saved.events[_j], _oldest)) {
+                _start_of[$ string(_saved[$ "group"])] = _saved.events[_j];
+                _in_batches[$ string(_saved[$ "group"])] = true;
+            }
+        }
+    }
     for (var _i = 0; _i < array_length(_batches); _i++) {
         var _saved = _batches[_i];
         if (!is_struct(_saved) || !is_array(_saved[$ "events"])) continue;
@@ -341,7 +385,30 @@ function __glitchless_load_outbox(_g) {
         var _group = string(_saved[$ "group"]);
         var _sid = is_string(_saved[$ "sid"]) ? _saved.sid : "";
         if (_sid == "") {
-            if (is_undefined(_fresh_ids[$ _group])) _fresh_ids[$ _group] = __glitchless_new_id("s_", 16);
+            if (is_undefined(_fresh_ids[$ _group])) {
+                _fresh_ids[$ _group] = __glitchless_new_id("s_", 16);
+                var _start = _start_of[$ _group];
+                if (!is_undefined(_start)) {
+                    if (is_undefined(_in_batches[$ _group])) {
+                        _start.continued = true;
+                        array_push(_g.outbox, {
+                            bid: _g.next_bid,
+                            batch_id: __glitchless_new_id("b_", 16),
+                            service: is_string(_saved[$ "service"]) ? _saved.service : _g.service,
+                            env: is_string(_saved[$ "env"]) ? _saved.env : _g.env,
+                            version: is_string(_saved[$ "version"]) ? _saved.version : _g.version,
+                            sid: _fresh_ids[$ _group],
+                            pid: "",
+                            group: _group,
+                            events: [_start],
+                            direct: false
+                        });
+                        _g.next_bid += 1;
+                    }
+                    // Kept for this launch's saves too: it may send the session's first batch and not the rest.
+                    _g.starts[$ _group] = _start;
+                }
+            }
             _sid = _fresh_ids[$ _group];
         }
         var _batch_id = is_string(_saved[$ "batch_id"]) ? _saved.batch_id : "";
@@ -360,6 +427,10 @@ function __glitchless_load_outbox(_g) {
         _g.next_bid += 1;
     }
     __glitchless_log(_g, string(array_length(_g.outbox)) + " saved batches from earlier launches");
+}
+
+function __glitchless_is_start(_e, _oldest) {
+    return is_struct(_e) && is_string(_e[$ "type"]) && _e.type == "session_start" && is_numeric(_e[$ "ts"]) && _e.ts >= _oldest;
 }
 
 /// Whether this is the first launch of this game version on this device. The first after an install or an update

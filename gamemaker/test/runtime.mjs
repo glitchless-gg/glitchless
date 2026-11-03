@@ -98,8 +98,9 @@ const chars = (s) => Array.from(String(s));
 // ───────────────────────────── a run of the game ─────────────────────────────
 
 // `osType`: GameMaker's os_type (3 macOS, 0 Windows, 6 Linux). `files`: absolute paths outside the save area (/sys, /etc)
-// and what they hold.
-export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms = ['rm_boot'], fetchImpl = fetch, log = () => {}, crcInverted = false, osType = 3, files = {} } = {}) {
+// and what they hold. `later`: ms the device's clock is ahead of the real one, for a launch that comes after another
+// (each session's start time is its own).
+export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms = ['rm_boot'], fetchImpl = fetch, log = () => {}, crcInverted = false, osType = 3, files = {}, later = 0 } = {}) {
   fs.mkdirSync(saveDir, { recursive: true });
   const savePath = (p) => (path.isAbsolute(p) ? p : path.join(saveDir, p));
   const state = {
@@ -147,7 +148,7 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
     return id;
   };
   const TYPES = { buffer_u8: 1, buffer_u32: 5, buffer_text: 11, buffer_string: 9 };
-  const unixNow = () => Date.now();
+  const unixNow = () => Date.now() + later;
 
   const builtins = {
     global: g,

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- A session cut in two by the outbox keeps its device and session type. In anonymous mode the next launch sends an earlier session's saved batches under a new session ID; when the session's first batch, with its `session_start`, had already gone, the rest arrived with none, and the server took it for a player's session with no device (Google Play's test phones counted as players). The outbox now also saves each waiting session's `session_start` (it holds no ID) and the next launch sends it first, marked `continued: true`, so it isn't counted again. Install and full mode save the session ID, so nothing changes there.
+
 ## 0.6.1
 
 - The SDK's own warnings are no longer sent as the game's errors. With `CaptureWarnings` on, a warning the SDK logged itself (they start with `[glitchless]`, such as a `--glitchless-out` file it couldn't write, or a bug report callback that threw) came back through Unity's log and was sent as one of the game's errors. Nothing new is sent.

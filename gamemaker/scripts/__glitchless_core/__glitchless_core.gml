@@ -16,8 +16,8 @@
 /// Struct fields are read with [$ "name"] wherever they may be missing: reading a missing one with
 /// a dot stops a GameMaker game.
 
-#macro GLITCHLESS_VERSION "0.4.0"
-#macro GLITCHLESS_SDK "glitchless-gamemaker/0.4.0"
+#macro GLITCHLESS_VERSION "0.4.1"
+#macro GLITCHLESS_SDK "glitchless-gamemaker/0.4.1"
 
 #macro __GLITCHLESS_HITCH_MS 50 // one frame over 50 ms is a stutter a player sees
 #macro __GLITCHLESS_JANK_MS 33.4 // two missed 60 Hz frames
@@ -107,6 +107,7 @@ function __glitchless_new_state() {
         recent: [],
         queue: [],
         outbox: [],
+        starts: {}, // a session's group (started_at, as a string) → its session_start, saved with its batches (__glitchless_save_outbox)
         next_bid: 1,
         in_flight: -1,
         http_id: -1,
@@ -356,6 +357,7 @@ function __glitchless_turn_off(_g) {
     // network samples, hitches waiting for their causes, positions, and what the next hitch or report would carry.
     _g.queue = [];
     _g.outbox = [];
+    _g.starts = {};
     __glitchless_delete_outbox();
     _g.retry_at = 0;
     _g.backoff = 0;

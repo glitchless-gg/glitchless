@@ -201,6 +201,19 @@ try {
     const sent = new Set(batches.slice(beforeAfterCrash).map((b) => b.json?.batch_id));
     for (const id of savedIds) assert.ok(sent.has(id), `${id} was not sent: ${JSON.stringify([...sent])}`);
   });
+  check('a crash whose session\'s first batch had gone comes after that session_start again, continued, with its device', () => {
+    const outboxed = saved ? JSON.parse(saved) : { batches: [] };
+    const hadStart = outboxed.batches.some((b) => b.events.some((e) => e.type === 'session_start'));
+    const after = batches.slice(beforeAfterCrash);
+    const sid = after.find((b) => b.json?.events?.some((e) => e.type === 'error' && e.kind === 'crash'))?.json.session_id;
+    const first = after.find((b) => b.json?.session_id === sid)?.json.events[0];
+    assert.equal(first?.type, 'session_start');
+    if (hadStart) return; // the crash came before the first batch went: its own start goes with it
+    assert.equal(outboxed.starts?.length, 1, 'its session_start saved beside the batches');
+    assert.equal(first.continued, true);
+    assert.equal(first.session_type, 'synthetic');
+    assert.match(first.device?.browser || '', /^Unreal 5\./);
+  });
 
   // 2b. a fatal error (UE_LOG Fatal) goes the same way
   console.log('2b. a fatal error, then a launch that sends it…');
@@ -339,7 +352,8 @@ try {
   await new Promise((r) => setTimeout(r, 300));
   const { sessions } = await query(port, 'sessions');
   check('the server has the sessions, with the Unreal device', () => {
-    // An anonymous crash arrives as a short session of its own, with no session_start: nothing on disk may tie it to the one it ended.
+    // An anonymous crash arrives as a short session of its own, under a new ID after its session's start again
+    // (continued): nothing on disk ties it to the one it ended.
     const started = sessions.filter((s) => s.browser);
     assert.ok(started.length >= 4, `${started.length} sessions with a start`);
     for (const s of started) assert.match(s.browser, /^Unreal 5\./);

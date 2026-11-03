@@ -575,6 +575,7 @@ namespace Glitchless
 		std::vector<FValue> RecentWindows;
 		std::vector<FValue> Queue;
 		std::vector<FBatch> Outbox;
+		std::map<int64_t, std::string> Starts; // a session's group (StartedAt) → its session_start, saved with its batches (SaveOutbox)
 		int NextBatchId = 1, InFlight = -1;
 		double RetryAt = 0, BackoffS = 0;
 		bool Draining = false; // SendNow is sending what is left, so no new request starts behind it

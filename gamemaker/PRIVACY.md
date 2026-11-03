@@ -30,7 +30,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-gamemaker/0.4.0`) and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode), `sdk` (`glitchless-gamemaker/0.4.1`) and `batch_id` (random, made for each batch and sent again with its retries, so the server stores it once).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level or room name, or null). While the game sets them, every event and frame window also carries `zone` (`glitchless_set_zone`: where the player is in an open world, in the game's words) and `match`, `party` and `run` (the group IDs below).
 
@@ -121,7 +121,7 @@ In the game's save area (`game_save_id`: `~/Library/Application Support/<game>` 
 
 | file | what | mode |
 | --- | --- | --- |
-| `glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or a crash): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id`; it names the batch, never the player or the session). In anonymous mode, no session or player ID. Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
+| `glitchless/outbox.json` | batches not yet sent (offline, the game closed first, or a crash): the events above, bug reports included, each with its own random batch ID (`b_…`, sent as `batch_id`; it names the batch, never the player or the session). In anonymous mode, no session or player ID, and each waiting session's `session_start` beside its batches (the device and session type above, no ID), sent again first on the next launch when the session's first batch already went (a crash's session too). Deleted once everything is sent. At most 4,000 events, none over 6 days old | all |
 | `glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 | `glitchless/enabled` | `on` or `off`: the player's choice, written once the game calls `glitchless_set_enabled`, so a player who turned Glitchless off sends nothing from the start of every later launch. It holds nothing else, the same on every device that made the same choice, so it ties nothing to anyone. Never sent | all, once the game asks |

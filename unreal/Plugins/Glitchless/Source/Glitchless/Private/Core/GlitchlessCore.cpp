@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <limits>
 #include <random>
+#include <set>
 
 namespace Glitchless
 {
@@ -370,6 +371,7 @@ namespace Glitchless
 		RecentWindows.clear();
 		// A request already on its way can't be called back: its answer is ignored (OnSent, OnHealth).
 		Outbox.clear();
+		Starts.clear();
 		InFlight = -1;
 		RetryAt = 0;
 		BackoffS = 0;
@@ -2831,7 +2833,9 @@ namespace Glitchless
 		Begin();
 		if (!SessionStartSent)
 		{
-			Queue.insert(Queue.begin(), SessionStartEvent());
+			FValue Start = SessionStartEvent();
+			Starts[StartedAt] = Start.Serialize();
+			Queue.insert(Queue.begin(), std::move(Start));
 			SessionStartSent = true;
 		}
 		if (FirstFrameMs > 0 && !LoadSent)
@@ -3124,8 +3128,22 @@ namespace Glitchless
 	// session ID; on the next launch each earlier session's batches go under a new random ID, so
 	// nothing written to the device ties two sessions. Every mode saves each batch's own ID, so a batch
 	// the server took just before the game closed is not stored twice when the next launch sends it.
+	// Anonymous mode also saves each of those sessions' session_start (it holds no ID): when its first
+	// batch went out before the game closed or crashed (or the server stored it but its answer was lost),
+	// the next launch sends it again first, marked continued, so the rest of the session, a crash
+	// included, still says what device and kind of session it was (SPEC §2 session_start.continued).
 	void FCore::SaveOutbox()
 	{
+		// Only the starts of the sessions still waiting, and this one's.
+		std::set<int64_t> Waiting;
+		for (const FBatch& B : Outbox)
+		{
+			Waiting.insert(B.Group);
+		}
+		for (auto It = Starts.begin(); It != Starts.end();)
+		{
+			It = Waiting.count(It->first) || It->first == StartedAt ? std::next(It) : Starts.erase(It);
+		}
 		if (!Enabled || SaveDir.empty())
 		{
 			return;
@@ -3170,7 +3188,25 @@ namespace Glitchless
 			}
 			S += "]}";
 		}
-		S += "]}";
+		S += ']';
+		if (!StoresId)
+		{
+			bool Any = false;
+			for (const auto& Start : Starts)
+			{
+				if (Waiting.count(Start.first))
+				{
+					S += Any ? ",{\"group\":" : ",\"starts\":[{\"group\":";
+					S += std::to_string(Start.first) + ",\"event\":" + Start.second + '}';
+					Any = true;
+				}
+			}
+			if (Any)
+			{
+				S += ']';
+			}
+		}
+		S += '}';
 		if (!WriteFile(OutboxPath(), S))
 		{
 			Debug("could not write " + OutboxPath());
@@ -3192,6 +3228,46 @@ namespace Glitchless
 		}
 		const int64_t Oldest = UnixNow() - MaxOutboxAgeMs;
 		std::map<int64_t, std::string> FreshIds;
+		// Each earlier session's session_start, from its saved batches or saved beside them. One saved beside them
+		// goes again first, marked continued: the session's first batch had gone.
+		auto IsStart = [Oldest](const FValue& E) {
+			const FValue* Type = E.Find("type");
+			const FValue* Ts = E.Find("ts");
+			return E.IsObject() && Type && Type->IsString() && Type->AsString() == "session_start" && Ts && Ts->IsNumber() && Ts->AsNumber() >= static_cast<double>(Oldest);
+		};
+		auto GroupOf = [](const FValue& V) {
+			const FValue* G = V.Find("group");
+			return G ? G->AsInt() : 0;
+		};
+		std::map<int64_t, FValue> StartOf;
+		std::set<int64_t> InBatches;
+		if (const FValue* SavedStarts = Data.Find("starts"); SavedStarts && SavedStarts->IsArray())
+		{
+			for (const FValue& S : SavedStarts->GetItems())
+			{
+				const FValue* E = S.IsObject() ? S.Find("event") : nullptr;
+				if (E && IsStart(*E))
+				{
+					StartOf[GroupOf(S)] = *E;
+				}
+			}
+		}
+		for (const FValue& SavedBatch : Batches->GetItems())
+		{
+			const FValue* Evs = SavedBatch.Find("events");
+			if (!Evs || !Evs->IsArray())
+			{
+				continue;
+			}
+			for (const FValue& E : Evs->GetItems())
+			{
+				if (IsStart(E))
+				{
+					StartOf[GroupOf(SavedBatch)] = E;
+					InBatches.insert(GroupOf(SavedBatch));
+				}
+			}
+		}
 		for (const FValue& SavedBatch : Batches->GetItems())
 		{
 			const FValue* Evs = SavedBatch.Find("events");
@@ -3216,8 +3292,7 @@ namespace Glitchless
 				const FValue* V = SavedBatch.Find(Key);
 				return V && V->IsString() ? V->AsString() : Fallback;
 			};
-			const FValue* GroupValue = SavedBatch.Find("group");
-			const int64_t Group = GroupValue ? GroupValue->AsInt() : 0;
+			const int64_t Group = GroupOf(SavedBatch);
 			std::string Sid = Str("sid", "");
 			if (Sid.empty())
 			{
@@ -3225,6 +3300,26 @@ namespace Glitchless
 				if (Fresh.empty())
 				{
 					Fresh = NewId("s_", 16);
+					const auto Start = StartOf.find(Group);
+					if (Start != StartOf.end())
+					{
+						if (!InBatches.count(Group))
+						{
+							Start->second.Set("continued", true);
+							FBatch Again;
+							Again.Id = NextBatchId++;
+							Again.Bid = NewId("b_", 16);
+							Again.Service = Str("service", Service);
+							Again.Env = Str("env", Env);
+							Again.Version = Str("version", Version);
+							Again.Sid = Fresh;
+							Again.Group = Group;
+							Again.Events.push_back(Start->second.Serialize());
+							Outbox.push_back(std::move(Again));
+						}
+						// Kept for this launch's saves too: it may send the session's first batch and not the rest.
+						Starts[Group] = Start->second.Serialize();
+					}
 				}
 				Sid = Fresh;
 			}

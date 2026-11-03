@@ -61,7 +61,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.6.1";
+        public const string SdkVersion = "0.6.2";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -167,6 +167,7 @@ namespace GlitchlessSdk
         readonly List<Dictionary<string, object>> recentWindows = new List<Dictionary<string, object>>(); // {ts, level, fps, p95}
         List<Dictionary<string, object>> queue = new List<Dictionary<string, object>>();
         readonly List<Batch> outbox = new List<Batch>();
+        readonly Dictionary<long, string> starts = new Dictionary<long, string>(); // a session's group (startedAt) → its session_start, saved with its batches (SaveOutbox)
         int nextBatchId = 1, inFlight = -1, sends;
         double retryAt, backoffS;
         bool sessionStartSent, loadSent, ended, shut;
@@ -1888,6 +1889,7 @@ namespace GlitchlessSdk
             SwitchedOff = true;
             queue.Clear();
             outbox.Clear();
+            starts.Clear();
             inFlight = -1; // the answer to a request on its way now is ignored: its batch is gone
             retryAt = backoffS = 0;
             heldCounts.Clear();
@@ -2155,7 +2157,9 @@ namespace GlitchlessSdk
             CheckFeatures();
             if (!sessionStartSent)
             {
-                queue.Insert(0, SessionStartEvent());
+                var start = SessionStartEvent();
+                starts[startedAt] = Json.Serialize(start);
+                queue.Insert(0, start);
                 sessionStartSent = true;
                 if (firstFrameMs > 0 && !loadSent)
                 {
@@ -2384,8 +2388,17 @@ namespace GlitchlessSdk
         // Install and full mode keep a stored ID anyway, so they save both IDs. Every mode saves each batch's
         // own ID, so a batch the server took just before the game closed is not stored twice when the next
         // launch sends it.
+        // Anonymous mode also saves each of those sessions' session_start (it holds no ID): when its first batch
+        // went out before the game closed (or the server stored it but its answer was lost), the next launch sends
+        // it again first, marked continued, so the rest of the session still says what device and kind of session
+        // it was (SPEC §2 session_start.continued).
         void SaveOutbox()
         {
+            // Only the starts of the sessions still waiting, and this one's.
+            var waiting = new HashSet<long>();
+            foreach (var b in outbox) waiting.Add(b.Group);
+            foreach (var group in new List<long>(starts.Keys))
+                if (!waiting.Contains(group) && group != startedAt) starts.Remove(group);
             if (!Enabled || SaveDir == null || IsWeb) return;
             TryIo(() =>
             {
@@ -2408,8 +2421,16 @@ namespace GlitchlessSdk
                     if (b.Role != null) saved["role"] = b.Role;
                     batches.Add(saved);
                 }
+                var data = new Dictionary<string, object> { ["v"] = 1, ["batches"] = batches };
+                if (!storesId)
+                {
+                    var saved = new List<object>();
+                    foreach (var kv in starts)
+                        if (waiting.Contains(kv.Key)) saved.Add(new Dictionary<string, object> { ["group"] = kv.Key, ["event"] = new Json.Raw(kv.Value) });
+                    if (saved.Count > 0) data["starts"] = saved;
+                }
                 var tmp = OutboxPath + ".tmp";
-                File.WriteAllText(tmp, Json.Serialize(new Dictionary<string, object> { ["v"] = 1, ["batches"] = batches }));
+                File.WriteAllText(tmp, Json.Serialize(data));
                 if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
                 File.Move(tmp, OutboxPath);
             });
@@ -2434,6 +2455,21 @@ namespace GlitchlessSdk
                 if (!(Json.Parse(File.ReadAllText(OutboxPath)) is Dictionary<string, object> data) || !(data.TryGetValue("batches", out var list) && list is List<object> batches)) return;
                 var oldest = UnixNow() - MaxOutboxAgeMs;
                 var freshIds = new Dictionary<string, string>();
+                // Each earlier session's session_start, from its saved batches or saved beside them. One saved beside
+                // them goes again first, marked continued: the session's first batch had gone.
+                var startOf = new Dictionary<string, Dictionary<string, object>>();
+                var inBatches = new HashSet<string>();
+                if (data.TryGetValue("starts", out var st) && st is List<object> savedStarts)
+                    foreach (var item in savedStarts)
+                        if (item is Dictionary<string, object> s && s.TryGetValue("event", out var se) && se is Dictionary<string, object> e && IsStart(e, oldest)) startOf[Str(s, "group", "")] = e;
+                foreach (var item in batches)
+                    if (item is Dictionary<string, object> saved && saved.TryGetValue("events", out var ev) && ev is List<object> evs)
+                        foreach (var o in evs)
+                            if (o is Dictionary<string, object> e && IsStart(e, oldest))
+                            {
+                                startOf[Str(saved, "group", "")] = e;
+                                inBatches.Add(Str(saved, "group", ""));
+                            }
                 foreach (var item in batches)
                 {
                     if (!(item is Dictionary<string, object> saved) || !(saved.TryGetValue("events", out var ev) && ev is List<object> evs)) continue;
@@ -2442,18 +2478,32 @@ namespace GlitchlessSdk
                         if (o is Dictionary<string, object> e && e.TryGetValue("ts", out var ts) && ts is double t && t >= oldest) events.Add(Json.Serialize(e));
                     if (events.Count == 0) continue;
                     var group = Str(saved, "group", "");
-                    var sid = Str(saved, "sid", "");
-                    if (sid == "")
-                    {
-                        if (!freshIds.TryGetValue(group, out sid)) freshIds[group] = sid = NewId("s_", 16);
-                    }
                     long.TryParse(group, NumberStyles.Integer, CultureInfo.InvariantCulture, out var groupId);
+                    var role = saved.TryGetValue("role", out var r) ? r as string : null;
+                    var sid = Str(saved, "sid", "");
+                    if (sid == "" && !freshIds.TryGetValue(group, out sid))
+                    {
+                        freshIds[group] = sid = NewId("s_", 16);
+                        if (startOf.TryGetValue(group, out var start))
+                        {
+                            if (!inBatches.Contains(group))
+                            {
+                                start["continued"] = true;
+                                outbox.Add(new Batch { Id = nextBatchId++, Bid = NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = "", Role = role, Group = groupId, Events = new List<string> { Json.Serialize(start) } });
+                            }
+                            // Kept for this launch's saves too: it may send the session's first batch and not the rest.
+                            starts[groupId] = Json.Serialize(start);
+                        }
+                    }
                     var bid = Str(saved, "bid", ""); // an outbox an older version saved has none: a new one
-                    outbox.Add(new Batch { Id = nextBatchId++, Bid = bid.StartsWith("b_", StringComparison.Ordinal) ? bid : NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Role = saved.TryGetValue("role", out var role) ? role as string : null, Group = groupId, Events = events });
+                    outbox.Add(new Batch { Id = nextBatchId++, Bid = bid.StartsWith("b_", StringComparison.Ordinal) ? bid : NewId("b_", 16), Service = Str(saved, "service", service), Env = Str(saved, "env", env), Version = Str(saved, "version", version), Sid = sid, Pid = storesId ? Str(saved, "pid", "") : "", Role = role, Group = groupId, Events = events });
                 }
                 Debug($"{outbox.Count} saved batches from earlier launches");
             });
         }
+
+        static bool IsStart(Dictionary<string, object> e, long oldest) =>
+            e.TryGetValue("type", out var type) && type as string == "session_start" && e.TryGetValue("ts", out var ts) && ts is double t && t >= oldest;
 
         static string Str(Dictionary<string, object> d, string key, string fallback)
         {

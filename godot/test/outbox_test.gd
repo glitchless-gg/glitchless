@@ -19,6 +19,7 @@ var _failed := 0
 func _init() -> void:
 	_clean()
 	_first_batch_sent()
+	_cut_again()
 	_nothing_sent()
 	_install_mode()
 	_clean()
@@ -56,6 +57,33 @@ func _first_batch_sent() -> void:
 	_check("under the same new ID as the rest, with its own batch ID", next._outbox.size() == 2 and b0.sid == next._outbox[1].sid and b0.sid != sid and b0.bid != next._outbox[1].bid)
 	_check("the rest follows: the error", next._outbox[1].events.any(func(e: Dictionary) -> bool: return e.type == "error"))
 	next.free()
+
+
+# The next launch sends the start again, then closes before the rest goes: the launch after still sends it first.
+func _cut_again() -> void:
+	_clean()
+	var g := _game({"session_type": "synthetic"})
+	g.flush()
+	g._outbox.pop_front()  # the server took the first batch
+	g.track("pickup", "coin")
+	g.flush()
+	g.free()
+	var next := _game()
+	_check("the next launch sends the start again first", next._outbox.size() == 2 and next._outbox[0].events[0].get("continued") == true)
+	var second_sid: String = next._outbox[0].sid
+	next._outbox.pop_front()  # the server took it; the rest is still waiting as the game closes
+	next._save_outbox()
+	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Glitchless.OUTBOX_PATH))
+	_check("its start is saved again beside the rest", saved.get("starts", []).size() == 1 and saved.starts[0].event.session_type == "synthetic")
+	next.free()
+	var third := _game()
+	var b0: Dictionary = third._outbox[0]
+	_check("the launch after sends it first again, continued", b0.events.size() == 1 and b0.events[0].type == "session_start" and b0.events[0].get("continued") == true and b0.events[0].session_type == "synthetic")
+	_check("…under a third ID, with the rest after it", third._outbox.size() == 2 and third._outbox[1].sid == b0.sid and b0.sid != second_sid and third._outbox[1].events.any(func(e: Dictionary) -> bool: return e.type == "custom"))
+	third._outbox.clear()  # the server took it all
+	third._save_outbox()
+	_check("once it has all gone, the outbox and the start it kept go too", not FileAccess.file_exists(Glitchless.OUTBOX_PATH) and third._starts.is_empty())
+	third.free()
 
 
 # Nothing went out: the saved batches have the session_start already, so none is added.
