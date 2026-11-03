@@ -13,7 +13,8 @@ export function NoGame() {
   );
 }
 
-// came_back and resolved: the game's owner resolved it (server/src/resolved.js), and whether it fired again since.
+// came_back and resolved: the game's owner resolved it (server/src/resolved.js), and whether players hit it again
+// since. no_players: only store test phones, bots, testers or dev builds hit it.
 export function IssuesTable({ issues, onClick, selected, empty = 'No errors in this time range.' }) {
   if (!issues?.length) return <div className="empty">{empty}</div>;
   return (
@@ -36,6 +37,7 @@ export function IssuesTable({ issues, onClick, selected, empty = 'No errors in t
               <td style={{ maxWidth: 460 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   {i.came_back && <Status kind="alert">came back</Status>}
+                  {i.no_players && <Status kind="neutral">test sessions only</Status>}
                   <Status kind={i.resolved ? 'neutral' : i.fatal ? 'alert' : 'warn'}>{i.kind}</Status>
                   <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.message}</b>
                 </div>

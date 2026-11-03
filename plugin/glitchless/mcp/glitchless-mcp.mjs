@@ -37035,6 +37035,7 @@ __export(context_exports, {
   fail: () => fail,
   filters: () => filters,
   isWorkspace: () => isWorkspace,
+  noPlayersLine: () => noPlayersLine,
   projectFor: () => projectFor,
   query: () => query,
   range: () => range,
@@ -37208,12 +37209,17 @@ function instructions(remote) {
   ].join(" ");
 }
 function slimIssue(i) {
-  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString(), ...i.resolved ? { resolved: i.resolved } : {}, ...i.came_back ? { came_back: i.came_back } : {} };
+  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString(), ...i.no_players ? { no_players: i.no_players } : {}, ...i.resolved ? { resolved: i.resolved } : {}, ...i.came_back ? { came_back: i.came_back } : {} };
+}
+function noPlayersLine(i) {
+  if (!i.no_players) return "";
+  const kinds = Object.entries(i.no_players).map(([k, n]) => `${n} ${TEST_KINDS[k] ?? k}`);
+  return `No player hit it${kinds.length ? `: its sessions were ${kinds.join(", ")}` : ", only test sessions"}. Check that it can happen on players' devices before changing code for it.`;
 }
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, saved, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField;
+var VERSION, CREDENTIALS_FILE, saved, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
@@ -37249,6 +37255,7 @@ var init_context = __esm({
     READS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}`;
     gameField = external_exports.string().optional().describe("The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.");
+    TEST_KINDS = { synthetic: "synthetic (bots, playtests, store test phones)", tester: "tester", simulated: "simulated", dev_builds: "on dev builds" };
   }
 });
 
@@ -37431,7 +37438,7 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
     );
     tool(
       "glitchless_get_error",
-      "Error Tracking for a game. Without a fingerprint: the open error issues ranked by sessions affected, any that came back first (`came_back`: resolved by the game's owner, then fired again in a later version: which, since when, and the note), and then, apart, the ones resolved (`resolved`: when, the newest version it had been seen in, the note). With a fingerprint: the full issue \u2014 message, location, stack trace, affected levels/versions, occurrence counts and breadcrumbs (the game events right before it fired), and whether it is resolved or came back. For a minified web build whose source maps were uploaded (glitchless-sourcemaps), location and stack are the original ones, `frames` gives each frame with its line of code, and `minified` what the browser reported. glitchless_resolve_error resolves one.",
+      "Error Tracking for a game. Without a fingerprint: the open error issues ranked by sessions affected, any that came back first (`came_back`: resolved by the game's owner, then hit by players again in a later version: which, since when, and the note), and then, apart, the ones resolved (`resolved`: when, the newest version it had been seen in, the note). With a fingerprint: the full issue \u2014 message, location, stack trace, affected levels/versions, occurrence counts and breadcrumbs (the game events right before it fired), and whether it is resolved or came back. An issue no player hit has `no_players`, its sessions by kind (synthetic: bots, playtests and store test phones such as Google Play's pre-launch ones; tester; dev_builds): check that it can happen on players' devices before fixing it. For a minified web build whose source maps were uploaded (glitchless-sourcemaps), location and stack are the original ones, `frames` gives each frame with its line of code, and `minified` what the browser reported. glitchless_resolve_error resolves one.",
       { ...common, fingerprint: external_exports.string().optional().describe("Issue fingerprint from the list or from glitchless_triage") },
       async ({ service, hours, fingerprint, ...f }) => {
         const svc = await resolveService(service);
@@ -37440,13 +37447,15 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
           const open2 = issues.filter((i) => !i.resolved).map(slimIssue);
           const resolved = issues.filter((i) => i.resolved).map(slimIssue);
           const back = open2.filter((i) => i.came_back).length;
-          return reply(`${open2.length} open error issue(s) in ${svc}${back ? `, ${back} of them back after being resolved` : ""}${resolved.length ? `; ${resolved.length} resolved (left out of glitchless_triage)` : ""}`, resolved.length ? { open: open2, resolved } : open2);
+          const tests2 = open2.filter((i) => i.no_players).length;
+          return reply(`${open2.length} open error issue(s) in ${svc}${back ? `, ${back} of them back after being resolved` : ""}${tests2 ? `, ${tests2} hit by no player (only test phones, bots, testers or dev builds: no_players)` : ""}${resolved.length ? `; ${resolved.length} resolved (left out of glitchless_triage)` : ""}`, resolved.length ? { open: open2, resolved } : open2);
         }
         const issue2 = issues.find((i) => i.fingerprint === fingerprint || i.fingerprint?.startsWith(fingerprint));
         if (!issue2) return reply(`No issue ${fingerprint} in ${svc} in this window. Known issues:`, issues.map(slimIssue));
         const { series, ...rest } = issue2;
         const state = issue2.came_back ? ` \u2014 resolved${issue2.came_back.resolved.version ? ` in ${issue2.came_back.resolved.version}` : ""}, and came back in ${issue2.came_back.version}` : issue2.resolved ? ` \u2014 resolved${issue2.resolved.version ? ` (newest version then: ${issue2.resolved.version})` : ""}${issue2.resolved.note ? `: ${issue2.resolved.note}` : ""}` : "";
-        return reply(`Error issue ${issue2.fingerprint} in ${svc}${state}`, rest);
+        const tests = noPlayersLine(issue2);
+        return reply(`Error issue ${issue2.fingerprint} in ${svc}${state}${tests ? `. ${tests}` : ""}`, rest);
       }
     );
     tool(
@@ -38175,24 +38184,26 @@ ${out.url}`, out.share);
     );
     act(
       "glitchless_resolve_error",
-      "Resolve an error issue, as in Sentry: the game's owner has fixed it or accepts it (a GPU driver's error on test phones, one the newest build fixed). The Errors page hides it, glitchless_get_error lists it apart, and glitchless_triage, the overview and the weekly summary leave it out. It comes back by itself if it fires again in a version later than the newest it had been seen in (any_version: in any version, the old builds included), first in the list and new to the new_error alert. fingerprint is the issue's from glitchless_get_error or glitchless_triage (error-<fingerprint>), or the start of one. Resolving one again (one that came back) starts over from now. clear: true unresolves it. Without fingerprint, lists the game's resolved errors. Only the person's say-so resolves an error: ask before resolving one. Needs an Owner's or Admin's key, as alert settings do.",
+      "Resolve an error issue, as in Sentry: the game's owner has fixed it or accepts it (a GPU driver's error on test phones, one the newest build fixed). The Errors page hides it, glitchless_get_error lists it apart, and glitchless_triage, the overview and the weekly summary leave it out. It comes back by itself if players hit it again in a version later than the newest players had hit it in (any_version: in any version, the old builds included), first in the list and new to the new_error alert. Store test phones (Google Play runs each upload on its own before release), bots, testers and dev builds don't bring it back unless all_sessions is true. fingerprint is the issue's from glitchless_get_error or glitchless_triage (error-<fingerprint>), or the start of one. Resolving one again (one that came back) starts over from now. clear: true unresolves it. Without fingerprint, lists the game's resolved errors. Only the person's say-so resolves an error: ask before resolving one. Needs an Owner's or Admin's key, as alert settings do.",
       {
         fingerprint: external_exports.string().optional().describe(`The issue's fingerprint, e.g. "9803ec1a", or the start of one`),
         note: external_exports.string().optional().describe(`Why, in a few words (200 characters at most), e.g. "Google Play's test phones on SwiftShader"`),
         any_version: external_exports.boolean().optional().describe("Come back if it fires again in any version, not only a later one"),
+        all_sessions: external_exports.boolean().optional().describe("Come back when any session fires it (store test phones, bots, testers, dev builds), not only a player's"),
         clear: external_exports.boolean().optional().describe("Unresolve it")
       },
-      async ({ fingerprint, note, any_version, clear, game }) => {
+      async ({ fingerprint, note, any_version, all_sessions, clear, game }) => {
         const pid = await projectFor(game);
         if (!fingerprint) {
           const { resolved: resolved2 } = await agent("GET", `/games/${pid}/resolved`);
           return reply(resolved2.length ? `${resolved2.length} resolved error(s), hidden on the Errors page and left out of triage until they come back:` : "No resolved errors.", resolved2);
         }
         const fp = fingerprint.replace(/^error-/, "");
-        const { resolved } = await agent("POST", `/games/${pid}/resolved`, clear ? { fingerprint: fp, clear: true } : { fingerprint: fp, note, any_version });
+        const { resolved } = await agent("POST", `/games/${pid}/resolved`, clear ? { fingerprint: fp, clear: true } : { fingerprint: fp, note, any_version, all_sessions });
         if (clear) return reply(`${fp} is open again: the Errors page and glitchless_triage show it.`, resolved);
         const e = resolved.find((x) => x.fingerprint.startsWith(fp));
-        return reply(`Resolved ${e.fingerprint}. It comes back if it fires again ${e.any ? "in any version" : e.version ? `in a version after ${e.version}` : "at all"}. Resolved errors:`, resolved);
+        const who = e.all_sessions ? "any session fires it" : "a player hits it";
+        return reply(`Resolved ${e.fingerprint}. It comes back if ${who} again ${e.any ? "in any version" : e.version ? `in a version after ${e.version}` : "at all"}. Resolved errors:`, resolved);
       },
       // Resolving again starts it over, and clear unresolves one.
       { title: "Resolve error", annotations: { destructiveHint: true, idempotentHint: false } }

@@ -687,9 +687,12 @@ export function errorIssues(ctx) {
 
 // Issues by fingerprint, most sessions first, without breadcrumbs (a store fetches those for the
 // samples listed here when it has no raw events). With ctx.resolved (resolved.js), each resolved issue is marked
-// `resolved` or `came_back`, the ones back first and the resolved last.
+// `resolved` or `came_back`, the ones back first and the resolved last. With ctx.playerErrors (errorFacts of the same
+// range's players: session type user, on prod when the game has it), a resolved issue comes back only when players hit
+// it again, and one no player hit says so: `no_players`, its sessions by kind when their IDs are kept (up to 31 days).
 export function errorList(ctx) {
   const resolved = ctx.resolved?.entries?.length ? resolvedIndex(ctx.resolved.entries) : null;
+  const players = ctx.playerErrors;
   const errors = {};
   const series = new Map();
   const totalSessions = sessionCount(ctx) || 1;
@@ -704,9 +707,9 @@ export function errorList(ctx) {
   if (ctx.daily) approximate(ctx, 'error_sessions', Object.values(errors).some((x) => x.sessions.approx || x.players.approx));
   // In the order each issue first occurred, as the raw events would list them.
   const list = Object.entries(errors)
-    .map(([key, x]) => ({ x, series: series.get(key) }))
+    .map(([key, x]) => ({ x, series: series.get(key), px: players ? (players[key] ?? null) : undefined }))
     .sort((a, b) => a.x.first.ts - b.x.first.ts)
-    .map(({ x, series }) => {
+    .map(({ x, series, px }) => {
       const e = x.first;
       const sessions = idCount(x.sessions);
       return {
@@ -733,11 +736,33 @@ export function errorList(ctx) {
         series,
         sessions_pct: pct(sessions, totalSessions),
         fatal: FATAL_KINDS.has(e.kind),
-        ...(resolved ? resolvedMark(x, resolved.get(x.fp), { seen: ctx.versionsFirstSeen, share: ctx.resolved.share }) : {}),
+        ...(px === null ? { no_players: testKinds(ctx, x.sessions) } : {}),
+        ...(resolved ? resolvedMark(x, resolved.get(x.fp), { seen: ctx.versionsFirstSeen, share: ctx.resolved.share, players: px }) : {}),
       };
     });
   list.sort((a, b) => b.sessions - a.sessions || b.count - a.count);
   return resolved ? resolvedOrder(list) : list;
+}
+
+// The error facts of a context, by fingerprint key: what errorList reads, for ctx.playerErrors.
+export function errorFacts(ctx) {
+  const errors = {};
+  for (const { c } of factsOf(ctx)) mergeErrors(errors, c.er);
+  return errors;
+}
+
+// An issue no player hit: its sessions by kind (synthetic: bots, playtests and store test phones; tester; simulated;
+// dev_builds: a player's session type on another env), or {} when the range keeps no IDs.
+function testKinds(ctx, ids) {
+  const out = {};
+  if (!ids || typeof ids.count === 'function') return out;
+  for (const id of Object.keys(ids)) {
+    const type = ctx.sessions.get(id)?.session_type;
+    if (!type) continue;
+    const kind = type === 'user' ? 'dev_builds' : type;
+    out[kind] = (out[kind] ?? 0) + 1;
+  }
+  return out;
 }
 
 // The six game events a session sent up to `ts` (not frames, positions, errors, maps or loads).

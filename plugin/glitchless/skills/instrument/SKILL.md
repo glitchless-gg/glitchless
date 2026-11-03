@@ -56,8 +56,10 @@ Settings, for every engine:
 - **Testers.** On iOS the Godot, Unity and Unreal SDKs tell a TestFlight install from an App Store one themselves
   (`distribution` in the device fields) and mark its sessions `tester`, out of player numbers, even though a
   TestFlight build is a release build that reports `prod`. Don't pass a session type that would undo this. On
-  Android, Google Play's testing tracks can't be told apart on the device: if the developer ships test builds there,
-  give the testing-track build its own env (`beta`) from a build flag.
+  Android the Godot SDK marks debug builds and sideloaded ones (adb, an APK file) `tester` the same way; a game sold
+  as an APK outside the stores (itch.io) passes `session_type: "user"`. Google Play's testing tracks can't be told
+  apart on the device: if the developer ships test builds there, give the testing-track build its own env (`beta`)
+  from a build flag.
 - **Version.** Find where the game's version lives and pass it; bump it on every release so Glitchless can compare versions.
 
 ## Every engine: the game's own metrics, and its board

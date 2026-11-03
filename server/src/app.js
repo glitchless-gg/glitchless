@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody, FEATURES, companionOf, isCompanion, gameOf, withServers } from './ingest.js';
-import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount } from './analytics.js';
+import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount, errorFacts } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
 import { validateDashboard, autoDashboard, evaluateBoard, eventQuery, versionColumns, dashboardStats, pathLevels, levelRows, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
@@ -406,11 +406,19 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         if (entries.length) ctx.resolved = { entries, share: Boolean(reader.share) };
         if (entries.length && !ctx.versionsFirstSeen && store.versionsFirstSeen) ctx.versionsFirstSeen = await (versionsSeen ??= store.versionsFirstSeen(projectId, service));
       }
+      // The same range's players, as findings read them: a resolved error comes back only when they hit it again, and
+      // the errors query says which issues no player hit (store test phones, bots, testers, dev builds).
+      if ((name === 'errors' || (RESOLVED_QUERIES.has(name) && ctx.resolved)) && !(q.type === 'user' && q.env === playersQuery.env)) ctx.playerErrors = errorFacts(await playersContext());
       // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
       // sessions aren't players': the same env and session type, never the players' property filters.
       if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });
       return ctx;
     };
+    // Players: session type user, on the game's prod env when it has one (no dev builds, bots, testers or store test
+    // phones). Read once, for findings and for the errors they hit.
+    const playersQuery = { ...q, env: services.find((s) => s.service === service)?.envs?.includes('prod') ? 'prod' : q.env, type: 'user' };
+    let playersRead;
+    const playersContext = () => (playersRead ??= contextFor(playersQuery));
     const companion = companionOf(service);
     const hasServers = !isCompanion(service) && services.some((s) => s.service === companion);
     const ctx = await contextFor(q);
@@ -425,8 +433,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     // production sessions of players (not dev builds, bots or testers) when it has any, and meta says which they read.
     const findingsContext = async () => {
       if (params.get('env') || params.get('type') || params.get('session_type') || q.sessions) return ctx;
-      const env = services.find((s) => s.service === service)?.envs?.includes('prod') ? 'prod' : null;
-      const players = await contextFor({ ...q, env, type: 'user' });
+      const env = playersQuery.env;
+      const players = await playersContext();
       players.stores = ctx.stores;
       const n = sessionCount(players);
       if (!n || n === sessionCount(ctx)) return ctx;

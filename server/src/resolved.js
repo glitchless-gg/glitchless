@@ -3,13 +3,18 @@
 // marked `resolved`, after the rest, and the dashboard hides them unless asked; triage, the overview's top errors
 // and the weekly summary leave them out. One that fires again after it was resolved, in a version later in release
 // order than the newest it had been seen in then, is back: first in the list, marked `came_back`, with a finding
-// again, and new to the new_error alert. Stragglers on the old builds don't bring it back. Glitchless Cloud keeps
+// again, and new to the new_error alert. Stragglers on the old builds don't bring it back, and neither do test
+// sessions: only players' sessions (session type user, on the game's prod env when it has one, as findings read them)
+// bring one back, unless it was resolved for every session. Google Play runs each upload on its test phones before
+// any player has it, so an error resolved as theirs would otherwise come back with every upload. Glitchless Cloud keeps
 // each game's list with its alert settings, beside its known findings (known.js, SPEC §3e); the matching is the
 // core's, and analytics.js errorList applies it when a context carries `resolved`: { entries, share }.
 //
-// An entry: { fingerprint, note, by, at (ISO), version, any? }
-//   version  the newest version the issue had been seen in when it was resolved (null if none was known)
-//   any      true: back if it fires again at all after `at`, in any version
+// An entry: { fingerprint, note, by, at (ISO), version, any?, all_sessions? }
+//   version       the newest version players had hit the issue in when it was resolved (with all_sessions, any session
+//                 had); null if none had, and then the first time one does after `at` brings it back
+//   any           true: back if it fires again at all after `at`, in any version
+//   all_sessions  true: any session brings it back, test phones, bots, testers and dev builds too
 // A share link's reader sees that an issue is resolved or came back, never the note or who.
 import { versionNewer } from './analytics.js';
 
@@ -23,12 +28,15 @@ export const RESOLVED_LIMITS = {
 // An issue's mark, from x (facts.js mergeErrors: versions { version: first time in the range }, last) and its entry
 // e: { resolved } while it stays resolved, { came_back } once it's back, or {} without an entry.
 // seen: the store's first sighting of each version (analytics.js versionNewer).
-export function resolvedMark(x, e, { seen = null, share = false } = {}) {
+// players: the issue's facts among players' sessions, null when no player hit it, or undefined when x is already
+// players' (or they weren't read), and then x is judged.
+export function resolvedMark(x, e, { seen = null, share = false, players = undefined } = {}) {
   if (!e) return {};
   const at = Date.parse(e.at);
   const who = share ? {} : { note: e.note ?? null, by: e.by ?? null };
-  const was = { at: e.at, version: e.version ?? null, ...(e.any ? { any_version: true } : {}), ...who };
-  if (!(x.last > at)) return { resolved: was };
+  const was = { at: e.at, version: e.version ?? null, ...(e.any ? { any_version: true } : {}), ...(e.all_sessions ? { all_sessions: true } : {}), ...who };
+  if (!e.all_sessions && players !== undefined) x = players;
+  if (!x || !(x.last > at)) return { resolved: was };
   // The versions that bring it back, with when the range first saw it in each: with `any`, every version it fired in
   // after `at` (or, when each of them was seen before, the newest of them); else those later than e.version.
   // When versions can't be ordered (names), a version it first fired in after `at` counts as later.

@@ -116,7 +116,7 @@ const DEFAULTS := {
 	"sample_rate": 1.0,
 	"flush_interval": 5.0,  # seconds between batches
 	"position_hz": 4.0,
-	"session_type": "",  # "user", "tester" or "synthetic"; "": synthetic with --autoplay, tester on TestFlight
+	"session_type": "",  # "user", "tester" or "synthetic"; "": synthetic with --autoplay, tester on TestFlight and debug or sideloaded Android builds
 	"session_timeout": 300.0,  # seconds in the background after which coming back is a new session
 	"capture_warnings": false,
 	"engine_gauges": true,  # node and object counts in ctx, where the findings look for leaks
@@ -170,7 +170,7 @@ var _privacy := "anonymous"
 var _full := false
 var _positions := false
 var _session_type := "user"
-var _sandbox := false  # a TestFlight or development install on iOS: its purchases are Apple's free sandbox ones
+var _sandbox := false  # a TestFlight or development install: its purchases are the store's sandbox ones (Apple's are free)
 var _rage_input := false
 var _engine_gauges := true
 var _measure_render := true
@@ -387,8 +387,8 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		_session_type = "synthetic"  # a bot, a measure run (or a server's load test), or Google Play's pre-launch test phones
 	elif DisplayServer.get_name() == "headless" and role != "server":
 		_session_type = "synthetic"  # a bot without a screen; a dedicated server runs headless and is live
-	elif _sandbox and role != "server":
-		_session_type = "tester"  # a person on a TestFlight or development build, not a player from the App Store
+	elif Device.is_test_install(Device.distribution()) and role != "server":
+		_session_type = "tester"  # a person on a TestFlight, development or sideloaded build, not a player from a store
 	if _opts.enabled != null:
 		_build_sends = bool(_opts.enabled)
 	else:

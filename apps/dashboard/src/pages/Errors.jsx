@@ -34,7 +34,7 @@ export function Errors({ route }) {
       <Widget
         span={12}
         title={view === 'resolved' ? 'Resolved issues' : 'Issues'}
-        sub={view === 'resolved' ? 'hidden from the open list until one fires again in a newer version' : 'grouped by fingerprint (kind + message + top stack frame)'}
+        sub={view === 'resolved' ? 'hidden from the open list until players hit one again in a newer version' : 'grouped by fingerprint (kind + message + top stack frame)'}
         flush
         actions={
           <>
@@ -52,12 +52,14 @@ export function Errors({ route }) {
 
 const day = (t) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
-// Where an issue stands with the game's owner, and the button that changes it: Resolve (with an optional note, and
-// whether any version brings it back) for an open one, Unresolve for a resolved one, Resolve again for one that came
-// back. Without `save` (a self-hosted server, a member who can't change alert settings) it only says.
+// Where an issue stands with the game's owner, and the button that changes it: Resolve (with an optional note, whether
+// any version brings it back, and whether test sessions do) for an open one, Unresolve for a resolved one, Resolve
+// again for one that came back. Without `save` (a self-hosted server, a member who can't change alert settings) it only
+// says.
 function Resolution({ issue, save }) {
   const [note, setNote] = useState('');
   const [any, setAny] = useState(false);
+  const [all, setAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const run = async (change) => {
@@ -90,7 +92,7 @@ function Resolution({ issue, save }) {
       )}
       {issue.resolved && (
         <div>
-          <Status kind="ok">resolved</Status> Resolved{said} It comes back if it fires again {issue.resolved.any_version ? 'in any version' : 'in a newer version'}.
+          <Status kind="ok">resolved</Status> Resolved{said} It comes back if {issue.resolved.all_sessions ? 'any session hits it' : 'players hit it'} again {issue.resolved.any_version ? 'in any version' : 'in a newer version'}.
         </div>
       )}
       {save && issue.resolved && (
@@ -103,12 +105,15 @@ function Resolution({ issue, save }) {
           className="resolve-form"
           onSubmit={(e) => {
             e.preventDefault();
-            run({ note: note.trim() || null, any });
+            run({ note: note.trim() || null, any, all_sessions: all });
           }}
         >
           <input className="input" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Why (optional): fixed in 1.1.3, test phones only…" aria-label="Why it's resolved" />
           <label className="muted">
             <input type="checkbox" checked={any} onChange={(e) => setAny(e.target.checked)} /> Reopen if it fires in any version, old builds too
+          </label>
+          <label className="muted">
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Reopen if store test phones, bots or testers hit it too
           </label>
           <button className="btn primary" disabled={busy}>
             {busy ? 'Saving…' : issue.came_back ? 'Resolve again' : 'Resolve'}
@@ -162,9 +167,20 @@ function checkFix(engine, levels) {
   return `Then confirm it no longer fires: run the ${native[0]} game with ${native[1]}glitchless-measure=SECONDS (and its autoplay flags, if it has them) and play ${where}; the JSON it prints lists the errors it heard in that time.`;
 }
 
+// Who hit an issue no player did (no_players: its sessions by kind), in words.
+const TEST_KINDS = { synthetic: ['store test phone or bot', 'store test phones or bots'], tester: ['tester', 'testers'], simulated: ['made-up session', 'made-up sessions'], dev_builds: ['dev build', 'dev builds'] };
+function testSessions(kinds) {
+  const parts = Object.entries(kinds).map(([k, n]) => `${fmtNum(n)} ${(TEST_KINDS[k] ?? [k, k])[n === 1 ? 0 : 1]}`);
+  return parts.length ? parts.join(', ') : 'test sessions';
+}
+
 function IssueDrawer({ issue, onClose, service, engine, ts, save }) {
   const f = useFilters();
-  const prompt = `Use the glitchless MCP tools to look up error ${issue.fingerprint} in the "${service}" game (glitchless_get_error), find the root cause in this repo and fix it. ${checkFix(engine, issue.levels)}`;
+  // An issue no player hit may be the test devices' own (Google Play's pre-launch phones draw in software): the agent
+  // checks it can happen to players before changing the game.
+  const prompt = issue.no_players
+    ? `No player has hit error ${issue.fingerprint} in the "${service}" game: its sessions were ${testSessions(issue.no_players)}. Use the glitchless MCP tools to look it up (glitchless_get_error) and check whether it can happen on players' devices. If it can, find the root cause in this repo and fix it. ${checkFix(engine, issue.levels)} If it only happens on the test devices, say so and leave the game as it is.`
+    : `Use the glitchless MCP tools to look up error ${issue.fingerprint} in the "${service}" game (glitchless_get_error), find the root cause in this repo and fix it. ${checkFix(engine, issue.levels)}`;
   return (
     <div className="drawer">
       <div className="dh">
@@ -187,6 +203,13 @@ function IssueDrawer({ issue, onClose, service, engine, ts, save }) {
         </button>
       </div>
       <div className="db">
+        {issue.no_players && (
+          <div className="resolution">
+            <div>
+              <Status kind="neutral">test sessions only</Status> No player hit this. Its sessions were {testSessions(issue.no_players)}.
+            </div>
+          </div>
+        )}
         <Resolution issue={issue} save={save} />
         <dl className="kv">
           <dt>Occurrences</dt>

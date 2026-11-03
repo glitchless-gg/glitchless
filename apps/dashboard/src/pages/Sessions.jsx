@@ -242,6 +242,9 @@ function noisyKey(e) {
   return { counts: 'counters', server_window: 'server windows' }[e.type] ?? null;
 }
 
+// A tester's build, where the SDK could tell where it came from (device.distribution, SPEC §4b).
+const TESTER_BUILDS = { testflight: 'TestFlight tester', development: 'development build', sideloaded: 'sideloaded build' };
+
 export function SessionDetail({ route }) {
   const f = useFilters();
   const id = route.arg;
@@ -352,7 +355,7 @@ export function SessionDetail({ route }) {
               VERSION
             </div>
             <span className="tag">{s.version}</span> {s.session_type === 'synthetic' && <Status kind="brand">synthetic</Status>}
-            {s.session_type === 'tester' && <Status>{s.device?.distribution === 'testflight' ? 'TestFlight tester' : 'tester'}</Status>}
+            {s.session_type === 'tester' && <Status>{TESTER_BUILDS[s.device?.distribution] ?? 'tester'}</Status>}
           </div>
           {s.p95 != null && (
             <div>

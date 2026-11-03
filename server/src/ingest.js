@@ -327,8 +327,9 @@ export function steamDevice(device) {
   return d;
 }
 
-// Where an iOS build was installed from (SPEC §4b), in the words the engine SDKs send, or nothing.
-const DISTRIBUTIONS = new Set(['app_store', 'testflight', 'development']);
+// Where a phone build was installed from (SPEC §4b), in the words the engine SDKs send, or nothing: iOS's App Store,
+// TestFlight or a development build, Android's Google Play, another app store, a sideloaded APK or a debug build.
+const DISTRIBUTIONS = new Set(['app_store', 'testflight', 'development', 'google_play', 'store', 'sideloaded']);
 
 export function distributionDevice(device) {
   if (!('distribution' in device) || DISTRIBUTIONS.has(device.distribution)) return device;

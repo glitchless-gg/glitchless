@@ -20,7 +20,7 @@
 // starts to hold and its key isn't active: the key is claimed with a conditional write, so it fires once however
 // many checks run. It stays active while the signal holds at a lower bar, and clears only after it has not held for
 // a day, so an alert never flaps. SPEC §3e has every number.
-import { buildContext, errorList, versions, cellsOf, playersAreSessions, round } from './analytics.js';
+import { buildContext, errorList, errorFacts, versions, cellsOf, playersAreSessions, round } from './analytics.js';
 import { findings } from './findings.js';
 import { seconds } from './rollups.js';
 import { sumsBy } from './sums.js';
@@ -105,7 +105,7 @@ export function alertRules(saved = {}) {
 // The context the rules read: what query `name` gets from app.js, with no drill-downs, and versions in release order
 // (the store's first sighting of each, analytics.js releaseOrder), so "the newest" is the newest whatever the day.
 export async function contextFor(store, projectId, q) {
-  const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: 'all', sessions: null, plan: q.plan ?? null };
+  const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: q.type || 'all', sessions: null, plan: q.plan ?? null };
   let ctx;
   if (store.context) ctx = await store.context(projectId, query, 'alerts');
   else ctx = buildContext(await store.query(projectId, query), query, await store.rollups(projectId, query));
@@ -117,6 +117,9 @@ export async function contextFor(store, projectId, q) {
 // ── what a check measures ──
 
 const realSessions = (ctx) => [...ctx.sessions.values()].filter((s) => !BOTS.has(s.session_type));
+// Players, as findings read them: session type user, on prod when the game sent from prod (no dev builds, bots, testers
+// or store test phones). The errors rules read them.
+const playersOf = (q, ctx) => ({ ...q, env: q.env ?? ([...ctx.sessions.values()].some((s) => s.env === 'prod') ? 'prod' : null), type: 'user' });
 const who = (s) => s.player_id ?? s.session_id;
 
 // A session stutters when it has LIMITS.stutterPerMin hitches a minute over a minute of frames or more.
@@ -199,8 +202,14 @@ export function releaseStats(ctx, real = realSessions(ctx), vers = versions(ctx)
 export async function measure(store, projectId, { service, env = null, plan = null, now, seed = false, history = false, resolved = [] }) {
   const q = { service, env, plan };
   const ctx = await contextFor(store, projectId, { ...q, from: now - DAY, to: now });
-  // Errors the game's owner resolved (resolved.js) are marked: the new_error rule skips them, unless they came back.
-  if (resolved?.length) ctx.resolved = { entries: resolved };
+  // The new_error rule reads players' errors: an error only test phones, bots or testers hit isn't one players have.
+  // Errors the game's owner resolved (resolved.js) are marked: the rule skips them, unless they came back, among
+  // players or, for one resolved for every session (all_sessions), in any session.
+  const pq = playersOf(q, ctx);
+  const players = await contextFor(store, projectId, { ...pq, from: now - DAY, to: now });
+  if (resolved?.length) players.resolved = { entries: resolved };
+  const everyone = resolved?.filter((e) => e.all_sessions) ?? [];
+  if (everyone.length) ctx.resolved = { entries: everyone };
   const long = seed || history ? await contextFor(store, projectId, { ...q, from: now - LIMITS.profileDays * DAY, to: now }) : null;
   const to = Math.min(now, (ctx.to ?? now) + 1); // summaries are complete up to here
   const real = realSessions(ctx);
@@ -212,8 +221,9 @@ export async function measure(store, projectId, { service, env = null, plan = nu
   return {
     to,
     units: playersAreSessions(real.length || !long ? ctx : long) ? 'sessions' : 'players',
-    history: history ? errorList(await contextFor(store, projectId, { ...q, from: now - LIMITS.seedDays * DAY, to: now })) : null,
-    errors: errorList(ctx),
+    history: history ? errorList(await contextFor(store, projectId, { ...pq, from: now - LIMITS.seedDays * DAY, to: now })) : null,
+    errors: errorList(players),
+    back: everyone.length ? errorList(ctx).filter((i) => i.came_back) : [],
     hours: { ...(long ? hourCounts(longReal, long.from, to) : {}), ...hourCounts(real, ctx.from, to) },
     versionsSeen,
     recent: {
@@ -296,7 +306,7 @@ export function zHigher(ka, na, kb, nb) {
 //   active                        Map key → { firedAt, heldAt } of keys that fired and haven't cleared
 //   settings                      { rules }; enabledAt (ms) when alerts were turned on
 // → { signals: [{ key, rule, holds, ...data }], seen }, one signal per key, the most urgent first.
-export function evaluate({ now, to = now, units = 'players', errors = [], history = null, hours = {}, versionsSeen = {}, recent = null, release = null, series = null, play = null, seen = null, active = new Map(), settings = {}, enabledAt = 0 }) {
+export function evaluate({ now, to = now, units = 'players', errors = [], back = [], history = null, hours = {}, versionsSeen = {}, recent = null, release = null, series = null, play = null, seen = null, active = new Map(), settings = {}, enabledAt = 0 }) {
   const rules = alertRules(settings.rules);
   const next = new Map(Object.entries(seen || {}));
   // An error without a fingerprint (an SDK sends one with each error) can't be told apart from the next.
@@ -339,7 +349,10 @@ export function evaluate({ now, to = now, units = 'players', errors = [], histor
   }
 
   if (rules.new_error) {
-    for (const issue of errors) {
+    // Players' errors, and the ones resolved for every session that came back in any (back): those are left out of
+    // players' list, which judged them on players alone.
+    const forAll = (i) => (i.resolved ?? i.came_back?.resolved)?.all_sessions;
+    for (const issue of [...errors.filter((i) => !forAll(i)), ...back.filter((i) => i.fingerprint)]) {
       // One the game's owner resolved isn't new; one that came back is, from when it did, once per version it's back in.
       if (issue.resolved) continue;
       const back = issue.came_back;
@@ -657,7 +670,11 @@ export async function weeklySummary(store, projectId, { service, name = null, en
   const b = weekOf(before, end - 14 * DAY, end - 7 * DAY);
   const own = w.purchases || b.purchases ? { source: null, currency: w.purchases?.currency ?? b.purchases?.currency ?? null, last: w.purchases?.sum ?? 0, before: b.purchases?.sum ?? 0 } : null;
   if (known?.length) last.known = { entries: known, now };
-  if (resolved?.length) last.resolved = { entries: resolved };
+  if (resolved?.length) {
+    // A resolved error comes back when players hit it again (resolved.js), so players' errors are read too.
+    last.resolved = { entries: resolved };
+    last.playerErrors = errorFacts(await contextFor(store, projectId, { ...playersOf(q, last), from: end - 7 * DAY, to: end }));
+  }
   const found = findings(last, store.getMaps ? await store.getMaps(projectId, service) : []).filter((f) => WORTH_FIXING.includes(f.severity));
   const open = found.filter((f) => !f.known);
   return { service, from: end - 7 * DAY, to: end, units: playersAreSessions(last) ? 'sessions' : 'players', last: w, before: b, revenue: revenue ?? own, fixes: open.slice(0, 3).map((f) => ({ id: f.id, severity: f.severity, ...plainFinding(f, clean(name ?? service, 80)) })), known: found.filter((f) => f.known).map((f) => f.id) };

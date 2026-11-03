@@ -116,24 +116,26 @@ act(
 
 act(
   'glitchless_resolve_error',
-  "Resolve an error issue, as in Sentry: the game's owner has fixed it or accepts it (a GPU driver's error on test phones, one the newest build fixed). The Errors page hides it, glitchless_get_error lists it apart, and glitchless_triage, the overview and the weekly summary leave it out. It comes back by itself if it fires again in a version later than the newest it had been seen in (any_version: in any version, the old builds included), first in the list and new to the new_error alert. fingerprint is the issue's from glitchless_get_error or glitchless_triage (error-<fingerprint>), or the start of one. Resolving one again (one that came back) starts over from now. clear: true unresolves it. Without fingerprint, lists the game's resolved errors. Only the person's say-so resolves an error: ask before resolving one. Needs an Owner's or Admin's key, as alert settings do.",
+  "Resolve an error issue, as in Sentry: the game's owner has fixed it or accepts it (a GPU driver's error on test phones, one the newest build fixed). The Errors page hides it, glitchless_get_error lists it apart, and glitchless_triage, the overview and the weekly summary leave it out. It comes back by itself if players hit it again in a version later than the newest players had hit it in (any_version: in any version, the old builds included), first in the list and new to the new_error alert. Store test phones (Google Play runs each upload on its own before release), bots, testers and dev builds don't bring it back unless all_sessions is true. fingerprint is the issue's from glitchless_get_error or glitchless_triage (error-<fingerprint>), or the start of one. Resolving one again (one that came back) starts over from now. clear: true unresolves it. Without fingerprint, lists the game's resolved errors. Only the person's say-so resolves an error: ask before resolving one. Needs an Owner's or Admin's key, as alert settings do.",
   {
     fingerprint: z.string().optional().describe('The issue\'s fingerprint, e.g. "9803ec1a", or the start of one'),
     note: z.string().optional().describe('Why, in a few words (200 characters at most), e.g. "Google Play\'s test phones on SwiftShader"'),
     any_version: z.boolean().optional().describe('Come back if it fires again in any version, not only a later one'),
+    all_sessions: z.boolean().optional().describe("Come back when any session fires it (store test phones, bots, testers, dev builds), not only a player's"),
     clear: z.boolean().optional().describe('Unresolve it'),
   },
-  async ({ fingerprint, note, any_version, clear, game }) => {
+  async ({ fingerprint, note, any_version, all_sessions, clear, game }) => {
     const pid = await projectFor(game);
     if (!fingerprint) {
       const { resolved } = await agent('GET', `/games/${pid}/resolved`);
       return reply(resolved.length ? `${resolved.length} resolved error(s), hidden on the Errors page and left out of triage until they come back:` : 'No resolved errors.', resolved);
     }
     const fp = fingerprint.replace(/^error-/, '');
-    const { resolved } = await agent('POST', `/games/${pid}/resolved`, clear ? { fingerprint: fp, clear: true } : { fingerprint: fp, note, any_version });
+    const { resolved } = await agent('POST', `/games/${pid}/resolved`, clear ? { fingerprint: fp, clear: true } : { fingerprint: fp, note, any_version, all_sessions });
     if (clear) return reply(`${fp} is open again: the Errors page and glitchless_triage show it.`, resolved);
     const e = resolved.find((x) => x.fingerprint.startsWith(fp));
-    return reply(`Resolved ${e.fingerprint}. It comes back if it fires again ${e.any ? 'in any version' : e.version ? `in a version after ${e.version}` : 'at all'}. Resolved errors:`, resolved);
+    const who = e.all_sessions ? 'any session fires it' : 'a player hits it';
+    return reply(`Resolved ${e.fingerprint}. It comes back if ${who} again ${e.any ? 'in any version' : e.version ? `in a version after ${e.version}` : 'at all'}. Resolved errors:`, resolved);
   },
   // Resolving again starts it over, and clear unresolves one.
   { title: 'Resolve error', annotations: { destructiveHint: true, idempotentHint: false } },

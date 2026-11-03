@@ -1,7 +1,8 @@
 extends SceneTree
 ## Steam Deck detection (device.gd is_steam_deck) from what a Deck, a desktop
 ## and a Deck-like PC show, without a Deck, Google Play's pre-launch phones, and
-## where an iOS build was installed from (TestFlight or the App Store).
+## where an iOS build was installed from (TestFlight or the App Store) and an
+## Android one (Google Play, another store, sideloaded or a debug build).
 ## test/e2e.mjs runs it.
 ##   godot --headless --path godot --script res://test/device_test.gd
 
@@ -45,7 +46,18 @@ func _init() -> void:
 	_check("iOS: an iPad app on a Mac without a receipt can't tell", Device.ios_distribution({"home": "/Users/dev/Library/Containers/AB12/Data"}) == "" and Device.ios_distribution({}) == "")
 	_check("iOS: an iPad app on a Mac with a receipt is the App Store; with a sandbox one TestFlight", Device.ios_distribution({"home": "/Users/dev/Library/Containers/AB12/Data", "receipt": true}) == "app_store" and Device.ios_distribution({"home": "/Users/dev/Library/Containers/AB12/Data", "sandbox_receipt": true}) == "testflight")
 	_check("iOS: TestFlight and development builds buy in the sandbox, the App Store doesn't", Device.is_sandbox("testflight") and Device.is_sandbox("development") and not Device.is_sandbox("app_store") and not Device.is_sandbox(""))
-	_check("iOS: nothing to tell off iOS", Device.distribution() == "" and not Device.info(false).has("distribution"))
+	_check("Android: a debug build is a development build, whatever installed it", Device.android_distribution(true, "com.android.shell") == "development" and Device.android_distribution(true, "com.android.vending") == "development" and Device.android_distribution(true, null) == "development")
+	_check("Android: no installer read (Godot before 4.4) says nothing", Device.android_distribution(false, null) == "")
+	_check("Android: Google Play, and its older installer", Device.android_distribution(false, "com.android.vending") == "google_play" and Device.android_distribution(false, "com.google.android.feedback") == "google_play")
+	_check("Android: no installer recorded is sideloaded", Device.android_distribution(false, "") == "sideloaded")
+	_check("Android: adb (Godot's one-click deploy, Android Studio) is sideloaded", Device.android_distribution(false, "com.android.shell") == "sideloaded")
+	_check("Android: a tapped APK file, Files by Google and Firebase App Distribution are sideloaded", Device.android_distribution(false, "com.android.packageinstaller") == "sideloaded" and Device.android_distribution(false, "com.google.android.packageinstaller") == "sideloaded" and Device.android_distribution(false, "com.google.android.apps.nbu.files") == "sideloaded" and Device.android_distribution(false, "dev.firebase.appdistribution") == "sideloaded")
+	_check("Android: any other installer is another store, whose players stay players", Device.android_distribution(false, "com.amazon.venezia") == "store" and Device.android_distribution(false, "com.sec.android.app.samsungapps") == "store" and Device.android_distribution(false, "com.huawei.appmarket") == "store")
+	_check("Android: a debug build's purchases are sandbox ones, a sideloaded or store build's are left alone", Device.is_sandbox("development") and not Device.is_sandbox("sideloaded") and not Device.is_sandbox("google_play") and not Device.is_sandbox("store"))
+	_check("TestFlight, development and sideloaded installs are testers'", Device.is_test_install("testflight") and Device.is_test_install("development") and Device.is_test_install("sideloaded"))
+	_check("a build from any store is a player's, and so is one that can't tell", not Device.is_test_install("app_store") and not Device.is_test_install("google_play") and not Device.is_test_install("store") and not Device.is_test_install(""))
+	_check("nothing to tell off iOS and Android", Device.distribution() == "" and not Device.info(false).has("distribution"))
+	_check("the installer is only read on Android", Device._android_installer() == null)
 	var buy := {"amount": 4.99, "currency": "USD", "item": "full_version"}
 	_check("a sandbox install's purchase says sandbox: true, and the game's own attributes are left as they were", Glitchless.sandbox_attrs("purchase", buy, true) == {"amount": 4.99, "currency": "USD", "item": "full_version", "sandbox": true} and not buy.has("sandbox"))
 	_check("so does any event with a currency", Glitchless.sandbox_attrs("unlock", {"price": 2, "currency": "EUR"}, true).get("sandbox") == true)

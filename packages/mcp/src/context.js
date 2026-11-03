@@ -267,7 +267,15 @@ function instructions(remote) {
 
 // An issue in a list: with `resolved` or `came_back` when the game's owner resolved it (glitchless_resolve_error).
 export function slimIssue(i) {
-  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString(), ...(i.resolved ? { resolved: i.resolved } : {}), ...(i.came_back ? { came_back: i.came_back } : {}) };
+  return { fingerprint: i.fingerprint, kind: i.kind, message: i.message, location: i.location, count: i.count, sessions: i.sessions, sessions_pct: i.sessions_pct, levels: i.levels, versions: i.versions, first_version: i.first_version, last_seen: new Date(i.last_seen).toISOString(), ...(i.no_players ? { no_players: i.no_players } : {}), ...(i.resolved ? { resolved: i.resolved } : {}), ...(i.came_back ? { came_back: i.came_back } : {}) };
+}
+
+// An issue no player hit (the errors query's no_players: its sessions by kind), in a line, or ''.
+const TEST_KINDS = { synthetic: 'synthetic (bots, playtests, store test phones)', tester: 'tester', simulated: 'simulated', dev_builds: 'on dev builds' };
+export function noPlayersLine(i) {
+  if (!i.no_players) return '';
+  const kinds = Object.entries(i.no_players).map(([k, n]) => `${n} ${TEST_KINDS[k] ?? k}`);
+  return `No player hit it${kinds.length ? `: its sessions were ${kinds.join(', ')}` : ', only test sessions'}. Check that it can happen on players' devices before changing code for it.`;
 }
 
 export function slimGroup(g) {

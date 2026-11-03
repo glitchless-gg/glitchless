@@ -237,21 +237,37 @@ static func _test_lab_setting() -> Variant:
 static var _distribution: Variant = null  # read once a launch
 
 
-## Where an iOS build was installed from: "app_store", "testflight" (TestFlight,
-## and App Review, which installs the same way), "development" (from Xcode, an
-## ad hoc or enterprise profile, or the Simulator), or "" when it can't tell and
-## on every other OS. Read from files the app can already see, so no plugin is
-## needed; only the answer is sent, never a path.
+## Where a phone build was installed from, or "" when it can't tell and on every
+## other OS. On iOS (ios_distribution): "app_store", "testflight" (TestFlight,
+## and App Review, which installs the same way) or "development" (from Xcode, an
+## ad hoc or enterprise profile, or the Simulator), from files the app can
+## already see. On Android (android_distribution): "google_play", "store"
+## (another app store), "sideloaded" or "development" (a debug build), from
+## whether it's a debug build and which app installed it. No plugin is needed
+## either way; only the answer is sent, never a path or a package name.
 static func distribution() -> String:
 	if _distribution == null:
-		_distribution = ios_distribution(_ios_install_facts()) if OS.get_name() == "iOS" else ""
+		if OS.get_name() == "iOS":
+			_distribution = ios_distribution(_ios_install_facts())
+		elif OS.get_name() == "Android":
+			_distribution = android_distribution(OS.is_debug_build(), _android_installer())
+		else:
+			_distribution = ""
 	return _distribution
 
 
-## TestFlight and development installs buy in Apple's sandbox, for free: their
-## sessions are testers', and their purchases aren't revenue.
+## TestFlight and development installs buy in the store's sandbox (Apple's is
+## free; on Android, a debug build's are test purchases): their purchases aren't
+## revenue. A sideloaded build's are left as the game sends them.
 static func is_sandbox(where: String) -> bool:
 	return where == "testflight" or where == "development"
+
+
+## TestFlight, development and sideloaded installs are a developer's or a
+## tester's, so their sessions are testers', not players'. A build from any
+## store is a player's.
+static func is_test_install(where: String) -> bool:
+	return where == "testflight" or where == "development" or where == "sideloaded"
 
 
 ## The rule, from what the files say (SPEC §4b). Apple writes an App Store
@@ -285,6 +301,51 @@ static func _ios_install_facts() -> Dictionary:
 		"sandbox_receipt": FileAccess.file_exists(home + "/StoreKit/sandboxReceipt") or FileAccess.file_exists(bundle + "/StoreKit/sandboxReceipt"),
 		"provisioned": FileAccess.file_exists(bundle + "/embedded.mobileprovision"),
 	}
+
+
+## Google Play, and the package it installs as on some older phones.
+const GOOGLE_PLAY := ["com.android.vending", "com.google.android.feedback"]
+## Installers that put a build on a phone outside any store: adb (Godot's
+## one-click deploy and Android Studio use it), the system installer when an APK
+## file is tapped, Files by Google, and Firebase App Distribution.
+const SIDELOAD_INSTALLERS := ["com.android.shell", "com.android.packageinstaller", "com.google.android.packageinstaller", "com.google.android.apps.nbu.files", "dev.firebase.appdistribution"]
+
+
+## The rule on Android (SPEC §4b): a debug build is a development build whatever
+## installed it; Google Play's installer is Google Play; no installer recorded,
+## or one of the sideload installers above, is sideloaded; any other installer
+## is another app store (Amazon Appstore, Galaxy Store, AppGallery), whose
+## players stay players. null, when the installer couldn't be read (Godot before
+## 4.4), says nothing.
+static func android_distribution(debug: bool, installer: Variant) -> String:
+	if debug:
+		return "development"
+	if installer == null:
+		return ""
+	var by := str(installer).strip_edges()
+	if by in GOOGLE_PLAY:
+		return "google_play"
+	if by == "" or by in SIDELOAD_INSTALLERS:
+		return "sideloaded"
+	return "store"
+
+
+## The package that installed this build, from the package manager, through the
+## AndroidRuntime singleton (Godot 4.4 and later) as _test_lab_setting() reads;
+## "" when none was recorded, null when it can't be read. Only read here: what
+## leaves the device is android_distribution's answer.
+static func _android_installer() -> Variant:
+	if OS.get_name() != "Android" or not Engine.has_singleton("AndroidRuntime"):
+		return null
+	var runtime: Variant = Engine.get_singleton("AndroidRuntime")
+	var context: Variant = runtime.getApplicationContext()
+	if context == null:
+		return null
+	var packages: Variant = context.getPackageManager()
+	if packages == null:
+		return null
+	var installer: Variant = packages.getInstallerPackageName(context.getPackageName())
+	return "" if installer == null else str(installer)
 
 
 static func _has(s: String, pattern: String) -> bool:

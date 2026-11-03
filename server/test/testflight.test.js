@@ -131,6 +131,18 @@ test('intake keeps distribution in the words the SDKs send', () => {
   assert.equal(store.device.distribution, 'app_store');
 });
 
+// Android says where a build came from too: Google Play and other stores are players; a debug build (development) and
+// a sideloaded APK (adb, Godot's one-click deploy, a tapped APK file) are testers, as Starlift's Galaxy A15 builds were.
+test('intake keeps where an Android build came from, never the installer', () => {
+  for (const where of ['google_play', 'store', 'sideloaded', 'development'])
+    assert.deepStrictEqual(distributionDevice({ os: 'Android', distribution: where }), { os: 'Android', distribution: where });
+  assert.deepStrictEqual(distributionDevice({ os: 'Android', distribution: 'com.android.vending' }), { os: 'Android' }, 'a package name is not a word the SDKs send');
+  const apk = session('s_apk', { distribution: 'sideloaded', type: 'tester' });
+  apk.events[0].device.os = 'Android';
+  const [start] = normalize(parsePayload(JSON.stringify(apk)), NOW);
+  assert.deepStrictEqual([start.session_type, start.device.os, start.device.distribution], ['tester', 'Android', 'sideloaded']);
+});
+
 test('only money is a sandbox purchase: a game\'s own sandbox mode keeps its sums', () => {
   assert.equal(isSandboxPurchase('purchase', { amount: 4.99, sandbox: true }), true, 'a purchase, with or without a currency');
   assert.equal(isSandboxPurchase('unlock', { price: 2, currency: 'EUR', sandbox: true }), true, 'anything with a currency');

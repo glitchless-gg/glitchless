@@ -1,7 +1,7 @@
 // The built-in reads: which games report, findings, headline numbers, frame time, errors, levels,
 // death hotspots and one session in detail.
 import { z } from 'zod';
-import { base, query, resolveService, range, reply, common, tool, slimIssue, slimGroup, filters, isWorkspace, workspaceGames, workspaceIntake, agent, SETUP_URL } from '../context.js';
+import { base, query, resolveService, range, reply, common, tool, slimIssue, noPlayersLine, slimGroup, filters, isWorkspace, workspaceGames, workspaceIntake, agent, SETUP_URL } from '../context.js';
 
 tool('glitchless_list_games', 'List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.', {}, async () => {
   if (isWorkspace()) {
@@ -78,7 +78,7 @@ tool(
 
 tool(
   'glitchless_get_error',
-  "Error Tracking for a game. Without a fingerprint: the open error issues ranked by sessions affected, any that came back first (`came_back`: resolved by the game's owner, then fired again in a later version: which, since when, and the note), and then, apart, the ones resolved (`resolved`: when, the newest version it had been seen in, the note). With a fingerprint: the full issue — message, location, stack trace, affected levels/versions, occurrence counts and breadcrumbs (the game events right before it fired), and whether it is resolved or came back. For a minified web build whose source maps were uploaded (glitchless-sourcemaps), location and stack are the original ones, `frames` gives each frame with its line of code, and `minified` what the browser reported. glitchless_resolve_error resolves one.",
+  "Error Tracking for a game. Without a fingerprint: the open error issues ranked by sessions affected, any that came back first (`came_back`: resolved by the game's owner, then hit by players again in a later version: which, since when, and the note), and then, apart, the ones resolved (`resolved`: when, the newest version it had been seen in, the note). With a fingerprint: the full issue — message, location, stack trace, affected levels/versions, occurrence counts and breadcrumbs (the game events right before it fired), and whether it is resolved or came back. An issue no player hit has `no_players`, its sessions by kind (synthetic: bots, playtests and store test phones such as Google Play's pre-launch ones; tester; dev_builds): check that it can happen on players' devices before fixing it. For a minified web build whose source maps were uploaded (glitchless-sourcemaps), location and stack are the original ones, `frames` gives each frame with its line of code, and `minified` what the browser reported. glitchless_resolve_error resolves one.",
   { ...common, fingerprint: z.string().optional().describe('Issue fingerprint from the list or from glitchless_triage') },
   async ({ service, hours, fingerprint, ...f }) => {
     const svc = await resolveService(service);
@@ -87,13 +87,15 @@ tool(
       const open = issues.filter((i) => !i.resolved).map(slimIssue);
       const resolved = issues.filter((i) => i.resolved).map(slimIssue);
       const back = open.filter((i) => i.came_back).length;
-      return reply(`${open.length} open error issue(s) in ${svc}${back ? `, ${back} of them back after being resolved` : ''}${resolved.length ? `; ${resolved.length} resolved (left out of glitchless_triage)` : ''}`, resolved.length ? { open, resolved } : open);
+      const tests = open.filter((i) => i.no_players).length;
+      return reply(`${open.length} open error issue(s) in ${svc}${back ? `, ${back} of them back after being resolved` : ''}${tests ? `, ${tests} hit by no player (only test phones, bots, testers or dev builds: no_players)` : ''}${resolved.length ? `; ${resolved.length} resolved (left out of glitchless_triage)` : ''}`, resolved.length ? { open, resolved } : open);
     }
     const issue = issues.find((i) => i.fingerprint === fingerprint || i.fingerprint?.startsWith(fingerprint));
     if (!issue) return reply(`No issue ${fingerprint} in ${svc} in this window. Known issues:`, issues.map(slimIssue));
     const { series, ...rest } = issue;
     const state = issue.came_back ? ` — resolved${issue.came_back.resolved.version ? ` in ${issue.came_back.resolved.version}` : ''}, and came back in ${issue.came_back.version}` : issue.resolved ? ` — resolved${issue.resolved.version ? ` (newest version then: ${issue.resolved.version})` : ''}${issue.resolved.note ? `: ${issue.resolved.note}` : ''}` : '';
-    return reply(`Error issue ${issue.fingerprint} in ${svc}${state}`, rest);
+    const tests = noPlayersLine(issue);
+    return reply(`Error issue ${issue.fingerprint} in ${svc}${state}${tests ? `. ${tests}` : ''}`, rest);
   },
 );
 

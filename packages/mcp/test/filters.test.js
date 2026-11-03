@@ -13,10 +13,11 @@ process.env.XDG_CONFIG_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-
 delete process.env.GLITCHLESS_API_KEY;
 
 const seen = [];
+let issues = [];
 const api = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://local');
   seen.push({ name: url.pathname.replace('/v1/query/', ''), params: Object.fromEntries(url.searchParams) });
-  const empty = { findings: [], meta: { from: 0 }, kpis: {}, top_errors: [], funnel: [], by_level: [], by_gpu_tier: [], by_browser: [], by_version: [], hitches: [], issues: [], rage_quits: [], events: [], versions: [], dashboard: null, sessions: 0 };
+  const empty = { findings: [], meta: { from: 0 }, kpis: {}, top_errors: [], funnel: [], by_level: [], by_gpu_tier: [], by_browser: [], by_version: [], hitches: [], issues, rage_quits: [], events: [], versions: [], dashboard: null, sessions: 0 };
   res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(empty));
 });
 await new Promise((r) => api.listen(0, '127.0.0.1', r));
@@ -39,6 +40,21 @@ test('comparing versions that sent nothing in the window says so instead of fail
   const r = await client.callTool({ name: 'glitchless_compare_versions', arguments: { a: '1.0.0', b: '1.1.0', hours: 168 } });
   assert.ok(!r.isError, r.content?.[0]?.text);
   assert.match(r.content[0].text, /^No sessions of starlift from version 1\.0\.0 and 1\.1\.0 in this window \(168h\); the versions that reported in it: none\./);
+});
+
+test('glitchless_get_error says when no player hit an issue, so an agent checks before fixing it', async () => {
+  // Starlift 1.2 (3 November 2026): Google Play's pre-launch phones fired a shader error no player had.
+  const issue = (fingerprint, o = {}) => ({ fingerprint, kind: 'engine', message: 'boom', location: null, count: 3, sessions: 3, sessions_pct: 1, levels: [], versions: ['1.2'], first_version: '1.2', last_seen: 0, series: [], ...o });
+  issues = [issue('9803ec1a', { no_players: { synthetic: 3 } }), issue('ab12cd34')];
+  try {
+    const list = await client.callTool({ name: 'glitchless_get_error', arguments: {} });
+    assert.match(list.content[0].text, /^2 open error issue\(s\) in starlift, 1 hit by no player/);
+    const one = await client.callTool({ name: 'glitchless_get_error', arguments: { fingerprint: '9803' } });
+    assert.match(one.content[0].text, /^Error issue 9803ec1a in starlift\. No player hit it: its sessions were 3 synthetic \(bots, playtests, store test phones\)\. Check that it can happen on players' devices/);
+    assert.doesNotMatch((await client.callTool({ name: 'glitchless_get_error', arguments: { fingerprint: 'ab12' } })).content[0].text, /No player/);
+  } finally {
+    issues = [];
+  }
 });
 
 test('every read tool passes env and session_type on to the API', async (t) => {

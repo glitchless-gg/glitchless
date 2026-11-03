@@ -12,7 +12,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID | the same ID as install mode |
-| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name, core count, memory |
+| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, whether it is a Steam Deck, and on iOS and Android where it was installed from (the App Store or TestFlight; Google Play, another store or outside a store) | the same as anonymous | adds model, OS version, GPU name, core count, memory |
 | Positions | **not sent**: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
 | Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on/off choice, once the game asks | unsent batches with their IDs, the player ID, the game version that last ran, and the on/off choice | the same as install mode |
 
@@ -25,6 +25,8 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 On Android, every mode reads two things that tell Google Play's pre-launch test phones: the system setting `firebase.test.lab`, which Firebase Test Lab sets to `true`, and the GPU's name, which on those phones is a software renderer (SwiftShader); no phone a player holds draws in software. A session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. Neither is sent: the setting never, the GPU's name only in full mode, as `gpu`.
 
 On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
+
+On Android, every mode reads two things to tell a player's install from a developer's or a tester's: whether the build is a debug build, and which app installed it, from the phone's package manager (Google Play, another store, adb when a developer installs it from a computer, as Godot's one-click deploy does, or the phone's own installer when someone opens an APK file). The installer's name is never sent; only the answer is, as `distribution` (`google_play`, `store`, `sideloaded` or `development`). A debug or sideloaded session is marked `tester` so it stays out of the players' numbers, and a purchase in a debug build says `sandbox: true`. A build from Google Play or any other store stays a player's.
 
 No mode reads or sends:
 
@@ -43,7 +45,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session), when it set any) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS and debug and sideloaded builds on Android, or `synthetic`), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session), when it set any) | the first batch of a session |
 | `session_end` | `reason` (`background`, `close`, `quit`), `duration_s` | going to the background, closing, quitting |
 | `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, average draw calls, primitives, render/process/physics ms, object/node/orphan-node/resource counts, video and texture MB, static MB (debug builds only), `screen` and `window` size in pixels, `ctx` (the game's gauges and engine counts); while connected to a game server, `net` ([network quality](#network-quality)) | every 5 s |
 | `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK measures in the game), draw calls, primitives, timings, pipeline compiles, nodes added, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
@@ -52,7 +54,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, and `level_start`'s `attrs` (the attempt in the game's words, such as difficulty and party size), as the game passes them | the game calls them |
 | `level_abandon` | `duration_s`; `reason` (`background`, `close`, `quit`, `disconnect`) when Glitchless sends it | the game calls it, or the game goes to the background, closes or loses its connection mid-level |
 | `death` | `cause`; **full** or `positions`: `x`, `y`, `z` | the game calls it |
-| `custom` | `name`, `attrs`: the game's own words via `track()`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
+| `custom` | `name`, `attrs`: the game's own words via `track()`; in a TestFlight or development install on iOS, or an Android debug build, a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
 | `counts` | `counts` (for each name and its words: `name`, `attrs`, `n` how many, `sums` of its numbers, `first_ts`), `duration_s`, `dropped`: the game's own words via `count()`, added up on the device | once a window that counted anything |
 | `props` | `props`: the [properties](#properties-the-games-words-about-the-session) that changed, null for one removed | at most once a window, when the game changed one |
 | `group` | `kind` (`match`, `party`, `run`), `id` (hashed for a match or party, null when it ends), `attrs` (the game's words), `resumed` | the game sets or ends a [group](#groups) |
@@ -75,7 +77,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `renderer`, `driver` | `mobile`, `metal` | all |
 | `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120`: `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (that is each frame window's `hz`) | all |
 | `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` on Linux, and through Proton's `Z:` drive on Windows; read on the device and not sent) | all |
-| `distribution` | iOS only: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there; left out when it can't tell | all |
+| `distribution` | iOS: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there. Android: `google_play`, `store` (another app store), `sideloaded` (adb, an APK file, Firebase App Distribution) or `development` (a debug build), from whether it's a debug build and which app installed it (read on the device and not sent). Left out when it can't tell, and on other systems | all |
 | `model`, `os_version` | `iPhone16,1`, `27.1` | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |
 | `cores`, `memory_gb` | `6`, `8` | **full** |

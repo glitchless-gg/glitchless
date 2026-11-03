@@ -8,10 +8,10 @@ import http from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildContext, errorList, overview, versionNewer } from '../src/analytics.js';
+import { buildContext, errorList, errorFacts, overview, versionNewer } from '../src/analytics.js';
 import { findings } from '../src/findings.js';
 import { resolvedMark } from '../src/resolved.js';
-import { weeklySummary, weeklyMessage, evaluate, alertMessage, weekStart } from '../src/alerts.js';
+import { weeklySummary, weeklyMessage, evaluate, alertMessage, weekStart, measure } from '../src/alerts.js';
 import { createApp } from '../src/app.js';
 import { FileStore } from '../src/stores/file.js';
 
@@ -23,11 +23,12 @@ const GODOT = 'glitchless-godot/0.6.0';
 const SHADER = '9803ec1a';
 const OTHER = 'cc33dd44';
 
-// One player's session on `version` at `ts`, with the errors given (each a fingerprint).
-function session(i, version, ts, errors = []) {
-  const base = { service: 'starlift', env: 'prod', version, session_id: `s_${i}`, player_id: `s_${i}`, sdk: GODOT, level: null };
+// One player's session on `version` at `ts`, with the errors given (each a fingerprint); `as` makes it another kind
+// of session ({ type: 'synthetic' } for Google Play's test phones, { env: 'dev' } for a dev build).
+function session(i, version, ts, errors = [], as = {}) {
+  const base = { service: 'starlift', env: as.env ?? 'prod', version, session_id: `s_${i}`, player_id: `s_${i}`, sdk: GODOT, level: null };
   return [
-    { ...base, type: 'session_start', ts, session_type: 'user', device: { browser: 'Godot', os: 'Android', gpu_tier: 'low' } },
+    { ...base, type: 'session_start', ts, session_type: as.type ?? 'user', device: { browser: 'Godot', os: 'Android', gpu_tier: 'low' } },
     ...errors.map((fp, n) => ({ ...base, type: 'error', ts: ts + 1000 + n, kind: 'engine', fingerprint: fp, message: fp === SHADER ? 'active uniforms exceed GL_MAX_FRAGMENT_UNIFORM_VECTORS (261)' : 'Condition "!is_inside_tree()" is true.', fn: '_compile', source: 'shader_gles3.cpp', line: 241, level: 'endless_normal' })),
     { ...base, type: 'session_end', ts: ts + 60_000, reason: 'quit' },
   ];
@@ -48,6 +49,10 @@ function week(after = []) {
 
 const ENTRY = { fingerprint: SHADER, note: "Google Play's test phones on SwiftShader", by: 'Owner', at: new Date(RESOLVED_AT).toISOString(), version: '1.1.2' };
 const ctxOf = (evs, resolved = [ENTRY], extra = {}) => Object.assign(buildContext(evs, { service: 'starlift', from: NOW - 7 * DAY, to: NOW, type: 'all' }), resolved ? { resolved: { entries: resolved, ...extra } } : {});
+// The same, with the range's players read as the errors query reads them (prod sessions of type user).
+const withPlayers = (evs, resolved = [ENTRY]) => Object.assign(ctxOf(evs, resolved), { playerErrors: errorFacts(buildContext(evs, { service: 'starlift', from: NOW - 7 * DAY, to: NOW, env: 'prod', type: 'user' })) });
+// Sessions of another kind on `version` in the last day, each firing the shader error.
+const others = (from, version, as, n) => Array.from({ length: n }, (_, k) => session(from + k, version, NOW - 20 * HOUR + k * HOUR, [SHADER], as)).flat();
 
 test('a resolved error is marked and listed last, its finding and its place in the top errors gone', () => {
   const ctx = ctxOf(week());
@@ -90,6 +95,37 @@ test('resolved for any version, it comes back on the old builds too', () => {
   assert.equal(issue.came_back.resolved.any_version, true);
   // Not firing at all after it was resolved, it stays resolved.
   assert.ok(errorList(ctxOf(week(), [{ ...ENTRY, any: true }])).find((i) => i.fingerprint === SHADER).resolved);
+});
+
+test("Google Play's test phones on a new upload leave it resolved; players there bring it back", () => {
+  // Starlift 1.2 (3 November 2026): uploaded, not released, and Google Play's pre-launch phones fired it in 1.2.
+  const phones = [...week(), ...others(900, '1.2', { type: 'synthetic' }, 3)];
+  assert.equal(errorList(ctxOf(phones)).find((i) => i.fingerprint === SHADER).came_back?.version, '1.2', 'judged on every session, it was back');
+  const issue = errorList(withPlayers(phones)).find((i) => i.fingerprint === SHADER);
+  assert.ok(issue.resolved && !issue.came_back, JSON.stringify(issue.came_back));
+  assert.equal(issue.no_players, undefined, 'players hit it before it was resolved');
+  // Testers and dev builds don't bring it back either; a player on 1.2 does.
+  const tested = [...phones, ...others(950, '1.2', { type: 'tester' }, 1), ...others(960, '1.2', { env: 'dev' }, 1)];
+  assert.ok(errorList(withPlayers(tested)).find((i) => i.fingerprint === SHADER).resolved);
+  const played = [...tested, ...session(990, '1.2', NOW - 2 * HOUR, [SHADER])];
+  const back = errorList(withPlayers(played))[0];
+  assert.deepEqual([back.fingerprint, back.came_back.version, back.came_back.since], [SHADER, '1.2', NOW - 2 * HOUR + 1000], 'from when the player hit it');
+  // Resolved for every session, the phones bring it back.
+  const all = errorList(withPlayers(phones, [{ ...ENTRY, all_sessions: true }])).find((i) => i.fingerprint === SHADER);
+  assert.equal(all.came_back.version, '1.2');
+  assert.equal(all.came_back.resolved.all_sessions, true);
+  assert.deepEqual(findings(withPlayers(phones)).filter((f) => f.id === `error-${SHADER}`), [], 'and no finding');
+});
+
+test('an issue no player hit says so, with its sessions by kind', () => {
+  const NEW = 'ab12cd34';
+  const evs = [...week(), ...others(900, '1.2', { type: 'synthetic' }, 3), ...others(950, '1.2', { type: 'tester' }, 1), ...others(960, '1.2', { env: 'dev' }, 2)].map((e) => (e.type === 'error' && Number(e.session_id.slice(2)) >= 900 ? { ...e, fingerprint: NEW } : e));
+  const list = errorList(withPlayers(evs, null));
+  const only = list.find((i) => i.fingerprint === NEW);
+  assert.deepEqual(only.no_players, { synthetic: 3, tester: 1, dev_builds: 2 });
+  assert.ok(list.filter((i) => i.fingerprint !== NEW).every((i) => !('no_players' in i)));
+  // Without players read, nothing is said.
+  assert.ok(!('no_players' in errorList(ctxOf(evs, null)).find((i) => i.fingerprint === NEW)));
 });
 
 test('versions are later by the store\'s first sighting, else by number; names without a sighting by when it first fired', () => {
@@ -153,6 +189,23 @@ test('the new_error alert skips a resolved error and treats one that came back a
   assert.ok(m.agent.some((l) => l === 'It came back in 1.1.3 on 2026-11-01, after it was resolved in 1.1.2 on 2026-10-31.'), m.agent.join(' | '));
 });
 
+test('the new_error alert reads players: test phones bring back only an error resolved for every session', async () => {
+  const rules = { new_error: true, crashes: false, release: false, quiet: false, store: false };
+  const NEW = 'ab12cd34';
+  const fired = async (evs, resolved = [ENTRY]) => {
+    const store = { query: async (projectId, q) => evs.filter((e) => e.ts >= q.from && e.ts < q.to), rollups: async () => null };
+    const m = await measure(store, 'p', { service: 'starlift', now: NOW, resolved, history: true });
+    return evaluate({ ...m, now: NOW, settings: { rules }, enabledAt: NOW - 30 * DAY }).signals.filter((x) => x.rule === 'new_error' && x.holds).map((x) => x.key);
+  };
+  // Ten of Google Play's test phones on the 1.2 upload: the resolved error and a new one, which no player has.
+  const phones = [...week(), ...others(900, '1.2', { type: 'synthetic' }, 10), ...others(920, '1.2', { type: 'synthetic' }, 10).map((e) => (e.type === 'error' ? { ...e, fingerprint: NEW } : e))];
+  assert.deepEqual(await fired(phones), []);
+  assert.deepEqual(await fired(phones, [{ ...ENTRY, all_sessions: true }]), [`error-${SHADER}-back-1.2`]);
+  // Ten players on 1.2 bring both in.
+  const played = [...phones, ...others(950, '1.2', {}, 10), ...others(970, '1.2', {}, 10).map((e) => (e.type === 'error' ? { ...e, fingerprint: NEW } : e))];
+  assert.deepEqual((await fired(played)).sort(), [`error-${SHADER}-back-1.2`, `error-${NEW}`]);
+});
+
 test("a host's resolved errors mark the errors query and a board's errors panel, and leave triage", async () => {
   const store = new FileStore(mkdtempSync(join(tmpdir(), 'gl-resolved-')));
   const asked = [];
@@ -170,11 +223,19 @@ test("a host's resolved errors mark the errors query and a board's errors panel,
     const { issues } = await q('errors');
     assert.deepEqual(issues.map((i) => [i.fingerprint, Boolean(i.resolved)]), [[OTHER, false], [SHADER, true]]);
     assert.equal(issues[1].resolved.note, ENTRY.note);
+    // Google Play's test phones on 1.1.3 leave it resolved, and an error only a tester hit says no player did.
+    const send = (id, type, fingerprint) => fetch(`${base}/v1/intake?token=gl_pub_dev`, { method: 'POST', body: JSON.stringify({ service: 'starlift', env: 'prod', version: '1.1.3', session_id: id, sdk: GODOT, events: [{ type: 'session_start', ts: now - HOUR, session_type: type }, { type: 'error', ts: now - HOUR + 1000, kind: 'engine', fingerprint, message: 'boom' }] }) });
+    for (const id of ['t_1', 't_2', 't_3']) assert.ok((await send(id, 'synthetic', SHADER)).ok);
+    assert.ok((await send('t_4', 'tester', 'ab12cd34')).ok);
+    const after = (await q('errors')).issues;
+    assert.ok(after.find((i) => i.fingerprint === SHADER).resolved, 'still resolved');
+    assert.deepEqual(after.find((i) => i.fingerprint === 'ab12cd34').no_players, { tester: 1 });
+    assert.equal(after.find((i) => i.fingerprint === OTHER).no_players, undefined);
     assert.ok(!(await q('findings')).findings.some((f) => f.id === `error-${SHADER}`));
     const board = await fetch(`${base}/v1/dashboard?service=starlift`, { method: 'PUT', body: JSON.stringify({ pages: [{ id: 'errs', title: 'Errors', panels: [{ type: 'errors' }] }] }) });
     assert.ok(board.ok, await board.text());
     const panel = (await q('board', '&page=errs')).board.panels[0];
-    assert.deepEqual(panel.issues.map((i) => [i.fingerprint, i.resolved?.version ?? null]), [[OTHER, null], [SHADER, '1.1.2']]);
+    assert.deepEqual(panel.issues.map((i) => [i.fingerprint, i.resolved?.version ?? null]), [[OTHER, null], ['ab12cd34', null], [SHADER, '1.1.2']]);
     assert.ok(asked.length >= 1);
   } finally {
     server.closeAllConnections();
