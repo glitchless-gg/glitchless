@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { createApp } from '../src/app.js';
+import { normalize } from '../src/ingest.js';
 import { FileStore } from '../src/stores/file.js';
 
 async function serve() {
@@ -56,6 +57,31 @@ test('a broken gzip body is a 400, a gzip bomb is a 413', async () => {
     const bomb = gzipSync(Buffer.alloc(9_000_000, 0x20)); // ~9 KB on the wire, 9 MB unpacked
     assert.ok(bomb.length < 1_000_000);
     assert.deepEqual(await app.send(bomb), { status: 413, body: { error: 'payload too large' } });
+  } finally {
+    await app.close();
+  }
+});
+
+// The rest of a session an engine SDK's outbox cut in two (SPEC §2 session_start.continued): its session_start comes
+// again first, so the session has its own type and device, where before it had neither and counted as a player's.
+test('a continued session_start gives the rest of a cut session its type and device; continued is kept only when true', async () => {
+  const app = await serve();
+  try {
+    const now = Date.now();
+    const rest = (sid, start) => JSON.stringify({ service: 'starlift', env: 'prod', version: '1.1.3', session_id: sid, sdk: 'glitchless-godot/0.6.0', batch_id: `b_${sid.slice(2)}`, events: [...(start ? [start] : []), { type: 'error', ts: now - 30_000, kind: 'engine', message: 'active uniforms exceed GL_MAX_FRAGMENT_UNIFORM_VECTORS (261)', fingerprint: '9803ec1a' }] });
+    const start = { type: 'session_start', ts: now - 40_000, session_type: 'synthetic', privacy: 'anonymous', device: { browser: 'Godot', os: 'Android', gpu_tier: 'low' } };
+    assert.equal((await app.send(rest('s_before0000000001', null))).status, 202);
+    assert.equal((await app.send(rest('s_continued00000001', { ...start, continued: true }))).status, 202);
+    assert.equal((await app.send(rest('s_notatrue00000001', { ...start, continued: 'yes' }))).status, 202);
+    const { sessions } = await (await fetch(`${app.base}/v1/query/sessions?service=starlift&from=${now - 3_600_000}&to=${now + 60_000}`)).json();
+    const by = Object.fromEntries(sessions.map((s) => [s.session_id, s]));
+    assert.equal(by.s_before0000000001.session_type, 'user', 'without it, the rest looked like a player with no device');
+    assert.equal(by.s_continued00000001.session_type, 'synthetic');
+    assert.match(by.s_continued00000001.browser ?? '', /^Godot/);
+    const envelope = { service: 'starlift', env: 'prod', version: '1.1.3', session_id: 's_x', sdk: 'glitchless-godot/0.6.0' };
+    const kept = (continued) => normalize({ envelope, events: [{ ...start, continued }] }, now)[0];
+    assert.equal(kept(true).continued, true);
+    assert.ok(!('continued' in kept('yes')) && !('continued' in kept(1)), 'anything but true is dropped');
   } finally {
     await app.close();
   }

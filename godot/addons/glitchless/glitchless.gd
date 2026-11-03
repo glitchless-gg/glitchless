@@ -48,7 +48,7 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.6.0"
+const SDK_VERSION := "0.6.1"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -191,6 +191,7 @@ var _http: HTTPRequest
 var _retry_at := 0
 var _backoff := 0.0
 var _session_start_sent := false
+var _starts := {}  # a session's group (_started_at) → its session_start, saved with its batches (_save_outbox)
 var _load_sent := false
 var _ended := false
 var _shut := false
@@ -994,7 +995,9 @@ func flush() -> void:
 		_queue.clear()
 		return
 	if not _session_start_sent:
-		_queue.push_front(_session_start_event())
+		var start := _session_start_event()
+		_starts[_started_at] = start
+		_queue.push_front(start)
 		_session_start_sent = true
 		if _first_frame_ms > 0 and not _load_sent and role != "server":
 			_load_sent = true
@@ -2462,25 +2465,44 @@ static func _parse_url(url: String) -> Dictionary:
 # Install and full mode keep a stored ID anyway, so they save both IDs. Every
 # mode saves each batch's own ID, so a batch the server took just before the
 # game closed is not stored twice when the next launch sends it.
+# Anonymous mode also saves each of those sessions' session_start (it holds no
+# ID): when its first batch went out before the game closed (or the server
+# stored it but its answer was lost), the next launch sends it again first,
+# marked continued, so the rest of the session still says what device and
+# kind of session it was (SPEC §2 session_start.continued).
 func _save_outbox() -> void:
 	if not enabled:
 		return
 	var out: Array[Dictionary] = []
+	var groups := {}
 	for b in _outbox:
 		var saved := {"bid": b.bid, "service": b.service, "env": b.env, "version": b.version, "group": b.group, "events": b.events}
 		if _privacy != "anonymous":
 			saved.sid = b.sid
 			saved.pid = b.pid
 		out.append(saved)
+		groups[b.group] = true
+	# Only the starts of the sessions still waiting, and this one's.
+	for group: Variant in _starts.keys():
+		if not groups.has(group) and group != _started_at:
+			_starts.erase(group)
 	if out.is_empty():
 		if FileAccess.file_exists(_outbox_path()):
 			DirAccess.remove_absolute(_outbox_path())
 		return
+	var data := {"v": 1, "batches": out}
+	if _privacy == "anonymous":
+		var starts: Array[Dictionary] = []
+		for group: Variant in groups:
+			if _starts.has(group):
+				starts.append({"group": group, "event": _starts[group]})
+		if not starts.is_empty():
+			data.starts = starts
 	var tmp := _outbox_path() + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify({"v": 1, "batches": out}))
+	f.store_string(JSON.stringify(data))
 	f.close()
 	DirAccess.rename_absolute(tmp, _outbox_path())
 
@@ -2499,6 +2521,14 @@ func _load_outbox() -> void:
 		return
 	var oldest := _now() - MAX_OUTBOX_AGE_MS
 	var fresh_ids := {}
+	# A session whose saved batches have no session_start gets its saved one again, marked continued, before them.
+	var starts := {}
+	for s: Variant in data.get("starts", []):
+		if s is Dictionary and s.get("event") is Dictionary and s.event.get("type") == "session_start" and s.event.has("ts") and float(s.event.ts) >= oldest:
+			starts[str(s.get("group", ""))] = s.event
+	for saved: Variant in data.batches:
+		if saved is Dictionary and saved.get("events") is Array and saved.events.any(func(e: Variant) -> bool: return e is Dictionary and e.get("type") == "session_start"):
+			starts.erase(str(saved.get("group", "")))
 	for saved: Variant in data.batches:
 		if not saved is Dictionary or not saved.get("events") is Array:
 			continue
@@ -2514,6 +2544,17 @@ func _load_outbox() -> void:
 		if sid == "":
 			if not fresh_ids.has(group):
 				fresh_ids[group] = _new_id("s_", 16)
+				if starts.has(group):
+					var start: Dictionary = starts[group]
+					start.ts = int(start.ts)
+					start.continued = true
+					var first: Array[Dictionary] = [start]
+					_outbox.append({
+						"id": _next_batch_id, "bid": _new_id("b_", 16), "service": str(saved.get("service", _service)),
+						"env": str(saved.get("env", _env)), "version": str(saved.get("version", _version)),
+						"sid": fresh_ids[group], "pid": "", "group": group, "events": first,
+					})
+					_next_batch_id += 1
 			sid = fresh_ids[group]
 		var bid := str(saved.get("bid", ""))
 		var b := {

@@ -174,6 +174,8 @@ function genreFields(e) {
   }
   switch (e.type) {
     case 'session_start':
+      // continued: the rest of a session cut in two by an engine SDK's outbox, sent again first (SPEC §2).
+      if ('continued' in e && e.continued !== true) delete e.continued;
       if ('props' in e) {
         const props = checkProps(e.props, false);
         if (props) e.props = props;

@@ -29,7 +29,8 @@
 // It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys), test/device_test.gd
 // (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Google Play's pre-launch phones),
 // test/frames_test.gd (the refresh rate read off the fast frames; hitch causes), test/steam_test.gd (Steam facts
-// from a fake GodotSteam), test/genre_test.gd and test/off_switch_test.gd (the player's off switch, without a server).
+// from a fake GodotSteam), test/genre_test.gd, test/off_switch_test.gd (the player's off switch, without a server) and
+// test/outbox_test.gd (a session whose first batch went out before the game closed: its session_start again, continued).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -233,6 +234,12 @@ try {
     assert.match(offUnit.stdout, /off switch tests: 0 failed/, offUnit.stdout + offUnit.stderr);
     assert.doesNotMatch(offUnit.stdout + offUnit.stderr, /SCRIPT ERROR/, offUnit.stdout + offUnit.stderr);
   });
+  const outboxUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/outbox_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of outboxUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `outbox unit: ${m[2]}`] : ['FAIL', `outbox unit: ${m[2]}`]);
+  check('outbox unit tests ran to the end, with no script error', () => {
+    assert.match(outboxUnit.stdout, /outbox tests: 0 failed/, outboxUnit.stdout + outboxUnit.stderr);
+    assert.doesNotMatch(outboxUnit.stdout + outboxUnit.stderr, /SCRIPT ERROR/, outboxUnit.stdout + outboxUnit.stderr);
+  });
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });
@@ -317,7 +324,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.6.0'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.6.1'));
   });
   check('load: stamped when the first frame was drawn, not when the first batch went', () => {
     for (const s of sessions) {
@@ -455,7 +462,7 @@ try {
     assert.ok(opened, 'no report from code');
     assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
     assert.ok(opened.screenshot.length <= 200_000);
-    assert.equal(opened.sdk, 'glitchless-godot/0.6.0');
+    assert.equal(opened.sdk, 'glitchless-godot/0.6.1');
     assert.equal(opened.level, 'level_1');
     assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
     assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');
