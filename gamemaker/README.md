@@ -20,7 +20,7 @@ Anonymous mode, the default, sends nothing that can be tied to a person. [PRIVAC
 
 ## Install
 
-1. Get the local package, `Glitchless-0.4.1.yymps`: from the [0.4.1 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.4.1), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
+1. Get the local package, `Glitchless-0.4.2.yymps`: from the [0.4.2 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.4.2), or make it with `node gamemaker/tools/project.mjs package` (it lands in `gamemaker/dist/`).
 2. In GameMaker: **Tools → Import Local Package**, pick the file, **Add All**, **Import**. It adds a *Glitchless* folder with nine scripts and two objects, `obj_glitchless` and `obj_glitchless_tail`. Don't place the objects in a room: `glitchless_init` makes them.
 3. Call `glitchless_init` once, as early as you can: the first room's creation code, or the Create event of your first object.
 4. For a sandboxed macOS build (the Mac App Store): **Game Options → macOS → Allow outgoing network connections**.
@@ -385,9 +385,25 @@ Glitchless groups errors with the browser SDK's fingerprint: the kind, the messa
 - **Offline**, batches are saved to `glitchless/outbox.json` in the save area and sent on a later launch, as is a crash. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID. Each batch keeps its own `batch_id` through every try and launch, so the server stores it once even when a reply was lost: one the game closed on, or one that never came within 20 s.
 - **On a phone**, coming back from the background within `session_timeout` carries on the session with an `app_resume` event; later than that starts a new session.
 
+## What it costs
+
+It isn't a profiler: it wraps none of the game's code. Each frame its time source and its two objects' events read the frame's time, a few counters GameMaker keeps (instances, garbage collection, texture pages) and the input, and add them to a fixed-size summary. Measured with `node gamemaker/test/overhead.mjs` (the demo with `-glitchless-overhead`) on runtime 2026.0.0.23, a VM build on an Apple M3 Max:
+
+| | How often | Time in the frame |
+| --- | --- | --- |
+| The frame's work | every frame | about 42 µs, 0.25% of a 60 fps frame |
+| Closing a window into one summary | every 5 seconds | about 0.4 to 0.5 ms |
+| A flush: the window and events become a batch, saved, gzipped and its request started | every 5 seconds | about 0.6 to 1.3 ms (the window close included) |
+| A flush with 4,000 events waiting, offline | every 5 seconds while offline | about 0.75 to 1.1 ms |
+
+- **Each batch is turned into JSON once**, however many times the outbox is saved or the batch is sent, and the file is written from those parts without joining them first. With 4,000 events waiting, a save took 13 to 15 ms before that.
+- **The outbox file is written in the frame**, unlike the other engines' SDKs, which write it on another thread: GML has no threads of its own. A save with the outbox near its cap (600 KB) takes 0.55 to 1.3 ms, mostly the disk; online, the outbox holds a batch or two.
+- **`buffer_save_async` wouldn't take the write out of the frame.** Its call copies the buffer (about 20 µs), and then the runner writes the whole file on the main thread, in its pass over async events between the Step and End Step events of the same frame: 0.4 to 0.55 ms for the same 600 KB file, about what the SDK's own save takes. The macOS runner's code (2026.0.0.23) says the same: that pass writes each waiting file itself before it fires the Save/Load event (the Windows, Linux and phone runners weren't checked). A web build's `buffer_save_async` saves at once and fires the event later (GameMaker's HTML5 runtime is open source). Using it would add an event to wait for, a second file in `default/` and rules for which write is the newest, and save no time, so the SDK keeps the plain write. `overhead.mjs` times both, so a runtime that does move the write to another thread will show it.
+- **A YYC build is faster**, a phone slower, often several times per operation.
+
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-gamemaker/0.4.1"`, as gzip with `Content-Type: text/plain` (the server knows gzip by its first bytes). GameMaker has no gzip, so the SDK wraps `buffer_compress`'s zlib stream in a gzip header and trailer. It checks once what `buffer_crc32` gives for a known input and corrects for it: runtime 2026.0.0.23 returns the inverted CRC-32. A runner where neither fits sends plain JSON. See [docs/SPEC.md](../docs/SPEC.md#5d-gamemaker-sdk) for what the GameMaker SDK adds; the browser fields it can't fill are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-gamemaker/0.4.2"`, as gzip with `Content-Type: text/plain` (the server knows gzip by its first bytes). GameMaker has no gzip, so the SDK wraps `buffer_compress`'s zlib stream in a gzip header and trailer. It checks once what `buffer_crc32` gives for a known input and corrects for it: runtime 2026.0.0.23 returns the inverted CRC-32. A runner where neither fits sends plain JSON. See [docs/SPEC.md](../docs/SPEC.md#5d-gamemaker-sdk) for what the GameMaker SDK adds; the browser fields it can't fill are sent as null or empty.
 
 ## Limits
 
@@ -402,6 +418,7 @@ From the repo root:
 
 - `npm run test:gamemaker:core` runs the SDK's GML in Node, with no GameMaker needed. `test/gml.mjs` turns the GML into JavaScript (it refuses JavaScript-only syntax, and reading a missing struct field throws, as in GameMaker). `test/core.test.mjs` checks that every GameMaker name the GML uses is a real one (`test/gml-builtins.txt`) and that the sketch, fingerprints, path scrubbing and gzip match the JavaScript SDK. It also plays whole sessions against a local server: offline and the outbox, install and full mode, hitches and their causes, rooms as levels, errors, a crash sent on the next launch, bug reports and measure, a batch whose reply never came (or that the game closed on) stored once, quitting mid-level, and the load event's time and `first_launch`. The genre tests read the batches the GML sends and check them against the design's wire format (`docs/design/genre-coverage.md`): counters and their limits, a server without counters, property checks and `props` events, level attributes, hashed match and party IDs, runs, zones, net samples, disconnects and their abandon. The off switch's tests read every request the GML makes: turning off drops the queue and the outbox and sends nothing more (no `session_end`), a reply already on its way changes nothing, turning on starts a new session with the properties and groups, a call that changes nothing does nothing, a saved choice read at the next launch (its outbox deleted unread), `opt_in`, a build that sends nothing staying off, bug reports and measure answering `off`, and no crash written while off.
 - `npm run test:gamemaker` builds the demo with GameMaker's Igor (a VM build for the mac target, in `gamemaker/.build`) and plays it against a local server: see [the demo](#the-demo). First the runner computes the sketch, fingerprints, gzip and JSON numbers of the JavaScript fixture (`-glitchless-selftest`), then come offline and the outbox, full and install mode, measure, the planted crash sent on the next launch, and bug reports from code and the F8 form, 32 checks in all (with batch IDs in the outbox, nothing stored twice, and the load event at the first frame). The bug report's screenshot is saved as `gamemaker/.build/bug-report.png`. Each run starts the runtime's YoYo Runner with its flags on the command line and its output in a `-debugoutput` file, so it opens a game window for a few seconds and needs a logged-in macOS desktop.
+- `node gamemaker/test/overhead.mjs` builds the demo the same way and runs it with `-glitchless-overhead`, which prints what the SDK costs a frame, a flush and a save, and what the same save costs with `buffer_save_async` (see [What it costs](#what-it-costs)). It's not a test: it prints numbers.
 - `npm test` includes `server/test/gamemaker-findings.test.js`: GameMaker sessions get GameMaker's fixes.
 
 ### Setting up GameMaker for the end-to-end test
@@ -430,4 +447,4 @@ Builds are VM builds (YYC needs Xcode). The free tier is non-commercial: shippin
 - **rm_level_3:** a bonus reads a variable from an object with no instances, which stops the game. Glitchless sends the crash on the next launch.
 - **rm_level_1** also has an error the game catches and reports, with the save folder in its message.
 
-`-autoplay` plays it by itself and quits after the last level; `-seed=N`, `-level-seconds=S`, `-no-crash`, `-bug-report-at=S` and `-bug-form-at=S` are its test flags, and `-glitchless-selftest` makes the runner compute the sketch and fingerprints of `datafiles/glitchless_fixture.json` and write them to its save area, so the e2e can check this runner against JavaScript. `node gamemaker/tools/project.mjs` rewrites the project's `.yyp` and `.yy` files after a script, object or event is added.
+`-autoplay` plays it by itself and quits after the last level; `-seed=N`, `-level-seconds=S`, `-no-crash`, `-bug-report-at=S` and `-bug-form-at=S` are its test flags, and `-glitchless-selftest` makes the runner compute the sketch and fingerprints of `datafiles/glitchless_fixture.json` and write them to its save area, so the e2e can check this runner against JavaScript; `-glitchless-overhead` times what the SDK costs (and the outbox saved with `buffer_save_async`) and writes it to `glitchless/overhead.txt` there. `node gamemaker/tools/project.mjs` rewrites the project's `.yyp` and `.yy` files after a script, object or event is added.

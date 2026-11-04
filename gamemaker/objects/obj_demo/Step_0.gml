@@ -1,5 +1,8 @@
 /// One frame of the demo: move the player, play the level's next event, end the level when its time is up.
-if (quitting) exit;
+if (quitting) {
+    if (variable_global_exists("demo_async_save") && is_struct(global.demo_async_save)) demo_overhead_async_step(); // -glitchless-overhead
+    exit;
+}
 var _dt = delta_time / 1000000;
 t += _dt;
 elapsed += _dt;

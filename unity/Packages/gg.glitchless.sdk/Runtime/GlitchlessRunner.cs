@@ -58,7 +58,8 @@ namespace GlitchlessSdk
         double fixedStart, fixedMs, updateStart, updateMs, renderStart, renderMs, renderEnd, frameBegan, busyMs = -1;
         int fixedSteps;
         bool hooksRan;
-        int accountedFrame = -1, lastGc;
+        internal int accountedFrame = -1; // internal for the overhead measure (unity/Assets/Overhead), which accounts a frame again and again
+        int lastGc;
         long lastGameObjects = -1;
         bool sceneChanged;
         readonly FrameTiming[] timings = new FrameTiming[1];
@@ -110,6 +111,7 @@ namespace GlitchlessSdk
             {
                 Transport = new UnityTransport(),
                 SaveDir = web ? null : Path.Combine(Application.persistentDataPath, "glitchless"),
+                SaveInBackground = true, // the outbox file on a thread-pool thread (the web saves none)
                 // The web has no folder to keep the player ID in; PlayerPrefs is the browser's localStorage there.
                 Ids = web ? new IdStorage
                 {

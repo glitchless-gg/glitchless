@@ -354,6 +354,12 @@ void FGlitchlessRuntime::Configure(Glitchless::FCore& C, const FString& SaveSubd
 	};
 	C.Files.Delete = [](const std::string& Path) { IFileManager::Get().Delete(*GlitchlessText::Tchar(Path), false, false, true); };
 	C.Files.MakeDir = [](const std::string& Dir) { IFileManager::Get().MakeDirectory(*GlitchlessText::Tchar(Dir), true); };
+	// The outbox file is written on the thread pool, so no frame waits on the disk. Where the platform runs no other
+	// threads, the core writes it at once.
+	if (FPlatformProcess::SupportsMultithreading())
+	{
+		C.Background = [](std::function<void()> Job) { AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [Job = MoveTemp(Job)]() { Job(); }); };
+	}
 	C.Device = [](bool bDetailed) { return GlitchlessDevice::Collect(bDetailed); };
 	C.SteamFacts = []() { return GlitchlessSteamworks::Read(); };
 	C.Distribution = []() { return GlitchlessDevice::Distribution(); };

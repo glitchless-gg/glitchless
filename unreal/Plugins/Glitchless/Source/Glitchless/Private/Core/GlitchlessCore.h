@@ -192,8 +192,8 @@ namespace Glitchless
 	class FCore
 	{
 	public:
-		static constexpr const char* SdkVersion = "0.5.2";
-		static constexpr const char* Sdk = "glitchless-unreal/0.5.2";
+		static constexpr const char* SdkVersion = "0.5.3";
+		static constexpr const char* Sdk = "glitchless-unreal/0.5.3";
 		static constexpr int SendDeadlineMs = 1500; // how long closing or going to the background may wait on the network
 
 		FCore();
@@ -225,6 +225,9 @@ namespace Glitchless
 		std::function<void(const std::string&)> Log;
 		/** Gzips a batch; unset or false sends it as it is. */
 		std::function<bool(const std::string& In, std::vector<uint8_t>& Out)> Gzip;
+		/** Runs a job on another thread (the Unreal side: its thread pool), for writing the outbox file off the game
+		 * thread. Unset: the outbox is written at once, on the game thread. */
+		std::function<void(std::function<void()> Job)> Background;
 		std::string AppVersion;
 		bool IsDevelopmentBuild = false;
 		bool IsMobile = false;
@@ -368,6 +371,12 @@ namespace Glitchless
 		/** Events waiting to be sent (for tests and the overlay). */
 		const std::vector<FValue>& Queued() const { return Queue; }
 		int OutboxEvents() const;
+		/** Waits until the outbox file handed to Background is written (tests, the overhead measure). */
+		void WaitForSave() const;
+		/** A write handed to Background that hasn't finished (tests). */
+		bool SaveOnItsWay() const;
+		/** Tests: runs on Background's thread before each write it makes. */
+		std::function<void()> BeforeWrite;
 		/** The errors seen this session, grouped: message, kind, location, count. */
 		std::vector<FValue> ErrorLog() const;
 		/** What is going on right now, for agents: who and where it sends, the stats, the last frame windows
@@ -382,6 +391,7 @@ namespace Glitchless
 			std::string Service, Env, Version, Sid, Pid;
 			int64_t Group = 0;
 			std::vector<std::string> Events;
+			std::string Saved; // the batch as the outbox file keeps it, made once (SaveOutbox)
 		};
 
 		using FGauges = std::vector<std::pair<std::string, double>>;
@@ -536,6 +546,11 @@ namespace Glitchless
 		std::string PlayerPath() const;
 		std::string ChoicePath() const;
 		void SaveOutbox();
+		void WriteOutbox(std::string Text);
+		void WriteNow(const std::string& Text);
+		void FinishWrites();
+		static bool WriteOutboxFile(const FFileSystem& Fs, const std::string& Path, const std::string& Text);
+		static bool WriteWhole(const FFileSystem& Fs, const std::string& Path, const std::string& Contents);
 		void LoadOutbox();
 		std::string LoadPlayerId();
 		bool ReadFile(const std::string& Path, std::string& Out) const;
@@ -575,6 +590,10 @@ namespace Glitchless
 		std::vector<FValue> RecentWindows;
 		std::vector<FValue> Queue;
 		std::vector<FBatch> Outbox;
+		// The outbox file's writer, shared with the job writing it (WriteOutbox), so it outlives the core.
+		struct FWriter;
+		std::shared_ptr<FWriter> Writer;
+		bool WriteAtOnce = false; // going to the background: the OS may stop the game before a job finishes
 		std::map<int64_t, std::string> Starts; // a session's group (StartedAt) → its session_start, saved with its batches (SaveOutbox)
 		int NextBatchId = 1, InFlight = -1;
 		double RetryAt = 0, BackoffS = 0;

@@ -33,7 +33,7 @@ if (process.platform === 'win32' && !process.env.CXX) {
 } else {
   const cxx = process.env.CXX || (has('clang++') ? 'clang++' : 'c++');
   exe = path.join(OUT_DIR, 'core-tests');
-  build = [cxx, ['-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-fno-exceptions', '-fno-rtti', '-ffp-contract=fast', `-I${CORE}`, `-I${FDLIBM}`, `-I${TESTS}`, '-o', exe, ...sources]];
+  build = [cxx, ['-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-fno-exceptions', '-fno-rtti', '-ffp-contract=fast', '-pthread', `-I${CORE}`, `-I${FDLIBM}`, `-I${TESTS}`, '-o', exe, ...sources]];
 }
 
 console.log(`building with ${build[0]}`);

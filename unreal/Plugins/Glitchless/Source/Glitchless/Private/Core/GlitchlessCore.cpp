@@ -4,12 +4,16 @@
 #include "GlitchlessSteam.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdio>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <set>
+#include <thread>
 
 namespace Glitchless
 {
@@ -154,8 +158,19 @@ namespace Glitchless
 		}
 	}
 
+	// The outbox file's writer: one job at a time on Background's thread, with the newest text waiting for it.
+	struct FCore::FWriter
+	{
+		std::mutex Queue; // guards Next and Running, and is never held for the disk
+		std::mutex File; // held while the file is written or removed
+		std::condition_variable Idle;
+		std::optional<std::string> Next; // the newest file waiting for the job; "" removes it
+		bool Running = false;
+		std::atomic<uint64_t> Gen{0}; // a write at once makes text the job took before it old
+	};
+
 	FCore::FCore()
-		: Alive(std::make_shared<bool>(true))
+		: Writer(std::make_shared<FWriter>()), Alive(std::make_shared<bool>(true))
 	{
 		const auto Start = std::chrono::steady_clock::now();
 		Clock = [Start]() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - Start).count(); };
@@ -381,7 +396,7 @@ namespace Glitchless
 		}
 		if (!SaveDir.empty())
 		{
-			RemoveFile(OutboxPath()); // bug reports and a crash from an earlier launch with it
+			WriteNow(std::string()); // bug reports and a crash from an earlier launch with it; a write on its way first
 		}
 		Debug("off: the player turned it off, so nothing more is measured or sent");
 		// A measure going has no more frames to measure. Answered last: -glitchless-measure quits from its answer.
@@ -2134,6 +2149,7 @@ namespace Glitchless
 			return;
 		}
 		Batch(); // into the outbox file, sent on the next launch
+		FinishWrites();
 	}
 
 	FValue FCore::MakeBugReport(const std::string& Screenshot)
@@ -2352,8 +2368,11 @@ namespace Glitchless
 		}
 		if (Inited && Enabled)
 		{
+			WriteAtOnce = true; // the OS may stop the game before a job on another thread finishes
 			Flush();
 			SendNow(SendDeadlineMs);
+			FinishWrites();
+			WriteAtOnce = false;
 		}
 	}
 
@@ -2445,6 +2464,7 @@ namespace Glitchless
 		{
 			Flush();
 			SendNow(SendDeadlineMs);
+			FinishWrites();
 		}
 	}
 
@@ -2798,7 +2818,7 @@ namespace Glitchless
 			Enabled = false;
 			Queue.clear();
 			Outbox.clear();
-			RemoveFile(OutboxPath());
+			WriteNow(std::string());
 			return;
 		}
 		SendNext();
@@ -3150,43 +3170,60 @@ namespace Glitchless
 		}
 		if (Outbox.empty())
 		{
-			RemoveFile(OutboxPath());
+			WriteOutbox(std::string());
 			return;
 		}
-		std::string S = "{\"v\":1,\"batches\":[";
+		// A batch never changes once it's in the outbox, so its saved form is made once (the privacy mode is set once,
+		// at Init), and a save only joins them.
+		size_t Size = 32;
+		for (FBatch& B : Outbox)
+		{
+			if (B.Saved.empty())
+			{
+				std::string& T = B.Saved;
+				T = "{\"bid\":";
+				Json::WriteString(T, B.Bid);
+				T += ",\"service\":";
+				Json::WriteString(T, B.Service);
+				T += ",\"env\":";
+				Json::WriteString(T, B.Env);
+				T += ",\"version\":";
+				Json::WriteString(T, B.Version);
+				T += ",\"group\":" + std::to_string(B.Group);
+				if (StoresId)
+				{
+					T += ",\"sid\":";
+					Json::WriteString(T, B.Sid);
+					T += ",\"pid\":";
+					Json::WriteString(T, B.Pid);
+				}
+				T += ",\"events\":[";
+				for (size_t K = 0; K < B.Events.size(); K++)
+				{
+					if (K > 0)
+					{
+						T += ',';
+					}
+					T += B.Events[K];
+				}
+				T += "]}";
+			}
+			Size += B.Saved.size() + 1;
+		}
+		for (const auto& Start : Starts)
+		{
+			Size += Start.second.size() + 48;
+		}
+		std::string S;
+		S.reserve(Size);
+		S += "{\"v\":1,\"batches\":[";
 		for (size_t I = 0; I < Outbox.size(); I++)
 		{
-			const FBatch& B = Outbox[I];
 			if (I > 0)
 			{
 				S += ',';
 			}
-			S += "{\"bid\":";
-			Json::WriteString(S, B.Bid);
-			S += ",\"service\":";
-			Json::WriteString(S, B.Service);
-			S += ",\"env\":";
-			Json::WriteString(S, B.Env);
-			S += ",\"version\":";
-			Json::WriteString(S, B.Version);
-			S += ",\"group\":" + std::to_string(B.Group);
-			if (StoresId)
-			{
-				S += ",\"sid\":";
-				Json::WriteString(S, B.Sid);
-				S += ",\"pid\":";
-				Json::WriteString(S, B.Pid);
-			}
-			S += ",\"events\":[";
-			for (size_t K = 0; K < B.Events.size(); K++)
-			{
-				if (K > 0)
-				{
-					S += ',';
-				}
-				S += B.Events[K];
-			}
-			S += "]}";
+			S += Outbox[I].Saved;
 		}
 		S += ']';
 		if (!StoresId)
@@ -3207,10 +3244,155 @@ namespace Glitchless
 			}
 		}
 		S += '}';
-		if (!WriteFile(OutboxPath(), S))
+		WriteOutbox(std::move(S));
+	}
+
+	namespace
+	{
+		// A crash can't wait on a lock the thread that crashed may hold: it tries for a while, then goes on without it.
+		bool Take(std::mutex& M, bool Crashing)
+		{
+			if (!Crashing)
+			{
+				M.lock();
+				return true;
+			}
+			for (int Try = 0; Try < 60; Try++)
+			{
+				if (M.try_lock())
+				{
+					return true;
+				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			}
+			return false;
+		}
+	}
+
+	// The outbox file is written by a job on Background's thread, so no frame waits on the disk: with the outbox near
+	// its cap offline, a save took 0.3 to 0.5 ms of a frame on a fast laptop, and saves come after every flush and every
+	// answer. One job at a time: the newest text waits for it, and anything older that was waiting is dropped, since the
+	// newest has it all. It's written at once instead when the game quits, crashes or goes to the background (the OS may
+	// stop it before the job finishes), and with no Background (the tests, a platform without threads). A write at once,
+	// and the off switch's delete, also make the text the job still holds old, so it can't overwrite them.
+	void FCore::WriteOutbox(std::string Text)
+	{
+		if (!Background || Shut || Crashed || WriteAtOnce)
+		{
+			WriteNow(Text);
+			return;
+		}
+		{
+			std::lock_guard<std::mutex> Lock(Writer->Queue);
+			Writer->Next = std::move(Text);
+			if (Writer->Running)
+			{
+				return;
+			}
+			Writer->Running = true;
+		}
+		// The job holds what it needs, not the core: the game may be gone before it finishes.
+		std::shared_ptr<FWriter> W = Writer;
+		Background([W, Fs = Files, Path = OutboxPath(), Before = BeforeWrite]() {
+			for (;;)
+			{
+				std::string Next;
+				uint64_t Gen;
+				{
+					std::lock_guard<std::mutex> Lock(W->Queue);
+					if (!W->Next)
+					{
+						W->Running = false;
+						W->Idle.notify_all();
+						return;
+					}
+					Next = std::move(*W->Next);
+					W->Next.reset();
+					Gen = W->Gen.load();
+				}
+				if (Before)
+				{
+					Before();
+				}
+				std::lock_guard<std::mutex> Lock(W->File);
+				if (Gen == W->Gen.load())
+				{
+					WriteOutboxFile(Fs, Path, Next);
+				}
+			}
+		});
+	}
+
+	// Writes on this thread, after a write on its way, and drops the text waiting for the job: this is newer.
+	void FCore::WriteNow(const std::string& Text)
+	{
+		const bool HaveQueue = Take(Writer->Queue, Crashed);
+		if (HaveQueue)
+		{
+			Writer->Next.reset();
+		}
+		Writer->Gen++;
+		if (HaveQueue)
+		{
+			Writer->Queue.unlock();
+		}
+		const bool HaveFile = Take(Writer->File, Crashed);
+		const bool Ok = WriteOutboxFile(Files, OutboxPath(), Text);
+		if (HaveFile)
+		{
+			Writer->File.unlock();
+		}
+		if (!Ok)
 		{
 			Debug("could not write " + OutboxPath());
 		}
+	}
+
+	// Quitting, the background and a crash write the outbox at once. When nothing in them saved it, a file still waiting
+	// for the job (or on its way) is written now instead, so the game doesn't stop with it in another thread's hands.
+	// With no job going, the file already says what the outbox does.
+	void FCore::FinishWrites()
+	{
+		const bool HaveQueue = Take(Writer->Queue, Crashed);
+		const bool Running = Writer->Running;
+		if (HaveQueue)
+		{
+			Writer->Queue.unlock();
+		}
+		if (Running)
+		{
+			SaveOutbox();
+		}
+	}
+
+	void FCore::WaitForSave() const
+	{
+		std::unique_lock<std::mutex> Lock(Writer->Queue);
+		Writer->Idle.wait(Lock, [this]() { return !Writer->Running; });
+	}
+
+	bool FCore::SaveOnItsWay() const
+	{
+		std::lock_guard<std::mutex> Lock(Writer->Queue);
+		return Writer->Running;
+	}
+
+	// The whole outbox file, or "" to remove it. Static: a job on another thread runs it.
+	bool FCore::WriteOutboxFile(const FFileSystem& Fs, const std::string& Path, const std::string& Text)
+	{
+		if (!Text.empty())
+		{
+			return WriteWhole(Fs, Path, Text);
+		}
+		if (Fs.Delete)
+		{
+			Fs.Delete(Path);
+		}
+		else
+		{
+			std::remove(Path.c_str());
+		}
+		return true;
 	}
 
 	void FCore::LoadOutbox()
@@ -3379,9 +3561,16 @@ namespace Glitchless
 
 	bool FCore::WriteFile(const std::string& Path, const std::string& Contents) const
 	{
-		if (Files.Write)
+		return WriteWhole(Files, Path, Contents);
+	}
+
+	// Replaces the file whole, through the file layer the Unreal side gives, or else the C library (as a crash writes
+	// it): a temporary file renamed over it, so a game stopped mid-write keeps the last one.
+	bool FCore::WriteWhole(const FFileSystem& Fs, const std::string& Path, const std::string& Contents)
+	{
+		if (Fs.Write)
 		{
-			return Files.Write(Path, Contents);
+			return Fs.Write(Path, Contents);
 		}
 		const std::string Tmp = Path + ".tmp";
 		std::FILE* F = Text::OpenFile(Tmp, "wb");

@@ -25,6 +25,7 @@ unity/UserSettings/
 unity/Builds/
 unity/Assets/Samples/
 unity/Assets/Samples.meta
+unity/Assets/Overhead/Overhead.unity*
 unity/*.csproj
 unity/*.sln
 

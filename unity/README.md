@@ -4,6 +4,7 @@
 - [`test`](test):
   - `e2e.mjs` builds the sample as a macOS player, plays it against a fresh local Glitchless server and checks the results through `/v1/query`.
   - `make-fixtures.mjs` writes the fixture the EditMode tests check the C# sketch and fingerprints against.
+  - `overhead.mjs` builds a release player with `Assets/Overhead` in it and prints what the SDK costs the main thread (the package README's "What it costs").
 - [`PUBLISHING.md`](PUBLISHING.md): releasing a version (git tags, OpenUPM, the Asset Store).
 
 This folder is itself a Unity project on the current LTS (Unity 6.3, 6000.3.27f1) that embeds the package; `Assets/Editor/SampleBuilder.cs` imports the sample and builds it. It also has Netcode for GameObjects 2.13 (the SDK itself doesn't depend on it), for the PlayMode test that runs an NGO server and client in one run.

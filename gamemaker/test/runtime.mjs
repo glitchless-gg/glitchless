@@ -204,6 +204,7 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
     string_digits: (s) => String(s).replace(/[^0-9]/g, ''),
     string_split: (s, d, removeEmpty = false) => String(s).split(d).filter((x) => !removeEmpty || x !== ''),
     string_byte_length: (s) => Buffer.byteLength(String(s), 'utf8'),
+    string_join_ext: (delimiter, values) => values.map((v) => String(v)).join(String(delimiter)),
     ord: (c) => String(c).codePointAt(0),
     chr: (n) => String.fromCodePoint(n),
     sha1_string_utf8: (s) => crypto.createHash('sha1').update(String(s), 'utf8').digest('hex'),
@@ -256,7 +257,11 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
     buffer_grow: 1,
     buffer_seek_start: 0,
     ...TYPES,
-    buffer_create: (size) => newBuffer(Buffer.alloc(size)),
+    buffer_create: (size, type) => {
+      const id = newBuffer(Buffer.alloc(size));
+      buf(id).grow = type === 1; // buffer_grow
+      return id;
+    },
     buffer_delete: (id) => void state.buffers.delete(id),
     buffer_get_size: (id) => buf(id).bytes.length,
     buffer_tell: (id) => buf(id).pos,
@@ -267,7 +272,12 @@ export function launch({ saveDir, args = [], env = {}, buildType = 'exe', rooms 
       else if (type === TYPES.buffer_u32) b.bytes.writeUInt32LE(v >>> 0, b.pos), (b.pos += 4);
       else {
         const bytes = Buffer.from(String(v) + (type === TYPES.buffer_string ? '\0' : ''), 'utf8');
-        if (b.pos + bytes.length > b.bytes.length) throw new Error('buffer_write past the end of a fixed buffer');
+        if (b.pos + bytes.length > b.bytes.length) {
+          if (!b.grow) throw new Error('buffer_write past the end of a fixed buffer');
+          const more = Buffer.alloc(Math.max(b.bytes.length * 2, b.pos + bytes.length));
+          b.bytes.copy(more);
+          b.bytes = more;
+        }
         bytes.copy(b.bytes, b.pos);
         b.pos += bytes.length;
       }

@@ -93,7 +93,7 @@ FGlitchlessOptions FGlitchlessOptions::FromSettings(const UGlitchlessSettings& S
 
 const TCHAR* FGlitchless::SdkVersion()
 {
-	return TEXT("0.5.2");
+	return TEXT("0.5.3");
 }
 
 void FGlitchless::Init(const FGlitchlessOptions& Options)

@@ -51,19 +51,23 @@ function __glitchless_flush(_g) {
 
 function __glitchless_add_batches(_g, _events) {
     var _chunk = [];
+    var _texts = []; // each event as JSON: measured here, and kept as the batch's events_json
     var _size = 0;
     for (var _i = 0; _i < array_length(_events); _i++) {
         var _e = _events[_i];
-        var _bytes = string_byte_length(json_stringify(_e));
+        var _text = json_stringify(_e);
+        var _bytes = string_byte_length(_text);
         if (array_length(_chunk) > 0 && _size + _bytes > __GLITCHLESS_BATCH_BYTES * 0.9) {
-            array_push(_g.outbox, __glitchless_batch(_g, _chunk));
+            array_push(_g.outbox, __glitchless_batch(_g, _chunk, _texts));
             _chunk = [];
+            _texts = [];
             _size = 0;
         }
         array_push(_chunk, _e);
+        array_push(_texts, _text);
         _size += _bytes;
     }
-    if (array_length(_chunk) > 0) array_push(_g.outbox, __glitchless_batch(_g, _chunk));
+    if (array_length(_chunk) > 0) array_push(_g.outbox, __glitchless_batch(_g, _chunk, _texts));
     var _total = 0;
     for (var _j = 0; _j < array_length(_g.outbox); _j++) _total += array_length(_g.outbox[_j].events);
     while (_total > __GLITCHLESS_MAX_OUTBOX_EVENTS && array_length(_g.outbox) > 1 && _g.outbox[0].bid != _g.in_flight) {
@@ -77,23 +81,37 @@ function __glitchless_add_batches(_g, _events) {
 /// that sends what the last one saved (a crash's batches too). It names the batch, not the player or the session, so
 /// anonymous mode saves it too. `bid` is only this launch's handle for it. The session ID goes into the hash: two
 /// players' first batches, cut seconds into their sessions, must never share an ID (the server would drop one).
-function __glitchless_batch(_g, _events) {
+function __glitchless_batch(_g, _events, _texts = undefined) {
     var _b = { bid: _g.next_bid, batch_id: __glitchless_new_id("b_", 16, _g.session_id), service: _g.service, env: _g.env, version: _g.version, sid: _g.session_id, pid: _g.player_id, group: _g.started_at, events: _events, direct: false };
+    if (is_array(_texts)) _b.events_json = "[" + string_join_ext(",", _texts) + "]";
     _g.next_bid += 1;
     return _b;
 }
 
+/// A batch's events as JSON, made once. A batch never changes once it's in the outbox, so saving the outbox again
+/// (after every flush and every reply) and sending the batch reuse it: turning the whole outbox into JSON again, near
+/// its cap offline, was most of a save.
+function __glitchless_events_json(_b) {
+    if (is_undefined(_b[$ "events_json"])) _b.events_json = json_stringify(_b.events);
+    return _b.events_json;
+}
+
+/// _head as JSON, with one more field whose value is JSON already.
+function __glitchless_json_with(_head, _key, _json) {
+    var _text = json_stringify(_head);
+    return string_copy(_text, 1, string_length(_text) - 1) + "," + json_stringify(_key) + ":" + _json + "}";
+}
+
 function __glitchless_body(_b) {
-    return json_stringify({
+    return __glitchless_json_with({
         service: _b.service,
         env: _b.env,
         version: _b.version,
         session_id: _b.sid,
         player_id: _b.pid != "" ? _b.pid : undefined, // the server uses the session ID in its place
         sdk: GLITCHLESS_SDK,
-        batch_id: _b.batch_id,
-        events: _b.events
-    });
+        batch_id: _b.batch_id
+    }, "events", __glitchless_events_json(_b));
 }
 
 function __glitchless_intake_url(_g) {
@@ -295,16 +313,23 @@ function __glitchless_gzip_works() {
 /// what device and kind of session it was (SPEC §2 session_start.continued).
 function __glitchless_save_outbox(_g) {
     if (!_g.enabled) return;
-    var _out = [];
+    var _parts = ["{\"v\":1,\"batches\":["];
+    var _bytes = 0;
     var _waiting = {}; // each group still waiting → its group as saved
     for (var _i = 0; _i < array_length(_g.outbox); _i++) {
         var _b = _g.outbox[_i];
-        var _saved = { batch_id: _b.batch_id, service: _b.service, env: _b.env, version: _b.version, group: _b.group, events: _b.events };
-        if (_g.keeps_ids) {
-            _saved.sid = _b.sid;
-            _saved.pid = _b.pid;
+        if (is_undefined(_b[$ "saved_json"])) { // made once too: the privacy mode is set once, at init
+            var _saved = { batch_id: _b.batch_id, service: _b.service, env: _b.env, version: _b.version, group: _b.group };
+            if (_g.keeps_ids) {
+                _saved.sid = _b.sid;
+                _saved.pid = _b.pid;
+            }
+            _b.saved_json = __glitchless_json_with(_saved, "events", __glitchless_events_json(_b));
+            _b.saved_bytes = string_byte_length(_b.saved_json);
         }
-        array_push(_out, _saved);
+        if (_i > 0) array_push(_parts, ",");
+        array_push(_parts, _b.saved_json);
+        _bytes += _b.saved_bytes + 1;
         _waiting[$ string(_b.group)] = _b.group;
     }
     // Only the starts of the sessions still waiting, and this one's.
@@ -312,11 +337,11 @@ function __glitchless_save_outbox(_g) {
     for (var _i = 0; _i < array_length(_groups); _i++) {
         if (is_undefined(_waiting[$ _groups[_i]]) && _groups[_i] != string(_g.started_at)) variable_struct_remove(_g.starts, _groups[_i]);
     }
-    if (array_length(_out) == 0) {
+    if (array_length(_g.outbox) == 0) {
         if (file_exists(__GLITCHLESS_OUTBOX)) file_delete(__GLITCHLESS_OUTBOX);
         return;
     }
-    var _data = { v: 1, batches: _out };
+    array_push(_parts, "]");
     if (!_g.keeps_ids) {
         var _starts = [];
         var _keys = variable_struct_get_names(_waiting);
@@ -324,10 +349,13 @@ function __glitchless_save_outbox(_g) {
             var _start = _g.starts[$ _keys[_i]];
             if (!is_undefined(_start)) array_push(_starts, { group: _waiting[$ _keys[_i]], event: _start });
         }
-        if (array_length(_starts) > 0) _data.starts = _starts;
+        if (array_length(_starts) > 0) array_push(_parts, ",\"starts\":" + json_stringify(_starts));
     }
+    array_push(_parts, "}");
+    // Written now, in the frame. GML has no threads, and buffer_save_async is no way out: the runner writes its file on
+    // the main thread later in the same frame, and takes as long (gamemaker/README.md, "What it costs").
     var _tmp = __GLITCHLESS_OUTBOX + ".tmp";
-    __glitchless_write_text(_tmp, json_stringify(_data));
+    __glitchless_write_parts(_tmp, _parts, _bytes);
     if (file_exists(__GLITCHLESS_OUTBOX)) file_delete(__GLITCHLESS_OUTBOX);
     file_rename(_tmp, __GLITCHLESS_OUTBOX);
 }

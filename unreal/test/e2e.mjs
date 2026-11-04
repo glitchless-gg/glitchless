@@ -212,7 +212,9 @@ try {
     assert.equal(outboxed.starts?.length, 1, 'its session_start saved beside the batches');
     assert.equal(first.continued, true);
     assert.equal(first.session_type, 'synthetic');
-    assert.match(first.device?.browser || '', /^Unreal 5\./);
+    // The plugin sends the engine as browser and its version apart; the server's sessions join them ("Unreal 5.8.0").
+    assert.equal(first.device?.browser, 'Unreal');
+    assert.match(first.device?.browser_version || '', /^5\./);
   });
 
   // 2b. a fatal error (UE_LOG Fatal) goes the same way

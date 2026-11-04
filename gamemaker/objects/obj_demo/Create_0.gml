@@ -18,6 +18,8 @@
 ///   -bug-form-at=S       S seconds in, open the F8 form and cancel it, then open it, type a note and send it
 ///   -glitchless-selftest compute the sketch and fingerprints of datafiles/glitchless_fixture.json, write them to
 ///                        glitchless/selftest.json in the save area, and quit (gamemaker/test/e2e.mjs compares them)
+///   -glitchless-overhead time what the SDK costs a frame, a flush and a save (and the save with buffer_save_async),
+///                        write it to glitchless/overhead.txt in the save area, and quit (gamemaker/test/overhead.mjs)
 /// and Glitchless's own: -glitchless, -glitchless-intake=URL, -glitchless-privacy=MODE, -glitchless-measure=S.
 
 autoplay = glitchless_has_flag("autoplay");
@@ -41,6 +43,12 @@ show_debug_message("glitchless demo save dir: " + game_save_id);
 if (glitchless_has_flag("glitchless-selftest")) {
     demo_selftest();
     game_end();
+    exit;
+}
+if (glitchless_has_flag("glitchless-overhead")) {
+    quitting = true; // the demo itself doesn't play
+    glitchless_init("glitchless-gamemaker-demo", "0.1.0", "dev", "http://127.0.0.1:9", {});
+    time_source_start(time_source_create(time_source_global, 30, time_source_units_frames, demo_overhead, [], 1)); // after real frames
     exit;
 }
 

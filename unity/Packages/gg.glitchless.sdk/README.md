@@ -24,7 +24,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.6.2"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.6.3"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
@@ -251,6 +251,21 @@ Events are summed up per 5-second frame window and sent every 15 seconds (the fi
 When a phone app goes to the background the session ends and the last batch is sent at once, waiting at most 1.5 s, because iOS and Android often stop a backgrounded app without warning. Back within 5 minutes, the session carries on; later, it's a new session. Quitting sends the last batch the same way.
 
 WebGL builds send without gzip and keep nothing on disk (an install or player ID goes in PlayerPrefs). For a web game, the [browser SDK](https://github.com/glitchless-gg/glitchless/tree/main/packages/sdk) also measures the page itself.
+
+## What it costs
+
+It isn't a profiler: it starts no profiler session and wraps none of your code. Each frame it reads the frame's time, its timing points in the player loop and the counters Unity already keeps (`ProfilerRecorder`, `FrameTimingManager`), and adds them to a fixed-size summary. Measured with [`unity/test/overhead.mjs`](https://github.com/glitchless-gg/glitchless/blob/main/unity/test/overhead.mjs) on Unity 6000.3.27f1, a release macOS player (Mono) on an Apple M3 Max:
+
+| | How often | Time on the main thread |
+| --- | --- | --- |
+| The frame's work | every frame | 5 to 10 µs, 0.03 to 0.06% of a 60 fps frame |
+| Closing a window into one summary | every 5 seconds | about 60 to 120 µs |
+| A flush: the window and events become a batch, saved, and its send started | every 15 seconds | about 50 to 130 µs (0.3 to 0.9 ms the first time) |
+| A flush with 4,000 events waiting, offline | every 15 seconds while offline | about 0.13 to 0.3 ms |
+
+- **The outbox file is written on a thread-pool thread**, so no frame waits on the disk (a full offline outbox is a 550 KB file, 0.5 to 1.3 ms for that thread), and each batch is turned into JSON once, however many times the outbox is saved. Quitting and going to the background write it at once instead, since the OS may stop the game before the thread finishes.
+- **Unity's garbage collector** runs when an allocation needs it, in Glitchless's code as in yours: a save then took 0.2 to 0.6 ms instead of 20 to 60 µs. The script marks those timings. A handful of timings (about 1 in 100 over the runs, a window close or a flush) took 3 to 6 ms with no collection seen, and a control timed the same way, with nothing of Glitchless's in it, never did: that isn't explained yet.
+- **A phone is slower**, often several times per operation, and IL2CPP (phones and consoles) compiles differently from this Mono build. To run it on your Mac: `node unity/test/overhead.mjs` builds the player (`SampleBuilder.BuildOverhead`, from `unity/Assets/Overhead`) and prints the numbers.
 
 ## For coding agents
 

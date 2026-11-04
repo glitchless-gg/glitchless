@@ -16,8 +16,8 @@
 /// Struct fields are read with [$ "name"] wherever they may be missing: reading a missing one with
 /// a dot stops a GameMaker game.
 
-#macro GLITCHLESS_VERSION "0.4.1"
-#macro GLITCHLESS_SDK "glitchless-gamemaker/0.4.1"
+#macro GLITCHLESS_VERSION "0.4.2"
+#macro GLITCHLESS_SDK "glitchless-gamemaker/0.4.2"
 
 #macro __GLITCHLESS_HITCH_MS 50 // one frame over 50 ms is a stutter a player sees
 #macro __GLITCHLESS_JANK_MS 33.4 // two missed 60 Hz frames
@@ -1515,6 +1515,15 @@ function __glitchless_write_text(_path, _text) {
     var _buf = buffer_create(string_byte_length(_text) + 1, buffer_fixed, 1);
     buffer_write(_buf, buffer_text, _text);
     buffer_save_ext(_buf, _path, 0, string_byte_length(_text));
+    buffer_delete(_buf);
+}
+
+/// Writes the file from its parts, one after another into a buffer, without joining them into one string first (an
+/// outbox near its cap is half a megabyte). _bytes is about their size; the buffer grows if they're more.
+function __glitchless_write_parts(_path, _parts, _bytes) {
+    var _buf = buffer_create(max(_bytes + 64, 64), buffer_grow, 1);
+    for (var _i = 0; _i < array_length(_parts); _i++) buffer_write(_buf, buffer_text, _parts[_i]);
+    buffer_save_ext(_buf, _path, 0, buffer_tell(_buf));
     buffer_delete(_buf);
 }
 

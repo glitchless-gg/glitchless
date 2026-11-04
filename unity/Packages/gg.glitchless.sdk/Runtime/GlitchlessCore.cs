@@ -7,6 +7,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 namespace GlitchlessSdk
 {
@@ -61,7 +62,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.6.2";
+        public const string SdkVersion = "0.6.3";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -101,6 +102,7 @@ namespace GlitchlessSdk
         public Func<double> Clock; // milliseconds, only ever compared with itself; default: a Stopwatch
         public ITransport Transport;
         public string SaveDir; // where the outbox and the player ID live; null writes nothing to disk
+        public bool SaveInBackground; // the outbox file is written on a thread-pool thread (WriteOutbox); unset, at once
         public IdStorage Ids; // keeps the player ID elsewhere (PlayerPrefs on the web); null: files in SaveDir
         public Func<bool, Dictionary<string, object>> Device = full => new Dictionary<string, object>();
         public Func<Dictionary<string, object>> Steam = () => null; // the game's Steamworks facts (SteamInfo.Read), null until it answers
@@ -248,6 +250,7 @@ namespace GlitchlessSdk
             public long Group;
             public List<string> Events;
             public bool Direct; // a bug report on a request of its own
+            public string Saved; // the batch as the outbox file keeps it, made once (SaveOutbox)
         }
 
         sealed class Window
@@ -1192,7 +1195,7 @@ namespace GlitchlessSdk
 
         /// <param name="fresh">Sample the engine counts now. Not when a level starts: whatever the game just
         /// did to load the new level belongs to the new level.</param>
-        void CloseWindow(bool fresh)
+        internal void CloseWindow(bool fresh)
         {
             if (fresh && win.Frames > 0) SampleEngine();
             var w = win;
@@ -1749,9 +1752,12 @@ namespace GlitchlessSdk
             }
             if (Inited && Enabled)
             {
+                writeAtOnce = true; // the OS may stop the game before a thread-pool write finishes
                 Flush();
                 KeepHeldCounts();
                 SendNow(SendDeadlineMs);
+                FinishWrites();
+                writeAtOnce = false;
             }
         }
 
@@ -1829,6 +1835,7 @@ namespace GlitchlessSdk
                 Flush();
                 KeepHeldCounts();
                 SendNow(SendDeadlineMs);
+                FinishWrites();
             }
         }
 
@@ -2392,7 +2399,7 @@ namespace GlitchlessSdk
         // went out before the game closed (or the server stored it but its answer was lost), the next launch sends
         // it again first, marked continued, so the rest of the session still says what device and kind of session
         // it was (SPEC §2 session_start.continued).
-        void SaveOutbox()
+        internal void SaveOutbox()
         {
             // Only the starts of the sessions still waiting, and this one's.
             var waiting = new HashSet<long>();
@@ -2400,51 +2407,158 @@ namespace GlitchlessSdk
             foreach (var group in new List<long>(starts.Keys))
                 if (!waiting.Contains(group) && group != startedAt) starts.Remove(group);
             if (!Enabled || SaveDir == null || IsWeb) return;
-            TryIo(() =>
+            if (outbox.Count == 0)
             {
-                if (outbox.Count == 0)
-                {
-                    if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
-                    return;
-                }
-                var batches = new List<object>();
-                foreach (var b in outbox)
-                {
-                    var events = new List<object>();
-                    foreach (var e in b.Events) events.Add(new Json.Raw(e));
-                    var saved = new Dictionary<string, object> { ["bid"] = b.Bid, ["service"] = b.Service, ["env"] = b.Env, ["version"] = b.Version, ["group"] = b.Group, ["events"] = events };
-                    if (storesId)
-                    {
-                        saved["sid"] = b.Sid;
-                        saved["pid"] = b.Pid;
-                    }
-                    if (b.Role != null) saved["role"] = b.Role;
-                    batches.Add(saved);
-                }
-                var data = new Dictionary<string, object> { ["v"] = 1, ["batches"] = batches };
-                if (!storesId)
-                {
-                    var saved = new List<object>();
-                    foreach (var kv in starts)
-                        if (waiting.Contains(kv.Key)) saved.Add(new Dictionary<string, object> { ["group"] = kv.Key, ["event"] = new Json.Raw(kv.Value) });
-                    if (saved.Count > 0) data["starts"] = saved;
-                }
-                var tmp = OutboxPath + ".tmp";
-                File.WriteAllText(tmp, Json.Serialize(data));
-                if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
-                File.Move(tmp, OutboxPath);
-            });
+                WriteOutbox(Array.Empty<string>());
+                return;
+            }
+            // The file in parts, joined only as the writer writes them: a batch never changes once it's in the outbox,
+            // so its saved form is made once (the privacy mode is set once, at Init), and a save is a list of them.
+            var parts = new List<string>(outbox.Count * 2 + 4) { "{\"v\":1,\"batches\":[" };
+            for (var i = 0; i < outbox.Count; i++)
+            {
+                if (i > 0) parts.Add(",");
+                parts.Add(outbox[i].Saved ?? (outbox[i].Saved = SavedForm(outbox[i])));
+            }
+            parts.Add("]");
+            if (!storesId)
+            {
+                var saved = new List<object>();
+                foreach (var kv in starts)
+                    if (waiting.Contains(kv.Key)) saved.Add(new Dictionary<string, object> { ["group"] = kv.Key, ["event"] = new Json.Raw(kv.Value) });
+                if (saved.Count > 0) parts.Add(",\"starts\":" + Json.Serialize(saved));
+            }
+            parts.Add("}");
+            WriteOutbox(parts.ToArray());
         }
 
-        // The player turned Glitchless off: the batches saved for later go unsent, and unread at start.
+        string SavedForm(Batch b)
+        {
+            var saved = new Dictionary<string, object> { ["bid"] = b.Bid, ["service"] = b.Service, ["env"] = b.Env, ["version"] = b.Version, ["group"] = b.Group, ["events"] = b.Events.ConvertAll(e => (object)new Json.Raw(e)) };
+            if (storesId)
+            {
+                saved["sid"] = b.Sid;
+                saved["pid"] = b.Pid;
+            }
+            if (b.Role != null) saved["role"] = b.Role;
+            return Json.Serialize(saved);
+        }
+
+        // The outbox file is written on a thread-pool thread, so no frame waits on the disk: with the outbox near its cap
+        // offline, a save took 3 ms of a frame on a fast laptop, and saves come after every flush and every answer. One
+        // writer at a time: the newest parts wait for it, and anything older that was waiting is dropped, since the
+        // newest has it all. It's written at once instead when the game quits or goes to the background (the OS may stop
+        // it before the writer finishes), and when SaveInBackground is unset (the tests, a host with no thread pool).
+        // A write at once, and the off switch's delete, also drop a writer's older parts, so they can't overwrite it.
+        readonly object writeQueue = new object(); // guards writeNext and writerRunning, never held for the disk
+        readonly object writeFile = new object(); // held while the file is written or removed
+        string[] writeNext; // the newest file waiting for the writer, in parts; empty removes it
+        bool writerRunning;
+        int writeGen; // a write at once makes the writer's parts taken before it old
+        bool writeAtOnce; // going to the background
+        internal Action BeforeWrite; // tests: runs on the writer's thread before it writes
+
+        void WriteOutbox(string[] parts)
+        {
+            var path = OutboxPath;
+            if (!SaveInBackground || shut || writeAtOnce)
+            {
+                WriteNow(path, parts);
+                return;
+            }
+            lock (writeQueue)
+            {
+                writeNext = parts;
+                if (writerRunning) return;
+                writerRunning = true;
+            }
+            ThreadPool.QueueUserWorkItem(_ => Writer(path));
+        }
+
+        void Writer(string path)
+        {
+            while (true)
+            {
+                string[] parts;
+                int gen;
+                lock (writeQueue)
+                {
+                    if (writeNext == null)
+                    {
+                        writerRunning = false;
+                        Monitor.PulseAll(writeQueue);
+                        return;
+                    }
+                    parts = writeNext;
+                    writeNext = null;
+                    gen = writeGen;
+                }
+                BeforeWrite?.Invoke();
+                lock (writeFile)
+                    if (gen == Volatile.Read(ref writeGen)) WriteFile(path, parts);
+            }
+        }
+
+        // Writes on this thread, after a write on its way, and drops the parts waiting for the writer.
+        void WriteNow(string path, string[] parts)
+        {
+            lock (writeQueue)
+            {
+                writeNext = null;
+                writeGen++;
+            }
+            lock (writeFile) WriteFile(path, parts);
+        }
+
+        // Quitting and the background write the outbox at once. When nothing in them saved it, a file still waiting for the
+        // writer (or on its way) is written now instead, so the game doesn't stop with it in a thread-pool thread's hands.
+        // With no writer going, the file already says what the outbox does.
+        void FinishWrites()
+        {
+            lock (writeQueue)
+                if (!writerRunning) return;
+            SaveOutbox();
+        }
+
+        /// <summary>Waits until the writer has written everything handed to it (tests, the overhead measure).</summary>
+        internal void WaitForSave()
+        {
+            lock (writeQueue)
+                while (writerRunning) Monitor.Wait(writeQueue);
+        }
+
+        internal bool SaveOnItsWay
+        {
+            get { lock (writeQueue) return writerRunning; }
+        }
+
+        internal string SaveWaiting
+        {
+            get { lock (writeQueue) return writeNext == null ? null : string.Concat(writeNext); }
+        }
+
+        // The whole file, to a temporary file first so a game stopped mid-write keeps the last one; no parts remove it.
+        void WriteFile(string path, string[] parts) => TryIo(() =>
+        {
+            var tmp = path + ".tmp";
+            if (parts.Length == 0)
+            {
+                if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(tmp)) File.Delete(tmp);
+                return;
+            }
+            using (var w = new StreamWriter(tmp, false, new UTF8Encoding(false), 65536))
+                foreach (var part in parts) w.Write(part);
+            if (File.Exists(path)) File.Delete(path);
+            File.Move(tmp, path);
+        });
+
+        // The player turned Glitchless off: the batches saved for later go unsent, and unread at start. A write on its
+        // way finishes first, and nothing waiting for the writer is written after.
         void DeleteOutbox()
         {
             if (SaveDir == null || IsWeb) return;
-            TryIo(() =>
-            {
-                if (File.Exists(OutboxPath)) File.Delete(OutboxPath);
-                if (File.Exists(OutboxPath + ".tmp")) File.Delete(OutboxPath + ".tmp");
-            });
+            WriteNow(OutboxPath, Array.Empty<string>());
         }
 
         void LoadOutbox()

@@ -62,4 +62,36 @@ public static class SampleBuilder
         Debug.Log($"[SampleBuilder] {report.summary.result}: {output} ({report.summary.totalErrors} errors)");
         if (Application.isBatchMode) EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
     }
+
+    // The player unity/test/overhead.mjs runs: an empty scene and Assets/Overhead, which measures what the SDK costs the
+    // main thread. A release build, under a product name of its own, so its saved files never meet Fetch's.
+    // GLITCHLESS_BUILD_OUT: where it goes (default Builds/overhead/Overhead.app).
+    public static void BuildOverhead()
+    {
+        var output = Environment.GetEnvironmentVariable("GLITCHLESS_BUILD_OUT") ?? "Builds/overhead/Overhead.app";
+        const string scene = "Assets/Overhead/Overhead.unity"; // made here each time, and not committed
+        EditorSceneManager.SaveScene(EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single), scene);
+        var product = PlayerSettings.productName;
+        PlayerSettings.companyName = "Glitchless";
+        PlayerSettings.productName = "Overhead";
+        PlayerSettings.runInBackground = true;
+        BuildReport report;
+        try
+        {
+            report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { scene },
+                locationPathName = output,
+                target = BuildTarget.StandaloneOSX,
+                options = BuildOptions.None,
+                extraScriptingDefines = new[] { "GLITCHLESS_OVERHEAD" },
+            });
+        }
+        finally
+        {
+            PlayerSettings.productName = product;
+        }
+        Debug.Log($"[SampleBuilder] {report.summary.result}: {output} ({report.summary.totalErrors} errors)");
+        if (Application.isBatchMode) EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
+    }
 }

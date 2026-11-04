@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.3
+
+- Saving the offline outbox no longer holds up a frame. Every save ran on the main thread: 0.2 to 0.7 ms after each flush, and 3 to 4 ms with a full offline outbox (4,000 events), half of it turning the whole outbox into JSON again. Each batch is now turned into JSON once, and a thread-pool thread writes the file, one write at a time with the newest waiting. A flush now takes about 50 to 130 µs of the frame, and about 0.13 to 0.3 ms with 4,000 events waiting. Quitting and going to the background still write at once, since the OS may stop the game before the thread finishes, and a write still on its way can't undo turning Glitchless off. Nothing new is sent.
+- The README has a "What it costs" section: what the SDK takes from each frame, measured with `unity/test/overhead.mjs`.
+
 ## 0.6.2
 
 - A session cut in two by the outbox keeps its device and session type. In anonymous mode the next launch sends an earlier session's saved batches under a new session ID; when the session's first batch, with its `session_start`, had already gone, the rest arrived with none, and the server took it for a player's session with no device (Google Play's test phones counted as players). The outbox now also saves each waiting session's `session_start` (it holds no ID) and the next launch sends it first, marked `continued: true`, so it isn't counted again. Install and full mode save the session ID, so nothing changes there.
