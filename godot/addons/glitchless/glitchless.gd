@@ -48,7 +48,7 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.6.3"
+const SDK_VERSION := "0.6.4"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -184,8 +184,11 @@ var _off_level: Variant = null  # the level going when the player turned Glitchl
 var _ctx := {}
 var _recent: Array[Dictionary] = []  # the last game events, for breadcrumbs: {name, t}
 var _queue: Array[Dictionary] = []
-var _outbox: Array[Dictionary] = []  # batches: {id, bid, service, env, version, sid, pid, group, events}
+var _outbox: Array[Dictionary] = []  # batches: {id, bid, service, env, version, sid, pid, group, events, events_json}
 var _next_batch_id := 1
+var _writing := -1  # the WorkerThreadPool task writing the outbox file (_write_outbox)
+var _write_next: Variant = null  # the newest outbox text, waiting for that write to finish ("" removes the file)
+var _write_at_once := false  # going to the background: the OS may stop the game before a worker finishes
 var _in_flight := -1  # id of the batch _http is sending
 var _http: HTTPRequest
 var _retry_at := 0
@@ -491,8 +494,8 @@ func _stop() -> void:
 		_in_flight = -1
 	_queue.clear()
 	_outbox.clear()
-	if FileAccess.file_exists(_outbox_path()):
-		DirAccess.remove_absolute(_outbox_path())
+	_wait_for_write()  # so a write on its way can't put the file back
+	_write_file(_outbox_path(), "")
 	_win = _new_window()
 	_pending_hitches.clear()
 	_pending_long = {}
@@ -1017,6 +1020,13 @@ func flush() -> void:
 # ───────────────────────────── frame timing ─────────────────────────────
 
 func _process(_delta: float) -> void:
+	if _writing >= 0 and WorkerThreadPool.is_task_completed(_writing):
+		WorkerThreadPool.wait_for_task_completion(_writing)
+		_writing = -1
+		if _write_next != null:
+			var text: String = _write_next
+			_write_next = null
+			_write_outbox(text)
 	if _player_off:
 		# Nothing is measured while the player has Glitchless off; errors heard meanwhile go unread.
 		_logger.take()
@@ -1895,8 +1905,10 @@ func _on_background() -> void:
 		_ended = true
 		_push({"type": "session_end", "reason": "background", "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
 	if _inited and enabled:
+		_write_at_once = true
 		flush()
 		_send_now(SEND_DEADLINE_MS)
+		_write_at_once = false
 
 
 func _on_foreground() -> void:
@@ -2217,17 +2229,20 @@ static func _keycode(v: Variant) -> Key:
 
 func _add_batches(events: Array[Dictionary]) -> void:
 	var chunk: Array[Dictionary] = []
+	var texts := PackedStringArray()  # each event as JSON: measured here, and kept as the batch's events_json
 	var size := 0
 	for e in events:
-		var bytes := JSON.stringify(e).length()
-		if not chunk.is_empty() and size + bytes > BATCH_BYTES * 0.9:
-			_outbox.append(_batch(chunk))
+		var text := JSON.stringify(e)
+		if not chunk.is_empty() and size + text.length() > BATCH_BYTES * 0.9:
+			_outbox.append(_batch(chunk, texts))
 			chunk = []
+			texts = PackedStringArray()
 			size = 0
 		chunk.append(e)
-		size += bytes
+		texts.append(text)
+		size += text.length()
 	if not chunk.is_empty():
-		_outbox.append(_batch(chunk))
+		_outbox.append(_batch(chunk, texts))
 	var total := 0
 	for b in _outbox:
 		total += b.events.size()
@@ -2241,13 +2256,29 @@ func _add_batches(events: Array[Dictionary]) -> void:
 # times it is sent: after a timeout, a send cut short by going to the background,
 # or a launch that sends what the last one saved. It names the batch, not the
 # player or the session, so anonymous mode saves it too.
-func _batch(events: Array[Dictionary]) -> Dictionary:
+func _batch(events: Array[Dictionary], texts := PackedStringArray()) -> Dictionary:
 	var b := {
 		"id": _next_batch_id, "bid": _new_id("b_", 16), "service": _service, "env": _env, "version": _version,
 		"sid": session_id, "pid": player_id, "group": _started_at, "events": events,
 	}
+	if not texts.is_empty():
+		b.events_json = "[" + ",".join(texts) + "]"
 	_next_batch_id += 1
 	return b
+
+
+# A batch's events as JSON, made once. A batch never changes once it's in the outbox, so saving the outbox again
+# (after every flush and every send) and sending the batch reuse it: an outbox of 4,000 events offline took 11 ms of
+# a frame to turn into text whole.
+func _events_json(b: Dictionary) -> String:
+	if not b.has("events_json"):
+		b.events_json = JSON.stringify(b.events)
+	return b.events_json
+
+
+# head as JSON, with one more field whose value is JSON already.
+static func _json_with(head: Dictionary, key: String, json: String) -> String:
+	return JSON.stringify(head).trim_suffix("}") + ",%s:%s}" % [JSON.stringify(key), json]
 
 
 func _body(b: Dictionary) -> String:
@@ -2259,11 +2290,10 @@ func _body(b: Dictionary) -> String:
 		"player_id": b.pid if b.pid != "" else null,  # the server uses the session ID in its place
 		"sdk": SDK,
 		"batch_id": b.bid,
-		"events": b.events,
 	}
 	if role == "server":
 		body.role = "server"  # intake files it under the game's companion service, <service>.server
-	return JSON.stringify(body)
+	return _json_with(body, "events", _events_json(b))
 
 
 # What the server takes (GET /v1/health "features"). An older one drops counts,
@@ -2304,8 +2334,8 @@ func _ask_features() -> void:
 		enabled = false
 		_queue.clear()
 		_outbox.clear()
-		if FileAccess.file_exists(_outbox_path()):
-			DirAccess.remove_absolute(_outbox_path())
+		_wait_for_write()
+		_write_file(_outbox_path(), "")
 	elif role == "server":
 		_retry_at = 0
 		_send_next()
@@ -2473,14 +2503,16 @@ static func _parse_url(url: String) -> Dictionary:
 func _save_outbox() -> void:
 	if not enabled:
 		return
-	var out: Array[Dictionary] = []
+	var out := PackedStringArray()
 	var groups := {}
 	for b in _outbox:
-		var saved := {"bid": b.bid, "service": b.service, "env": b.env, "version": b.version, "group": b.group, "events": b.events}
-		if _privacy != "anonymous":
-			saved.sid = b.sid
-			saved.pid = b.pid
-		out.append(saved)
+		if not b.has("saved_json"):  # made once too: the privacy level is set once, at init()
+			var saved := {"bid": b.bid, "service": b.service, "env": b.env, "version": b.version, "group": b.group}
+			if _privacy != "anonymous":
+				saved.sid = b.sid
+				saved.pid = b.pid
+			b.saved_json = _json_with(saved, "events", _events_json(b))
+		out.append(b.saved_json)
 		groups[b.group] = true
 	# Only the starts of the sessions still waiting, and this one's. An earlier launch's group is a String, this
 	# one's an int: is_same compares them without an error.
@@ -2488,10 +2520,9 @@ func _save_outbox() -> void:
 		if not groups.has(group) and not is_same(group, _started_at):
 			_starts.erase(group)
 	if out.is_empty():
-		if FileAccess.file_exists(_outbox_path()):
-			DirAccess.remove_absolute(_outbox_path())
+		_write_outbox("")
 		return
-	var data := {"v": 1, "batches": out}
+	var data := {"v": 1}
 	if _privacy == "anonymous":
 		var starts: Array[Dictionary] = []
 		for group: Variant in groups:
@@ -2499,13 +2530,47 @@ func _save_outbox() -> void:
 				starts.append({"group": group, "event": _starts[group]})
 		if not starts.is_empty():
 			data.starts = starts
-	var tmp := _outbox_path() + ".tmp"
+	_write_outbox(_json_with(data, "batches", "[" + ",".join(out) + "]"))
+
+
+# The outbox file is written on one of Godot's worker threads, so no frame waits on the disk (about 0.2 ms a write
+# on a fast laptop, and saves come after every flush and every send). One write at a time: the newest text waits for
+# it, and anything older that was waiting is dropped, since the newest has it all. It's written at once instead when
+# the game closes or goes to the background (the OS may stop it before a worker finishes), in a web build (no worker
+# threads to count on), and when this node isn't in the scene tree (no frames to keep smooth, and none to notice
+# the write finishing, as in the tests).
+func _write_outbox(text: String) -> void:
+	if _shut or _write_at_once or not is_inside_tree() or OS.has_feature("web"):
+		_wait_for_write()
+		_write_file(_outbox_path(), text)
+	elif _writing >= 0:
+		_write_next = text
+	else:
+		_writing = WorkerThreadPool.add_task(_write_file.bind(_outbox_path(), text), false, "Glitchless outbox")
+
+
+# Waits for the write on its way, and drops the one waiting for it: the caller writes newer text, or removes the file.
+func _wait_for_write() -> void:
+	if _writing >= 0:
+		WorkerThreadPool.wait_for_task_completion(_writing)
+		_writing = -1
+	_write_next = null
+
+
+# Writes the outbox file whole, to a temporary file first so a game stopped mid-write keeps the last one; "" removes
+# it. Static, as it runs on a worker thread.
+static func _write_file(path: String, text: String) -> void:
+	if text == "":
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+		return
+	var tmp := path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return
-	f.store_string(JSON.stringify(data))
+	f.store_string(text)
 	f.close()
-	DirAccess.rename_absolute(tmp, _outbox_path())
+	DirAccess.rename_absolute(tmp, path)
 
 
 # A dedicated server keeps its own, so a player build of the same project on the

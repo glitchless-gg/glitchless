@@ -7,7 +7,8 @@ extends SceneTree
 ## session_start: the server took them for a player's session with no device
 ## (Starlift 1.1.3's Google Play test phones). The outbox now keeps each
 ## session's session_start, which holds no ID, and the next launch sends it
-## first, marked continued. test/e2e.mjs runs it.
+## first, marked continued. In the scene tree the file is written on a worker
+## thread, so no frame waits on the disk; that's checked last. test/e2e.mjs runs it.
 ##   godot --headless --path godot --script res://test/outbox_test.gd
 
 const Glitchless := preload("res://addons/glitchless/glitchless.gd")
@@ -17,11 +18,16 @@ var _failed := 0
 
 
 func _init() -> void:
+	_run()
+
+
+func _run() -> void:
 	_clean()
 	_first_batch_sent()
 	_cut_again()
 	_nothing_sent()
 	_install_mode()
+	await _on_a_worker()
 	_clean()
 	print("outbox tests: %d failed" % _failed)
 	quit(1 if _failed else 0)
@@ -116,6 +122,46 @@ func _install_mode() -> void:
 	var next := _game({"privacy": "install"})
 	_check("…and its rest goes under the same session, with nothing added", next._outbox.size() == 1 and next._outbox[0].sid == saved.batches[0].sid)
 	next.free()
+
+
+# In the tree, as a game has it: a save hands the file to a worker thread and the frame goes on. One write at a
+# time, the newest text waiting for it; turning Glitchless off waits for a write on its way, so it can't put the file
+# back. A batch's events are turned into JSON once, and its body and saved form both carry them.
+func _on_a_worker() -> void:
+	_clean()
+	await process_frame
+	var g: Node = Glitchless.new()
+	root.add_child(g)  # _ready() runs, as for the autoload
+	g._retry_at = 1 << 62
+	g.init("starlift", "1.1.3", "prod", "http://127.0.0.1:9", {"network": false, "enabled": true})
+	g._next_flush = 1 << 62
+	g.track("pickup", "coin")
+	g.flush()
+	_check("worker: a flush hands the write to a worker and returns", g._writing >= 0)
+	g.track("pickup", "gem")
+	g.flush()
+	_check("worker: a save while one is on its way waits, as the newest text", g._write_next is String and g._write_next.contains("gem"))
+	for i in 60:
+		await process_frame
+		if g._writing < 0 and g._write_next == null:
+			break
+	var saved: Variant = JSON.parse_string(FileAccess.get_file_as_string(Glitchless.OUTBOX_PATH))
+	var bids: Array = g._outbox.map(func(b: Dictionary) -> String: return b.bid)
+	_check("worker: the next frames write the newest text, every batch in it", saved is Dictionary and saved.batches.map(func(b: Dictionary) -> String: return b.bid) == bids, str(saved))
+	_check("worker: each batch saved with all its events", saved is Dictionary and saved.batches.size() == g._outbox.size() and range(bids.size()).all(func(i: int) -> bool: return saved.batches[i].events.size() == g._outbox[i].events.size()))
+	var b: Dictionary = g._outbox.back()
+	var body: Variant = JSON.parse_string(g._body(b))
+	_check("worker: a batch's body has its events, from the JSON made once", b.has("events_json") and body is Dictionary and body.batch_id == b.bid and body.events.size() == b.events.size() and body.events.back().get("name") == "pickup")
+	g.track("pickup", "key")
+	g.flush()
+	_check("worker: another flush, another write on its way", g._writing >= 0)
+	g.set_enabled(false)
+	_check("worker: turning it off waits for that write, then removes the file", g._writing < 0 and not FileAccess.file_exists(Glitchless.OUTBOX_PATH))
+	for i in 5:
+		await process_frame
+	_check("worker: and nothing puts it back", not FileAccess.file_exists(Glitchless.OUTBOX_PATH))
+	g.queue_free()
+	await process_frame
 
 
 # The autoload's script, out of the tree, as _ready() leaves it. It has no

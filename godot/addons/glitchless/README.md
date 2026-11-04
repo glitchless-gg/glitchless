@@ -352,9 +352,24 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 - **Closing** (the window's close button, Android's back button, or `get_tree().quit()`) sends `session_end` the same way.
 - **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID. Each batch keeps its own `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back.
 
+## What it costs
+
+It isn't a profiler: it hooks no functions and runs no engine profiler. Each frame it reads the frame's wall-clock time and a few counters Godot already keeps (draw calls, primitives, nodes, pipeline compiles, the renderer's time), and adds them to a fixed-size summary. Measured with [test/overhead.gd](../../test/overhead.gd) on Godot 4.7.2, a debug build on an Apple M3 Max:
+
+| | How often | Time on the main thread |
+| --- | --- | --- |
+| The frame's work | every frame | about 5.6 µs, 0.03% of a 60 fps frame |
+| Closing a window into one summary | every 5 seconds | about 30 µs |
+| A flush: the window and events become a batch | every 15 seconds | about 70 µs (0.5 ms the first time) |
+| Saving the outbox with 3,900 events waiting, offline | every 15 seconds while offline | about 0.4 ms |
+
+- **The outbox file is written on a worker thread**, so no frame waits on the disk, and each batch is turned into JSON once, however many times the outbox is saved or the batch is sent. Closing and going to the background write it at once instead, since the OS may stop the game before a worker finishes.
+- **A phone is slower**, often several times per operation. Run the script on your own hardware: `godot --headless --path godot --script res://test/overhead.gd`.
+- `measure_render_time: false` turns off the renderer timing (Godot's own `viewport_set_measure_render_time`).
+
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.3"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.4"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
 
 ## Limits
 
