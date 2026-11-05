@@ -1473,7 +1473,7 @@ hitch and velocity error, and Zoomies' dashboard), so someone who connects an ap
 tool on something real. Every new workspace starts with it: a first sign-in (not one through an invitation) makes it in
 the person's own workspace (`GLITCHLESS_SEED_DEMO=0` turns that off), and it isn't counted as a game made. A workspace
 has one; it takes no room from the plan's games, its sessions aren't the plan's, and games list it with `demo: true`.
-On the lake its data is readable about five minutes after it's made. When the demo is a workspace's only game,
+On the lake its data is readable about three minutes after it's made. When the demo is a workspace's only game,
 `glitchless_list_games` says it's sample play and how the person's own game gets in (with `glitchless_create_game`
 when the key may `manage`, otherwise where in the dashboard). In a workspace with no games at all (one from before),
 it says how to make one (with the demo game when the key may `manage`, otherwise where in the dashboard and how to
