@@ -28,7 +28,8 @@ every tool takes `game` (a name or id). The key acts as you, with your role in t
 or touches billing or people. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
 key, and Settings → Keys & access in the dashboard lists and revokes keys. An agent can also sign in from inside a
 chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
-approve.
+approve. The saved key is only ever sent to the server it was saved for: point `GLITCHLESS_URL` at another one (a
+meetup's own box) and the MCP server connects without it, so set `GLITCHLESS_API_KEY` if that server has a key.
 
 ## Serve it over HTTP yourself
 
@@ -46,7 +47,7 @@ clients send it as `Authorization: Bearer`.
 
 | Variable | What |
 | --- | --- |
-| `GLITCHLESS_URL` | Your Glitchless server. Default: the signed-in workspace's, else `http://localhost:7777` |
+| `GLITCHLESS_URL` | Your Glitchless server. Default: the signed-in workspace's, else `http://localhost:7777`. A saved sign-in goes only to the server it was saved for |
 | `GLITCHLESS_API_KEY` | A key, if the server needs one: a workspace key (`gl_ws_…`) for every game, or a secret key (`gl_sk_…`) for one. Overrides a sign-in. Keep it out of git and out of the game |
 | `GLITCHLESS_GAME` | With a workspace key, the game to use when a call doesn't name one. Optional |
 | `GLITCHLESS_SERVICE` | The service to use when a call doesn't name one. Optional |

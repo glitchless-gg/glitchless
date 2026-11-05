@@ -542,3 +542,296 @@ html.drawer-open { overflow: hidden; }
   :root:not([data-theme="light"]) .sidenav { border-right: 1px solid var(--border); }
   :root:not([data-theme="light"]) .codeblock { background: var(--nav-bg-2); border: 1px solid var(--border); }
 }
+
+/* ─── jam rooms (Room.jsx and the pages beside it, Rooms.jsx) ───
+   Public pages that open without the dashboard around them: a navy stage with the room's title, then games as cards
+   with their QR codes. Phone first; at projector width the arcade is a grid of large codes and the big screen's type
+   is read from across a room. QR codes are always dark on white with their quiet zone, so phones scan them in either
+   theme. The main button is navy in light and mint in dark (--room-cta). */
+:root { --room-cta: var(--navy); --room-cta-ink: #fff; --room-on-navy: #c5d0e4; }
+.room { min-height: 100%; display: flex; flex-direction: column; font: 15px/1.5 var(--sans); color: var(--text); background: var(--bg); }
+.room-stage {
+  position: relative; color: #fff;
+  background:
+    radial-gradient(900px 380px at 88% -15%, rgba(46, 230, 166, .18), transparent 65%),
+    radial-gradient(rgba(255, 255, 255, .07) 1px, transparent 1.3px) 0 0 / 18px 18px,
+    var(--navy);
+}
+.room-stage-in { max-width: 1240px; margin: 0 auto; padding: 20px 16px 36px; display: flex; gap: 20px 32px; align-items: center; justify-content: space-between; }
+.room-stage-text { min-width: 0; flex: 1; }
+.room-brand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.room-brand img { height: 20px; width: auto; }
+.room-brand-name { font: 800 16px var(--display); letter-spacing: -.01em; }
+.room-brand-name b { color: var(--mint); font-weight: 800; }
+.room-kicker { padding: 2px 9px; border: 1px solid rgba(46, 230, 166, .45); border-radius: 999px; color: var(--mint); font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
+.room-title { margin: 14px 0 6px; font: 800 clamp(30px, 6.4vw, 60px)/1.02 var(--display); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.room-about { margin: 0 0 10px; max-width: 62ch; color: var(--room-on-navy); font-size: 16px; }
+.room-status { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
+.room-pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px; font-size: 13.5px; font-weight: 600; }
+.room-pill.on { background: rgba(46, 230, 166, .14); color: var(--mint); }
+.room-pill.on i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); animation: room-ping 2s infinite; }
+.room-pill.ended { background: rgba(255, 107, 87, .16); color: var(--coral); }
+@keyframes room-ping { 0% { box-shadow: 0 0 0 0 rgba(46, 230, 166, .55); } 70%, 100% { box-shadow: 0 0 0 8px rgba(46, 230, 166, 0); } }
+.room-code-line { color: var(--room-on-navy); font-size: 13.5px; }
+.room-code { display: inline-block; padding: 0 8px; border-radius: 6px; background: var(--mint); color: var(--navy); font: 800 1.05em/1.5 var(--display); letter-spacing: .08em; white-space: nowrap; }
+.room-strip { position: absolute; left: 0; bottom: 0; display: block; width: 100%; height: 16px; }
+.room-strip rect { fill: var(--mint); opacity: .32; }
+.room-strip rect.spike { fill: var(--coral); opacity: .95; }
+
+/* Not the dashboard's own <main> (a fixed-height flex column that clips): a room page scrolls as one, which the
+   survey's Send bar needs to stay at the foot of the screen. */
+.room-main { display: block; width: 100%; max-width: 1240px; height: auto; margin: 0 auto; padding: 22px 16px 36px; flex: 1; overflow: visible; }
+.room-main.narrow, .room-join .room-stage-in, .room-survey .room-stage-in { max-width: 760px; }
+.room-lede { margin: 0 0 16px; color: var(--text-2); font-size: 16px; }
+.room-sub { margin: 4px 0 12px; color: var(--muted); font-size: clamp(13px, 1.05vw, 18px); }
+.room-note { margin: 0 0 16px; padding: 10px 14px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); font-size: 14px; }
+.room-note a { color: inherit; font-weight: 700; text-decoration: underline; }
+.room-empty { padding: 36px 16px; text-align: center; color: var(--text-2); }
+.room-empty h2 { margin: 0 0 6px; font: 800 26px/1.15 var(--display); color: var(--text); }
+.room-empty p { max-width: 52ch; margin: 0 auto 14px; }
+.room-empty.big h2 { font-size: clamp(28px, 4vw, 60px); }
+.room-empty.big p { font-size: clamp(15px, 1.5vw, 24px); }
+.room-games-h { margin: 6px 0 12px; font: 800 24px var(--display); letter-spacing: -.01em; }
+.room-more { margin: 16px 0 0; text-align: center; color: var(--muted); }
+
+/* Buttons people press with a thumb: 44 px tall. */
+.room-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 0 20px; border: 2px solid transparent; border-radius: 999px; background: none; color: var(--text); font: 700 15px var(--sans); cursor: pointer; white-space: nowrap; transition: transform .12s, filter .12s, background .12s; }
+.room-btn:hover { text-decoration: none; }
+.room-btn:active { transform: scale(.97); }
+.room-btn:focus-visible { outline: 3px solid var(--info); outline-offset: 2px; }
+.room-btn:disabled { opacity: .55; cursor: default; transform: none; }
+.room-btn.play { background: var(--room-cta); color: var(--room-cta-ink); }
+.room-btn.play:hover { filter: brightness(1.15); }
+.room-btn.vote, .room-btn.ghost { border-color: var(--border-strong); }
+.room-btn.vote:hover, .room-btn.ghost:hover { background: var(--panel-2); }
+.room-btn.vote.on { border-color: var(--ok-solid); background: var(--brand-100); color: var(--brand-fg); }
+.room-own { padding: 0 4px; color: var(--muted); font-size: 13.5px; font-weight: 600; }
+
+/* The arcade: a card a game. On a phone the code sits beside the title; wider, each card leads with a large code. */
+.room-games { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.room-game { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-content: start; gap: 14px; padding: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); animation: room-rise .45s both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes room-rise { from { opacity: .35; transform: translateY(8px); } }
+.room-game-qr { display: block; align-self: start; border-radius: 10px; box-shadow: 0 0 0 1px var(--border); }
+.room-qr { display: block; width: 100%; height: auto; aspect-ratio: 1; border-radius: 10px; background: #fff; }
+.room-game-tags { display: flex; align-items: center; gap: 6px; min-height: 18px; color: var(--muted); font-size: 12px; }
+.room-version { font-family: var(--mono); }
+.room-new { padding: 1px 8px; border-radius: 999px; background: var(--coral); color: var(--navy); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.room-game-title { margin: 2px 0 0; font: 800 22px/1.1 var(--display); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.room-by { margin-top: 2px; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+.room-game-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.room-game .room-btn { padding: 0 15px; }
+.room-report { display: inline-block; margin-top: 10px; color: var(--muted); font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+@media (min-width: 720px) {
+  .room-games { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+  .room-game { grid-template-columns: minmax(0, 1fr); padding: 16px; transition: transform .15s, box-shadow .15s; }
+  .room-game:hover { transform: translateY(-3px); box-shadow: 0 10px 26px var(--shadow); }
+}
+/* Once the jam has ended, the arcade's first card: the survey, in mint, so it reads as the next thing to do. */
+.room-tell { display: grid; justify-items: start; gap: 6px; margin-bottom: 24px; padding: 18px; border-radius: 18px; background: var(--mint); color: var(--navy); box-shadow: 0 10px 30px color-mix(in srgb, var(--mint) 22%, transparent); }
+.room-tell:hover { text-decoration: none; }
+.room-tell-kicker { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .78; }
+.room-tell-heading { font: 800 clamp(24px, 4vw, 34px)/1.08 var(--display); letter-spacing: -.015em; overflow-wrap: anywhere; }
+.room-tell-intro { max-width: 60ch; font-size: 15.5px; }
+.room-tell .room-btn.play { margin-top: 8px; background: var(--navy); color: #fff; }
+.room-makers { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 26px; padding: 16px 18px; border: 2px dashed var(--border-strong); border-radius: 16px; }
+.room-makers p { margin: 0; font-size: 16px; }
+.room-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; width: 100%; max-width: 1240px; margin: 0 auto; padding: 16px 16px 30px; border-top: 1px solid var(--border); font-size: 13.5px; }
+.room-foot .muted { margin-left: auto; }
+
+/* The awards: a navy card each, the winner's name big. */
+.room-awards { margin: 0 0 24px; }
+.room-awards-head { display: flex; align-items: center; gap: 10px; }
+.room-awards-head img { width: 76px; height: 76px; margin: -8px 0 -8px -6px; }
+.room-awards-head h2 { margin: 0; font: 800 28px var(--display); letter-spacing: -.01em; }
+.room-award-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin-top: 10px; }
+.room-award { padding: 16px 18px 18px; border: 1px solid rgba(46, 230, 166, .22); border-radius: 16px; background: var(--navy); color: #fff; box-shadow: inset 0 4px 0 var(--mint); }
+.room-award-name { color: var(--mint); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.room-award-games { margin: 6px 0; font: 800 24px/1.1 var(--display); overflow-wrap: anywhere; }
+.room-award-text { margin: 0; color: var(--room-on-navy); font-size: 14px; }
+.room-award.none { border: 1px dashed var(--border-strong); background: var(--panel); color: var(--muted); box-shadow: none; }
+.room-award.none .room-award-name, .room-award.none .room-award-text, .room-award-games.none { color: var(--muted); }
+.room-awards.big .room-awards-head h2 { font-size: clamp(28px, 3vw, 52px); }
+.room-awards.big .room-awards-head img { width: clamp(76px, 7vw, 130px); height: auto; }
+.room-awards.big .room-award-name { font-size: clamp(12px, 1vw, 17px); }
+.room-awards.big .room-award-games { font-size: clamp(24px, 2.6vw, 46px); }
+.room-awards.big .room-award-text { font-size: clamp(14px, 1.2vw, 20px); }
+
+/* The big screen: the room's code large in the stage, its totals, then who needs players and who leads. */
+.room-scan { flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; }
+.room-qr.xl { width: clamp(200px, 21vw, 380px); border-radius: 16px; box-shadow: 0 0 0 6px rgba(46, 230, 166, .3), 0 18px 50px rgba(0, 0, 0, .35); }
+.room-scan-text { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.room-scan-label { color: var(--mint); font-size: clamp(14px, 1.3vw, 22px); font-weight: 700; }
+.room-code-xl { font: 800 clamp(48px, 7vw, 124px)/1 var(--display); letter-spacing: .1em; margin-right: -.1em; }
+.room-scan-url { color: var(--room-on-navy); font: 600 clamp(12px, 1vw, 18px) var(--mono); overflow-wrap: anywhere; }
+.room-live .room-title { font-size: clamp(32px, 5.2vw, 92px); }
+.room-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; margin: 24px 0 0; }
+.room-total { display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 4px; padding: 12px 14px; border: 1px solid rgba(255, 255, 255, .09); border-radius: 14px; background: rgba(255, 255, 255, .06); }
+.room-total dt { color: var(--room-on-navy); font-size: clamp(12.5px, 1.05vw, 19px); line-height: 1.25; }
+.room-total dd { margin: 0; font: 800 clamp(32px, 4.2vw, 80px)/1 var(--display); font-variant-numeric: tabular-nums; }
+.room-total.now dd { color: var(--mint); }
+.room-live-main h2 { margin: 0; font: 800 clamp(24px, 2.6vw, 46px)/1.1 var(--display); letter-spacing: -.01em; }
+.room-live-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; }
+.room-need-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 12px; }
+.room-need { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); color: var(--text); }
+.room-need:hover { border-color: var(--border-strong); text-decoration: none; }
+.room-need-title { font: 800 clamp(16px, 1.5vw, 28px)/1.12 var(--display); overflow-wrap: anywhere; }
+.room-need-plays { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: auto; color: var(--muted); font-size: clamp(13px, 1.1vw, 19px); }
+.room-need-plays b { color: var(--text); font-family: var(--display); font-weight: 800; }
+.room-podium { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
+.room-podium li { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--panel); }
+.room-podium-text { min-width: 0; }
+.room-podium .room-sub { margin: 2px 0 0; }
+.room-rank { flex: none; display: grid; place-items: center; width: clamp(42px, 3.6vw, 68px); aspect-ratio: 1; border: 1px solid rgba(46, 230, 166, .35); border-radius: 50%; background: var(--navy); color: var(--mint); font: 800 clamp(20px, 2vw, 36px) var(--display); }
+.room-podium li:first-child .room-rank { background: var(--mint); color: var(--navy); }
+.room-podium-title { font: 800 clamp(18px, 1.8vw, 32px)/1.1 var(--display); overflow-wrap: anywhere; }
+.room-final { margin-top: 26px; }
+.room-final .tablewrap { margin-top: 10px; max-height: none; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.room-final .dt { font-size: clamp(14px, 1.1vw, 19px); }
+/* After the end: the awards, and beside them on a projector (under them on a phone) the survey's code, the biggest
+   thing after them, in the same mint as the arcade's card. */
+.room-ended { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: start; }
+.room-ended .room-awards { margin: 0; }
+.room-survey-scan { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: clamp(18px, 2vw, 32px); border-radius: 20px; background: var(--mint); color: var(--navy); text-align: center; }
+.room-survey-scan:hover { text-decoration: none; }
+.room-qr.xxl { width: min(100%, clamp(220px, 21vw, 440px), max(220px, 36vh)); border-radius: 16px; box-shadow: 0 14px 40px rgba(14, 24, 46, .25); }
+/* Once it has ended the stage steps back: the awards and the survey are the screen now. */
+.room-live-stage.ended .room-stage-in { padding-top: 16px; padding-bottom: 30px; }
+.room-live-stage.ended .room-title { font-size: clamp(28px, 3.8vw, 68px); margin-top: 10px; }
+.room-live-stage.ended .room-totals { margin-top: 16px; }
+.room-live-stage.ended .room-total dd { font-size: clamp(26px, 3vw, 56px); }
+.room-survey-scan-text { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.room-survey-scan-kicker { font-size: clamp(12px, 1vw, 17px); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+.room-live-main .room-survey-scan h2 { color: var(--navy); font-size: clamp(26px, 2.8vw, 54px); line-height: 1.05; overflow-wrap: anywhere; }
+.room-survey-scan p { margin: 2px 0 0; font-size: clamp(15px, 1.4vw, 24px); font-weight: 600; }
+.room-survey-scan .room-scan-url { color: var(--navy); opacity: .7; }
+@media (min-width: 1100px) {
+  .room-ended { grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); }
+  .room-ended .room-award-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .room-live-cols { grid-template-columns: minmax(0, 2.3fr) minmax(300px, 1fr); }
+  .room-need-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+  .room-live .room-main { padding-top: 28px; }
+}
+@media (max-width: 719.98px) {
+  .room-stage-in { flex-direction: column; align-items: stretch; }
+  .room-scan { flex-direction: row; justify-content: flex-start; text-align: left; }
+  .room-scan-text { align-items: flex-start; }
+  .room-qr.xl { width: 132px; box-shadow: 0 0 0 4px rgba(46, 230, 166, .3); }
+  .room-code-xl { font-size: 44px; }
+  .room-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .room-total:last-child:nth-child(odd) { grid-column: span 2; }
+}
+
+/* The survey: one screen of questions, finger-sized answers. */
+.room-stage.compact .room-stage-in { padding-bottom: 30px; }
+.room-stage.compact .room-title { font-size: clamp(28px, 5vw, 44px); margin-top: 10px; }
+.room-stage.compact .room-about { margin: 0; }
+.room-form { display: flex; flex-direction: column; gap: 18px; }
+.room-q { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.room-q-text { padding: 0; margin-bottom: 6px; color: var(--text); font-size: 16px; font-weight: 700; }
+.room-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.room-q.scale .room-choices { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.room-choice { position: relative; }
+.room-choice input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.room-choice span { display: flex; align-items: center; justify-content: center; min-height: 42px; padding: 6px 14px; border: 1.5px solid var(--border-strong); border-radius: 999px; background: var(--panel); font-size: 14.5px; font-weight: 500; text-align: center; transition: background .12s, border-color .12s; }
+.room-choice:hover span { border-color: var(--text-2); }
+.room-choice.on span { border-color: var(--room-cta); background: var(--room-cta); color: var(--room-cta-ink); font-weight: 700; }
+.room-choice input:focus-visible + span { outline: 3px solid var(--info); outline-offset: 2px; }
+.room-q.scale .room-choice span { border-radius: 12px; font: 800 19px var(--display); }
+.room-scale-ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12.5px; }
+.room-text { width: 100%; min-height: 60px; padding: 10px 12px; border: 1.5px solid var(--border-strong); border-radius: 12px; background: var(--panel); color: var(--text); font: 16px/1.4 var(--sans); resize: vertical; }
+.room-text:focus { outline: 3px solid color-mix(in srgb, var(--info) 40%, transparent); border-color: var(--info); }
+.room-quick { margin: 8px 0 0; color: var(--mint); font-size: 14px; font-weight: 600; }
+.room-stage.compact .room-about + .room-quick { margin-top: 6px; }
+/* Send stays in reach at the foot of the screen, with how many are answered. */
+.room-form-foot { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 -16px; padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(to top, var(--bg) 78%, transparent); }
+.room-form-foot .room-sub { margin: 0; }
+.room-form-foot .room-btn { flex: 1 1 auto; max-width: 320px; }
+.room-progress { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.room-progress i { position: relative; width: 44px; height: 6px; overflow: hidden; border-radius: 3px; background: var(--track); }
+.room-progress i::after { content: ''; position: absolute; inset: 0; background: var(--ok-solid); transform: scaleX(var(--done, 0)); transform-origin: left; transition: transform .2s; }
+.room-thanks { padding: 36px 16px; text-align: center; }
+.room-thanks h2 { margin: 0 0 6px; font: 800 44px var(--display); }
+.room-thanks p { margin: 0 0 4px; }
+.room-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; }
+
+/* The join page: numbered steps, commands that wrap on a phone instead of scrolling sideways. */
+.room-steps { display: flex; flex-direction: column; gap: 28px; margin: 0; padding: 0; list-style: none; counter-reset: room-step; }
+.room-steps > li { position: relative; padding-left: 46px; counter-increment: room-step; }
+.room-steps > li::before { content: counter(room-step); position: absolute; left: 0; top: -2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--navy); color: var(--mint); font: 800 17px var(--display); }
+.room-steps h2 { margin: 0 0 6px; font: 800 21px/1.2 var(--display); }
+.room-steps p { margin: 0 0 10px; color: var(--text-2); }
+.room-steps .room-sub { margin-top: 10px; font-size: 13.5px; }
+.room .codeblock { padding-right: 64px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+.room-details summary { margin: 10px 0 6px; color: var(--link); font-size: 14px; font-weight: 600; cursor: pointer; }
+@media (max-width: 480px) { .room-steps > li { padding-left: 0; padding-top: 44px; } }
+
+/* The organiser's home in the jam (Jam.jsx): the jam's stage over the dashboard's panels, at the dashboard's size. */
+.room-home-main { font-size: 13px; line-height: 1.45; }
+.room-home-dash { flex: none; align-self: flex-start; padding: 6px 12px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 999px; color: var(--room-on-navy); font-size: 13px; font-weight: 600; }
+.room-home-dash:hover { border-color: var(--mint); color: #fff; text-decoration: none; }
+
+/* The organiser's Jam rooms page (Rooms.jsx). */
+.room-org-make { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(200px, 1.7fr) repeat(3, auto); gap: 10px; align-items: end; }
+.room-org-make select.input { min-width: 150px; max-width: 220px; }
+.room-org-make label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+.room-org-hours { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12.5px; }
+.room-org-hours .input { width: 72px; }
+@media (max-width: 900px) { .room-org-make { grid-template-columns: minmax(0, 1fr); } .room-org-make .btn { justify-self: start; } }
+.room-org-card .wa { flex-wrap: wrap; justify-content: flex-end; }
+.room-org-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }
+.room-org-code { padding: 0 7px; border-radius: 5px; background: var(--mint); color: var(--navy); font: 800 12px/1.6 var(--display); letter-spacing: .08em; }
+.room-org-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12.5px; }
+.room-org-about { margin: 8px 0 0; color: var(--text-2); }
+.room-org-links { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.room-org-games { margin: 4px 0 8px; border: 1px solid var(--border); border-radius: 4px; }
+.btn.room-org-danger { color: var(--alert); }
+.btn.room-org-danger:hover { border-color: var(--alert); background: var(--alert-bg); }
+.btn.room-org-quiet { height: 24px; padding: 0 8px; color: var(--muted); font-size: 12px; }
+.room-org-details { margin-top: 8px; }
+.room-org-details summary { width: max-content; max-width: 100%; color: var(--link); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.room-org-details > p { margin: 6px 0; }
+.room-org-questions { min-height: 220px; margin: 4px 0 8px; }
+.room-org-snapshot { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.room-org-answers > p { margin: 6px 0; }
+.room-org-answer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px 22px; margin-top: 8px; }
+.room-org-answer h4 { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; }
+.room-org-quotes { max-height: 200px; margin: 0; padding-left: 18px; overflow: auto; color: var(--text-2); font-size: 12.5px; }
+.room-org-quotes li + li { margin-top: 4px; }
+.room-org-past { display: flex; flex-direction: column; }
+.room-org-past-row { padding: 10px 0; border-bottom: 1px solid var(--row); }
+.room-org-past-row:last-child { border-bottom: 0; }
+.room-org-past-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+/* A survey's fields (a room's or a template's), what can be done with them, and the templates' list. */
+.room-org-survey { display: grid; gap: 10px; max-width: 860px; margin-top: 8px; }
+.room-org-survey > p { margin: 0; }
+.room-org-survey label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
+.room-org-survey textarea.input { height: auto; min-height: 48px; padding: 6px 8px; line-height: 1.45; resize: vertical; }
+.room-org-survey .input[readonly], .room-org-survey .board-editor[readonly] { background: var(--panel-2); color: var(--text-2); }
+.room-org-hint { font-size: 12px; }
+.room-org-locked { padding: 8px 10px; border-radius: 4px; background: var(--warn-bg); color: var(--warn); font-size: 12.5px; }
+.room-org-tools { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--row); }
+.room-org-tool { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 8px; }
+.room-org-tool > .muted { flex-basis: 100%; font-size: 12px; }
+.room-org-tool .input { width: auto; flex: 1 1 150px; min-width: 0; max-width: 260px; }
+.room-org-tool label { flex: 1 1 180px; max-width: 280px; }
+.room-org-tool label .input { flex: none; width: 100%; max-width: none; }
+.room-org-done { margin: 6px 0 0; font-size: 12.5px; }
+.room-org-templates { display: flex; flex-direction: column; }
+.room-org-template { padding: 10px 0; border-bottom: 1px solid var(--row); }
+.room-org-template-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.room-org-template-head .muted { min-width: 0; overflow-wrap: anywhere; }
+.room-org-template-head .spacer { flex: 1; }
+.room-org-new { padding-top: 10px; }
+
+:root[data-theme="dark"] { --room-cta: var(--mint); --room-cta-ink: var(--navy); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --room-cta: var(--mint); --room-cta-ink: var(--navy); } }
+@media (prefers-reduced-motion: reduce) { .room-game, .room-pill.on i { animation: none; } .room-game:hover, .room-btn:active { transform: none; } }
+
+/* A host's own join page's form (Glitchless Cloud's): sign in, pick or make a game, join. */
+.room-join-form { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; margin: 8px 0 4px; max-width: 520px; }
+.room-join-form input[type='email'], .room-join-form input[type='text'] { width: 100%; max-width: 340px; min-height: 42px; padding: 8px 12px; border: 1.5px solid var(--border-strong); border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; }
+.room-join-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 500; }
+.room-join-pick input[type='radio'] { width: 18px; height: 18px; margin: 0; accent-color: var(--room-cta); }
+.room-join-pick input[type='text'] { flex: 1 1 200px; }

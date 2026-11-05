@@ -21,6 +21,8 @@ import { storeReviews, storeVitals } from './reviews.js';
 import { revenueQuery } from './revenue.js';
 import { markTestLab } from './test-lab.js';
 import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
+import { createRooms, RoomError, LIMITS as ROOM_LIMITS } from './rooms.js';
+import { createRoomsApi } from './rooms-api.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
@@ -85,7 +87,9 @@ const MIME = {
 // none leaves it out.
 // resolved: (projectId) → the game's resolved errors (resolved.js), which its issues are marked with and its findings
 // leave out; a host that keeps none leaves it out.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, clientAddress = (req) => req.socket?.remoteAddress }) {
+// rooms: jam rooms (rooms.js, SPEC §3j): { store, files, urls: { app, play }, abuse?, notify?, requireService? }; a host
+// without them answers /v1/rooms with 404. handle.rooms is then the rooms themselves (for the host's sweep).
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, rooms = null, clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -102,6 +106,21 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     if (auth.serversNow) return auth.serversNow(projectId, companion);
     return { servers: presence.count(projectId, companion), players: presence.players(projectId, companion) };
   };
+  // A game's sessions in a window, for a jam room's numbers (rooms.js): every session type, from the store's summaries
+  // where it keeps them (rooms.js keeps the players' own).
+  const gameSessions = async (projectId, service, from, to) => {
+    const q = { service, from, to, env: null, version: null, type: 'all', sessions: null, plan: null };
+    const ctx = store.context ? await store.context(projectId, q, 'versions') : buildContext(await store.query(projectId, { service, from, to }), q);
+    return [...ctx.sessions.values()];
+  };
+  const roomsApi = rooms
+    ? createRoomsApi({
+        rooms: createRooms({ ...rooms, readGame: gameSessions, playersNow, logger }),
+        auth,
+        clientAddress,
+        maxFile: Math.min(maxUploadBytes, ROOM_LIMITS.fileBytes),
+      })
+    : null;
 
   async function handle(req, res) {
     counters.requests++;
@@ -155,6 +174,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         forwarder?.forward(events).catch((err) => logger.warn('[export]', err.message));
         return;
       }
+
+      // Jam rooms (rooms-api.js): public pages, organisers, makers and voters, each with its own check.
+      if (p === '/v1/rooms' || p.startsWith('/v1/rooms/')) return roomsApi ? await roomsApi(req, res, url) : json(res, 404, { error: 'this server has no jam rooms' });
 
       // Everything else under /v1/ reads (or deletes) one project's data, never the intake token's.
       const reader = p.startsWith('/v1/') ? checkIdentity(await auth.resolveReader(req)) : null;
@@ -317,7 +339,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (req.method === 'GET' || req.method === 'HEAD') return serveStatic(res, p, staticRoutes);
       return json(res, 404, { error: 'not found' });
     } catch (err) {
-      if (err instanceof IntakeError || err instanceof AuthError || err instanceof BoardError || err instanceof QueryError) return json(res, err.status, { error: err.message });
+      if (err instanceof IntakeError || err instanceof AuthError || err instanceof BoardError || err instanceof QueryError || err instanceof RoomError) return json(res, err.status, { error: err.message });
       logger.error('[glitchless]', err);
       return json(res, 500, { error: err.message });
     }
@@ -639,6 +661,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
   // The host changed what this project's answers depend on (its known findings, resolved errors): answer afresh.
   handle.forget = (projectId) => clearCache(projectId);
+  handle.rooms = roomsApi?.rooms ?? null;
   return handle;
 }
 
@@ -683,21 +706,33 @@ function emptyFor(name) {
   return { meta: null, empty: true, ...(name === 'sessions' ? { sessions: [] } : {}), ...(name === 'reports' ? { reports: [] } : {}), ...(name === 'errors' ? { issues: [] } : {}), ...(name === 'findings' ? { findings: [] } : {}), ...(name === 'events' ? { events: [] } : {}), ...(name === 'dashboard' ? { dashboard: null } : {}) };
 }
 
+// A route's `spa` serves its page for every path it doesn't have a file for: true for index.html, or the page's file
+// name (the jam's pages are jam.html, at /jam/ beside the dashboard's files).
 function serveStatic(res, pathname, routes) {
   for (const { prefix, dir, spa } of routes) {
-    if (!pathname.startsWith(prefix) || !dir || !fs.existsSync(dir)) continue;
-    if (prefix.endsWith('/') && pathname === prefix.slice(0, -1)) {
+    if (prefix.endsWith('/') && pathname === prefix.slice(0, -1) && dir && fs.existsSync(dir)) {
       res.writeHead(301, { Location: prefix });
       return res.end();
     }
+    if (!pathname.startsWith(prefix) || !dir || !fs.existsSync(dir)) continue;
+    const page = typeof spa === 'string' ? spa : 'index.html';
     let rel = decodeURIComponent(pathname.slice(prefix.length));
-    if (!rel || rel.endsWith('/')) rel += 'index.html';
+    if (!rel || rel.endsWith('/')) rel += page;
     const file = path.join(dir, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
     if (!file.startsWith(dir)) return send(res, 403, 'forbidden');
     if (fs.existsSync(file) && fs.statSync(file).isFile()) return sendFile(res, file);
-    if (spa) return sendFile(res, path.join(dir, 'index.html'));
+    if (spa) return sendPage(res, path.join(dir, page), prefix, rel.includes('/'));
   }
   return send(res, 404, 'not found');
+}
+
+// A single-page app's page for a path it routes itself. Its files are addressed relative to it (./assets/…), so a
+// deeper path (a jam room's /jam/<CODE>/live) gets a <base> at the app's root; a script tag couldn't, under a strict CSP.
+export function sendPage(res, file, prefix, deep) {
+  if (!deep) return sendFile(res, file);
+  const html = fs.readFileSync(file, 'utf8').replace(/<head\b[^>]*>/i, (head) => `${head}<base href="${prefix}">`);
+  res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+  res.end(html);
 }
 
 function sendFile(res, file) {
@@ -712,8 +747,8 @@ function sendFile(res, file) {
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-glitchless-api-key, x-glitchless-client');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-glitchless-api-key, x-glitchless-client, x-glitchless-voter');
 }
 
 // API answers are never cached unless they say so (a share link's, SHARE_CACHE).

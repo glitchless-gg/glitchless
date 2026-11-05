@@ -153,6 +153,23 @@ purchases, a platformer about where players die. Glitchless doesn't assume a gen
    turns the developer's questions into collectors, panels and pages and saves them with the
    `glitchless_set_dashboard` MCP tool.
 
+## In a jam room
+
+When the user is at a Glitchless jam and gives you a room code (5 letters and digits, such as `K7Q2M`), the game also
+goes to the room's arcade, where everyone plays everyone's game on their phones:
+
+- Add the `glitchless-jam` MCP server (`npx -y glitchless-jam`, the same `GLITCHLESS_URL`; it uses the same sign-in as
+  `glitchless-mcp`). It is the jam's own tool, kept apart from the production one.
+- Build with relative paths, since the room serves the game from a folder of its own: `vite build --base ./` (or
+  `base: './'` in `vite.config.js`), and no `fetch('/…')` of the game's own files. Keep `localStorage` keys prefixed
+  with the game's name: every game in a room shares one origin.
+- Keep the default anonymous mode; the room counts plays.
+- Publish the build folder with `glitchless_jam` (`action: "publish"`, `dir: "dist"`, `room`), or
+  `npx -y glitchless-jam publish dist --room <code>` in a terminal. It joins the room, checks the folder, reads the
+  version from `Glitchless.init`, and answers with the game's link and a QR code: show both to the user.
+- Before publishing a fix, bump the version passed to `Glitchless.init`: a room takes each version once, and its
+  "biggest improvement" award compares the first version with the last.
+
 ## Report
 
 Tell the user what you wired (with file:line), the gauges you chose and why, the events you track and count, the

@@ -31,17 +31,26 @@ export async function api(name, params = {}) {
     context.onUnauthorized();
     throw new Error(`${name}: HTTP 401`);
   }
-  if (res.status === 401) {
-    const key = window.prompt('This Glitchless API needs a read key (x-glitchless-api-key):');
-    if (key) {
-      localStorage.setItem('glitchless.apiKey', key);
-      return api(name, params);
-    }
-  }
+  if (res.status === 401 && askForKey()) return api(name, params);
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
   const data = await res.json();
   if (data?.meta) for (const fn of metaListeners) fn(name, data.meta);
   return data;
+}
+
+// After a 401: the host's own sign-in when it has one, else ask for the server's key and keep it in this browser. True
+// when there's a key to try again with.
+export function askForKey() {
+  if (context.onUnauthorized) {
+    context.onUnauthorized();
+    return false;
+  }
+  const key = window.prompt('This Glitchless API needs a read key (x-glitchless-api-key):');
+  if (!key) return false;
+  try {
+    localStorage.setItem('glitchless.apiKey', key);
+  } catch {}
+  return true;
 }
 
 // Told the meta of every query answer: how a range was answered (by day past 31 days, estimated parts,

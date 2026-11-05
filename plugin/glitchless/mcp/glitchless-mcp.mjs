@@ -947,8 +947,8 @@ var init_util = __esm({
 function newError(Definition) {
   const E = _E;
   if (E) {
-    const saved2 = E.stackTraceLimit;
-    if (typeof saved2 === "number") {
+    const saved = E.stackTraceLimit;
+    if (typeof saved === "number") {
       try {
         E.stackTraceLimit = 0;
       } catch {
@@ -958,7 +958,7 @@ function newError(Definition) {
       try {
         return new Definition();
       } finally {
-        E.stackTraceLimit = saved2;
+        E.stackTraceLimit = saved;
       }
     }
   }
@@ -37044,6 +37044,7 @@ __export(context_exports, {
   resolveService: () => resolveService,
   slimGroup: () => slimGroup,
   slimIssue: () => slimIssue,
+  stdioConnection: () => stdioConnection,
   tool: () => tool,
   toolList: () => toolList,
   useCredentials: () => useCredentials,
@@ -37065,8 +37066,26 @@ function readCredentials() {
 function connection({ base: base2, apiKey: apiKey2 = "", service = "", game = "", fetch: fetch2 = globalThis.fetch, client = "" }) {
   return { base: String(base2).replace(/\/$/, ""), apiKey: apiKey2, service, game, fetch: fetch2, client, games: null };
 }
+function stdioConnection(env = process.env) {
+  const saved = env.GLITCHLESS_API_KEY ? null : readCredentials();
+  const savedAt = saved?.token ? originOf(saved.url) : null;
+  const fits = Boolean(saved?.token) && (!env.GLITCHLESS_URL || savedAt !== null && originOf(env.GLITCHLESS_URL) === savedAt);
+  return {
+    ...connection({
+      base: env.GLITCHLESS_URL || (fits ? saved.url : "") || "http://localhost:7777",
+      apiKey: env.GLITCHLESS_API_KEY || (fits ? saved.token : ""),
+      service: env.GLITCHLESS_SERVICE || "",
+      game: env.GLITCHLESS_GAME || ""
+    }),
+    savedFor: saved?.token && !fits ? savedAt ?? String(saved.url) : null
+  };
+}
 function useCredentials({ url: url2, token }) {
-  Object.assign(local, { base: String(url2).replace(/\/$/, ""), apiKey: token, games: null });
+  Object.assign(local, { base: String(url2).replace(/\/$/, ""), apiKey: token, games: null, savedFor: null });
+}
+function signInHint(status2) {
+  const { savedFor, base: at } = conn();
+  return status2 === 401 && savedFor ? ` The saved sign-in is for ${savedFor} and isn't sent to another server: set GLITCHLESS_API_KEY for ${at}.` : "";
 }
 async function workspaceGames(fresh = false) {
   const c = conn();
@@ -37109,7 +37128,7 @@ async function query(name, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v != null && v !== "") qs.set(k, String(v));
   const res = await conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() });
-  if (!res.ok) throw new Error(`Glitchless API ${name} \u2192 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Glitchless API ${name} \u2192 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}${signInHint(res.status)}`);
   const data = await res.json();
   const call2 = calls.getStore();
   if (call2 && data?.meta) Object.assign(call2, { meta: data.meta, from: params.from });
@@ -37134,7 +37153,7 @@ async function write(method, p, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 403) throw new Error(`${data.error || "forbidden"}. Saving a dashboard needs a key with the dashboard scope (a workspace key from glitchless_sign_in has it).`);
-  if (!res.ok) throw new Error(`Glitchless API ${method} ${p} \u2192 HTTP ${res.status}: ${data.error || ""}`);
+  if (!res.ok) throw new Error(`Glitchless API ${method} ${p} \u2192 HTTP ${res.status}: ${data.error || ""}${signInHint(res.status)}`);
   return data;
 }
 async function resolveService(service) {
@@ -37219,20 +37238,21 @@ function noPlayersLine(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, saved, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField, TEST_KINDS;
+var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
     init_zod();
     VERSION = "0.14.0";
     CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "glitchless", "credentials.json");
-    saved = process.env.GLITCHLESS_API_KEY ? null : readCredentials();
-    local = connection({
-      base: process.env.GLITCHLESS_URL || saved?.url || "http://localhost:7777",
-      apiKey: process.env.GLITCHLESS_API_KEY || saved?.token || "",
-      service: process.env.GLITCHLESS_SERVICE || "",
-      game: process.env.GLITCHLESS_GAME || ""
-    });
+    originOf = (u) => {
+      try {
+        return new URL(u).origin;
+      } catch {
+        return null;
+      }
+    };
+    local = stdioConnection();
     connections = new AsyncLocalStorage();
     conn = () => connections.getStore() ?? local;
     base = () => conn().base;
@@ -41216,15 +41236,15 @@ function gitInfo2(dir) {
     return null;
   }
 }
-function toRun(saved2) {
-  const m = saved2.measure || {};
+function toRun(saved) {
+  const m = saved.measure || {};
   return {
-    name: saved2.name,
-    created: saved2.created,
-    service: saved2.game,
-    git: saved2.git,
-    machine: { gpu: `Steam Deck (${saved2.deck?.name || "deck"})`, browser: m.sdk || m.renderer || "" },
-    scenarios: [{ params: { seconds: m.seconds, warmup: saved2.warmup, args: saved2.args }, finished: true }],
+    name: saved.name,
+    created: saved.created,
+    service: saved.game,
+    git: saved.git,
+    machine: { gpu: `Steam Deck (${saved.deck?.name || "deck"})`, browser: m.sdk || m.renderer || "" },
+    scenarios: [{ params: { seconds: m.seconds, warmup: saved.warmup, args: saved.args }, finished: true }],
     summary: {
       pct_frames_over_budget: m.pct_frames_over_budget ?? null,
       frame_p95: m.frame_ms?.p95 ?? null,
@@ -41239,10 +41259,10 @@ function toRun(saved2) {
     }
   };
 }
-function measureReport(saved2, comparison, baseline) {
-  const m = saved2.measure;
-  const out = [`## Steam Deck measure: ${saved2.game}${comparison ? ` (${comparison.verdict === "fail" ? `FAIL, ${comparison.regressions.length} regression${comparison.regressions.length === 1 ? "" : "s"}` : "PASS"})` : ""}`, ""];
-  out.push(`\`${saved2.name}\` on ${saved2.deck.name}, ${m.seconds}s after ${saved2.warmup}s warm-up, ${saved2.created.slice(0, 16).replace("T", " ")} UTC${saved2.git ? `, ${saved2.git.sha}${saved2.git.dirty ? " + uncommitted changes" : ""}` : ""}.`);
+function measureReport(saved, comparison, baseline) {
+  const m = saved.measure;
+  const out = [`## Steam Deck measure: ${saved.game}${comparison ? ` (${comparison.verdict === "fail" ? `FAIL, ${comparison.regressions.length} regression${comparison.regressions.length === 1 ? "" : "s"}` : "PASS"})` : ""}`, ""];
+  out.push(`\`${saved.name}\` on ${saved.deck.name}, ${m.seconds}s after ${saved.warmup}s warm-up, ${saved.created.slice(0, 16).replace("T", " ")} UTC${saved.git ? `, ${saved.git.sha}${saved.git.dirty ? " + uncommitted changes" : ""}` : ""}.`);
   out.push("", "| Measure | Value |", "| --- | ---: |");
   const rows = [
     ["Frames per second", m.fps],
@@ -41304,17 +41324,17 @@ ${got.log}` : ""}`);
   const line = got.content.trim().split("\n").reverse().find((l) => l.startsWith("{"));
   const result = JSON.parse(line).glitchless_measure;
   if (!result || result.error) throw new Problem(`The measurement came back empty: ${result?.error || "no glitchless_measure in it"}`);
-  const saved2 = { created: (/* @__PURE__ */ new Date()).toISOString(), game: game.id, deck: { name: deck.name, address: deck.address }, warmup, args: flags.filter((f) => !f.startsWith("--glitchless-out=")), git: gitInfo2(game._root), intake: glitch?.url || null, measure: result };
-  const files2 = { latest: saveRun2(game, "latest", saved2) };
-  if (saveAs) files2[saveAs] = saveRun2(game, saveAs, saved2);
-  saved2.name = saveAs || "latest";
+  const saved = { created: (/* @__PURE__ */ new Date()).toISOString(), game: game.id, deck: { name: deck.name, address: deck.address }, warmup, args: flags.filter((f) => !f.startsWith("--glitchless-out=")), git: gitInfo2(game._root), intake: glitch?.url || null, measure: result };
+  const files2 = { latest: saveRun2(game, "latest", saved) };
+  if (saveAs) files2[saveAs] = saveRun2(game, saveAs, saved);
+  saved.name = saveAs || "latest";
   const target = compareTo ?? (saveAs === "baseline" ? null : listRuns2(game).includes("baseline") ? "baseline" : null);
-  if (!target) return { verdict: "none", report: `${measureReport(saved2)}
+  if (!target) return { verdict: "none", report: `${measureReport(saved)}
 
-${saveAs ? `Saved as \`${saveAs}\`.` : "Nothing to compare with yet: save one with --save baseline before a change."}`, run: saved2, files: files2 };
+${saveAs ? `Saved as \`${saveAs}\`.` : "Nothing to compare with yet: save one with --save baseline before a change."}`, run: saved, files: files2 };
   const baseline = loadRun2(game, target);
-  const comparison = compareRuns(toRun(baseline), toRun(saved2));
-  return { verdict: comparison.verdict, report: measureReport(saved2, comparison, baseline), comparison, run: saved2, baseline, files: files2 };
+  const comparison = compareRuns(toRun(baseline), toRun(saved));
+  return { verdict: comparison.verdict, report: measureReport(saved, comparison, baseline), comparison, run: saved, baseline, files: files2 };
 }
 var NAME2, runsDir, p50, round, errorType, fmt2;
 var init_measure = __esm({

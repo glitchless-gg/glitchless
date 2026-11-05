@@ -1445,7 +1445,9 @@ Each server stamps a key at most once every ten minutes, so it's right to about 
    `slow_down`, `denied`, `expired`, or `approved` with `{ token, workspace, scopes }`, which comes back once.
 
 `npx -y glitchless-mcp login` does all three and saves the key; the MCP server's `glitchless_sign_in` tool does it
-from inside a chat.
+from inside a chat. The saved key goes only to the origin it was saved for: with `GLITCHLESS_URL` set to another
+server (a meetup's own box), the MCP server connects without a key, and if that server answers 401 the tool's error
+says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this server. `GLITCHLESS_API_KEY` always wins.
 
 **With the key**, sent as `Authorization: Bearer gl_ws_…` or in `x-glitchless-api-key`:
 
@@ -1757,6 +1759,132 @@ Glitchless's own billing).
 **Routes** are the stores' (§3f): `PUT /api/projects/{p}/stores/stripe` takes `{restrictedKey?, products?, service?}`
 (a key left out stays; `products: ""` picks none); `GET …/stores` gives its `connection` (`mode`, `products`,
 `keys.restricted: {hint, mode}`), `status` and `data` (`overview`: the last 28 days, `mode`).
+
+### 3j. Jam rooms
+
+A jam room is a short game jam's arcade (`docs/design/jam-rooms.md`): an organiser makes a room and gets a code,
+makers join it with their games and publish the static files their agent built (nothing is built on the server),
+everyone plays every game from the room's arcade, and when the jam ends the room gives awards from what players did
+and one the room votes for, keeps a snapshot of what every game did, and asks how it went. The core has all of it
+(`server/src/rooms.js` the model, `rooms-api.js` the routes, `play.js` the games' headers, `qr.js` the QR codes); a
+host passes `createApp({ rooms: { store, files, urls: { app, play }, abuse?, notify?, requireService?, followUp? } })`
+(§6). A host without `rooms` answers `/v1/rooms` with 404.
+
+**The jam's own pages** are an app apart from the dashboard (`apps/dashboard/jam.html`, `src/pages/Jam.jsx`), at the
+jam's address (`urls.jam`): `/jam/` on the open-source server (and a laptop's cloud), jam.glitchless.gg on Glitchless
+Cloud. Its root is the organiser's home (their rooms, each room's survey, survey templates, past jams); `<CODE>` is a
+room's arcade, with `<CODE>/live`, `<CODE>/survey` and `<CODE>/join`, all open without signing in. The server answers
+every path under the jam's address with `jam.html`, with a `<base>` at the jam's root for the deeper ones, so its
+relative files load under a strict CSP. A room's `links` are on this address.
+
+**A room**: `code` (5 of `23456789ABCDEFGHJKMNPQRSTVWXYZ`, read in any case), `title` (≤ 80), `about` (≤ 280),
+`owner` (the organiser's host id), `created_at`, `closes_at` (default 24 h after it's made, at most 7 days),
+`ended_at`, `joining`, `max_games` (default 60, up to 200), `survey` (`{heading, intro, questions}`, or null for the
+default). **A game
+in it**: `slug` (2 to 32 of `[a-z0-9-]`, from the title, unique in the room), `title` (≤ 60), `by` (≤ 40, optional
+free text), `project` and `service` (which game; never in a public answer), `joined_at`, `uploads: [{n, version,
+files, bytes, published_at, agent}]` (`agent`: the `x-glitchless-client` that published it), `current`, `pending` (an
+upload in progress), `removed` (the organiser took it out; it can't rejoin).
+
+**Routes** (public ones are cached 10 to 15 s, `Cache-Control: public`; reads are limited loosely per address, since a
+room's phones share the venue's; votes and answers per person):
+
+| route | who | does |
+| --- | --- | --- |
+| `GET /v1/rooms/{code}` | anyone | the arcade: `{code, title, about, created_at, closes_at, ended, ended_at, joining, links: {arcade, live, join, survey}, report?, games: [{slug, title, by, url, version, published_at, new}], building}`; `new` for a publish in the last 10 minutes while the jam is on, `building` the games joined but not published |
+| `GET /v1/rooms/{code}/live` | anyone | the big screen: `{room, totals: {games, building, plays, minutes_played, phone_pct, playing_now}, games: [{…a game, plays, players, minutes_played, phone_plays, playing_now, votes?}], needs_players: [slug] (fewest plays first), most_played: [slug] (3), awards (null until the end), updated_at}`; after the end, frozen from the snapshot, with each game's `votes` |
+| `GET /v1/rooms/{code}/qr.svg?game={slug}` | anyone | the QR code of the arcade, or of a game's URL |
+| `GET`, `PUT /v1/rooms/{code}/vote` | a voter | `{vote, own: [slug], open}` (own: the voter's own games); `PUT {slug}` (null takes it back) until the end. One vote a person; 403 for an own game |
+| `GET`, `PUT /v1/rooms/{code}/survey` | anyone; once each | `{open, closes_at, title (the room's), heading, intro, questions, answers, suggested?}` (`heading` and `intro` with `{room}` filled in); `PUT {answers: {id: answer}}` from the end until 7 days after; answering again replaces |
+| `POST`, `GET /v1/rooms` | an organiser | `{title, about?, hours?, max_games?, template?}` → the room, with `qr_text` (the arcade's QR code as text); `GET` → `{rooms, past}`: each room as the arcade has it plus `joined: [{slug, title, by, joined_at, uploads, published, removed}]` (every game, published or not) and `survey: {heading, intro, questions, default, answers}` (as set, `{room}` unfilled, with its answers so far), and `past`, ended jams kept as snapshots. At most 3 rooms on at once |
+| `PATCH`, `DELETE /v1/rooms/{code}` | its organiser | `{title?, about?, closes_at?, joining?, end: true}` (`end`: the jam ends now); `DELETE`: the room, its games, files, votes and snapshot, or a past jam's snapshot once its room is gone |
+| `PATCH /v1/rooms/{code}/survey` | its organiser | `{heading?, intro?, questions?, template?}` (`questions`: `[{id, kind: scale\|choice\|text, text, options?}]`, 1 to 10, or null for the default ones; `template`: one of the organiser's, or `default`) → `{heading, intro, questions, filled}`; until the survey's first answer, after the end too (the snapshot's survey changes with it) |
+| `GET /v1/rooms/templates` | an organiser | `{templates: [{id, name, heading, intro, questions, builtin?, updated_at?}]}`: `default` (built in, read only), then theirs |
+| `PUT`, `DELETE /v1/rooms/templates/{id}` | an organiser | saves `{name, heading?, intro?, questions?, from_room?}` (`from_room`: a room's survey as it's set; id 1 to 32 of `[a-z0-9-]`, at most 20 templates), or deletes one |
+| `GET /v1/rooms/{code}/snapshot[?format=csv]` | its organiser | the snapshot with the survey's answers; CSV: one row a game |
+| `POST /v1/rooms/{code}/games` | a maker | joins: `{title?, by?, service?}` → the game (joining again answers the same one) |
+| `GET`, `PATCH`, `DELETE /v1/rooms/{code}/games/{slug}` | its maker | its uploads and numbers by version; `{title?, by?}`; leaves. `DELETE …?by=organiser`: the organiser removes it |
+| `POST /v1/rooms/{code}/games/{slug}/uploads` | its maker | `{version, service?, files: [{path, bytes, sha256}]}` → `{n, send, expires_at}`; every limit below is checked here |
+| `PUT …/uploads/{n}/files/{path}` | its maker | one file (each path segment URI-encoded); its size and SHA-256 must match the list |
+| `POST …/uploads/{n}/publish` | its maker | every file in: the game plays this upload → `{url, version, n, arcade, qr_text, qr_svg}` |
+
+**Who.** Makers are readers (§6) with the `dashboard` scope on the game's project; a reader may name its `person`.
+Organisers come from `auth.resolveOrganiser(req) → {owner, limits?}` (default: whoever passes `resolveReader`, as
+`{owner: projectId}`); voters and survey respondents from `auth.resolveVoter(req) → {voter, owns(projectId), person?,
+email?}` (default: a browser's own random `x-glitchless-voter`, 16 to 128 of `[A-Za-z0-9_-]`, which owns nothing). The
+open-source server tells games apart by `service` (`requireService`); Glitchless Cloud by project.
+
+**Uploads.** At most 25 MB, 400 files and 4 MB a file; paths of `[A-Za-z0-9._-]` segments up to 200 characters, none
+starting with a dot, no `..`; types from an allow-list by extension (`FILE_TYPES` in `rooms.js`: web, image, model,
+audio, video, font and game data files), served with the type the server picks; `index.html` at the root; an HTML file
+with a password field or a `<base>` is refused. 12 uploads a game an hour, 60 a game in a room, 2 GB a room. A version
+publishes once a game (bump it first). An upload not published within 30 minutes is dropped.
+
+**Files** are laid out for any static host: `<CODE>/<slug>/<n>/…` as uploaded, never changed (cached for a year), and
+`<CODE>/<slug>/index.html`, the current upload's `index.html` with `<base href="{play path}<CODE>/<slug>/<n>/">`
+(`no-cache`), so games must use relative paths (`vite build --base ./`). `files`: `put(key, bytes, {type, cache})`,
+`get(key)`, `stat(key) → {bytes}`, `remove(prefix)`. The open-source server serves them on `GLITCHLESS_PLAY_PORT`
+(default PORT + 1000, 8777) at `/r/<CODE>/<slug>/`, another origin from the dashboard; Glitchless Cloud from S3 at
+`play.glitchless.gg/r/`. Both send `playHeaders()` (`play.js`): a Content-Security-Policy with scripts, styles, fonts
+and network calls only from the page, jsDelivr, unpkg, cdnjs, esm.sh (and Google Fonts) and the host's intake,
+`form-action 'none'`, `frame-ancestors 'none'`; a Permissions-Policy without camera, microphone, location, payments,
+USB, serial, Bluetooth or screen capture; `Cross-Origin-Opener-Policy: same-origin`; `nosniff`; `X-Robots-Tag:
+noindex`.
+
+**Plays.** A game's numbers count its players' sessions (`session_type` user) on the versions it published to the
+room, from its first publish to the end: `plays`, `players` (only when it sends player IDs; jam games in anonymous mode
+count plays), `minutes_played` (frames on screen), `phone_plays` (iOS and Android), `phone_frames_on_time_pct` (frames
+within 1.15× their screen's budget), `most_at_once`, and per version `{plays, with_problem, problems: {errors,
+crashes, stutter, rage_quits}}`. A play hits a problem when it had an error, crashed, had more than 1 in 10 frames late,
+or rage-quit. They're read from the store's summaries (every session type, then kept), at most every 15 s a room;
+`playing_now` is the host's players now.
+
+**The end.** At `closes_at`, or when the organiser ends it (the sweep, or the first request after), publishing,
+joining and voting stop, the numbers freeze, and the room writes its **snapshot**: the room, each game (uploads with
+their agent in words, numbers, votes, whether removed), the funnel `{joined, published, sending, improved, fixed}`,
+`votes.voters`, the awards and the survey's questions; never a voter's choice, a project or a person. **Awards**, each
+with a minimum, none given when no game qualifies: Crowd favourite (most votes, at least 3; a tie is shared), Most
+played (most plays, at least 3; then minutes played), Biggest improvement (the largest drop in the share of plays with
+a problem from a game's first version in the room to its latest, each with at least 3 plays, of at least 10 points),
+Smoothest on phones (most frames on time over at least 3 plays on phones). Each is `{id, title, games: [slug], text}`,
+`text` in plain words ("Neon Dash: before the fix, 5 of 8 plays hit a problem; after it, 1 of 9").
+
+**The survey** is a page, opened at the end for 7 days: people scan its QR code on the big screen and answer there;
+nothing is emailed. It is a `heading` (default "How was {room}?"), an `intro` and its questions. Default questions:
+`rating` (1 to 5), `liked`, `hard` (text), `make_more`, `use_glitchless`, `agent` (choices; `suggested.agent` from the
+maker's uploads), and on a host that knows respondents' emails (`followUp`; Glitchless Cloud) `follow_up` ("May
+Glitchless email you about your answers?"). An organiser keeps up to 20 **templates** of their own (a name, a heading,
+an intro and questions), picks one when making a room, and sets a room's survey from one or by hand until its first
+answer. One set of answers a respondent (`{respondent: a hash, at, made: [slug], answers, email?}`;
+`email` only with `follow_up` Yes), text at most 1,000 characters.
+
+**Keeping.** A day after the end the sweep deletes the room, its games' files and every vote; the snapshot and the
+survey's answers stay a year. A code is never given to another room while its snapshot is kept. The open-source server
+sweeps hourly; Glitchless Cloud every 15 minutes (the alerts function).
+
+**notify(type, data)**, for a host's own counting: `joined`, `published` (`{room, game, upload, person}`),
+`voted`, `answered` (`{room, person, answers, questions}`), `ended` (`{room, snapshot}`), `deleted`.
+
+**Glitchless Cloud** keeps rooms in the control table (`ROOM#<code>`: `META`, `GAME#<slug>`, `VOTE#<voter hash>`;
+`ROOMS` lists them; `JAM#<code>`: `SNAPSHOT` (gzip JSON), `ANSWER#<respondent>`; `JAMS` lists them; an organiser's
+templates under `ROOMTPL#<owner>` `TPL#<id>`) and games' files in the rooms bucket under `r/`. Organisers are allow-listed (`GLITCHLESS_ROOM_ORGANISERS`:
+emails or workspace IDs; anyone on a laptop without one), by workspace key or dashboard session; a room belongs to the
+workspace. `GET /api/me` says `rooms.organiser`. The jam's pages are on their own host (`GLITCHLESS_JAM_ORIGIN`,
+jam.glitchless.gg; without one, `/jam/` on the app), which has no sign-in of its own: its pages send people to
+`/api/auth/jam?return=<page>`, which goes over to the app; signed in there (after signing in, if need be: the dashboard
+keeps `?jam=`), the app sends them back with a one-time code (a minute, once) that `/api/auth/handoff` on the jam host
+turns into a session of the jam host's own. A voter is a signed-in person on the app, whose own games are every
+game of a workspace they're in. `jam_joined`, `jam_published`, `jam_voted` and `jam_survey_answered` (its
+multiple-choice answers only) go to Glitchless's own analytics.
+
+**`glitchless-jam`** (`packages/jam`, on npm) is the jam's own tool, kept apart from `glitchless-mcp`. Its stdio MCP
+server has `glitchless_jam` for makers (`action`: `join`, `publish`, `status`, `leave`) and `glitchless_jam_host` for
+the organiser's agent (`create`, `list`, `update`, `end`, `remove_game`, `delete`, `survey`, `templates`,
+`save_template`, `delete_template`, `report`; a maker's key is refused). Its CLI publishes
+(`npx -y glitchless-jam publish dist --room K7Q2M`) and has the same organiser's commands under `host`. It uses `glitchless-mcp`'s saved sign-in, or `GLITCHLESS_URL` and `GLITCHLESS_API_KEY`.
+Before sending anything it checks the folder against the limits above, that `index.html` loads nothing from `/`, and
+reads the version and service from the game's `Glitchless.init` call; source maps go to `/v1/sourcemaps` instead of the
+room.
 
 ## 4. Derived concepts
 
@@ -2257,6 +2385,13 @@ Optionally `getBrand(projectId, service)`, `putBrand(…, brand)`, `getBrandImag
 bytes)` keep a game's branding (§3b): what it is in one item and each image's bytes in one of their own (the file
 store: `brands.json` and `brand/<project>/<service>.<kind>`; Glitchless Cloud: items under `P#<project>#BRAND`, an
 image at most 300 KB of a 400 KB item). A store without them answers `/v1/brand` with 501.
+
+**Jam rooms** (§3j) have stores of their own, not the events store's: `rooms.store` keeps rooms (`claimRoom`, `getRoom`,
+`putRoom`, `deleteRoom`, `rooms(owner)`, `allRooms`), their games (`games`, `getGame`, `putGame(code, game, {create})`,
+`deleteGame`), votes (`putVote`, `votes`), survey answers (`putAnswers`, `answers`) and snapshots (`putSnapshot`,
+`getSnapshot`, `snapshots(owner)`, `allSnapshots`, `deleteSnapshot`); the open-source server's is
+`server/src/stores/rooms-file.js` (`<data>/rooms/`). `rooms.files` keeps games' files (§3j). Two optional auth hooks
+go with them, `resolveOrganiser(req)` and `resolveVoter(req)`, and a reader may name its `person`.
 
 Data written before projects existed (JSONL lines without `project_id`) is read as the `default` project, so no
 migration is needed.

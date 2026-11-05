@@ -3,6 +3,9 @@
 #
 #   docker run -d -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless
 #
+# For a jam room (SPEC §3j), publish 8777 too, where the room's games are served, and tell the server the address
+# phones reach it at: -p 8777:8777 -e GLITCHLESS_PUBLIC_URL=http://<this machine's address>:7777
+#
 # Settings are environment variables (.env.example lists them). On a server others can reach, set
 # GLITCHLESS_API_KEY so reads need a key, and GLITCHLESS_CLIENT_TOKENS to your own write token.
 
@@ -27,6 +30,6 @@ COPY LICENSE ./
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data
-EXPOSE 7777
+EXPOSE 7777 8777
 HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/v1/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
 CMD ["node", "server/src/local.js"]

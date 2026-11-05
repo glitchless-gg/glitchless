@@ -168,6 +168,14 @@ hit and check that the fix worked.
    (Discord, Slack or email) in Settings → Alerts, and that you can make a read-only link to any
    board with glitchless_share_links, for a dev log or a "Live stats" button. On my own server,
    alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
+
+8. Only if I'm at a Glitchless jam and give you a room code: also add the glitchless-jam MCP server
+   (command `npx`, arguments `-y glitchless-jam`, the same GLITCHLESS_URL; it uses the same sign-in
+   as glitchless-mcp). Build the game with relative paths (`vite build --base ./` for Vite), then
+   publish the build folder to the room with its glitchless_jam tool (action "publish", or
+   `npx -y glitchless-jam publish <folder> --room <code>` in a terminal) and show me the link and
+   the QR code it gives. After every fix, bump the version passed to Glitchless.init and publish
+   again.
 ```
 <!-- setup-prompt:end -->
 

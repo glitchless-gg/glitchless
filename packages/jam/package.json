@@ -1,0 +1,51 @@
+{
+  "name": "glitchless-jam",
+  "version": "0.1.0",
+  "description": "Glitchless jam rooms for coding agents: join a jam room, publish your game's build in one command and get a link and a QR code to play it on a phone, and see the room's plays and awards. An MCP tool for makers, another for the jam's organiser, and a CLI for both.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "game-jam",
+    "gamedev",
+    "game-development",
+    "web-games",
+    "threejs",
+    "phaser",
+    "coding-agent",
+    "claude-code",
+    "codex",
+    "cursor"
+  ],
+  "homepage": "https://www.glitchless.gg",
+  "bugs": {
+    "url": "https://github.com/glitchless-gg/glitchless/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/glitchless-gg/glitchless.git",
+    "directory": "packages/jam"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "bin": {
+    "glitchless-jam": "src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0"
+  }
+}

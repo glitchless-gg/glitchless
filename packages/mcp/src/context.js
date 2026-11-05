@@ -28,15 +28,34 @@ export function connection({ base, apiKey = '', service = '', game = '', fetch =
   return { base: String(base).replace(/\/$/, ''), apiKey, service, game, fetch, client, games: null };
 }
 
-// On stdio, the one connection: GLITCHLESS_API_KEY wins; without it, a saved sign-in. Over HTTP each request runs
-// with the connection its bearer token gives (createServer's `connection`).
-const saved = process.env.GLITCHLESS_API_KEY ? null : readCredentials();
-const local = connection({
-  base: process.env.GLITCHLESS_URL || saved?.url || 'http://localhost:7777',
-  apiKey: process.env.GLITCHLESS_API_KEY || saved?.token || '',
-  service: process.env.GLITCHLESS_SERVICE || '',
-  game: process.env.GLITCHLESS_GAME || '',
-});
+const originOf = (u) => {
+  try {
+    return new URL(u).origin;
+  } catch {
+    return null;
+  }
+};
+
+// On stdio, the one connection: GLITCHLESS_URL and GLITCHLESS_API_KEY win, else the saved sign-in. A saved key goes
+// only to the server it was saved for, so pointing GLITCHLESS_URL at a meetup's own server never hands it a Glitchless
+// Cloud key: the connection goes without one (an open self-hosted server needs none), and `savedFor`, the origin the
+// sign-in is for, says why on a 401. Over HTTP each request runs with the connection its bearer token gives
+// (createServer's `connection`).
+export function stdioConnection(env = process.env) {
+  const saved = env.GLITCHLESS_API_KEY ? null : readCredentials();
+  const savedAt = saved?.token ? originOf(saved.url) : null;
+  const fits = Boolean(saved?.token) && (!env.GLITCHLESS_URL || (savedAt !== null && originOf(env.GLITCHLESS_URL) === savedAt));
+  return {
+    ...connection({
+      base: env.GLITCHLESS_URL || (fits ? saved.url : '') || 'http://localhost:7777',
+      apiKey: env.GLITCHLESS_API_KEY || (fits ? saved.token : ''),
+      service: env.GLITCHLESS_SERVICE || '',
+      game: env.GLITCHLESS_GAME || '',
+    }),
+    savedFor: saved?.token && !fits ? (savedAt ?? String(saved.url)) : null,
+  };
+}
+const local = stdioConnection();
 const connections = new AsyncLocalStorage();
 const conn = () => connections.getStore() ?? local;
 
@@ -47,7 +66,13 @@ export const isWorkspace = () => conn().apiKey.startsWith('gl_ws_');
 
 // After a sign-in from inside the agent (glitchless_sign_in): the running server switches to the new key.
 export function useCredentials({ url, token }) {
-  Object.assign(local, { base: String(url).replace(/\/$/, ''), apiKey: token, games: null });
+  Object.assign(local, { base: String(url).replace(/\/$/, ''), apiKey: token, games: null, savedFor: null });
+}
+
+// What a 401 adds when the saved sign-in was kept from this server: where it's for, and how to give this one a key.
+function signInHint(status) {
+  const { savedFor, base: at } = conn();
+  return status === 401 && savedFor ? ` The saved sign-in is for ${savedFor} and isn't sent to another server: set GLITCHLESS_API_KEY for ${at}.` : '';
 }
 
 // The games a workspace key reaches, cached briefly; the game each call names (by name or id), else the one the
@@ -104,7 +129,7 @@ export async function query(name, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') qs.set(k, String(v));
   const res = await conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() });
-  if (!res.ok) throw new Error(`Glitchless API ${name} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`Glitchless API ${name} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}${signInHint(res.status)}`);
   const data = await res.json();
   const call = calls.getStore();
   if (call && data?.meta) Object.assign(call, { meta: data.meta, from: params.from });
@@ -136,7 +161,7 @@ export async function write(method, p, body) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 403) throw new Error(`${data.error || 'forbidden'}. Saving a dashboard needs a key with the dashboard scope (a workspace key from glitchless_sign_in has it).`);
-  if (!res.ok) throw new Error(`Glitchless API ${method} ${p} → HTTP ${res.status}: ${data.error || ''}`);
+  if (!res.ok) throw new Error(`Glitchless API ${method} ${p} → HTTP ${res.status}: ${data.error || ''}${signInHint(res.status)}`);
   return data;
 }
 
