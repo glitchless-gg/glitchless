@@ -1360,7 +1360,7 @@ token, 20 minutes):
 | versions | `GET /v1/apps/{id}/appStoreVersions` | once a day: the release marks |
 | reviews | `GET /v1/apps/{id}/customerReviews` (newest first), and `GET /v1/appStoreVersions/{id}/customerReviews` for the latest 3 versions, which name each review's version | every 6 hours, from a day before the newest kept (first: the plan's retention, at most 90 days), at most 5 pages |
 | hang rate, launch time, animation hitches | `GET /v1/apps/{id}/perfPowerMetrics` (iOS, all devices, p50 and p90, by version) | once a day |
-| heaviest hangs | the latest build's `GET /v1/builds/{id}/diagnosticSignatures` (`HANGS`), the top 5 by weight | once a day |
+| heaviest hangs | `GET /v1/builds/{id}/diagnosticSignatures` (`HANGS`) of the build players have: the newest iOS `appStoreVersion` in `READY_FOR_DISTRIBUTION` (`/v1/apps/{id}/appStoreVersions?include=build`), not the newest upload, since Apple keeps diagnostics only for App Store builds. The top 5 by weight; a 404 for that build is no hangs yet (an empty list), and no version on the App Store is no snapshot | once a day |
 
 With or without the key, **Apple's own rating** comes from its public lookup, once a day, one call per country set
 (keyless, counted in the daily keyless budget): `GET https://itunes.apple.com/lookup?id={id}&country={cc}` →
