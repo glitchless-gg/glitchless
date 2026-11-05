@@ -9,6 +9,9 @@
 //            Glitchless Cloud): put, get, stat, remove(prefix)
 //   readGame(projectId, service, from, to) → that game's finalized sessions in the window (app.js, from the store's
 //            summaries), and playersNow(projectId, service) → its sessions playing now
+//   liveStarts(projectId, service, from, to)  optional: sessions the host saw start at intake, [{ session_id, at,
+//            version, session_type, os }], for a store whose summaries run behind (Glitchless Cloud's event lake, a
+//            few minutes): each counts as a play as soon as it starts (withLiveStarts)
 //   notify(type, data)  optional: what happened, for a host that emails people or counts its own product's use
 //
 // Nothing is built here: a maker's agent builds the game on their own computer and publishes the folder it made.
@@ -215,6 +218,21 @@ export function problemsOf(s) {
 // One game's numbers in a room, from its sessions: plays (players' sessions on the versions it published to the room,
 // from its first publish until `to`), players where it keeps an ID, minutes played, plays on phones and their frames on
 // time, the most playing at once, and per version its plays and how many hit a problem.
+// A game's sessions with those the host saw start at intake but its store doesn't have yet (liveStarts): each is a
+// play from its start, on the device it started on, with nothing yet about how it went (minutes, frames, problems),
+// which arrive with the store's own session. One session is one play, whichever has it.
+export function withLiveStarts(sessions, starts = []) {
+  if (!starts?.length) return sessions;
+  const known = new Set(sessions.map((s) => s.session_id));
+  const early = [];
+  for (const s of [...starts].sort((a, b) => a.at - b.at)) {
+    if (!s?.session_id || !Number.isFinite(s.at) || known.has(s.session_id)) continue;
+    known.add(s.session_id);
+    early.push({ session_id: s.session_id, session_type: s.session_type ?? 'user', version: s.version ?? null, start: s.at, device: s.os ? { os: s.os } : {} });
+  }
+  return early.length ? [...sessions, ...early] : sessions;
+}
+
 export function gameNumbers(entry, sessions, to) {
   const uploads = entry.uploads ?? [];
   if (!uploads.length) return emptyNumbers();
@@ -327,7 +345,7 @@ function award(id, games, text) {
 // Report link, or null. requireService: games are told apart by the name they send (the open-source server's one
 // project holds every game), so joining names it. followUp: the host knows respondents' emails (resolveVoter's email),
 // so the default survey also asks whether Glitchless may email them.
-export function createRooms({ store, files, readGame, playersNow = async () => 0, notify = null, urls, abuse = null, requireService = false, followUp = false, now = Date.now, logger = console }) {
+export function createRooms({ store, files, readGame, playersNow = async () => 0, liveStarts = null, notify = null, urls, abuse = null, requireService = false, followUp = false, now = Date.now, logger = console }) {
   const defaultSurvey = followUp ? [...DEFAULT_SURVEY, FOLLOW_UP] : DEFAULT_SURVEY;
   // The template every organiser has, which can't be changed: the default survey.
   const builtIn = { id: 'default', name: 'Glitchless default', heading: DEFAULT_HEADING, intro: null, questions: defaultSurvey, builtin: true };
@@ -693,7 +711,15 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   async function numbersOf(r, g, to = Math.min(now(), r.ended_at ?? Infinity)) {
     if (!g.uploads?.length || !g.service) return emptyNumbers();
     try {
-      return gameNumbers(g, await readGame(g.project, g.service, g.uploads[0].published_at, to), to);
+      const from = g.uploads[0].published_at;
+      const sessions = await readGame(g.project, g.service, from, to);
+      const starts = liveStarts
+        ? await liveStarts(g.project, g.service, from, to).catch((err) => {
+            logger.warn('[rooms] live starts', r.code, g.slug, err.message);
+            return [];
+          })
+        : [];
+      return gameNumbers(g, withLiveStarts(sessions, starts), to);
     } catch (err) {
       logger.warn('[rooms] numbers', r.code, g.slug, err.message);
       return emptyNumbers();

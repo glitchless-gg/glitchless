@@ -14,7 +14,7 @@ import { createApp } from '../src/app.js';
 import { AuthError } from '../src/auth.js';
 import { createPlay, playHeaders } from '../src/play.js';
 import { FileRoomStore, DirFiles } from '../src/stores/rooms-file.js';
-import { slugify, checkPath, checkHtml, withBase, awardsOf, LIMITS, CODE_RE } from '../src/rooms.js';
+import { slugify, checkPath, checkHtml, withBase, awardsOf, gameNumbers, withLiveStarts, LIMITS, CODE_RE } from '../src/rooms.js';
 import { STORES } from './helpers/stores.js';
 
 const MINUTE = 60_000;
@@ -152,6 +152,27 @@ test('awards: the minimums, a shared tie for the vote, and the improvement in pl
   const none = Object.fromEntries(awardsOf([g('x', { plays: 2, versions: [v('1', 2, 2)] }, 2)]).map((a) => [a.id, a]));
   assert.deepEqual(Object.values(none).map((a) => a.games.length), [0, 0, 0, 0]);
   assert.equal(none.most_played.text, 'No game had 3 plays');
+});
+
+test("plays a host saw start at intake count before its store has them: once each, players only, the room's versions", () => {
+  const entry = { uploads: [{ version: '1.0', published_at: 1_000 }] };
+  const stored = [{ session_id: 's1', session_type: 'user', version: '1.0', start: 2_000, device: { os: 'Windows' }, cell: { sec: 60 } }];
+  const starts = [
+    { session_id: 's1', at: 2_000, version: '1.0', session_type: 'user', os: 'Windows' }, // the store has it: one play
+    { session_id: 's2', at: 3_500, version: '1.0', session_type: 'user', os: 'iOS' }, // not yet: a play, on a phone
+    { session_id: 's2', at: 3_000, version: '1.0', session_type: 'user', os: 'iOS' }, // the same session again
+    { session_id: 's3', at: 4_000, version: '1.0', session_type: 'synthetic', os: 'Linux' }, // a bot: no play
+    { session_id: 's4', at: 5_000, version: '0.9', session_type: 'user', os: 'Android' }, // not a version in the room
+    { session_id: 's5', at: 500, version: '1.0', session_type: 'user', os: 'Android' }, // before the first publish
+  ];
+  const merged = withLiveStarts(stored, starts);
+  assert.deepEqual(merged.map((s) => s.session_id), ['s1', 's5', 's2', 's3', 's4']);
+  assert.equal(merged.find((s) => s.session_id === 's2').start, 3_000, 'a session starts at its first start');
+  const n = gameNumbers(entry, merged, 10_000);
+  assert.equal(n.plays, 2);
+  assert.equal(n.phone_plays, 1);
+  assert.equal(n.minutes_played, gameNumbers(entry, stored, 10_000).minutes_played, "minutes come with the store's own session");
+  assert.equal(withLiveStarts(stored, []), stored);
 });
 
 for (const [kind, make] of Object.entries(STORES)) {

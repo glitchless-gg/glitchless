@@ -1837,7 +1837,9 @@ count plays), `minutes_played` (frames on screen), `phone_plays` (iOS and Androi
 within 1.15× their screen's budget), `most_at_once`, and per version `{plays, with_problem, problems: {errors,
 crashes, stutter, rage_quits}}`. A play hits a problem when it had an error, crashed, had more than 1 in 10 frames late,
 or rage-quit. They're read from the store's summaries (every session type, then kept), at most every 15 s a room;
-`playing_now` is the host's players now.
+`playing_now` is the host's players now. A host whose summaries run behind gives `liveStarts(project, service, from,
+to)`, the sessions it saw start at intake: one the store doesn't have yet counts as a play from its start, on the
+device it started on, with its minutes and problems once the store has it; one session is one play either way.
 
 **The end.** At `closes_at`, or when the organiser ends it (the sweep, or the first request after), publishing,
 joining and voting stop, the numbers freeze, and the room writes its **snapshot**: the room, each game (uploads with
@@ -1867,7 +1869,10 @@ sweeps hourly; Glitchless Cloud every 15 minutes (the alerts function).
 
 **Glitchless Cloud** keeps rooms in the control table (`ROOM#<code>`: `META`, `GAME#<slug>`, `VOTE#<voter hash>`;
 `ROOMS` lists them; `JAM#<code>`: `SNAPSHOT` (gzip JSON), `ANSWER#<respondent>`; `JAMS` lists them; an organiser's
-templates under `ROOMTPL#<owner>` `TPL#<id>`) and games' files in the rooms bucket under `r/`. Organisers are allow-listed (`GLITCHLESS_ROOM_ORGANISERS`:
+templates under `ROOMTPL#<owner>` `TPL#<id>`) and games' files in the rooms bucket under `r/`. Its event lake runs a
+few minutes behind, so intake writes down each session_start of a game in an open room (`ROOMPLAY#<project>#<service>`
+`H#<hour>#<ts>#<session>`: version, session type and OS, kept an hour) for `liveStarts`: plays show on the big screen
+within its 15 s. Organisers are allow-listed (`GLITCHLESS_ROOM_ORGANISERS`:
 emails or workspace IDs; anyone on a laptop without one), by workspace key or dashboard session; a room belongs to the
 workspace. `GET /api/me` says `rooms.organiser`. The jam's pages are on their own host (`GLITCHLESS_JAM_ORIGIN`,
 jam.glitchless.gg; without one, `/jam/` on the app), which has no sign-in of its own: its pages send people to
