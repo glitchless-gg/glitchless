@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 export const DEFAULT_URL = 'http://localhost:7777';
 
 const configDir = () => path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless');
@@ -122,19 +122,25 @@ async function workspaceGames(c, fresh = false) {
 }
 
 // The workspace game a maker's call is about: `want` by id or name, else the one last named, else the only one.
-// → { id, name, service } (its one service, if it has sent data), or null without a workspace key.
+// → { id, name, service } (its one service, if it has sent data), or null without a workspace key. The workspace's
+// demo game (sample play, which every new workspace starts with) is never one: it isn't the maker's, and taking it as
+// the only game would join a room with it before the maker has made theirs.
+const MAKE_ONE = "Make your game first (glitchless-mcp's glitchless_create_game, or in the dashboard), then join the room with it.";
 export async function gameFor(c, want = null) {
   if (!isWorkspace(c)) return null;
   want ||= c.game;
   let list = await workspaceGames(c);
   const find = () => list.find((g) => g.id === want) ?? list.find((g) => g.name.toLowerCase() === String(want).toLowerCase());
-  let hit = want ? find() : list.length === 1 ? list[0] : null;
-  if (want && !hit) {
+  const own = () => list.filter((g) => !g.demo);
+  const names = () => own().map((g) => g.name).join(', ');
+  let hit = want ? find() : own().length === 1 ? own()[0] : null;
+  if ((want && !hit) || (!want && !own().length)) {
     list = await workspaceGames(c, true);
-    hit = find();
+    hit = want ? find() : own().length === 1 ? own()[0] : null;
   }
-  if (!list.length) throw new JamError('This workspace has no games yet: make one in the dashboard (or with glitchless-mcp\'s glitchless_create_game), then join the room with it.');
-  if (!hit) throw new JamError(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(', ')}.` : `Name the game (game: "<name>"): ${list.map((g) => g.name).join(', ')}.`);
+  if (hit?.demo) throw new JamError(`"${hit.name}" is the workspace's demo game, with sample play: a room takes the game you're making. ${own().length ? `Your games: ${names()}.` : MAKE_ONE}`);
+  if (!own().length) throw new JamError(`This workspace has ${list.length ? 'only its demo game' : 'no games yet'}. ${MAKE_ONE}`);
+  if (!hit) throw new JamError(want ? `No game called "${want}" in this workspace. Games: ${names()}.` : `Name the game (game: "<name>"): ${names()}.`);
   c.game = hit.id;
   const services = (hit.services ?? []).filter((s) => !s.server_of).map((s) => s.service);
   return { id: hit.id, name: hit.name, service: services.length === 1 ? services[0] : null };

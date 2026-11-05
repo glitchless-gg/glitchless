@@ -1802,7 +1802,7 @@ room's phones share the venue's; votes and answers per person):
 | `GET /v1/rooms/templates` | an organiser | `{templates: [{id, name, heading, intro, questions, builtin?, updated_at?}]}`: `default` (built in, read only), then theirs |
 | `PUT`, `DELETE /v1/rooms/templates/{id}` | an organiser | saves `{name, heading?, intro?, questions?, from_room?}` (`from_room`: a room's survey as it's set; id 1 to 32 of `[a-z0-9-]`, at most 20 templates), or deletes one |
 | `GET /v1/rooms/{code}/snapshot[?format=csv]` | its organiser | the snapshot with the survey's answers; CSV: one row a game |
-| `POST /v1/rooms/{code}/games` | a maker | joins: `{title?, by?, service?}` → the game (joining again answers the same one) |
+| `POST /v1/rooms/{code}/games` | a maker | joins: `{title?, by?, service?}` → the game (joining again answers the same one); a host's `joinable(project)` can refuse a game (Glitchless Cloud: a workspace's demo game, 400) |
 | `GET`, `PATCH`, `DELETE /v1/rooms/{code}/games/{slug}` | its maker | its uploads and numbers by version; `{title?, by?}`; leaves. `DELETE …?by=organiser`: the organiser removes it |
 | `POST /v1/rooms/{code}/games/{slug}/uploads` | its maker | `{version, service?, files: [{path, bytes, sha256}]}` → `{n, send, expires_at}`; every limit below is checked here |
 | `PUT …/uploads/{n}/files/{path}` | its maker | one file (each path segment URI-encoded); its size and SHA-256 must match the list |
@@ -1887,6 +1887,8 @@ server has `glitchless_jam` for makers (`action`: `join`, `publish`, `status`, `
 the organiser's agent (`create`, `list`, `update`, `end`, `remove_game`, `delete`, `survey`, `templates`,
 `save_template`, `delete_template`, `report`; a maker's key is refused). Its CLI publishes
 (`npx -y glitchless-jam publish dist --room K7Q2M`) and has the same organiser's commands under `host`. It uses `glitchless-mcp`'s saved sign-in, or `GLITCHLESS_URL` and `GLITCHLESS_API_KEY`.
+With a workspace key a maker's game is the one named, else the workspace's only game, never its demo game (sample
+play every new workspace starts with): with only the demo, it says to make the game first.
 Before sending anything it checks the folder against the limits above, that `index.html` loads nothing from `/`, and
 reads the version and service from the game's `Glitchless.init` call; source maps go to `/v1/sourcemaps` instead of the
 room.

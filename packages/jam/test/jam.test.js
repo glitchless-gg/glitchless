@@ -224,6 +224,7 @@ test('the tool: join, publish, status with the plays by version, through an MCP 
 test('a workspace key: signed in like glitchless-mcp, organiser calls name no game, and a maker\'s calls name theirs in x-glitchless-project', async (t) => {
   const KEY = `gl_ws_${'k'.repeat(43)}`;
   const GAMES = [
+    { id: 'p_demo', name: 'Zoomies (demo)', demo: true, services: [{ service: 'zoomies', last_seen: null }] },
     { id: 'p_neon', name: 'Neon Dash', services: [{ service: 'neon-dash', last_seen: null }] },
     { id: 'p_tap', name: 'Tap Tower', services: [] },
   ];
@@ -267,6 +268,11 @@ test('a workspace key: signed in like glitchless-mcp, organiser calls name no ga
   assert.equal(made.code, 0, made.err);
   const room = /Made room ([A-Z0-9]{5})/.exec(made.out)[1];
 
+  // The workspace's demo game is never the maker's: not counted, not listed, and refused by name.
+  const mine = GAMES.splice(1);
+  assert.match((await run(['publish', build(NEON), '--room', room], {})).err, /This workspace has only its demo game\. Make your game first/);
+  GAMES.push(...mine);
+  assert.match((await run(['publish', build(NEON), '--room', room, '--game', 'zoomies (demo)'], {})).err, /"Zoomies \(demo\)" is the workspace's demo game, with sample play: a room takes the game you're making\. Your games: Neon Dash, Tap Tower\./);
   assert.match((await run(['publish', build(NEON), '--room', room], {})).err, /Name the game \(game: "<name>"\): Neon Dash, Tap Tower\./);
   assert.match((await run(['publish', build(NEON), '--room', room, '--game', 'nope'], {})).err, /No game called "nope" in this workspace\. Games: Neon Dash, Tap Tower\./);
   const done = await run(['publish', build(NEON), '--room', room, '--game', 'neon dash'], {});

@@ -12,6 +12,8 @@
 //   liveStarts(projectId, service, from, to)  optional: sessions the host saw start at intake, [{ session_id, at,
 //            version, session_type, os }], for a store whose summaries run behind (Glitchless Cloud's event lake, a
 //            few minutes): each counts as a play as soon as it starts (withLiveStarts)
+//   joinable(projectId)  optional: why this project's game can't join a room, or null (Glitchless Cloud: a workspace's
+//            demo game, which is sample play, not a game anyone is making)
 //   notify(type, data)  optional: what happened, for a host that emails people or counts its own product's use
 //
 // Nothing is built here: a maker's agent builds the game on their own computer and publishes the folder it made.
@@ -345,7 +347,7 @@ function award(id, games, text) {
 // Report link, or null. requireService: games are told apart by the name they send (the open-source server's one
 // project holds every game), so joining names it. followUp: the host knows respondents' emails (resolveVoter's email),
 // so the default survey also asks whether Glitchless may email them.
-export function createRooms({ store, files, readGame, playersNow = async () => 0, liveStarts = null, notify = null, urls, abuse = null, requireService = false, followUp = false, now = Date.now, logger = console }) {
+export function createRooms({ store, files, readGame, playersNow = async () => 0, liveStarts = null, joinable = null, notify = null, urls, abuse = null, requireService = false, followUp = false, now = Date.now, logger = console }) {
   const defaultSurvey = followUp ? [...DEFAULT_SURVEY, FOLLOW_UP] : DEFAULT_SURVEY;
   // The template every organiser has, which can't be changed: the default survey.
   const builtIn = { id: 'default', name: 'Glitchless default', heading: DEFAULT_HEADING, intro: null, questions: defaultSurvey, builtin: true };
@@ -558,6 +560,8 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     }
     if (!r.joining) refuse(403, 'this room has stopped taking new games');
     if (visible(games).length >= r.max_games) refuse(409, `this room is full: ${r.max_games} games`);
+    const why = joinable ? await joinable(maker.projectId) : null;
+    if (why) refuse(400, why);
     const title = clean(input.title, 60, 'title') ?? service ?? refuse(400, 'a game needs a title');
     const base = slugify(input.slug ?? title) ?? slugify(service) ?? 'game';
     if (input.slug != null && !SLUG_RE.test(String(input.slug))) refuse(400, 'slug is 2 to 32 of a-z, 0-9 and -');
