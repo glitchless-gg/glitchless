@@ -40,9 +40,12 @@ function collect(events, serverEvents = []) {
     if (!m) matches.set(id, (m = { id, from: Infinity, to: -Infinity, sessions: new Set(), servers: new Set(), levels: new Map(), attrs: null, attrsAt: Infinity, outcomes: {}, disconnects: {}, rtt: new Sketch(NET_ALPHA), lagSec: 0, netSec: 0, ticks: new Sketch(), players: 0 }));
     return m;
   };
+  // A window runs from its ts for its duration, so the match lasts at least to the window's end, whatever order the
+  // events come in (an event at the same ts just before the window mustn't hide its duration).
   const touch = (m, e) => {
     if (e.ts < m.from) m.from = e.ts;
-    if (e.ts > m.to) m.to = e.ts + (e.type === 'frame_window' || e.type === 'server_window' ? (e.duration_s || 0) * 1000 : 0);
+    const end = e.ts + (e.type === 'frame_window' || e.type === 'server_window' ? (e.duration_s || 0) * 1000 : 0);
+    if (end > m.to) m.to = end;
   };
   for (const [list, server] of [
     [events, false],

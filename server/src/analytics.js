@@ -2030,7 +2030,7 @@ export function platformOf(dev) {
 // The browser a session ran in, for a board's $browser: the browser SDK's name for it (Chrome, Safari, Firefox, Edge,
 // Opera, Other). The engine SDKs put their engine there instead, so their sessions are "Godot app" (no browser), or
 // "Unity web build" for a web build, whose browser the engine doesn't say.
-const ENGINES = new Set(['Godot', 'Unity', 'Unreal', 'GameMaker']);
+const ENGINES = new Set(['Godot', 'Unity', 'Unreal', 'GameMaker', 'Roblox']);
 const WEB_OS = /^(web|html5|webgl|gx\.games|opera gx)$/i;
 export function browserOf(dev) {
   const b = String(dev?.browser ?? '').trim();

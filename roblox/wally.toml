@@ -1,0 +1,13 @@
+[package]
+name = "glitchless-gg/glitchless"
+description = "Game observability for coding agents: frame times, hitches, errors, sessions and game events from a Roblox experience to Glitchless"
+version = "0.1.0"
+license = "MIT"
+authors = ["Glitchless <support@glitchless.gg>"]
+realm = "shared"
+registry = "https://github.com/UpliftGames/wally-index"
+homepage = "https://glitchless.gg"
+repository = "https://github.com/glitchless-gg/glitchless"
+exclude = ["test", "demo", "place.project.json", "*.rbxl", "*.rbxm", "README.md"]
+
+[dependencies]

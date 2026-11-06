@@ -9,7 +9,7 @@
 
 **Coding agents can build a game. They can't see anyone play it. Glitchless lets them.**
 
-Glitchless is game observability for coding agents. Your agent adds it to the game, sees what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix. It works with Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Godot 4.5+, Unity (6.3 LTS and later), Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops. Use it free on [Glitchless Cloud](https://www.glitchless.gg/pricing.html) (5,000 play sessions a month), or run it yourself: it's open source (MIT).
+Glitchless is game observability for coding agents. Your agent adds it to the game, sees what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix. It works with Unity (6.3 LTS and later), Godot 4.5+, Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops, Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Roblox experiences. Use it free on [Glitchless Cloud](https://www.glitchless.gg/pricing.html) (5,000 play sessions a month), or run it yourself: it's open source (MIT).
 
 On Starlift, a Godot game on iPhone and Android, Glitchless showed that 1 in 4 players who skipped the tutorial quit without playing. The agent made a skip start a game, and all 26 who skipped since then played ([the case study](https://www.glitchless.gg/starlift-case-study.html)). In a web game the SDK adds 33.7 KB gzipped and about 0.6 µs of work a frame, with no measurable change in frame time ([measured](https://www.glitchless.gg/glitchless-sdk-overhead.html)).
 
@@ -40,6 +40,7 @@ Read more: [a five-second first launch, found in player data and fixed](https://
 | [`unity`](unity) | Glitchless for **Unity 6.3 LTS and later** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
 | [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
 | [`gamemaker`](gamemaker) | Glitchless for **GameMaker 2024.2+** (GML scripts, a local package or `tools/install.mjs`): frame windows from `delta_time`, hitches named by what GameMaker can see (texture pages, room changes, collections, instance bursts), instance, surface and DS counts for leaks, rooms as levels, crashes sent on the next launch, bug reports and `-glitchless-measure` for agents. A demo with planted problems, a Node test that runs the GML without GameMaker, and an end-to-end test sit alongside |
+| [`roblox`](roblox) | Glitchless for **Roblox** (a Luau ModuleScript, by Rojo, Wally or a `.rbxm` model): each player's frame windows, stutters with their causes from Roblox's `Stats` service, errors from LocalScripts and server Scripts (scrubbed of players' names), loading time and ping, and each game server's frames, players and memory, all sent from the server, the only place Roblox lets a script make HTTP requests. Anonymous only: no user ID, name or display name ([PRIVACY.md](roblox/PRIVACY.md)) |
 | [`server`](server) | Intake, query API, findings and alerts: one Node 20+ server with a file store and no npm dependencies (`npm run server`, or the [Docker image](#run-it-on-a-server)) |
 | [`apps/dashboard`](apps/dashboard) | The dashboard: Overview, Performance, Error Tracking, Bug Reports, Player Analytics, Heatmaps, Sessions & Replay, Versions, Live Tail, Agents |
 | [`apps/zoomies`](apps/zoomies) | **Zoomies!**, a vibe-coded Three.js platformer that ships with four realistic bugs for the demo |
@@ -83,9 +84,11 @@ hit and check that the fix worked.
    the same address.
 
 2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It
-   covers Three.js (and React Three Fiber), Phaser 3 and 4, Babylon.js, PlayCanvas, Unity 6.3 or
-   later, Godot 4.5 or later, Unreal Engine 5.8, and GameMaker 2024.2 or later; for Godot it sends
-   you to ~/.glitchless/godot/addons/glitchless/README.md.
+   covers Unity 6.3 or later, Godot 4.5 or later, Unreal Engine 5.8, Three.js (and React Three
+   Fiber), Roblox, Phaser 3 and 4, Babylon.js, PlayCanvas, and GameMaker 2024.2 or later; for Godot
+   it sends you to ~/.glitchless/godot/addons/glitchless/README.md. On Roblox only the game's
+   servers can send, so the client token goes in a server Script, and I need to turn on Allow HTTP
+   Requests in Game Settings: tell me.
    Use these settings:
    - intake URL: http://localhost:7777
    - client token: gl_pub_dev (it's public and can only send data, so it's fine inside the game
@@ -109,11 +112,11 @@ hit and check that the fix worked.
    those as session properties as the skill describes: bands and the game's own words, never a name
    or an ID. They're sent in every privacy mode, so they need a line in the privacy policy.
    For a multiplayer game, also send its matches, ping and disconnects as the skill describes: the
-   Unity, Godot and Unreal SDKs read their netcode by themselves, and a web or GameMaker game passes
-   its ping. If it has dedicated or authoritative servers (a Node server on ws, Socket.IO or
-   Colyseus, or a Unity, Godot or Unreal dedicated-server build), run the SDK in server mode there
-   too, so the servers' tick time, players and crashes show next to the players'. Server mode sends
-   nothing about players.
+   Unity, Godot, Unreal and Roblox SDKs read their netcode by themselves, and a web or GameMaker
+   game passes its ping. If it has dedicated or authoritative servers (a Node server on ws,
+   Socket.IO or Colyseus, or a Unity, Godot or Unreal dedicated-server build; a Roblox game's
+   servers always are), run the SDK in server mode there too, so the servers' tick time, players and
+   crashes show next to the players'. Server mode sends nothing about players.
    For a web game with a production build (Vite or another bundler), also add the source map upload
    the skill describes (glitchless-sourcemaps), so errors from the minified build show the real file
    and line. It uploads with a secret key that can upload source maps, read from GLITCHLESS_API_KEY
@@ -136,7 +139,8 @@ hit and check that the fix worked.
      `npx`, arguments `-y @jason.today/webmcp@latest --mcp`. It lets you drive the running game:
      measure frame times, inspect the scene and reproduce problems. Unity, Godot, Unreal and
      GameMaker builds don't need it: they measure themselves with --glitchless-measure
-     (-glitchless-measure in Unreal and GameMaker).
+     (-glitchless-measure in Unreal and GameMaker). A Roblox game is measured from play tests in
+     Roblox Studio.
    - For an Unreal game, Epic's Unreal MCP (UE 5.8, Experimental) can sit beside Glitchless: it is
      your hands in the editor (open maps, look inside Blueprints, edit actors, start Play In
      Editor), and Glitchless says what is wrong and whether a change fixed it. If the project uses
@@ -249,6 +253,8 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 then call `Glitchless.Init(new GlitchlessOptions { Service = "my-game", Intake = "http://localhost:7777" })` in the `Awake` of your first scene (`using GlitchlessSdk;`). See its [README](unity/Packages/gg.glitchless.sdk/README.md).
 
 For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless) into the project's `Plugins` folder, enable it in **Edit → Plugins**, and fill in **Service** and **Intake** in **Project Settings → Plugins → Glitchless**; no code is needed. See its [README](unreal/Plugins/Glitchless/README.md), and [`unreal/demo`](unreal/demo) for a small game with planted problems.
+
+For a Roblox experience, put [`roblox/src`](roblox/src) in ReplicatedStorage as `Glitchless` (Rojo or Wally, or `rojo build roblox/default.project.json -o Glitchless.rbxm` and insert it), turn on **Allow HTTP Requests** in Game Settings → Security, and call `require(ReplicatedStorage.Glitchless).init({ service = "my-game", clientToken = "gl_pub_dev", intake = "http://localhost:7777" })` from a server Script. A play test in Studio reaches a local server; a published game needs an `https://` one. See its [README](roblox/README.md).
 
 For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.4.2.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.4.2) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
 

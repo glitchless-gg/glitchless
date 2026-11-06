@@ -1,0 +1,29 @@
+{
+  "name": "Glitchless Test Place",
+  "emitLegacyScripts": true,
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Glitchless": {
+        "$path": "src"
+      }
+    },
+    "ServerScriptService": {
+      "GlitchlessDemo": {
+        "$path": "demo/server.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "GlitchlessDemoClient": {
+          "$path": "demo/client.client.luau"
+        }
+      }
+    },
+    "HttpService": {
+      "$properties": {
+        "HttpEnabled": true
+      }
+    }
+  }
+}

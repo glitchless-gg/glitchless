@@ -15,7 +15,7 @@ This plugin adds Glitchless to [DeepSeek Harness](https://github.com/deepseek-ai
 
 | Skill | What it does |
 | --- | --- |
-| `glitchless-setup` | Adds Glitchless to a game in Unity, Godot, Unreal, Three.js, Phaser, Babylon.js, PlayCanvas or GameMaker: the SDK, levels, events, bots, privacy settings |
+| `glitchless-setup` | Adds Glitchless to a game in Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker: the SDK, levels, events, bots, privacy settings |
 | `glitchless-dashboard` | Works out what you want to know about your game, adds what's needed to measure it, and designs its dashboard |
 | `glitchless-triage` | Finds the problem that hits the most players, fixes it, and checks the fix with the next version |
 

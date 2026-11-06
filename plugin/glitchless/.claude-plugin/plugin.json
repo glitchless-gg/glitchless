@@ -1,7 +1,7 @@
 {
   "name": "glitchless",
   "version": "0.1.0",
-  "description": "Let your agent understand your players. Glitchless for Claude Code: add game observability to a Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker game, then find and fix what real players hit (stutters, crashes, where they quit) from their sessions (Glitchless MCP) and the running game (WebMCP).",
+  "description": "Let your agent understand your players. Glitchless for Claude Code: add game observability to a Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker game, then find and fix what real players hit (stutters, crashes, where they quit) from their sessions (Glitchless MCP) and the running game (WebMCP).",
   "author": { "name": "Glitchless" },
   "keywords": ["gamedev", "threejs", "godot", "unreal", "observability", "performance", "telemetry", "webmcp"]
 }

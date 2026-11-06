@@ -1,7 +1,7 @@
 # Glitchless plugin for Codex, ChatGPT, Cursor and Antigravity
 
-Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and
-GameMaker. This plugin connects your agent to Glitchless Cloud's MCP server, `https://api.glitchless.gg/mcp` (you sign
+Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas
+and GameMaker. This plugin connects your agent to Glitchless Cloud's MCP server, `https://api.glitchless.gg/mcp` (you sign
 in through the browser and pick what the agent may do), and adds three skills:
 
 | Skill | What it does |

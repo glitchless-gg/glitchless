@@ -22,6 +22,8 @@
     "test:unity": "node unity/test/e2e.mjs",
     "test:gamemaker": "node gamemaker/test/e2e.mjs",
     "test:gamemaker:core": "node --test gamemaker/test/core.test.mjs",
+    "test:roblox": "lune run roblox/test/run && node --test roblox/test/e2e.mjs",
+    "test:roblox:studio": "node --test roblox/test/studio.mjs",
     "test:otlp": "node server/test/otlp-collector.e2e.mjs",
     "bots": "node scripts/bots.js",
     "playtest": "node packages/playtest/bin/glitchless-playtest.js",

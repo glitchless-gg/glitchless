@@ -270,7 +270,7 @@ export function createServer({ remote = false, scopes = null, connection: c = nu
 
 function instructions(remote) {
   return [
-    'Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker.',
+    'Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker.',
     remote
       ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_links makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else."
       : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_links makes a read-only link to a board.",

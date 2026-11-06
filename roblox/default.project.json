@@ -1,0 +1,7 @@
+{
+  "name": "Glitchless",
+  "emitLegacyScripts": true,
+  "tree": {
+    "$path": "src"
+  }
+}

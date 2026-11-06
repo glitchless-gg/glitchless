@@ -253,7 +253,7 @@ export function findings(ctx, maps = []) {
       title: `\`${g.key}\` keeps climbing: median ${fmt(g.median_first)} → ${fmt(g.median_last)} per session`,
       summary: `In ${g.climbing} of the ${g.sessions} sessions that report it, the \`${g.key}\` gauge climbed from a median of ${fmt(g.median_first)} to ${fmt(g.median_last)} and was still at its peak when the session ended. Something is made and never removed: it holds memory now, and frame time as it grows.`,
       evidence: g,
-      suggestion: gaugeEngine === 'unreal' ? unrealGaugeLeak(g.key) : gaugeEngine === 'gamemaker' ? gamemakerGaugeLeak(g.key) : `Find where the game adds to \`${g.key}\` and check that each one goes away when it's done (an effect that finished, an object off screen, a level that ended): remove it from the scene and dispose its geometry, materials and textures, or return it to a pool.`,
+      suggestion: gaugeEngine === 'unreal' ? unrealGaugeLeak(g.key) : gaugeEngine === 'gamemaker' ? gamemakerGaugeLeak(g.key) : gaugeEngine === 'roblox' ? robloxGaugeLeak(g.key) : `Find where the game adds to \`${g.key}\` and check that each one goes away when it's done (an effect that finished, an object off screen, a level that ended): remove it from the scene and dispose its geometry, materials and textures, or return it to a pool.`,
       link: { page: 'performance', section: 'memory' },
       impact: g.climbing / totalSessions,
     });
@@ -467,7 +467,9 @@ export function findings(ctx, maps = []) {
       summary:
         `${slow}% of sessions waited more than ${SLOW_START_MS / 1000}s for the first frame (median ${(perf.kpis.ttff_p50 / 1000).toFixed(1)}s). ` +
         launchNote(perf.kpis.ttff_first_launch) +
-        (engine === 'godot' || engine === 'unity' || engine === 'unreal' || engine === 'gamemaker'
+        (engine === 'roblox'
+          ? 'On Roblox this is the loading screen, from joining the server to the first frame after the game loaded, and a player can leave for another experience before it ends.'
+          : engine === 'godot' || engine === 'unity' || engine === 'unreal' || engine === 'gamemaker'
           ? 'Players expect to be playing within seconds of opening the game, and some give up during a long splash screen.'
           : 'Web portals expect gameplay within ~20s and every extra second costs conversion-to-play.'),
       evidence: { ttff_p50: perf.kpis.ttff_p50, ttff_p95: perf.kpis.ttff_p95, slow_sessions_pct: slow, ...(perf.kpis.ttff_first_launch ? { by_launch: perf.kpis.ttff_first_launch } : {}) },
@@ -548,7 +550,7 @@ function carriedGauges(ctx, level, baselineLevel) {
 
 // Which SDK sent most of these sessions, so fix advice names that engine's APIs: 'godot', 'unity', 'unreal',
 // 'gamemaker', 'phaser', 'babylon', 'playcanvas', or 'web' (the browser SDK on its own or with three.js).
-const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-unreal/': 'unreal', 'glitchless-gamemaker/': 'gamemaker', 'glitchless-phaser/': 'phaser', ...WEB_ENGINES };
+const SDK_ENGINES = { 'glitchless-godot/': 'godot', 'glitchless-unity/': 'unity', 'glitchless-unreal/': 'unreal', 'glitchless-gamemaker/': 'gamemaker', 'glitchless-roblox/': 'roblox', 'glitchless-phaser/': 'phaser', ...WEB_ENGINES };
 function engineOf(sessions) {
   return engineOfSdks(sessions.map((s) => [s?.sdk || '', 1]));
 }
@@ -630,6 +632,8 @@ function errorSuggestion(engine, issue, crumbs, when = 'play') {
       return webEngineErrorSuggestion(engine, where, trigger);
     case 'gamemaker':
       return gamemakerErrorSuggestion(where, issue, trigger);
+    case 'roblox':
+      return robloxErrorSuggestion(where, issue, trigger);
     default:
       return `${where} an unchecked lookup (e.g. a pool/array .find() returning undefined) on the code path triggered by ${trigger}. Make it fail safe and make sure game state (score, pickups) is applied before anything that can throw.`;
   }
@@ -654,6 +658,7 @@ const QUALITY_TIER_TIPS = {
   unreal: 'Add a quality tier: when gpu_tier is low (a Steam Deck is) or p95 stays above budget for 5s, lower the scalability groups (UGameUserSettings::SetOverallScalabilityLevel, or sg.ShadowQuality, sg.GlobalIlluminationQuality, sg.ReflectionQuality, sg.PostProcessQuality and sg.EffectsQuality one by one; RunHardwareBenchmark picks levels per machine), render at a lower r.ScreenPercentage and let TSR upscale, swap Lumen for cheaper lighting (r.DynamicGlobalIlluminationMethod and r.ReflectionMethod) and cut shadow cost (fewer shadow-casting lights, r.Shadow.Virtual.Enable 0 for plain shadow maps).',
   godot:'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render 3D at a lower resolution (Viewport.scaling_3d_scale around 0.7), turn off shadows, glow and SSAO in the WorldEnvironment, drop MSAA and halve particle amounts.',
   unity: 'Add a quality tier: when the device tier is low or p95 stays above budget for 5s, switch QualitySettings to a lower level, render at a lower scale (renderScale on the URP asset, or ScalableBufferManager), turn off shadows and post-processing, and halve particle counts.',
+  roblox: 'Roblox lowers its own graphics quality when a player leaves Graphics Quality on Automatic, so cut what the game adds: when `os` is Phone or Tablet or p95 stays above budget for 5s, turn down the client-side effects (ParticleEmitter Rate, Beams and Trails, Bloom, DepthOfField and SunRays post effects), turn on StreamingEnabled so a phone holds only the world around the player, use fewer, larger parts and shared MeshParts, and set RenderFidelity to Automatic and CastShadow off on small decoration.',
   gamemaker: 'Add a quality tier: when p95 stays above budget for 5s (or on a low-tier GPU), turn off what costs most per frame: shaders and full-screen surface effects, particle density (part_type and part_emitter amounts), and the size of the application surface (surface_resize(application_surface, ...) with display_set_gui_size for the GUI), and turn on texture group prefetching so pages are not swapped in during play.',
   phaser: 'Add a quality tier: when gpu_tier is low or p95 stays above budget for 5s, render at a lower resolution (a smaller game size with Scale.FIT, and resolution 1), drop preFX/postFX filters and lights, and halve particle emitter quantities.',
   web: 'Add a quality tier: cap devicePixelRatio at 1.5, disable shadows/post-processing and halve particle counts when gpu_tier is low or p95 stays above budget for 5s.',
@@ -664,6 +669,7 @@ const SLOW_START_TIPS = {
   unreal: 'Make the startup map tiny (a menu with little in it), load the first level behind a loading screen (the MoviePlayer, or a widget while the level streams in), load what that level needs with the Asset Manager instead of hard references from the game instance, and let the bundled PSO cache precompile behind the loading screen rather than during play.',
   godot:'Keep the first scene small and load the rest in the background with ResourceLoader.load_threaded_request(), preload() only what the first screen needs, turn on the Shader Baker in the export preset (Godot 4.5+) so the first frame does not wait on shader compiles, and use VRAM-compressed textures. Before shipping the baker, check a fresh install on a real device with user://shader_cache wiped and look at every screen: on Godot 4.7.2 it left parts of the UI blank on new iPhone installs, with no error to show for it.',
   unity: 'Keep the first scene small and load the rest with SceneManager.LoadSceneAsync() or Addressables, move heavy Awake()/Start() work behind the first frame, warm shaders behind the splash screen with a ShaderVariantCollection, and use compressed textures (ASTC on phones).',
+  roblox: 'Turn on StreamingEnabled (Workspace) so a player starts once the area around their spawn has arrived, not the whole map; keep ReplicatedFirst to a small loading screen; preload only what the first scene shows (ContentProvider:PreloadAsync of everything at start holds the loading screen until all of it is downloaded); split huge models and unions; and move heavy setup in LocalScripts until after the first frame.',
   gamemaker: 'Keep the first room light (a menu with little in it), prefetch only the texture groups it draws (texturegroup_load, or texture_prefetch) and load the rest behind a loading room, set heavy texture groups to load on demand (Dynamic Texture Groups) instead of at start, and move big Create-event work (building grids, reading files, json_parse of large data) out of the first frame.',
   phaser: 'Have the Preloader load only what the menu and first level need and load later levels in their own scenes, pack images into texture atlases, and ship compressed audio (and compressed textures where the target supports them).',
   web: 'Lazy-load non-first-level assets, compress textures (KTX2/Basis) and meshes (Draco/Meshopt), and warm shaders with renderer.compileAsync before the first frame.',
@@ -865,8 +871,58 @@ function gamemakerErrorSuggestion(where, issue, trigger) {
   return `${where} ${cause}. The game caught this one and carried on; fix the cause so the fallback isn't needed.`;
 }
 
+// Roblox hitch causes, from what the long frame measured on the player's device (SPEC §5e): assets still streaming
+// in (ContentProvider's queue), hundreds of instances added at once, a long physics step, render CPU or GPU time, or
+// time outside all of those (Luau and the engine's other main-thread work).
+const ROBLOX_CAUSE_TIPS = {
+  asset_load:
+    'Some hitches come while assets are still downloading (ContentProvider had requests queued): preload what a scene shows before it shows it (ContentProvider:PreloadAsync on a loading screen, for that scene\'s meshes, textures and sounds only), and reuse a few textures and meshes rather than many unique ones.',
+  object_spawn:
+    'Some hitches add hundreds of instances in one frame (a model cloned or a map built at once): pool and reuse models instead of Clone() and Destroy() for every effect, set a new model\'s Parent last (after its properties), build big things over several frames (task.wait between chunks), and turn on StreamingEnabled so the client receives the world in pieces.',
+  physics:
+    'Some hitches are long physics steps: anchor parts that never move, cut unanchored parts and constraints, turn off CanCollide, CanTouch and CanQuery on decoration, and use Box or Hull CollisionFidelity on meshes.',
+  render:
+    'Some hitches are long render frames: cut draw calls (fewer unique materials and meshes, the same MeshId reused, small parts combined), shadows (CastShadow off on small parts, fewer shadow-casting lights), and transparent parts, Beams and particles on screen.',
+  script:
+    'Some hitches spend their time outside rendering and physics, in Luau or the engine\'s other work: look for loops over workspace:GetDescendants() or every part each frame (keep your own lists, or use CollectionService tags), heavy work in RenderStepped or Heartbeat handlers, and bursts of RemoteEvent messages handled at once. The MicroProfiler (Ctrl+F6) names the script.',
+  frozen:
+    'Some frames froze for over 0.7s: something blocked the client that long (a huge Clone() or Instance.new loop, a big table built in one go, a synchronous wait on the server); split it over frames with task.wait() or move it behind a loading screen.',
+};
+
+function robloxPerfSuggestion(corr, preceding, causes, level) {
+  const tips = [];
+  const gauge = corr[0]?.key;
+  const trigger = preceding[0]?.share >= 0.3 ? preceding[0].event : null;
+  if (gauge || trigger) tips.push(`Find the code that runs on ${trigger ? `\`${trigger}\`` : 'the hitch'}${gauge ? ` and drives \`${gauge}\`` : ''}. If it creates many instances, pool and reuse them instead of Clone() and Destroy() per effect, or use one ParticleEmitter.`);
+  const top = Object.entries(causes).filter(([c]) => ROBLOX_CAUSE_TIPS[c]).sort((a, b) => GENERIC_CAUSES.includes(a[0]) - GENERIC_CAUSES.includes(b[0]) || b[1] - a[1]).slice(0, 3);
+  for (const [c] of top) tips.push(ROBLOX_CAUSE_TIPS[c]);
+  if (!tips.length) tips.push(`Profile ${level.key} with the MicroProfiler (Ctrl+F6, or View → MicroProfiler in Studio) and the Developer Console (F9: Memory and Scripts); check draw calls (${level.draw_calls} avg).`);
+  return tips.join(' ');
+}
+
+// A climbing gauge in a Roblox game. The SDK sends the client's instance count as a gauge; Roblox frees an instance
+// only once it is destroyed and nothing refers to it.
+function robloxGaugeLeak(key) {
+  if (key === 'instances') return 'Instances pile up on players\' devices: something creates them (Instance.new, Clone) and never Destroy()s them, or a table or a connection still holds ones taken out of the world. Destroy() effects, projectiles and UI when they are done (Debris:AddItem for timed ones), disconnect connections that are no longer needed, and pool what is made per shot. The Developer Console (F9 → Memory) shows which category grows.';
+  return `Find where the game adds to \`${key}\` and check that each one goes away when it's done: Destroy() instances (or return them to a pool) and disconnect their connections.`;
+}
+
+// Roblox's error kinds (SPEC §5e): `script`, an error that stopped a LocalScript's thread on a player's client,
+// `server_script`, one that stopped a server Script's thread (never the server), and `manual`, one the game caught.
+function robloxErrorSuggestion(where, issue, trigger) {
+  const m = issue.message || '';
+  let cause = `an instance that isn't there (FindFirstChild returning nil, a part or a character destroyed or not loaded yet) or a table entry that is nil, on the path triggered by ${trigger}`;
+  if (/attempt to index nil/i.test(m)) cause = `a value that is nil where the code expects an instance or a table, on the path triggered by ${trigger}: often player.Character before it loads or after a death, a Humanoid that is gone, or, on a client, a child the server made that hasn't replicated yet (WaitForChild it instead of indexing it)`;
+  else if (/attempt to (call|perform arithmetic|compare|concatenate)/i.test(m)) cause = `a nil or wrongly typed value used as a function or a number, on the path triggered by ${trigger}: a module that returned nothing, a missing table field, or a value from a RemoteEvent that isn't the type expected`;
+  else if (/is not a valid member/i.test(m)) cause = `a child or property read by a name that doesn't exist (renamed, not created yet, or not replicated to the client), on the path triggered by ${trigger}: use FindFirstChild or WaitForChild for children`;
+  else if (/DataStore|HTTP|Http|request/i.test(m)) cause = `a web call that failed (DataStore, HttpService, MarketplaceService), on the path triggered by ${trigger}: these fail now and then by design, so wrap them in pcall and retry`;
+  if (issue.kind === 'script' || issue.kind === 'server_script') return `${where} ${cause}. Roblox stops the thread at an error, so the rest of that function or event handler never ran: make the path fail safe, and apply game state (coins, progress) before anything that can error.`;
+  return `${where} ${cause}. The game caught this one and carried on; fix the cause so the fallback isn't needed.`;
+}
+
 function perfSuggestion(corr, preceding, causes, level, engine) {
   if (engine === 'godot') return godotPerfSuggestion(corr, preceding, causes, level);
+  if (engine === 'roblox') return robloxPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'gamemaker') return gamemakerPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'phaser') return phaserPerfSuggestion(corr, preceding, causes, level);
   if (engine === 'unity') return unityPerfSuggestion(corr, preceding, causes, level);
