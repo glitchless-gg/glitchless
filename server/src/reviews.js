@@ -848,7 +848,10 @@ function robloxScore(st) {
   return {
     synced: null,
     overall: { up: r.up ?? null, down: r.down ?? null, votes, positive_pct: votes ? pct(r.up, votes) : null, favorites: r.favorites ?? null, visits: r.visits ?? null, playing: r.playing ?? null, day: r.day ?? null },
-    notes: ['Roblox has no written reviews: players give the experience a thumbs up or down, all time. Favorites and visits are all time too; a visit is a time someone joined.'],
+    notes: [
+      'Roblox has no written reviews: players give the experience a thumbs up or down, all time. Favorites and visits are all time too; a visit is a time someone joined.',
+      ...(r.private ? ['The experience is private: Roblox shows the public only its thumbs up and down, so players now, favorites and visits come once it is public.'] : []),
+    ],
   };
 }
 

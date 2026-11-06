@@ -1929,7 +1929,7 @@ the kept data.
 
 | from | call | when | key |
 | --- | --- | --- | --- |
-| players now, visits, favorites, name | `GET games.roblox.com/v1/games?universeIds={u}` (`playing`, `visits`, `favoritedCount`, `maxPlayers`, `rootPlaceId`, `updated`; an unknown universe answers `id: 0`) | every sync | none |
+| players now, visits, favorites, name | `GET games.roblox.com/v1/games?universeIds={u}` (`playing`, `visits`, `favoritedCount`, `maxPlayers`, `rootPlaceId`, `updated`; an unknown universe answers no data, a private one a stand-in with `id: 0` and "[TITLE UNAVAILABLE]": it connects when its votes answer under its ID, and its snapshot keeps `private: true` and no players, visits or favorites until it is public) | every sync | none |
 | thumbs up and down | `GET games.roblox.com/v1/games/votes?universeIds={u}` (`upVotes`, `downVotes`, all time) | once a day | none |
 | users, Robux, play time | the Analytics Query API (beta), `POST apis.roblox.com/analytics-query-api/v1/universes/{u}/metrics` with `x-api-key`, `granularity: "OneDay"`: `DailyActiveUsers`; `DailyActiveUsers` by `IsNewUser` (its `true` series: new users); `DailyRevenue`; `PayingUsers`; `PayingUsersCVR`; `AveragePlayTimeMinutesPerDAU`; `AverageSessionLengthMinutes` | once a day: back the plan's retention on the first (at most 400 days), then from 3 days before the last day read, to today | Open Cloud key |
 | retention | `ForwardD1Retention`, `ForwardD7Retention`, `ForwardD30Retention` | once a day: the last 32 days (a cohort's D30 comes in a month after its day) | Open Cloud key |
