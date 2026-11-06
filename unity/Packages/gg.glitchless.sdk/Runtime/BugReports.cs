@@ -154,6 +154,7 @@ namespace GlitchlessSdk
         CursorLockMode lockMode;
         bool cursorVisible = true;
         TouchScreenKeyboard keyboard;
+        string keyboardText = ""; // what the on-screen keyboard last said, so only its changes reach the note
         Rect sendRect, cancelRect, noteRect;
         readonly Event evt = new Event();
 #if GLITCHLESS_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
@@ -212,7 +213,8 @@ namespace GlitchlessSdk
             cursorVisible = Cursor.visible;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
-            if (TouchScreenKeyboard.isSupported) keyboard = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default, false, true);
+            keyboardText = "";
+            if (OnScreenKeyboard) keyboard = TouchScreenKeyboard.Open("", TouchScreenKeyboardType.Default, false, true);
             while (Event.PopEvent(evt)) { } // keys pressed before the form opened aren't part of the note
             Call(Options.OnOpen, "OnOpen");
         }
@@ -262,7 +264,7 @@ namespace GlitchlessSdk
                 Close();
                 return;
             }
-            if (keyboard != null && state == State.Form && keyboard.status != TouchScreenKeyboard.Status.Canceled) note = Cap(keyboard.text ?? "");
+            if (keyboard != null && keyboard.status != TouchScreenKeyboard.Status.Canceled) FromKeyboard(keyboard.text);
             while (IsOpen && Event.PopEvent(evt))
                 if (evt.type == EventType.KeyDown) OnKey(evt);
             if (IsOpen && PointerDown(out var at)) Click(new Vector2(at.x, Screen.height - at.y));
@@ -270,6 +272,20 @@ namespace GlitchlessSdk
 
         internal string Note => note;
         internal string Status => state.ToString();
+
+        // The on-screen keyboard is for phones and tablets. A web build says it is supported on a desktop too, where
+        // it stays empty.
+        static bool OnScreenKeyboard => TouchScreenKeyboard.isSupported && Application.isMobilePlatform;
+
+        // What the on-screen keyboard holds, read each frame it's up (tests call it too). Only its changes reach the
+        // note, so letters typed on a real keyboard stay: copying it every frame wiped them a frame after they showed.
+        internal void FromKeyboard(string text)
+        {
+            text = text ?? "";
+            if (state != State.Form || text == keyboardText) return;
+            keyboardText = text;
+            note = Cap(text);
+        }
 
         // One key from the event queue (tests feed it events too).
         internal void OnKey(Event e)
@@ -310,8 +326,11 @@ namespace GlitchlessSdk
         {
             if (sendRect.Contains(at)) Send();
             else if (cancelRect.Contains(at)) Close();
-            else if (noteRect.Contains(at) && TouchScreenKeyboard.isSupported && (keyboard == null || !keyboard.active))
+            else if (noteRect.Contains(at) && OnScreenKeyboard && (keyboard == null || !keyboard.active))
+            {
+                keyboardText = note; // it opens holding the note: no change yet
                 keyboard = TouchScreenKeyboard.Open(note, TouchScreenKeyboardType.Default, false, true);
+            }
         }
 
         static void Call(Action action, string name)

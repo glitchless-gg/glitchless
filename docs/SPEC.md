@@ -2270,7 +2270,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.6.3"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.6.4"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |

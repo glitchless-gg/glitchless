@@ -159,6 +159,38 @@ namespace GlitchlessSdk.Tests
         }
 
         [UnityTest]
+        public IEnumerator AnOnScreenKeyboardThatStaysEmptyLeavesTypedLettersInTheNote()
+        {
+            var go = new GameObject("form test");
+            var form = go.AddComponent<BugReportForm>();
+            form.Core = GlitchlessRunner.Core;
+            form.Options = new BugReportOptions { PauseGame = false, Screenshot = false };
+            try
+            {
+                form.Open();
+                yield return null;
+                Assert.AreEqual("Form", form.Status);
+                // A web build on a desktop: the on-screen keyboard is up but empty, read every frame, while the
+                // player types on the real keyboard.
+                form.FromKeyboard("");
+                foreach (var c in "stuck") form.OnKey(new Event { type = EventType.KeyDown, character = c });
+                form.FromKeyboard("");
+                form.FromKeyboard(null);
+                Assert.AreEqual("stuck", form.Note, "the letters stay");
+                // A phone: what the player types on the on-screen keyboard is the note.
+                form.FromKeyboard("stuck in the wall");
+                Assert.AreEqual("stuck in the wall", form.Note);
+                form.OnKey(Event.KeyboardEvent("backspace"));
+                form.FromKeyboard("stuck in the wall");
+                Assert.AreEqual("stuck in the wal", form.Note, "a key from a real keyboard isn't undone by the same text again");
+            }
+            finally
+            {
+                UnityEngine.Object.Destroy(go);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator ABugReportBeforeInitSaysOffline()
         {
             (bool sent, string reason)? result = null;
