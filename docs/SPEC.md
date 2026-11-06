@@ -1395,7 +1395,7 @@ permission (Owner, Admin).
 
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store`, `revenuecat` (§3h), `stripe` (§3i) and `roblox` (§3k) |
+| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], notes: [{part, note}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` (`notes`: what the store has no data for yet, which leaves the sync ok) for `steam`, `google_play`, `app_store`, `revenuecat` (§3h), `stripe` (§3i) and `roblox` (§3k) |
 | `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); Roblox `{universeId, apiKey?}` (§3k); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}`. A new connection, another app or a new key syncs before answering (up to 15 seconds, counted as one of the hour's 6 syncs; a sync that fails shows as `status.errors` `[{part: 'sync'}]` and never fails the save) |
 | `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
 | `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour with the syncs on connecting, within 20 seconds; the hourly sync does the rest) |
@@ -1941,7 +1941,13 @@ the sync polls `GET apis.roblox.com/analytics-query-api/{path}` after 1, 2, 3, 5
 else leaves that part for the next sync. Each part (one metric, or the four vitals of one breakdown) is kept as done for
 the day, so a sync cut short (the first, behind the connecting request's 15 seconds) goes on at the next one. A 401,
 403 or 429 stops the day's analytics until the next sync; a metric Roblox refuses (400, its code 2001) is reported and
-the others go on. Calls go one at a time: one an hour without a key, and 18 queries a day (with their polls) with one.
+the others go on. A query Roblox says "is not available" for the experience (HTTP 400, "Query is not available for
+Universe with id …", seen for a new private experience's `ClientCrashRate15m`; no code for it is documented, so the
+words are matched) is **no data yet**, not a failure: the part counts as done for the day, the sync stays ok with one
+note for everything Roblox has nothing for (Settings → Integrations shows it under Last sync: "Roblox doesn't have this
+experience's crash rate and frame rate yet…"), the day after asks again from where it would have started (the backfill,
+or 27 days of vitals), and the vitals' empty answer says on which day Roblox said so. The same answer to the key's
+check on save leaves the key saved: Roblox took it. Calls go one at a time: one an hour without a key, and 18 queries a day (with their polls) with one.
 
 **Checked against Roblox's docs** (Supported metrics and dimensions, create.roblox.com/docs/cloud/guides/analytics/metrics,
 November 2026). Every metric name above is Roblox's, case and all, and each supports `OneDay`; the retention metrics
@@ -2016,7 +2022,9 @@ at, up, down, favorites, visits, playing, max_players, updated, name}`), `SNAP#p
 D1, thumbs up, favorites, visits), `VIT#<month>` (vitals by day and place version), `REV#<month>` (by day: `revenue`,
 `active_customers`, `new_customers`, `paying_users`, `payer_pct`, `playtime_min`, `session_min`, `d1`, `d7`, `d30`,
 `currency: "ROBUX"`; each part a sync brings replaces only its own fields) and `META`. The sync's own state is
-`ROBLOX#<project>` `STATE` (`{votes, analytics: {day, done}, usersUntil, perfUntil, latest, public}`).
+`ROBLOX#<project>` `STATE` (`{votes, analytics: {day, done, none?}, usersUntil, perfUntil, latest, public}`; `none`: the
+day's parts Roblox has no data for); `SNAP#platforms` with `rows: []` and `unavailable: true` when Roblox has no
+vitals by platform for it yet.
 
 **Not yet seen from Roblox itself** (answered by a stand-in that follows the docs): the units of rates, the value
 names of `IsNewUser` (read as `true`, `1` or `new…`), how soon a day's numbers and a place version's vitals come in,

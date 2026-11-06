@@ -55,7 +55,8 @@ async function vitals({ service, store, version, hours }) {
   const svc = await resolveService(service);
   const r = await query('store_vitals', { service: svc, store, version, ...range(hours || 720) });
   if (r.connected === false) return reply(`${svc}: ${r.why}${r.stores?.length ? ` Connected: ${r.stores.join(', ')}.` : ''}`, {});
-  if (r.empty) return reply(`${r.store_name} vitals of ${svc}: ${r.why}`, {});
+  // (Roblox's retention comes with them even when it has no vitals yet, as for a new experience.)
+  if (r.empty) return reply(`${r.store_name} vitals of ${svc}: ${r.why}${r.store === 'roblox' ? robloxLines({ ...r, about: null }) : ''}`, r.store === 'roblox' ? { retention: r.retention } : {});
   const fmt = (c, v) => (v == null ? '–' : `${v}${c.unit === '%' ? '%' : c.unit ? ` ${c.unit}` : ''}`);
   const lines = r.rows.map((row) => {
     const m = row.glitchless;

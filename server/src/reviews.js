@@ -1047,7 +1047,12 @@ function robloxDisagreements(version, s, m) {
 
 // Why a store that reports vitals has none yet.
 function vitalsLate(st) {
-  if (st.store === 'roblox') return st.keys?.api ? 'Roblox reports them for a place version once enough players have played it, keeps them 28 days, and they are read once a day' : 'they need a Roblox Open Cloud API key with universe.analytics:read';
+  if (st.store === 'roblox') {
+    if (!st.keys?.api) return 'they need a Roblox Open Cloud API key with universe.analytics:read';
+    const none = st.snapshots?.platforms?.unavailable ? st.snapshots.platforms.day : null;
+    if (none) return `on ${none} Roblox said its crash rate and frame rate aren't available for this experience, which a new or private experience can get; they are asked for again each day`;
+    return 'Roblox reports them for a place version once enough players have played it, keeps them 28 days, and they are read once a day';
+  }
   if (st.store === 'google_play') return 'Google Play reports them a day or two late, and only for a version enough people have played';
   if (!st.keys?.api) return 'they need an App Store Connect API key';
   return 'Apple publishes them for a version once enough people have used it, and they are read once a day';

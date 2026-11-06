@@ -37820,7 +37820,7 @@ async function vitals({ service, store, version: version2, hours }) {
   const svc = await resolveService(service);
   const r = await query("store_vitals", { service: svc, store, version: version2, ...range(hours || 720) });
   if (r.connected === false) return reply(`${svc}: ${r.why}${r.stores?.length ? ` Connected: ${r.stores.join(", ")}.` : ""}`, {});
-  if (r.empty) return reply(`${r.store_name} vitals of ${svc}: ${r.why}`, {});
+  if (r.empty) return reply(`${r.store_name} vitals of ${svc}: ${r.why}${r.store === "roblox" ? robloxLines({ ...r, about: null }) : ""}`, r.store === "roblox" ? { retention: r.retention } : {});
   const fmt3 = (c, v) => v == null ? "\u2013" : `${v}${c.unit === "%" ? "%" : c.unit ? ` ${c.unit}` : ""}`;
   const lines = r.rows.map((row) => {
     const m = row.glitchless;
