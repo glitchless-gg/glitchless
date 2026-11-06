@@ -495,8 +495,8 @@ the sessions, so over 31 days or less (Glitchless Cloud reads a longer range's l
 | `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{currency?, pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
 | `store_reviews` | One store's reviews of the game (Steam, Google Play, the App Store), filtered, with counts by build, topic and device (§3f); `{connected: false}` without a store |
-| `store_vitals` | One store's own measures of the game (Google Play's Android vitals, the App Store's hang, launch and animation metrics) by version, next to Glitchless's, with where they disagree (§3f) |
-| `store_revenue` | A game's real revenue from RevenueCat (production purchases only) by UTC day and, where RevenueCat splits it, by version, with installs (new customers), active users, MRR, active subscriptions and trials (§3h); or from its own Stripe account (`store=stripe`), with refunds, disputes, fees, net, new paying customers, by product, and by version for purchases tied to a session (§3i); next to the sessions, players, new players and purchase events Glitchless measured; `{connected: false, why}` for a game without it |
+| `store_vitals` | One store's own measures of the game (Google Play's Android vitals, the App Store's hang, launch and animation metrics, Roblox's crash rate and frame rate by place version and platform with its retention, §3k) by version, next to Glitchless's, with where they disagree (§3f) |
+| `store_revenue` | A game's real revenue from RevenueCat (production purchases only) by UTC day and, where RevenueCat splits it, by version, with installs (new customers), active users, MRR, active subscriptions and trials (§3h); or from its own Stripe account (`store=stripe`), with refunds, disputes, fees, net, new paying customers, by product, and by version for purchases tied to a session (§3i); or Roblox's Robux, paying users, daily active and new users and retention (`store=roblox`, §3k); next to the sessions, players, new players and purchase events Glitchless measured; `{connected: false, why}` for a game without it |
 
 ### 3b. Dashboards and boards
 
@@ -559,9 +559,9 @@ the images in Edit pages → Look.
 | `frame_time`, `errors`, `deaths`, `events` | `limit` (errors), `by` and `level` (deaths, as on `levels`) | frame-time p50/p95, top errors, deaths by level and cause (with `by`, per level and value), every custom event |
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
-| `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, §3f): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
+| `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, Roblox, §3f, §3k): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
 | `store_score` | `store` | a store's rating (§3f): the average stars of the written reviews synced in the window and how many, next to the store's own rating where it has one (the App Store's, from Apple's lookup; Steam's summary); Google Play's is the synced reviews' average, and says so |
-| `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h) or Stripe (§3i): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`); Stripe's refunds, new paying customers, revenue by product (§3i; no installs, MRR, subscriptions, trials or stores) |
+| `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h) or Stripe (§3i): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`); Stripe's refunds, new paying customers, revenue by product (§3i; no installs, MRR, subscriptions, trials or stores); Roblox's Robux, new users (`installs`), daily active users (`active_users`) and `retention` (D1, D7, D30 by cohort day, §3k) |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
 | `net` | `show` (`ping`, `loss` or `disconnects`; default `ping`), `by`, `limit` | network quality (A8, below): ping p50 and p95 over time with the share of connected play over 150 ms; loss and jitter; or disconnects per hour played by reason. With `by` (`$version`, `$level`, `$zone`, a session split such as `$link` or `$platform`, or a property such as `$region`) a row per value |
 | `servers` | `show` (`ticks`, `players` or `crashes`; default `ticks`), `by` (`players`, `$level`, `$version`), `limit` | a game's servers (A9, from its companion service): tick time against its budget over time and by players connected (in tenths of capacity), map or version; players connected; or server crashes with the matches and players each ended |
@@ -1193,7 +1193,7 @@ when there are none). Spike protection keeps its own email; the plan notice says
 Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time, then each of their
 workspaces' plan.
 
-### 3f. Store reviews and vitals: Steam, Google Play, the App Store
+### 3f. Store reviews and vitals: Steam, Google Play, the App Store, Roblox
 
 What players write about a game on its store pages is joined to what Glitchless measures, **by build**: "the
 reviews say it stutters since the update" becomes which build, which devices, how many reviewers played on a Steam
@@ -1205,9 +1205,10 @@ and vitals, and storage, the join, the panels, the finding and the queries are t
 adapters: Steam ([`server/src/steam.js`](../server/src/steam.js), its keyless calls; Glitchless Cloud adds the
 publisher's keys and the partner calls), the App Store
 ([`server/src/app-store.js`](../server/src/app-store.js), Apple's public review feed; Glitchless Cloud adds the App
-Store Connect API) and Google Play (Glitchless Cloud only, with a service account).
+Store Connect API), Google Play (Glitchless Cloud only, with a service account) and Roblox (Glitchless Cloud only:
+its public stats, and with an Open Cloud key its own analytics; it has no written reviews, §3k).
 A host hands the core a game's stores with `createApp({ stores: { read(projectId, service, { from, to, recordsFrom }) } })`,
-which answers `{ steam: {…}, google_play: {…}, app_store: {…} }` (the connected ones) or null; without it the store
+which answers `{ steam: {…}, google_play: {…}, app_store: {…}, roblox: {…} }` (the connected ones) or null; without it the store
 panels say the game has no store connected, and nothing else changes. Every adapter is read only: none replies to a
 review or writes anything to a store.
 
@@ -1253,6 +1254,9 @@ game that passes either to `Glitchless.init` is matched too.
 | `hang_rate` | App Store | seconds hung per hour of use (p50, p90) | hitches a minute |
 | `launch_time` | App Store | launch to first frame, ms (p50, p90) | time to first frame, median |
 | `animation_hitch_rate` | App Store | ms of hitches per second of animation (p50, p90) | hitches a minute |
+| `client_crash_rate` | Roblox | % of the sessions that ended in which the Roblox app crashed, by place version (§3k) | % of sessions that crashed |
+| `client_crashes` | Roblox | how many times the Roblox app crashed (added up over the days, not averaged) | (nothing: read it when the rate is noisy) |
+| `fps_p50`, `fps_p10` | Roblox | the frame rate of the median player's client, and of the slowest tenth | the same over sessions: each session's median frame rate, then the median and the 10th percentile |
 
 They **disagree** when, for a version, the store's slow rendering is at least twice Glitchless's and 3 points more
 (or the reverse), its crash rate twice and 0.5 points more (or the reverse), or its launch time and Glitchless's time
@@ -1260,8 +1264,8 @@ to first frame differ two-fold and by 500 ms. Each disagreement is a line saying
 reason: a store counts a user once a day and only on the devices it watches, Glitchless counts sessions; native
 crashes and crashes before the SDK starts never reach Glitchless; Glitchless also counts a stopped game loop or a
 fatal script error, which the OS doesn't see as a crash; a launch includes what runs before the SDK starts (the
-engine, a splash screen). Sessions-based measures (slow sessions, time to first frame) need a range of 31 days or
-less.
+engine, a splash screen). Roblox's lines are in §3k. Sessions-based measures (slow sessions, time to first frame,
+frame rates) need a range of 31 days or less.
 
 | panel `type` | fields | shows |
 | --- | --- | --- |
@@ -1271,7 +1275,10 @@ less.
 | `store_vitals` | `store` | the store's vitals version by version (newest first; by day weighted by users, or the store's latest for the version), next to the sessions, frame p95, crash-free % and the matching measures Glitchless has of the same version; the lines where the two disagree; Google Play's slowest devices and GPUs on its freshest day; the App Store's heaviest hang signatures in the latest build |
 | `store_score` | `store` | a store's rating, small (default size `s`; one panel per store): the average stars of the written reviews Glitchless synced in the window and how many (`synced: {average, reviews, stars: [1★…5★ counts], since, capped}`; on Steam the share positive instead), next to the store's own overall number where it has one (`overall`): the App Store's rating from Apple's public lookup, every rating with or without a review, weighted over the connection's countries, and the current version's (`{average, count, countries, day, current: {average, count, version}}`); Steam's review summary (`{desc, positive_pct, count}`). Google Play has no API for its overall rating: `overall` is null and a note says the number is the synced reviews' average. `notes` say which number is which |
 
-`store` is `steam`, `app_store` or `google_play` (default: the game's first connected store). A game connected to a
+`store` is `steam`, `app_store`, `google_play` or `roblox` (default: the game's first connected store). Roblox has no
+written reviews: its `store_reviews` panel and query answer `{empty, why}`, its `store_score` is its thumbs up and down
+(`overall: {up, down, votes, positive_pct, favorites, visits, playing, day}`), its `store_players` its players now, and
+its page is its own (§3k). A game connected to a
 store gets a **page per store** on the automatic dashboard, after the Overview (`steam`, `app-store`, `google-play`):
 `store_reviews`, `store_vitals` where the store reports vitals, `store_players` where the store counts players,
 `frame_time` when the game sends frame times, and `store_sales` when there are sales (or, on Steam, a financial key).
@@ -1315,7 +1322,8 @@ reviews, up to 300 KB of UTF-8: past that a review is counted but its text not k
 hour: up, down, down about performance, and the same in the store's segment), `PL#<month>` (players-online samples),
 `SALES#<month>` and `WISH#<month>` (by day; a day the store sends again replaces what was there), `VIT#<month>`
 (vitals by day; likewise), `VITV` (each version's latest vitals), `SNAP#devices`, `SNAP#hangs` and `SNAP#rating` (the
-App Store's own rating; the latest snapshot of each), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
+App Store's own rating; the latest snapshot of each), `SNAP#public` and `SNAP#platforms` (Roblox's public stats and its
+vitals by platform, §3k), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
 itself (Steam: its builds). Each day or month item expires 400 days after its period.
 
 **Steam.** What a sync takes, per game, from where its last sync stopped:
@@ -1387,8 +1395,8 @@ permission (Owner, Admin).
 
 | route | does |
 | --- | --- |
-| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store`, `revenuecat` (§3h) and `stripe` (§3i) |
-| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}`. A new connection, another app or a new key syncs before answering (up to 15 seconds, counted as one of the hour's 6 syncs; a sync that fails shows as `status.errors` `[{part: 'sync'}]` and never fails the save) |
+| `GET /api/projects/{p}/stores` | `{stores: {<store>: {connection: {…settings, keys: {<name>: hint \| null}, service, connectedAt, updatedAt, updatedBy} \| null, status: {at, ok, errors: [{part, error}], added, players, calls} \| null, data: {reviews, syncedAt, summary}}}, permissions}` for `steam`, `google_play`, `app_store`, `revenuecat` (§3h), `stripe` (§3i) and `roblox` (§3k) |
+| `PUT /api/projects/{p}/stores/{store}` | Steam `{appId, publisherKey?, financialKey?}`; Google Play `{packageName, serviceAccount?}` (the JSON key); the App Store `{appId, countries?, apiKey?: {issuerId, keyId, privateKey}}`; RevenueCat `{rcProjectId, currency?, secretKey?}` (§3h); Stripe `{restrictedKey?, products?}` (§3i); Roblox `{universeId, apiKey?}` (§3k); each with `service?`. A credential left out stays, `null` removes it → that store's `{connection, status, data}`. A new connection, another app or a new key syncs before answering (up to 15 seconds, counted as one of the hour's 6 syncs; a sync that fails shows as `status.errors` `[{part: 'sync'}]` and never fails the save) |
 | `DELETE /api/projects/{p}/stores/{store}` | disconnects and deletes the game's data from that store |
 | `POST /api/projects/{p}/stores/{store}/sync` | syncs now (6 an hour with the syncs on connecting, within 20 seconds; the hourly sync does the rest) |
 | `GET`, `PUT`, `DELETE /api/projects/{p}/steam`, `POST …/steam/sync` | Steam's, as before the other stores: `{steam, status, data}` |
@@ -1398,7 +1406,7 @@ The `glitchless-stores` Lambda syncs every connected game of every store every h
 store under a 15-minute lease (`deploy.js` puts it up with everything else; `--stores off` leaves it out). A sync
 stops for the day at 1,500 calls a game and store, and without credentials at 80,000 calls a day across every game on
 Steam (Valve's Web API terms allow 100,000 and ask that only what is needed is retrieved: an ordinary hour is 3 calls
-a game) and 20,000 on Apple's feed. A part a store refuses or rate-limits (`errors`) waits for the next sync from where
+a game), 20,000 on Apple's feed and 50,000 on Roblox's public games API (which allows 300 a minute). A part a store refuses or rate-limits (`errors`) waits for the next sync from where
 it was; the others go on.
 
 ### 3g. Agents across a workspace (Glitchless Cloud)
@@ -1620,6 +1628,9 @@ and store segments found, the segments the revenue chart has, the currency, and 
 `countries_day`, `stores_day`) and `META`;
 each month item expires 400 days after its month. The sync's own state is `REVENUECAT#<project>` `STATE` (the options
 and the last day each chart was read).
+
+Roblox is a revenue source too, in Robux rather than money, with its daily active and new users and its retention:
+§3k.
 
 **Routes** are the stores' (§3f): `PUT /api/projects/{p}/stores/revenuecat` takes `{rcProjectId, currency?, secretKey?,
 service?}` (a key left out stays, `null` removes it); `GET …/stores` gives its `connection` (`rcProjectId`, `currency`,
@@ -1893,6 +1904,125 @@ play every new workspace starts with): with only the demo, it says to make the g
 Before sending anything it checks the folder against the limits above, that `index.html` loads nothing from `/`, and
 reads the version and service from the game's `Glitchless.init` call; source maps go to `/v1/sourcemaps` instead of the
 room.
+
+### 3k. Roblox: Roblox's own numbers next to the Roblox SDK (Glitchless Cloud)
+
+A game measured by the Roblox SDK (§5e) can also be connected to Roblox in Settings → Integrations, so what Roblox
+measures of the experience sits next to what the SDK measures. The SDK is anonymous, so it can't tell a returning
+player from a new one; Roblox counts people by their Roblox account, so its daily active users, new users and
+retention are the game's. Roblox is both a store (§3f: no written reviews, players now, a rating of thumbs up and down,
+its vitals) and a revenue source (§3h: Robux), stored under one name, `roblox`. The adapter that calls Roblox is
+Glitchless Cloud's; storage, the join and everything shown are the core's (`server/src/reviews.js`,
+`server/src/revenue.js`). Read only: nothing is ever written to Roblox.
+
+**Connecting.** The experience's universe ID, which the Creator Dashboard shows on the experience's overview. Its
+roblox.com address (`roblox.com/games/<place ID>/…`) or a place ID is taken too: it is turned into the universe with
+Roblox's public `GET apis.roblox.com/universes/v1/places/{placeId}/universe`, and a bare number is a universe ID when
+`games.roblox.com` knows one by it, else a place ID. That alone gives the public stats. For Roblox's analytics, an
+**Open Cloud API key** (Creator Dashboard → Open Cloud → API Keys) with this experience under Access Permissions →
+`universe-analytics` and only the `universe.analytics:read` operation. The key is checked on save with one query (two
+days of `DailyActiveUsers`): a 400, 401, 403 or 404 refuses the save and says what the key needs. It is sealed like a
+store's credentials and never sent back (the dashboard gets `…` and its last four characters). A new universe forgets
+the kept data.
+
+**The sync** (hourly with the stores, the `glitchless-stores` Lambda):
+
+| from | call | when | key |
+| --- | --- | --- | --- |
+| players now, visits, favorites, name | `GET games.roblox.com/v1/games?universeIds={u}` (`playing`, `visits`, `favoritedCount`, `maxPlayers`, `rootPlaceId`, `updated`; an unknown universe answers `id: 0`) | every sync | none |
+| thumbs up and down | `GET games.roblox.com/v1/games/votes?universeIds={u}` (`upVotes`, `downVotes`, all time) | once a day | none |
+| users, Robux, play time | the Analytics Query API (beta), `POST apis.roblox.com/analytics-query-api/v1/universes/{u}/metrics` with `x-api-key`, `granularity: "OneDay"`: `DailyActiveUsers`; `DailyActiveUsers` by `IsNewUser` (its `true` series: new users); `DailyRevenue`; `PayingUsers`; `PayingUsersCVR`; `AveragePlayTimeMinutesPerDAU`; `AverageSessionLengthMinutes` | once a day: back the plan's retention on the first (at most 400 days), then from 3 days before the last day read, to today | Open Cloud key |
+| retention | `ForwardD1Retention`, `ForwardD7Retention`, `ForwardD30Retention` | once a day: the last 32 days (a cohort's D30 comes in a month after its day) | Open Cloud key |
+| vitals by place version | `ClientCrashRate15m`, `ClientCrashCount`, `ClientFpsP50`, `ClientFpsP10`, each with `breakdown: ["PlaceVersion"]` | once a day: from 2 days before the last day read, at most 27 days back (Roblox keeps performance metrics 28 days and refuses an older start) | Open Cloud key |
+| vitals by platform | the same four with `breakdown: ["Platform"]`, the last 7 whole days | once a day | Open Cloud key |
+
+A query answers at once (`done: true` and `response.values`) or as an operation (`202`, `done: false` and a `path`):
+the sync polls `GET apis.roblox.com/analytics-query-api/{path}` after 1, 2, 3, 5 and 5 seconds while it has time, and
+else leaves that part for the next sync. Each part (one metric, or the four vitals of one breakdown) is kept as done for
+the day, so a sync cut short (the first, behind the connecting request's 15 seconds) goes on at the next one. A 401,
+403 or 429 stops the day's analytics until the next sync; a metric Roblox refuses (400, its code 2001) is reported and
+the others go on. Calls go one at a time: one an hour without a key, and 18 queries a day (with their polls) with one.
+
+**Checked against Roblox's docs** (Supported metrics and dimensions, create.roblox.com/docs/cloud/guides/analytics/metrics,
+November 2026). Every metric name above is Roblox's, case and all, and each supports `OneDay`; the retention metrics
+support only `OneDay`. Crash rate is `ClientCrashRate15m` (Roblox's Performance page: crashes divided by ended
+sessions), not a metric named crash rate; frame rate is `ClientFpsAvg`, `ClientFpsP10`, `ClientFpsP50` and
+`ClientFpsP90`. The performance metrics break down by `PlaceVersion`, `Platform`, `OperatingSystem`, `Place` and
+`MemoryGroup`, so **the vitals compare version by version**: a place version is `game.PlaceVersion`, which the Roblox SDK
+sends as the game's version. The standard metrics (users, revenue, retention) have no `PlaceVersion`: revenue and
+retention are the whole experience's, never one version's. An experience's places each count their own versions, so
+two places can both have a version 42 (they are read together). Server frame rate and server crashes break down only by
+`Place` and aren't read: the SDK measures each server's frames itself (§5e `server_window`).
+
+**Units.** Roblox's pages don't say what unit a rate comes in; its Benchmarks page shows D1 retention as 0.3. Rates
+(retention, payer conversion, crash rate) are read as fractions and kept as percent. A crash rate Roblox marks
+`NotStatisticallySignificant` (too few sessions ended that day) is left out; that day's crash count is kept, as Roblox
+suggests reading it then.
+
+**Next to Glitchless** (§3f's vitals): a `store_vitals` row per place version over the window's days (the crash rate
+and frame rates averaged over them, the crashes added up), next to the sessions, frame p95, crashed sessions and
+frame rates Glitchless measured of the same version. Roblox's crash rate is per session, the same unit Glitchless
+counts (a player's time in a server), so where they disagree it is about what a crash is: when the Roblox app itself
+crashes or runs out of memory, the session just ends, and to the game's server that looks like the player leaving
+(Roblox counts it, Glitchless can't); a script error the player leaves right after is a crash to Glitchless, while to
+Roblox the app kept running. The line comes when one rate is at least twice the other and 0.5 points more. The median
+player's frame rate disagrees when the two differ by 5 fps and a quarter: Roblox reads every player's client, while
+Glitchless reads the frames of sessions that send telemetry, while the window is focused. Under the rows, the
+**platforms**: Roblox's crash rate, crashes and frame rates by platform over its last 7 days, next to Glitchless's
+sessions, crashed sessions and frame rates on the same platform in the window (the SDK names a session's platform in
+Roblox's words: Computer, Phone, Tablet, Console, VR).
+
+**Robux, users and retention** (§3h's `store_revenue` panels, `store: roblox`, in the currency `ROBUX`):
+
+| `measure` | shows |
+| --- | --- |
+| `revenue` | Robux earned in the window ("Robux earned"), with `devex: {robux, usd, rate, adult_rate, minimum}` and `paying: {per_day, pct}` (paying users a day, and the share of daily active users who paid) |
+| `per_player` | Robux over the sessions Glitchless measured (the SDK sends no player IDs) |
+| `active_users` | Roblox's daily active users, the average of the window's whole days, next to Glitchless's sessions a day |
+| `installs` | Roblox's new users (first day in the experience) in the window ("New users") |
+| `by_day`, `players_by_day` | Robux per day; new and daily active users per day next to Glitchless's sessions a day |
+| `retention` | D1, D7 and D30 by the day users first played (`series`), and over the window weighted by each day's new users (`d1`, `d7`, `d30`), next to Glitchless's own when a game sends player IDs; a cohort's D7 comes a week after its day, its D30 a month after |
+
+Roblox doesn't split revenue by place version, so there is no `by_version` (nor MRR, subscriptions, trials, refunds,
+countries or stores), and a query filtered to a version answers `{empty, why}`. **Robux aren't money**: Robux become
+money only through Roblox's Developer Exchange (DevEx), at its standard rate of $0.0038 an Earned Robux (since 5
+September 2025; $0.0054 for some purchases by age-verified US adults in eligible games), once a creator has 30,000
+Earned Robux and Roblox approves the request. The revenue panel says what the window's Robux would be worth at the
+standard rate and that it takes that; `DEVEX` in `server/src/revenue.js` holds the rates. A game's own purchase events
+in Robux (`currency: "ROBUX"`) sit next to Roblox's count; when they add up to more, the line says why: Roblox counts
+what the experience earned, after its share of each sale.
+
+**Retention where people look for it.** The game's **Roblox page** (`roblox`, on the automatic dashboard and added to
+saved ones on the first connection, after the first page): the Roblox rating (`store_score`), daily active users, new
+users, the sessions measured, retention, players now next to the sessions measured (`store_players`), and the vitals
+with the platforms; then a **Revenue page** ("Roblox revenue" when the game has another revenue source): Robux earned,
+Robux per player, daily active users, new users, Robux per day, new and daily active users per day. A board's
+`retention` panel (§3b), which says an anonymous game can't count anyone coming back, shows Roblox's retention instead
+when the game is connected to Roblox (`source: "roblox"`, its cohort days with their new users, and how many came back
+worked out from Roblox's rates). The `store_vitals` query with `store=roblox` carries it too, and so do
+`glitchless_store` (`show: "vitals"`) and `glitchless_revenue` (`source: "roblox"`).
+
+**Queries.** `store_vitals` with `store=roblox` adds `platforms: {from, to, measured, rows: [{platform,
+client_crash_rate, client_crashes, fps_p50, fps_p10, glitchless: {sessions, crashed_pct, fps_p50, fps_p10} | null}]}`,
+`about` (how Roblox counts) and `retention: {d1, d7, d30, cohorts, from_day, to_day, glitchless, notes} | {empty, why}`.
+`store_revenue` with `store=roblox` answers §3h's shape with `totals: {revenue, installs, active_users_per_day,
+paying_users_per_day, payer_pct, days, incomplete}`, `devex`, `retention: {d1, d7, d30, cohorts, glitchless} | {empty,
+why}`, `days: [{day, revenue, installs, active_users, paying_users, payer_pct, playtime_min, session_min, d1, d7, d30,
+sessions, players, new_players, purchases}]`, `versions: null` with `versions_why`, and `countries: null`.
+
+**Stored** under `STORE#<project>#roblox` (§3f's layout): `PL#<month>` (players now, each sync), `SNAP#public` (`{day,
+at, up, down, favorites, visits, playing, max_players, updated, name}`), `SNAP#platforms` (`{from, to, day, rows}`),
+`SNAP#overview` (what Settings shows under Last sync: players now, the latest day's daily active and new users, Robux and
+D1, thumbs up, favorites, visits), `VIT#<month>` (vitals by day and place version), `REV#<month>` (by day: `revenue`,
+`active_customers`, `new_customers`, `paying_users`, `payer_pct`, `playtime_min`, `session_min`, `d1`, `d7`, `d30`,
+`currency: "ROBUX"`; each part a sync brings replaces only its own fields) and `META`. The sync's own state is
+`ROBLOX#<project>` `STATE` (`{votes, analytics: {day, done}, usersUntil, perfUntil, latest, public}`).
+
+**Not yet seen from Roblox itself** (answered by a stand-in that follows the docs): the units of rates, the value
+names of `IsNewUser` (read as `true`, `1` or `new…`), how soon a day's numbers and a place version's vitals come in,
+how often a query comes back as an operation to poll, and the rate limit of the Analytics Query API (beta, so its
+answers may change). The public stats' shapes were read from games.roblox.com.
+
 
 ## 4. Derived concepts
 
@@ -2382,6 +2512,11 @@ On the server, findings for a `gamemaker` game name GameMaker's fixes (texture g
 | `server_window` | every 5 s: a tick is one of the server's frames, a Heartbeat to the next (Roblox runs a server at 60 frames a second and gives scripts no tick time of their own). `tick` (2% sketch), `tick_p50`, `tick_p95`, `tick_max`, `tick_hz` (reached), `late` (frames over `budget_ms`, 25: one and a half of the 1/60 s slot, as a frame window's slow frames), `tick_source: "heartbeat"`, `heartbeat_ms` and `physics_ms` (averages of Stats.HeartbeatTime and PhysicsStepTime: the frame's work), `players`, `players_max`, `mem_mb` (`Stats:GetTotalMemoryUsageMb()`), `in_kbps`, `out_kbps` (Stats' data rates ×8), `rtt_p95` (the players' `GetNetworkPing()` as the server sees them), `ctx` (`Glitchless.setContext` on the server); `cpu_pct` and `net_objects` null |
 
 Not in 0.1.0: install and full mode, bug reports (a Roblox script can't capture the screen, and a typed note would be a player's free text off the platform), `netSample`/`disconnect` for other netcode, and measure runs. `roblox/test` runs the core under Lune with a fake of Roblox's services (`lune run roblox/test/run`), checks the sketch, fingerprints, property rules and match hashes against the JavaScript SDK (`js-fixture.json`), and plays a race over real HTTP against `server/src/local.js` (`node --test roblox/test/e2e.mjs`, whose batches are `server/test/fixtures/sdk-payloads/roblox.json`). `node --test roblox/test/studio.mjs` plays the demo place in real Roblox Studio through Studio's MCP server (`execute_luau`, `start_stop_play`, `get_console_output`), against a local server of its own.
+
+On Glitchless Cloud a Roblox game can also be connected to Roblox itself (Settings → Integrations → Roblox, §3k): its
+players now and thumbs up, and with an Open Cloud key Roblox's daily active and new users, Robux, D1/D7/D30 retention
+(the only retention an anonymous game has) and the Roblox app's crash rate and frame rate by place version, the
+version this SDK sends.
 
 On the server, findings for a `roblox` game name Roblox's fixes (StreamingEnabled and preloading for the loading screen and assets, pooling instead of Clone and Destroy, anchoring and collision fidelity for physics, draw calls and shadows for rendering, the MicroProfiler and the Developer Console), and its error advice reads Luau's messages (`attempt to index nil`, `is not a valid member`). A `script` error the player leaves right after is a crash, as Godot's is; a `server_script` error never is.
 

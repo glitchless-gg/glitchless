@@ -6,9 +6,14 @@ export function fmtNum(v, d = 0) {
 }
 
 // Money in its currency, with the symbol and two decimals ("$1,234.50", "€4.99"); `short` for chart axes
-// ("$1.2K"). A code the browser doesn't know is written after the number.
+// ("$1.2K"). A code the browser doesn't know is written after the number. Robux (Roblox's currency) are whole:
+// "2,400 Robux", "24.5k Robux"; on an axis, Roblox's own short mark: "2.4k R$".
 export function fmtMoney(v, currency, short = false) {
   if (v == null || Number.isNaN(v)) return '–';
+  if (currency === 'ROBUX') {
+    if (short) return `${Math.abs(v) >= 1e6 ? `${fmtNum(v / 1e6, 1)}M` : Math.abs(v) >= 1e3 ? `${fmtNum(v / 1e3, 1)}k` : fmtNum(v)} R$`;
+    return `${Math.abs(v) >= 1e4 ? fmtNum(v, 1) : Math.round(v).toLocaleString('en-US')} Robux`;
+  }
   try {
     return Number(v).toLocaleString('en-US', short ? { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 } : { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
   } catch {

@@ -33,8 +33,8 @@ export function RetentionTable({ r, compact = false }) {
       <table className="dt">
         <thead>
           <tr>
-            <th>First seen</th>
-            <th className="num">New players</th>
+            <th>{r.source ? 'First played' : 'First seen'}</th>
+            <th className="num">{r.source ? `New users (${r.source_name})` : 'New players'}</th>
             <th className="num">D1</th>
             <th className="num">D7</th>
             <th className="num">D30</th>

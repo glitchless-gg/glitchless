@@ -1,11 +1,12 @@
 // Store reviews and store vitals: what players write about a game on its store pages, and what each store measures of
-// it (Google Play's slow rendering, crashes and ANRs; the App Store's hangs, launch time and animation hitches), joined
-// to what Glitchless measures, by build and version. "The reviews say it stutters since the update" becomes which
-// build, which devices, and the frame times and crashes measured on that build's version; "Play says 1.4.2 crashes for
-// 3% of users" sits next to the crash-free sessions Glitchless saw on 1.4.2, with a line where the two disagree.
-// Store-neutral: a store adapter (steam.js, app-store.js here; Google Play and the App Store Connect API in Glitchless
-// Cloud) turns its answers into the shapes below; storage, the join, the board panels, the finding and the queries are
-// here, once, for every store. SPEC §3f.
+// it (Google Play's slow rendering, crashes and ANRs; the App Store's hangs, launch time and animation hitches; Roblox's
+// crash rate and frame rate by place version and by platform), joined to what Glitchless measures, by build and
+// version. "The reviews say it stutters since the update" becomes which build, which devices, and the frame times and
+// crashes measured on that build's version; "Play says 1.4.2 crashes for 3% of users" sits next to the crash-free
+// sessions Glitchless saw on 1.4.2, with a line where the two disagree. Store-neutral: a store adapter (steam.js,
+// app-store.js here; Google Play, the App Store Connect API and Roblox in Glitchless Cloud) turns its answers into the
+// shapes below; storage, the join, the board panels, the finding and the queries are here, once, for every store.
+// SPEC §3f, §3k.
 //
 // A review, as every store gives it:
 //   { store, id, ts, up, rating, lang, text, topics, version, device: { os, cpu, gpu, ram_mb, model } | null,
@@ -16,7 +17,8 @@
 //
 // A vital, as every store gives it: { metric, value, version, build, day, period: 'day' | 'version', users,
 // percentile, device } — a rate in percent, a time in ms or a rate per hour, as VITALS says. Google Play's come per day
-// and version code (`build`); the App Store's per version, over the versions Apple keeps (`period: 'version'`).
+// and version code (`build`); the App Store's per version, over the versions Apple keeps (`period: 'version'`); Roblox's
+// per day and place version (`version`: the number game.PlaceVersion gives, which the Roblox SDK sends as its version).
 //
 // A host hands the core every store a game is connected to (createApp({ stores })), as ctx.stores:
 //   { <store>: { store, app_id, synced_at, keys, summary: { desc, positive, negative, total } | null,
@@ -28,19 +30,22 @@
 //                wishlists: [{ day, adds, deletes, purchases, gifts }] | null } }
 //   Mark: { source, build_id?, version?, from, title?, url?, approx? }
 // A revenue source (RevenueCat, Stripe) comes in the same way, under its name, with revenue instead of reviews: it is
-// stored and read here with the stores' data, and its panel, page and query are revenue.js's.
-import { versions, pct, round } from './analytics.js';
-import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue } from './revenue.js';
+// stored and read here with the stores' data, and its panel, page and query are revenue.js's. Roblox is both: a store
+// with no written reviews (players' thumbs up and down, favorites, visits and players now; its vitals) and a revenue
+// source (Robux, daily active and new users, retention).
+import { versions, pct, round, platformOf } from './analytics.js';
+import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue, storeRetention } from './revenue.js';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
 // What a store has beyond reviews: players online, sales, a segment of reviewers counted apart (Steam Deck), the
 // session fact that names a session's build when the game's SDK sends it (SPEC §4c), whether its reviews name their
-// version, and the vitals it reports.
+// version, and the vitals it reports. `reviews: false`: players write none there (Roblox: a thumbs up or down).
 export const STORES = {
   steam: { name: 'Steam', players: true, sales: true, segment: 'Steam Deck', buildFact: 'steam_build', versioned: false, vitals: [] },
   google_play: { name: 'Google Play', players: false, sales: false, segment: null, buildFact: null, versioned: true, vitals: ['slow_rendering_20fps', 'slow_rendering_30fps', 'crash_rate', 'anr_rate'] },
   app_store: { name: 'App Store', players: false, sales: false, segment: null, buildFact: null, versioned: true, vitals: ['hang_rate', 'launch_time', 'animation_hitch_rate'] },
+  roblox: { name: 'Roblox', players: true, sales: false, segment: null, buildFact: null, versioned: true, reviews: false, vitals: ['client_crash_rate', 'client_crashes', 'fps_p50', 'fps_p10'] },
 };
 const storeName = (store) => STORES[store]?.name ?? store;
 const NOT_CONNECTED = 'This game has no store connected (Glitchless Cloud: Settings → Integrations).';
@@ -53,6 +58,11 @@ const NOT_CONNECTED = 'This game has no store connected (Glitchless Cloud: Setti
 //   hang_rate         the App Store: seconds the game hung, per hour of use — Glitchless: hitches a minute
 //   launch_time       the App Store: launch to first frame — Glitchless: time to first frame
 //   animation_hitch_rate  the App Store: ms of hitches per second of animation — Glitchless: hitches a minute
+//   client_crash_rate Roblox: sessions in which the Roblox app crashed, of the sessions that ended — Glitchless:
+//                     sessions that crashed
+//   client_crashes    Roblox: how many times the Roblox app crashed (to read when the rate is noisy); a count, summed
+//   fps_p50, fps_p10  Roblox: the frame rate of the median player's client, and of the slowest tenth — Glitchless: the
+//                     same over its sessions, each session's median frame rate
 export const VITALS = {
   slow_rendering_20fps: { label: 'Slow rendering (under 20 fps)', unit: '%', vs: 'slow20_pct' },
   slow_rendering_30fps: { label: 'Slow rendering (under 30 fps)', unit: '%', vs: 'slow30_pct' },
@@ -61,6 +71,10 @@ export const VITALS = {
   hang_rate: { label: 'Hang rate', unit: 's/h', vs: 'hitches_per_min' },
   launch_time: { label: 'Launch time', unit: 'ms', vs: 'ttff_p50' },
   animation_hitch_rate: { label: 'Animation hitches', unit: 'ms/s', vs: 'hitches_per_min' },
+  client_crash_rate: { label: 'Crash rate', unit: '%', vs: 'crashed_pct' },
+  client_crashes: { label: 'Crashes', unit: '', vs: null, sum: true },
+  fps_p50: { label: 'Frame rate, median player', unit: 'fps', vs: 'fps_p50' },
+  fps_p10: { label: 'Frame rate, slowest 10%', unit: 'fps', vs: 'fps_p10' },
 };
 
 // Stored items live this long past their day or month (the longest plan's retention).
@@ -73,8 +87,9 @@ const DAY_BYTES = 300_000;
 const READ_REVIEWS = 3000;
 const LOOKBACK = 30 * DAY;
 const RECORD_DAYS = 62;
-// health: Google Play's 28-day user-perceived crash and ANR rates over every version (the alerts' store rule).
-const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health'];
+// health: Google Play's 28-day user-perceived crash and ANR rates over every version (the alerts' store rule). public:
+// Roblox's public stats (thumbs up and down, favorites, visits, players now); platforms: its vitals by platform.
+const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health', 'public', 'platforms'];
 
 // ───────────────────────────── topics ─────────────────────────────
 
@@ -159,7 +174,11 @@ function withTopics(r) {
 //   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs,
 //                                                 rating (the App Store's own: { day, at, average, count, countries:
 //                                                 [{ country, average, count, version, current_average,
-//                                                 current_count }] }); a revenue source's overview and charts (revenue.js)
+//                                                 current_count }] }); public (Roblox's: { day, at, up, down,
+//                                                 favorites, visits, playing, updated }); platforms (Roblox's vitals by
+//                                                 platform: { from, to, rows: [{ platform, client_crash_rate,
+//                                                 client_crashes, fps_p50, fps_p10 }] }); a revenue source's overview and
+//                                                 charts (revenue.js)
 //   STORE#<projectId>#<store>  REV#… REVV#…       a revenue source's revenue by day and by version, REVC#… REVS#… by
 //                              REVC#… REVS#…      country and store; a payments source's REVP#… by product, and
 //                              REVP#… RPAY#…      RPAY#<day> its purchases tied to sessions (revenue.js)
@@ -645,7 +664,8 @@ export function storePanelFields(p, at, BoardError) {
 
 // A page per connected store on the automatic dashboard: its reviews by build, its vitals next to Glitchless's, its
 // players online, frame times (to read next to the reviews), its units, returns and wishlists; then a Revenue page for
-// a revenue source (revenue.js).
+// a revenue source (revenue.js). Roblox's page leads with what it has instead of reviews: its rating (thumbs up and
+// down), daily active and new users, retention (which the anonymous Roblox SDK can't count), then its vitals.
 export function storePages(ctx, { frames = false } = {}) {
   const all = Object.entries(ctx.stores ?? {});
   const revenue = all.filter(([store]) => REVENUE_SOURCES[store]);
@@ -653,6 +673,24 @@ export function storePages(ctx, { frames = false } = {}) {
 }
 
 function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales = false } = {}) {
+  if (store === 'roblox') {
+    const source = (measure, size) => ({ type: 'store_revenue', store, measure, size });
+    return {
+      id,
+      title: storeName(store),
+      icon: 'flag',
+      panels: [
+        { type: 'store_score', store, size: 's' },
+        source('active_users', 's'),
+        source('installs', 's'),
+        { type: 'stat', metric: 'players', title: 'Players measured', size: 's' },
+        source('retention', 'm'),
+        { type: 'store_players', store, size: 'm' },
+        { type: 'store_vitals', store, size: 'l' },
+        ...(frames ? [{ type: 'frame_time', size: 'm' }] : []),
+      ],
+    };
+  }
   return {
     id,
     title: storeName(store),
@@ -673,19 +711,47 @@ function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales
 // store panel naming it, or naming none; for a revenue source, a store_revenue panel).
 export function withStorePage(dashboard, store, { sales = false } = {}) {
   if (!dashboard?.pages) return null;
+  // Roblox is a store and a revenue source: its page, then its Revenue page after it.
+  if (STORES[store] && REVENUE_SOURCES[store]) {
+    const page = storeOnly(dashboard, store, { sales });
+    const next = page ?? dashboard;
+    const at = next.pages.findIndex((p) => (p.panels ?? []).some((x) => x.type === 'store_score' && x.store === store));
+    const money = withRevenuePage(next, store);
+    if (!money) return page;
+    if (at < 0) return money;
+    // After the store's own page rather than the first.
+    const added = money.pages.find((p) => !next.pages.some((q) => q.id === p.id));
+    const rest = money.pages.filter((p) => p !== added).map((p) => next.pages.find((q) => q.id === p.id) ?? p);
+    return { ...money, pages: [...rest.slice(0, at + 1), added, ...rest.slice(at + 1)] };
+  }
+  return REVENUE_SOURCES[store] ? withRevenuePage(dashboard, store) : storeOnly(dashboard, store, { sales });
+}
+
+function storeOnly(dashboard, store, { sales = false } = {}) {
   const pages = dashboard.pages;
-  const revenue = Boolean(REVENUE_SOURCES[store]);
-  if (pages.some((p) => (p.panels ?? []).some((x) => STORE_PANELS[x.type] && (x.type === 'store_revenue') === revenue && (x.store ?? store) === store))) return null;
+  if (pages.some((p) => (p.panels ?? []).some((x) => STORE_PANELS[x.type] && x.type !== 'store_revenue' && (x.store ?? store) === store))) return null;
   const ids = new Set(pages.map((p) => p.id));
-  const base = revenue ? 'revenue' : store.replace(/_/g, '-');
+  const base = store.replace(/_/g, '-');
+  let id = base;
+  for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
+  return { ...dashboard, pages: [...pages.slice(0, 1), storePage(store, { id, sales }), ...pages.slice(1)] };
+}
+
+function withRevenuePage(dashboard, store) {
+  const pages = dashboard.pages;
+  // (Roblox's page has its users and retention panels, which aren't its Revenue page.)
+  const money = (x) => store !== 'roblox' || ['revenue', 'by_day', 'per_player'].includes(x.measure);
+  if (pages.some((p) => (p.panels ?? []).some((x) => x.type === 'store_revenue' && (x.store ?? store) === store && money(x)))) return null;
+  const ids = new Set(pages.map((p) => p.id));
+  const base = 'revenue';
   let id = base;
   for (let n = 2; ids.has(id); n++) id = `${base}-${n}`;
   // A game with another revenue source's page already: this one says whose it is, and so does that one if it still has
   // the name it came with.
   const other = (p) => [...new Set((p.panels ?? []).filter((x) => x.type === 'store_revenue' && x.store && x.store !== store).map((x) => x.store))];
-  const named = revenue && pages.some((p) => other(p).length);
+  const named = pages.some((p) => other(p).length);
   const kept = named ? pages.map((p) => (p.title === 'Revenue' && other(p).length === 1 ? { ...p, title: `${REVENUE_SOURCES[other(p)[0]]?.name ?? other(p)[0]} revenue` } : p)) : pages;
-  return { ...dashboard, pages: [...kept.slice(0, 1), revenue ? revenuePage(store, { id, named }) : storePage(store, { id, sales }), ...kept.slice(1)] };
+  return { ...dashboard, pages: [...kept.slice(0, 1), revenuePage(store, { id, named }), ...kept.slice(1)] };
 }
 
 // `currency`: the dashboard's (the game's one currency, sums.js), for revenue.
@@ -703,8 +769,10 @@ export function storePanel(ctx, p, { currency = null } = {}) {
 }
 
 const notSynced = (st) => `${storeName(st.store)} has not been synced yet: the first sync runs within the hour.`;
+const NO_REVIEWS = { roblox: "Roblox has no written reviews: players give a thumbs up or down, which the Roblox rating panel shows (store_score)." };
 
 function reviewsPanel(ctx, st) {
+  if (STORES[st.store]?.reviews === false) return { empty: true, why: NO_REVIEWS[st.store] };
   const { from, to } = ctx;
   const total = countsIn(st.hours, from, to + 1);
   if (!total.reviews) return { empty: true, why: st.synced_at ? `No ${storeName(st.store)} reviews were written in this window.` : notSynced(st), summary: st.summary };
@@ -747,8 +815,11 @@ function reviewsPanel(ctx, st) {
 // share of them that recommend the game), next to the store's own overall number where it gives one: the App Store's
 // rating from Apple's public lookup (every rating, with or without a review, in the countries the connection reads),
 // Steam's review summary. Google Play has no API for its overall rating, so it has the synced reviews' average only.
+// Roblox has no reviews: its rating is the thumbs up and down players give the experience, with its favorites and
+// visits, from its public stats once a day.
 function scorePanel(ctx, st) {
   const name = storeName(st.store);
+  if (st.store === 'roblox') return robloxScore(st);
   const from = Math.max(ctx.from, st.reviews_from ?? ctx.from);
   const stars = st.store !== 'steam';
   const rated = stars ? (st.reviews ?? []).filter((r) => r.ts >= from && r.ts <= ctx.to && r.rating != null) : [];
@@ -768,6 +839,17 @@ function scorePanel(ctx, st) {
   if (st.store === 'google_play') notes.push("Google Play has no API for its overall rating, so this is the average of the written reviews Glitchless synced (Google Play gives a week of them at a time).");
   if (st.store === 'app_store') notes.push(overall ? `Apple's rating counts every rating in ${overall.countries.map((x) => x.toUpperCase()).join(', ')}, with or without a review, for every version; the reviews' average is of the written reviews Glitchless synced.` : "Apple's own rating is read once a day from its public lookup: none yet.");
   return { synced, overall, notes };
+}
+
+function robloxScore(st) {
+  const r = st.snapshots?.public;
+  if (!r) return { empty: true, why: st.synced_at ? "Roblox's thumbs up and down are read once a day: none yet." : notSynced(st) };
+  const votes = (r.up ?? 0) + (r.down ?? 0);
+  return {
+    synced: null,
+    overall: { up: r.up ?? null, down: r.down ?? null, votes, positive_pct: votes ? pct(r.up, votes) : null, favorites: r.favorites ?? null, visits: r.visits ?? null, playing: r.playing ?? null, day: r.day ?? null },
+    notes: ['Roblox has no written reviews: players give the experience a thumbs up or down, all time. Favorites and visits are all time too; a visit is a time someone joined.'],
+  };
 }
 
 // The current version's rating, summed over the countries that have one.
@@ -837,19 +919,22 @@ function salesPanel(ctx, st) {
 
 // What Glitchless measured of each version, in the terms the stores' vitals compare with: sessions, frame-time p95,
 // hitches a minute, crash-free and crashed sessions, sessions with over a quarter of their frames slower than 20 or 30
-// fps (from their frame-time sketch), and time to first frame. Sessions-based measures need a range of 31 days or less.
+// fps (from their frame-time sketch), time to first frame, and the frame rate of the median session and of the slowest
+// tenth (each session's median frame rate). Sessions-based measures need a range of 31 days or less.
 function measuredByVersion(ctx) {
   if (ctx.measuredCache) return ctx.measuredCache;
   const out = new Map();
-  for (const v of versionsOf(ctx)) out.set(v.version, { sessions: v.sessions, frame_p95: v.frame_p95, hitches_per_min: v.hitches_per_min, crash_free_pct: v.crash_free_pct, crashed_pct: v.crash_free_pct == null ? null : round(100 - v.crash_free_pct, 1), slow20_pct: null, slow30_pct: null, ttff_p50: null });
+  for (const v of versionsOf(ctx)) out.set(v.version, { sessions: v.sessions, frame_p95: v.frame_p95, hitches_per_min: v.hitches_per_min, crash_free_pct: v.crash_free_pct, crashed_pct: v.crash_free_pct == null ? null : round(100 - v.crash_free_pct, 1), slow20_pct: null, slow30_pct: null, ttff_p50: null, fps_p50: null, fps_p10: null });
   const per = new Map();
   for (const s of ctx.daily ? [] : (ctx.sessions?.values() ?? [])) {
-    const g = per.get(s.version) ?? { framed: 0, slow20: 0, slow30: 0, ttff: [] };
+    const g = per.get(s.version) ?? { framed: 0, slow20: 0, slow30: 0, ttff: [], fps: [] };
     if (typeof s.sketch?.quantile === 'function' && s.sketch.n) {
       g.framed++;
       const q75 = s.sketch.quantile(0.75);
       if (q75 > 50) g.slow20++;
       if (q75 > 1000 / 30) g.slow30++;
+      const q50 = s.sketch.quantile(0.5);
+      if (q50 > 0) g.fps.push(1000 / q50);
     }
     if (Number.isFinite(s.ttff)) g.ttff.push(s.ttff);
     per.set(s.version, g);
@@ -859,8 +944,17 @@ function measuredByVersion(ctx) {
     if (!m) continue;
     if (g.framed) Object.assign(m, { slow20_pct: pct(g.slow20, g.framed), slow30_pct: pct(g.slow30, g.framed) });
     if (g.ttff.length) m.ttff_p50 = g.ttff.sort((a, b) => a - b)[Math.floor(g.ttff.length / 2)];
+    if (g.fps.length) Object.assign(m, fpsOf(g.fps));
   }
   return (ctx.measuredCache = out);
+}
+
+// Sessions' median frame rates → the median session's and the slowest tenth's (the 10th percentile), as Roblox reads
+// its players' clients.
+function fpsOf(list) {
+  const sorted = [...list].sort((a, b) => a - b);
+  const at = (q) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
+  return { fps_p50: round(at(0.5), 1), fps_p10: round(at(0.1), 1) };
 }
 
 // Each version's store vitals over the window (by day: users-weighted where the store says how many users; by version:
@@ -890,6 +984,7 @@ function vitalsByVersion(ctx, st) {
     for (const [key, list] of Object.entries(g.metrics)) {
       const byVersion = list.filter((v) => v.period === 'version').sort((a, b) => (b.day ?? '').localeCompare(a.day ?? ''));
       if (byVersion.length) store[key] = round(byVersion[0].value, 2);
+      else if (VITALS[key.split(':')[0]]?.sum) store[key] = round(list.reduce((a, v) => a + v.value, 0), 2);
       else {
         const weighted = list.every((v) => v.users > 0);
         store[key] = round(weighted ? list.reduce((a, v) => a + v.value * v.users, 0) / list.reduce((a, v) => a + v.users, 0) : list.reduce((a, v) => a + v.value, 0) / list.length, 2);
@@ -925,14 +1020,31 @@ function disagreements(store, version, s, m) {
   const k = m.crashed_pct;
   if (twice(c, k, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `${name} counts crashes for ${c}% of users on ${version}, Glitchless recorded ${k}% of sessions crashing: native crashes, and crashes before the SDK starts, never reach Glitchless.` });
   else if (twice(k, c, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `Glitchless recorded ${k}% of sessions crashing on ${version}, ${name} counts ${c}% of users: Glitchless also counts a stopped game loop or a fatal script error, which the OS doesn't see as a crash.` });
+  if (store === 'roblox') out.push(...robloxDisagreements(version, s, m));
   const l = s['launch_time:p50'] ?? s.launch_time;
   const t = m.ttff_p50;
   if (l != null && t != null && Math.max(l, t) >= 2 * Math.min(l, t) && Math.abs(l - t) >= 500) out.push({ metric: 'launch_time', store_value: l, glitchless_value: t, says: `${name} measures a ${Math.round(l)} ms launch on ${version}, Glitchless ${Math.round(t)} ms to the first frame: ${l > t ? 'the launch includes what happens before the SDK starts (the engine, a splash screen)' : 'Glitchless counts until the game draws its first frame, after the launch the OS times'}.` });
   return out;
 }
 
+// Roblox's crash rate is per session, as Glitchless counts: they disagree on what a crash is. Its frame rate is read
+// from every player's client; Glitchless's from the sessions that send telemetry, while the window is focused.
+function robloxDisagreements(version, s, m) {
+  const out = [];
+  const twice = (a, b, min) => a != null && b != null && a >= b * 2 && a - b >= min;
+  const c = s.client_crash_rate;
+  const k = m.crashed_pct;
+  if (twice(c, k, 0.5)) out.push({ metric: 'client_crash_rate', store_value: c, glitchless_value: k, says: `Roblox counts the Roblox app crashing in ${c}% of sessions on place version ${version}, Glitchless recorded ${k}% of sessions crashing: when the Roblox app itself crashes or runs out of memory, the player's session just ends, and to the game's server that looks like the player leaving.` });
+  else if (twice(k, c, 0.5)) out.push({ metric: 'client_crash_rate', store_value: c, glitchless_value: k, says: `Glitchless recorded ${k}% of sessions crashing on place version ${version}, Roblox counts ${c}%: Glitchless counts a script error the player left right after as a crash, while to Roblox the app kept running and the player left.` });
+  const a = s.fps_p50;
+  const b = m.fps_p50;
+  if (a != null && b != null && Math.abs(a - b) >= 5 && Math.max(a, b) >= 1.25 * Math.min(a, b)) out.push({ metric: 'fps_p50', store_value: a, glitchless_value: b, says: `Roblox measures the median player at ${a} fps on place version ${version}, Glitchless ${b} fps: ${a < b ? "Roblox reads every player's client, including those whose frames Glitchless doesn't get (a minimised window, a client that never sent a frame window), so its slow players weigh more" : 'Glitchless counts only the frames of sessions that send telemetry, and its slowest frames (loading, a hitch) pull a session down more than a once-a-minute sample does'}.` });
+  return out;
+}
+
 // Why a store that reports vitals has none yet.
 function vitalsLate(st) {
+  if (st.store === 'roblox') return st.keys?.api ? 'Roblox reports them for a place version once enough players have played it, keeps them 28 days, and they are read once a day' : 'they need a Roblox Open Cloud API key with universe.analytics:read';
   if (st.store === 'google_play') return 'Google Play reports them a day or two late, and only for a version enough people have played';
   if (!st.keys?.api) return 'they need an App Store Connect API key';
   return 'Apple publishes them for a version once enough people have used it, and they are read once a day';
@@ -952,6 +1064,35 @@ function vitalsPanel(ctx, st) {
     notes: rows.flatMap((r) => r.notes.map((n) => ({ version: r.version, ...n }))),
     devices: st.snapshots?.devices ?? null,
     hangs: st.snapshots?.hangs ?? null,
+    ...(st.store === 'roblox' ? { platforms: platformsOf(ctx, st), about: ROBLOX_VITALS } : {}),
+  };
+}
+
+const ROBLOX_VITALS = "Roblox's numbers are its own, from every player's client: the crash rate is the sessions in which the Roblox app crashed, of the sessions that ended (the same unit Glitchless counts: a player's time in a server), and the frame rates are of the median player and the slowest tenth. Roblox keeps them 28 days. A version is the place version (game.PlaceVersion), which the Roblox SDK sends as the game's version.";
+
+// Roblox's vitals by platform (Computer, Phone, Tablet, Console, VR) over its last days, next to what Glitchless
+// measured on the same platform in the window: the Roblox SDK names a session's platform in Roblox's own words.
+function platformsOf(ctx, st) {
+  const snap = st.snapshots?.platforms;
+  if (!snap?.rows?.length) return null;
+  const by = new Map();
+  for (const s of ctx.daily ? [] : (ctx.sessions?.values() ?? [])) {
+    const key = platformOf(s.device);
+    const g = by.get(key) ?? { sessions: 0, crashed: 0, fps: [] };
+    g.sessions++;
+    if (s.crashed) g.crashed++;
+    const q50 = typeof s.sketch?.quantile === 'function' && s.sketch.n ? s.sketch.quantile(0.5) : 0;
+    if (q50 > 0) g.fps.push(1000 / q50);
+    by.set(key, g);
+  }
+  return {
+    from: snap.from ?? null,
+    to: snap.to ?? null,
+    measured: !ctx.daily,
+    rows: snap.rows.map((r) => {
+      const g = by.get(r.platform);
+      return { ...r, glitchless: g ? { sessions: g.sessions, crashed_pct: pct(g.crashed, g.sessions), ...(g.fps.length ? fpsOf(g.fps) : { fps_p50: null, fps_p10: null }) } : null };
+    }),
   };
 }
 
@@ -964,7 +1105,9 @@ export function storeVitals(ctx, params = new URLSearchParams()) {
   const panel = vitalsPanel(ctx, st);
   const version = params.get('version')?.trim();
   const rows = panel.rows ? (version ? panel.rows.filter((r) => r.version === version || String(r.build) === version) : panel.rows) : [];
-  return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...(panel.empty ? { empty: true, why: panel.why } : { columns: panel.columns, rows, notes: panel.notes.filter((n) => !version || n.version === version), devices: panel.devices, hangs: panel.hangs }) };
+  // Roblox: its retention too, which the anonymous Roblox SDK can't count (revenue.js).
+  const extra = st.store === 'roblox' ? { platforms: panel.platforms ?? null, about: ROBLOX_VITALS, retention: storeRetention(ctx, 'roblox') } : {};
+  return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...(panel.empty ? { empty: true, why: panel.why } : { columns: panel.columns, rows, notes: panel.notes.filter((n) => !version || n.version === version), devices: panel.devices, hangs: panel.hangs }), ...extra };
 }
 
 // ── the finding (findings.js) ──
@@ -1096,6 +1239,7 @@ export function storeReviews(ctx, params = new URLSearchParams()) {
   if (store && !STORES[store]) return { connected: false, why: `store is one of ${Object.keys(STORES).join(', ')}`, stores: Object.keys(ctx.stores ?? {}), reviews: [] };
   const st = pickStore(ctx, store);
   if (!st) return { connected: false, why: store && ctx.stores ? `This game has no ${storeName(store)} connection (Glitchless Cloud: Settings → Integrations).` : NOT_CONNECTED, stores: Object.keys(ctx.stores ?? {}), reviews: [] };
+  if (STORES[st.store].reviews === false) return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, empty: true, why: NO_REVIEWS[st.store], reviews: [] };
   const rels = storeReleases(ctx, st);
   const build = get('build')?.toLowerCase();
   const sentiment = get('sentiment');

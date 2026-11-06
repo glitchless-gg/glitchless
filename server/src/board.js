@@ -84,6 +84,7 @@ import { STEAM_DIMENSIONS } from './analytics.js';
 import { reportSummary } from './reports.js';
 import { sumsBy, senders } from './sums.js';
 import { STORE_PANELS, storePanel, storePages, storePanelFields } from './reviews.js';
+import { storeRetention } from './revenue.js';
 import { hoursPlayed, hoursBy, hoursSeries, perHour, hoursRound, measureOf, measureProblem, measureBy, rateOf, avgOf, misses, MIN_EVENTS, MIN_HOURS } from './rates.js';
 import { distributionOf, percentileOf, BINS, ROWS } from './distributions.js';
 import { eachOccurrence, occurrenceGroups, bucketOf } from './occurrences.js';
@@ -783,7 +784,15 @@ function panelData(ctx, p, board, maps, currency) {
     case 'retention': {
       const r = retention(ctx, { by: p.by ? p.by.slice(1) : null });
       // Not zeros: an anonymous game can't see anyone come back, which is not the same as nobody coming back.
-      if (r.status === 'anonymous') return { empty: true, anonymous: true, why: "This game sends no player IDs, so returning players can't be counted. Turn on install mode (privacy: 'install') to see retention." };
+      if (r.status === 'anonymous') {
+        // A Roblox game's SDK is anonymous, and Roblox counts retention by account: show Roblox's (revenue.js).
+        const roblox = ctx.stores?.roblox ? storeRetention(ctx, 'roblox') : null;
+        if (roblox && !roblox.empty) {
+          const cohorts = roblox.rows.slice(-(p.limit || 14));
+          return { d1: roblox.d1, d7: roblox.d7, d30: roblox.d30, new_players: roblox.new_users, source: 'roblox', source_name: 'Roblox', cohorts, more: roblox.rows.length - cohorts.length, notes: roblox.notes };
+        }
+        return { empty: true, anonymous: true, why: `This game sends no player IDs, so returning players can't be counted. ${ctx.stores?.roblox ? "Roblox's own retention shows here once its first sync has it (Settings → Integrations → Roblox needs an Open Cloud API key)." : "Turn on install mode (privacy: 'install') to see retention."}` };
+      }
       if (!r.cohorts.length) return { empty: true, why: r.status === 'empty' ? 'No sessions in this window.' : 'No new players in this window: a cohort is the day players were first seen.' };
       const cohorts = r.cohorts.slice(-(p.limit || 14));
       // By a property: each value's D1, D7 and D30 next to everyone's, as `split` (the panel's own `by` stays the spec's).

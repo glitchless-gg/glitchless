@@ -42,7 +42,10 @@ Settings, for every engine:
   D1, D7, D30), offer install mode: it adds only a random player ID kept on the device (`privacy: 'install'`;
   Godot `"privacy": "install"`; Unity `Privacy = Privacy.Install`; Unreal `Privacy=Install`). Anonymous mode
   can't count returning players. Full mode adds a stored player ID, device detail and positions. The Roblox SDK is
-  anonymous only: on Roblox a stored ID would be kept against the player's account, which Roblox's rules protect.
+  anonymous only: on Roblox a stored ID would be kept against the player's account, which Roblox's rules protect. For
+  a Roblox game's retention, connect Roblox on Glitchless Cloud instead (Settings → Integrations → Roblox, with an Open
+  Cloud API key that has only `universe.analytics:read` for the experience): Roblox's own D1, D7 and D30, daily active
+  and new users, Robux and its crash rate by place version then sit next to what the SDK measures.
 - **A "share performance data" setting.** If the game has a settings or options menu, offer to add a toggle wired to
   Glitchless's off switch, so players can turn it off and back on at any time (store rules such as the Unity Asset
   Store's ask for it, and it lets the store forms answer "optional"): `glitchless.setEnabled(on)`; Godot

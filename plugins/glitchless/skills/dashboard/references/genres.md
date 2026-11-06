@@ -25,7 +25,10 @@ and active users next to the players Glitchless measures, so keep it, and read i
 own `purchase` sums are for revenue by item, level or player. A game that sells through its own Stripe account gets a
 Stripe one (refunds, fees, new paying customers, revenue by product). For its revenue by version, the game's server puts
 the player's Glitchless session ID (`Glitchless.instance.sessionId` in a web game) in the Checkout Session's
-`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent.
+`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent. A Roblox game connected to Roblox
+gets a Roblox page (thumbs up, daily active and new users, Roblox's retention, players now, Roblox's crash rate and
+frame rate by place version) and a Revenue page in Robux: keep both, since its SDK is anonymous and Roblox's retention
+is the only one it has.
 
 **Who is playing.** A game that sets properties splits anything by them (`by: "$rank"`): win rate by hero at each
 rank is a page with `"where": { "$rank": ["diamond", "master"] }` and the same breakdown on it; retention by

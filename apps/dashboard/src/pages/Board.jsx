@@ -316,6 +316,8 @@ function panelLine(p) {
     return `${p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${plural(p.sessions, 'session')}`}${more}`;
   }
   if (p.type === 'frame_time') return p.kpis.avg_fps != null ? `${fmtNum(p.kpis.avg_fps)} fps on average` : null;
+  // A Roblox game's retention is Roblox's (its SDK is anonymous): say whose it is.
+  if (p.type === 'retention' && p.source) return `${p.source_name}'s, by ${p.source_name} account`;
   if (p.type === 'net') return netLine(p);
   if (p.type === 'servers') return serversLine(p);
   // Levels split by an attempt's attribute, a property or a split, or counting runs (SPEC §3b levels).
@@ -345,6 +347,7 @@ function panelInfo(p) {
   const out = [p.note];
   if (STORE_TYPES.has(p.type)) return [...out, ...storeInfo(p)];
   if (p.empty) return out;
+  if (p.type === 'retention' && p.source) out.push(...(p.notes ?? []));
   if (p.type === 'breakdown') {
     if (p.counts === 'sessions' && p.players == null) out.push('The game sends no player IDs, so these are sessions: players are not counted.');
     if (p.rate) {

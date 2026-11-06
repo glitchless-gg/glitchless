@@ -1,16 +1,17 @@
 // A game's real revenue from RevenueCat or Stripe (Glitchless Cloud: Settings → Integrations), by day, and by app
 // version, country and store where the source splits it (RevenueCat) or by version where the game tied its purchases
 // to sessions and by country (Stripe), next to the sessions and players Glitchless measured and what the game's own
-// purchase events add up to. A game connected to both gets both, one after the other, unless `source` picks one.
+// purchase events add up to. Roblox's is Robux, with what they'd be worth through DevEx, its daily active and new users
+// and its retention. A game connected to several gets each, one after the other, unless `source` picks one.
 import { z } from 'zod';
 import { query, resolveService, range, reply, common, filters, tool } from '../context.js';
 
 tool(
   'glitchless_revenue',
-  "The game's real revenue as RevenueCat or Stripe counts it, for a game connected to either in Glitchless Cloud (Settings → Integrations); a game with both gets both unless source picks one. RevenueCat counts production purchases only (never sandbox, TestFlight or licence-tester ones): revenue and transactions by UTC day, MRR, active subscriptions and trials, installs (its new customers: the first time its SDK starts on a device) next to the new players Glitchless saw, active users a day next to Glitchless's players a day, and, where RevenueCat splits them, revenue by the app version purchases were made on, installs, revenue and purchases by country, and revenue by store (App Store, Google Play) next to the sessions Glitchless measured on iOS and Android. Stripe is the game's own account (a web or PC game's unlock, DLC, supporter packs; a test-mode key says so): revenue by UTC day with refunds, disputes, Stripe's fees and net, new paying customers, revenue by product and by country, and revenue by version and platform for the purchases the game tied to a Glitchless session or player (client_reference_id, or glitchless_session / glitchless_player metadata), with how many players paid. Both give revenue per player Glitchless measured, each day next to its sessions and players, each version next to its players, crash-free sessions and frame-time p95, and what the game's own purchase events (track('purchase', { amount, currency })) add up to: the gap is purchases that never reach Glitchless. Use it for money questions, e.g. whether 1.4.2 earns more per player than 1.4.1, or which DLC gets refunded. Use glitchless_events for purchases by item, level or player.",
+  "The game's real revenue as RevenueCat or Stripe counts it, for a game connected to either in Glitchless Cloud (Settings → Integrations); a game with both gets both unless source picks one. RevenueCat counts production purchases only (never sandbox, TestFlight or licence-tester ones): revenue and transactions by UTC day, MRR, active subscriptions and trials, installs (its new customers: the first time its SDK starts on a device) next to the new players Glitchless saw, active users a day next to Glitchless's players a day, and, where RevenueCat splits them, revenue by the app version purchases were made on, installs, revenue and purchases by country, and revenue by store (App Store, Google Play) next to the sessions Glitchless measured on iOS and Android. Stripe is the game's own account (a web or PC game's unlock, DLC, supporter packs; a test-mode key says so): revenue by UTC day with refunds, disputes, Stripe's fees and net, new paying customers, revenue by product and by country, and revenue by version and platform for the purchases the game tied to a Glitchless session or player (client_reference_id, or glitchless_session / glitchless_player metadata), with how many players paid. Both give revenue per player Glitchless measured, each day next to its sessions and players, each version next to its players, crash-free sessions and frame-time p95, and what the game's own purchase events (track('purchase', { amount, currency })) add up to: the gap is purchases that never reach Glitchless. Roblox (an experience with an Open Cloud key): Robux earned by UTC day (Robux, not money: it says what they'd be worth through Roblox's Developer Exchange and what that takes), paying users and the share of daily active users who paid, daily active users and new users next to Glitchless's sessions, play time, and D1, D7 and D30 retention by cohort day: the game's retention, since the Roblox SDK is anonymous. Roblox doesn't split revenue by place version. Use it for money questions, e.g. whether 1.4.2 earns more per player than 1.4.1, or which DLC gets refunded. Use glitchless_events for purchases by item, level or player.",
   {
     service: common.service,
-    source: z.enum(['revenuecat', 'stripe']).optional().describe('Only this revenue source (default: every one the game is connected to)'),
+    source: z.enum(['revenuecat', 'stripe', 'roblox']).optional().describe('Only this revenue source (default: every one the game is connected to)'),
     hours: z.number().min(24).max(9600).optional().describe('Look-back window in hours (default 720, 30 days), read as whole UTC days'),
     version: z.string().optional().describe("Only this version: its revenue (where RevenueCat splits revenue by version, or Stripe's purchases joined to that version's sessions) over its players. MRR, subscriptions and trials, and Stripe's refunds and fees, stay the whole game's"),
     env: common.env,
@@ -30,8 +31,8 @@ tool(
 
 function describe(svc, r) {
   if (r.empty) return { text: `${r.store_name} revenue of ${svc}: ${r.why}`, data: { overview: r.overview?.metrics ?? null } };
-  const money = (v) => (v == null ? '–' : r.currency ? new Intl.NumberFormat('en-US', { style: 'currency', currency: r.currency }).format(v) : String(v));
   const n = (v) => (v == null ? '–' : v.toLocaleString('en-US'));
+  const money = (v) => (v == null ? '–' : r.currency === 'ROBUX' ? `${n(Math.round(v))} Robux` : r.currency ? new Intl.NumberFormat('en-US', { style: 'currency', currency: r.currency }).format(v) : String(v));
   const t = r.totals;
   const g = r.glitchless;
   const perPlayer = r.per_player != null ? `Revenue per player: ${money(r.per_player)} over ${n(r.players)} ${r.players_are_sessions ? 'sessions (no player IDs)' : 'players'} Glitchless measured (${n(r.sessions)} sessions).` : `Glitchless measured no players in this window.`;
@@ -42,6 +43,20 @@ function describe(svc, r) {
   const countries = r.countries?.length
     ? `By country${r.countries_as_of && r.countries_as_of < r.to_day ? ` (to ${r.countries_as_of})` : ''}: ${r.countries.slice(0, 10).map((c) => `${c.name} ${c.installs != null ? `${n(c.installs)} installs, ` : ''}${money(c.revenue)} from ${n(c.purchases)} ${r.store === 'stripe' ? 'payments' : 'purchases'}`).join('; ')}${r.countries.length > 10 ? `; ${r.countries.length - 10} more in the data` : ''}.`
     : `By country: ${r.countries_why ?? 'none in this window'}`;
+  if (r.store === 'roblox') {
+    const k = r.retention;
+    const lines = [
+      `${r.store_name} revenue of ${svc} (universe ${r.app_id}), ${r.from_day} to ${r.to_day} (UTC days): ${money(t.revenue)} earned${t.incomplete ? ' (today so far included)' : ''}${r.devex ? `, about $${r.devex.usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} at DevEx's standard rate ($${r.devex.rate} a Robux)` : ''}.`,
+      `Paying users: ${t.paying_users_per_day != null ? `${n(t.paying_users_per_day)} a day` : '–'}; ${t.payer_pct != null ? `${t.payer_pct}% of daily active users paid` : 'payer conversion –'}.`,
+      perPlayer.replace('Revenue per player', 'Robux per player'),
+      `Daily active users: ${t.active_users_per_day != null ? `${n(t.active_users_per_day)} a day` : '–'}${r.players_per_day != null ? `; Glitchless measured ${n(r.players_per_day)} ${r.players_are_sessions ? 'sessions' : 'players'} a day` : ''}. New users: ${n(t.installs)}.`,
+      k ? (k.empty ? `Retention: ${k.why}` : `Retention (Roblox, by cohort day): D1 ${k.d1 ?? '–'}%, D7 ${k.d7 ?? '–'}%, D30 ${k.d30 ?? '–'}% over ${k.cohorts} cohort days.${k.glitchless ? ` Glitchless's own: D1 ${k.glitchless.d1 ?? '–'}%, D7 ${k.glitchless.d7 ?? '–'}%.` : ''}`) : null,
+      own,
+      `By version: ${r.versions_why ?? 'none'}`,
+      ...notes,
+    ].filter(Boolean);
+    return { text: lines.join('\n'), data: { days: r.days, retention: r.retention ?? null, devex: r.devex ?? null, overview: r.overview?.metrics ?? null } };
+  }
   if (r.store === 'stripe') {
     const lines = [
       `${r.store_name} revenue of ${svc}${r.products_picked ? ` (products: ${r.products_picked})` : ''}, ${r.from_day} to ${r.to_day} (UTC days)${r.version ? `, version ${r.version}` : ''}: ${money(t.revenue)} from ${n(t.transactions)} payments${t.incomplete ? ' (today so far included)' : ''}; refunds ${money(t.refunds)} (${n(t.refund_count)}), disputes ${money(t.disputes)}, Stripe's fees ${money(t.fees)}, net ${money(t.net)}.`,

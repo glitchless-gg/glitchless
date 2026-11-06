@@ -17,12 +17,20 @@
 // which are joined here to that session's version and platform (so its revenue splits by version without the source
 // knowing versions).
 //
+// Roblox (SPEC §3h) is a source in Robux, not money: what the experience earned by UTC day, its paying users and
+// payer conversion, its daily active users and new users (next to Glitchless's sessions: the Roblox SDK is anonymous),
+// and its retention by cohort day (D1, D7, D30), which is the only retention a Roblox game has, since the anonymous SDK
+// can't tell a returning player. Robux become money only through Roblox's Developer Exchange, so its panels say what
+// they'd be worth there.
+//
 // What a source's sync brings (createStoreData().write in reviews.js):
 //   revenue: [{ day, revenue, transactions, mrr, actives, trials, new_customers, active_customers, currency,
 //            incomplete }]   per UTC day: revenue, transactions, new customers and active customers in the day; MRR,
 //            active subscriptions and trials as the source's snapshot of the day; `incomplete`: a day still filling in.
 //            A payments source's days also have refunds, refund_count, disputes, fees, net and other_payments (payments
-//            settled in another currency, left out), and new_customers are its new paying customers
+//            settled in another currency, left out), and new_customers are its new paying customers. Roblox's have
+//            paying_users, payer_pct, playtime_min (a day's average per active user), session_min, and d1, d7 and d30:
+//            the retention of the users who first played that day (percent), filled in as the days pass
 //   revenue_versions: [{ day, version, revenue, transactions, currency }]   by the app version purchases were made on
 //   revenue_countries: [{ day, country, name, revenue, transactions, currency }]   by the customer's country: `country`
 //            an ISO 3166-1 alpha-2 code, else the source's name for it ("(other)": the countries past its top 50;
@@ -57,10 +65,16 @@ import { overview, versions, eventIndex, playersAreSessions, retention, sessions
 import { sumsBy, gameCurrency } from './sums.js';
 
 // `lacks`: the measures a source doesn't count. `payments`: a payments source (above).
+// `titles`: a measure's title for that source. `currency`: the one it always reports in (Roblox: Robux).
 export const REVENUE_SOURCES = {
-  revenuecat: { name: 'RevenueCat', lacks: ['refunds', 'customers', 'by_product'] },
-  stripe: { name: 'Stripe', payments: true, lacks: ['installs', 'active_users', 'mrr', 'actives', 'trials', 'players_by_day', 'by_store'] },
+  revenuecat: { name: 'RevenueCat', lacks: ['refunds', 'customers', 'by_product', 'retention'] },
+  stripe: { name: 'Stripe', payments: true, lacks: ['installs', 'active_users', 'mrr', 'actives', 'trials', 'players_by_day', 'by_store', 'retention'] },
+  roblox: { name: 'Roblox', currency: 'ROBUX', lacks: ['mrr', 'actives', 'trials', 'by_version', 'by_country', 'by_store', 'refunds', 'customers', 'by_product'], titles: { revenue: 'Robux earned', per_player: 'Robux per player', installs: 'New users', active_users: 'Daily active users', by_day: 'Robux per day', players_by_day: 'New and daily active users' } },
 };
+// Roblox's Developer Exchange: the US dollars a creator gets for one Earned Robux at the standard rate (Roblox's DevEx
+// page, November 2026: 0.0038 since 5 September 2025; 0.0054 for some purchases by age-verified US adults in eligible
+// games), and the Earned Robux a creator needs before cashing out.
+export const DEVEX = { usd: 0.0038, adult_usd: 0.0054, minimum: 30_000 };
 const sourceName = (s) => REVENUE_SOURCES[s]?.name ?? s;
 // A source as its panels name it: a Stripe connection with a test-mode key says so everywhere.
 const nameOf = (st) => `${sourceName(st.store)}${st.mode === 'test' ? ' (test mode)' : ''}`;
@@ -82,6 +96,8 @@ export const MEASURES = {
   refunds: { title: 'Refunds', size: 's' },
   customers: { title: 'New paying customers', size: 's', count: true },
   by_product: { title: 'Revenue by product', size: 'm' },
+  // Roblox: D1, D7 and D30 by the day users first played (next to Glitchless's own, when the game sends player IDs).
+  retention: { title: 'Retention', size: 'm', count: true },
 };
 // What a sync brings that writeRevenue keeps.
 export const REVENUE_BATCHES = ['revenue', 'revenue_versions', 'revenue_countries', 'installs_countries', 'revenue_stores', 'revenue_products', 'revenue_purchases'];
@@ -103,7 +119,7 @@ const MONEY = new Set(['revenue', 'per_player', 'mrr', 'refunds']);
 // The purchase convention every SDK documents (sums.js): its event and the attribute summed.
 const PURCHASE = { name: 'purchase', key: null, value: null };
 const AMOUNT = 'amount';
-const KEPT = ['revenue', 'transactions', 'mrr', 'actives', 'trials', 'new_customers', 'active_customers', 'refunds', 'refund_count', 'disputes', 'fees', 'net', 'other_payments'];
+const KEPT = ['revenue', 'transactions', 'mrr', 'actives', 'trials', 'new_customers', 'active_customers', 'refunds', 'refund_count', 'disputes', 'fees', 'net', 'other_payments', 'paying_users', 'payer_pct', 'playtime_min', 'session_min', 'd1', 'd7', 'd30'];
 // A payments source's split by product, kept by month like the versions (its countries are the splits' above).
 const PAYMENT_SPLITS = [
   { batch: 'revenue_products', prefix: 'REVP', by: 'product', pick: (r) => ({ name: String(r.name ?? '').slice(0, 80) || null, revenue: round(r.revenue ?? 0, 4), transactions: r.transactions ?? 0, refunds: round(r.refunds ?? 0, 4), refund_count: r.refund_count ?? 0, currency: currencyOf(r.currency) }) },
@@ -213,9 +229,10 @@ export async function readRevenue(kv, key, months, source = null) {
   return out;
 }
 
+// An ISO 4217 code, or ROBUX (Roblox's).
 function currencyOf(v) {
   const c = String(v ?? '').trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(c) ? c : null;
+  return /^[A-Z]{3}$/.test(c) || c === 'ROBUX' ? c : null;
 }
 
 // ───────────────────────────── the window ─────────────────────────────
@@ -228,7 +245,7 @@ function pickSource(ctx, source) {
 }
 
 function notConnected(ctx, source) {
-  return source && ctx.stores ? `This game has no ${sourceName(source)} connection (Glitchless Cloud: Settings → Integrations → ${sourceName(source)}).` : 'This game has no revenue connected (Glitchless Cloud: Settings → Integrations → RevenueCat or Stripe).';
+  return source && ctx.stores ? `This game has no ${sourceName(source)} connection (Glitchless Cloud: Settings → Integrations → ${sourceName(source)}).` : 'This game has no revenue connected (Glitchless Cloud: Settings → Integrations → RevenueCat, Stripe or Roblox).';
 }
 
 // A payments source's purchases in the window that the game tied to a Glitchless session or player, joined to it: the
@@ -303,7 +320,7 @@ function windowOf(ctx, st, currency) {
   const payments = Boolean(REVENUE_SOURCES[st.store]?.payments);
   const joined = payments ? joinedOf(ctx, st, lo, hi) : null;
   const byVersion = payments ? joined.rows : (st.revenue_versions ?? []).filter((r) => r.day >= lo && r.day <= hi);
-  const split = payments ? joined.joined > 0 : Boolean(st.snapshots?.charts?.version_segment || st.revenue_versions?.length);
+  const split = payments ? joined.joined > 0 : !REVENUE_SOURCES[st.store]?.lacks?.includes('by_version') && Boolean(st.snapshots?.charts?.version_segment || st.revenue_versions?.length);
   let days = whole;
   if (version) {
     const mine = new Map();
@@ -318,6 +335,7 @@ function windowOf(ctx, st, currency) {
   // Glitchless's purchases are compared only in the source's currency (one currency per game: never converted).
   const comparable = own && cur && own.currency === cur;
   const w = {
+    store: st.store,
     lo,
     hi,
     whole,
@@ -371,8 +389,10 @@ function customersOf(ctx, whole, st) {
     notes: [
       REVENUE_SOURCES[st.store]?.payments
         ? `${sourceName(st.store)} counts a new paying customer on the day of their first payment for this game that Glitchless has read (by their ${sourceName(st.store)} customer, else their email, kept only as a hash); Glitchless counts a new player the first time it sees their player ID.`
-        : 'RevenueCat counts a new customer the first time its SDK starts on a device (a reinstall without signing in is a new one, and testers count: customers have no sandbox side); Glitchless counts a new player the first time it sees their player ID.',
-      ...(m.anonymous ? ["The game sends no player IDs, so Glitchless can't tell new players from returning ones (install mode turns them on)."] : []),
+        : st.store === 'roblox'
+          ? "Roblox counts people by their Roblox account: a daily active user once a day whatever they played, and a new user on their first day in the experience. Glitchless counts sessions (each player's time in a server)."
+          : 'RevenueCat counts a new customer the first time its SDK starts on a device (a reinstall without signing in is a new one, and testers count: customers have no sandbox side); Glitchless counts a new player the first time it sees their player ID.',
+      ...(m.anonymous ? [st.store === 'roblox' ? "The Roblox SDK sends no player IDs, so Glitchless can't tell new players from returning ones: Roblox's new users and retention are the numbers for that." : "The game sends no player IDs, so Glitchless can't tell new players from returning ones (install mode turns them on)."] : []),
     ],
   };
 }
@@ -419,8 +439,10 @@ function notes(ctx, st, w, currency) {
   if (st.mode === 'test') out.push(`This ${name} connection uses a test-mode key: these are test payments, not real revenue. Connect a live restricted key (rk_live_…) for the game's sales.`);
   const game = currency ?? w.own?.currency ?? null;
   if (w.currency && game && game !== w.currency) out.push(`${name} reports in ${w.currency} and this game's money is in ${game}: ${name}'s amounts are shown in ${w.currency}, never converted or added to the game's own. Set the connection's currency to ${game} (Settings → Integrations → ${name}) to compare them.`);
+  if (st.store === 'roblox') out.push(...robuxNotes(w));
   if (w.comparable && w.revenue > 0) {
-    if (w.coverage_pct < 80) out.push(`The game's own purchase events add up to ${w.coverage_pct}% of what ${name} counts: the rest are purchases that never reached Glitchless (builds without the SDK, purchases the game doesn't track, players with telemetry off).`);
+    if (st.store === 'roblox' && w.coverage_pct > 110) out.push(`The game's own purchase events add up to ${w.coverage_pct}% of the Robux Roblox counts: Roblox counts what the experience earned, after Roblox's share of each sale, so events sent at the price players paid add up to more.`);
+    else if (w.coverage_pct < 80) out.push(`The game's own purchase events add up to ${w.coverage_pct}% of what ${name} counts: the rest are purchases that never reached Glitchless (builds without the SDK, purchases the game doesn't track, players with telemetry off).`);
     else if (w.coverage_pct > 110) out.push(`The game's own purchase events add up to ${w.coverage_pct}% of what ${name} counts: amounts sent with a different price than the store charged, refunds ${name} took off, or purchases it hasn't processed yet.`);
   }
   if (w.own?.sandbox) out.push(`${w.own.sandbox} sandbox ${w.own.sandbox === 1 ? 'purchase' : 'purchases'} (TestFlight and other test installs) are counted by Glitchless and left out of every sum; ${name} never counts them.`);
@@ -430,10 +452,26 @@ function notes(ctx, st, w, currency) {
   return out;
 }
 
+// What Robux are worth: the Developer Exchange's standard rate for the window's Robux, and what decides whether they
+// are paid out at all.
+export function devexOf(robux) {
+  return robux == null ? null : { robux, usd: round(robux * DEVEX.usd, 2), rate: DEVEX.usd, adult_rate: DEVEX.adult_usd, minimum: DEVEX.minimum };
+}
+
+const dollars = (v) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function robuxNotes(w) {
+  const d = devexOf(w.revenue);
+  const worth = d?.robux ? `: ${Math.round(d.robux).toLocaleString('en-US')} Robux is about ${dollars(d.usd)} at its standard rate of $${DEVEX.usd} a Robux` : ` at $${DEVEX.usd} a Robux`;
+  return [
+    `Revenue is in Robux: what the experience earned, as Roblox counts it (developer products, passes, subscriptions, private servers, commissions). Robux become money only through Roblox's Developer Exchange (DevEx)${worth} ($${DEVEX.adult_usd} for some purchases by age-verified US adults), once the creator has ${DEVEX.minimum.toLocaleString('en-US')} Earned Robux and Roblox approves the request.`,
+  ];
+}
+
 // ───────────────────────────── board panels ─────────────────────────────
 
 export const REVENUE_PANEL = {
-  title: (p) => (REVENUE_SOURCES[p.store]?.payments && MEASURES[p.measure]?.paymentsTitle) || (MEASURES[p.measure]?.title ?? 'Revenue'),
+  title: (p) => REVENUE_SOURCES[p.store]?.titles?.[p.measure] || (REVENUE_SOURCES[p.store]?.payments && MEASURES[p.measure]?.paymentsTitle) || (MEASURES[p.measure]?.title ?? 'Revenue'),
   size: (p) => MEASURES[p.measure]?.size ?? 'm',
   shared: 'sums',
   hidden: (p) => (MEASURES[p.measure]?.count ? 'Store figures are not shown on this shared board.' : 'Revenue is not shown on this shared board.'),
@@ -463,6 +501,11 @@ export function revenuePage(source, { id = 'revenue', named = false } = {}) {
   const title = named ? `${sourceName(source)} revenue` : 'Revenue';
   if (REVENUE_SOURCES[source]?.payments) {
     return { id, title, icon: 'money', panels: [panel('revenue', 's'), panel('per_player', 's'), panel('refunds', 's'), panel('customers', 's'), panel('by_day', 'm'), panel('by_product', 'm'), panel('by_version', 'l')] };
+  }
+  // Roblox's: Robux earned and per player, its daily active and new users, Robux per day, and users per day next to the
+  // sessions Glitchless measured (its retention is on the Roblox page).
+  if (source === 'roblox') {
+    return { id, title, icon: 'money', panels: [panel('revenue', 's'), panel('per_player', 's'), panel('active_users', 's'), panel('installs', 's'), panel('by_day', 'm'), panel('players_by_day', 'm')] };
   }
   return {
     id,
@@ -496,9 +539,11 @@ export function revenuePanel(ctx, p, { currency = null } = {}) {
   const none = { ...named, empty: true, why: w.unsplit ? unsplit(name, w.version) : `No ${name} revenue in this window: ${name}'s days kept here start ${st.revenue?.[0]?.day ?? 'with its next sync'}.` };
   const money = MONEY.has(p.measure) ? { currency: w.currency } : {};
   switch (p.measure) {
+    case 'retention':
+      return { ...named, ...retentionOf(ctx, st, w) };
     case 'revenue':
       if (w.revenue == null) return none;
-      return { ...named, value: w.revenue, unit: null, ...money, transactions: w.transactions, days: w.days.length, from_day: w.days[0].day, to_day: w.days.at(-1).day, incomplete: w.incomplete, glitchless: w.comparable ? { sum: w.own.sum, events: w.own.events, coverage_pct: w.coverage_pct } : null, ...(w.net != null ? { net: w.net, fees: w.fees, refunds: w.refunds, disputes: w.disputes } : {}), notes: w.notes };
+      return { ...named, value: w.revenue, unit: null, ...money, ...(st.store === 'roblox' ? { devex: devexOf(w.revenue), paying: payingOf(w) } : {}), transactions: w.transactions, days: w.days.length, from_day: w.days[0].day, to_day: w.days.at(-1).day, incomplete: w.incomplete, glitchless: w.comparable ? { sum: w.own.sum, events: w.own.events, coverage_pct: w.coverage_pct } : null, ...(w.net != null ? { net: w.net, fees: w.fees, refunds: w.refunds, disputes: w.disputes } : {}), notes: w.notes };
     case 'per_player':
       if (w.revenue == null) return none;
       if (!w.players) return { ...named, empty: true, why: 'Glitchless measured no players in this window.' };
@@ -589,10 +634,10 @@ function customersByDay(ctx, w, name) {
     days: w.whole.map((r) => r.day),
     // `measured`: what Glitchless measured, next to the source's.
     series: [
-      { key: 'installs', label: `Installs (${name} new customers)`, values: col('new_customers') },
+      { key: 'installs', label: w.store === 'roblox' ? 'New users (Roblox)' : `Installs (${name} new customers)`, values: col('new_customers') },
       ...(m.fresh ? [{ key: 'new_players', label: 'New players (Glitchless)', measured: true, values: w.whole.map((r) => m.fresh.get(r.day) ?? 0) }] : []),
-      { key: 'active_users', label: `Active users (${name})`, values: col('active_customers') },
-      { key: 'players', label: 'Players (Glitchless)', measured: true, values: w.whole.map((r) => m.players.get(r.day) ?? (ctx.daily && ctx.bucketMs !== DAY ? null : 0)) },
+      { key: 'active_users', label: w.store === 'roblox' ? 'Daily active users (Roblox)' : `Active users (${name})`, values: col('active_customers') },
+      { key: 'players', label: m.anonymous ? 'Sessions (Glitchless)' : 'Players (Glitchless)', measured: true, values: w.whole.map((r) => m.players.get(r.day) ?? (ctx.daily && ctx.bucketMs !== DAY ? null : 0)) },
     ],
     installs: w.customers.installs,
     new_players: w.customers.new_players,
@@ -601,7 +646,85 @@ function customersByDay(ctx, w, name) {
   };
 }
 
-const unsplit = (name, version) => `${name} can't split this game's revenue by app version (its revenue chart has no app version segment), so there is no revenue of ${version} alone: read it without the version filter.`;
+// Roblox's retention of the users who first played on each day of the window (D1: they played again the next day; D7
+// and D30 a week and a month on), each cohort day as Roblox reports it, and over the window weighted by the day's new
+// users. A cohort's D7 comes in a week after its day, its D30 a month after. Next to it, Glitchless's own retention when
+// the game sends player IDs (the Roblox SDK never does: it is anonymous, so Roblox's is the only retention there is).
+function retentionOf(ctx, st, w) {
+  const name = sourceName(st.store);
+  const rows = w.whole.filter((r) => ['d1', 'd7', 'd30'].some((k) => Number.isFinite(r[k])));
+  if (!rows.length) return { empty: true, why: st.synced_at ? `No ${name} retention in this window yet: a day's D1 comes the day after, its D7 a week after.` : `${name} has not been synced yet: the first sync runs within the hour.` };
+  const of = (k) => {
+    const xs = rows.filter((r) => Number.isFinite(r[k]));
+    if (!xs.length) return null;
+    const weighted = xs.every((r) => r.new_customers > 0);
+    const total = weighted ? xs.reduce((a, r) => a + r.new_customers, 0) : xs.length;
+    return round(xs.reduce((a, r) => a + r[k] * (weighted ? r.new_customers : 1), 0) / total, 1);
+  };
+  const own = retention(ctx);
+  const ok = own.status === 'ok' && own.new_players > 0;
+  const col = (k) => rows.map((r) => (Number.isFinite(r[k]) ? r[k] : null));
+  return {
+    value: of('d1'),
+    unit: '%',
+    d1: of('d1'),
+    d7: of('d7'),
+    d30: of('d30'),
+    cohorts: rows.length,
+    from_day: rows[0].day,
+    to_day: rows.at(-1).day,
+    ts: rows.map((r) => dayTs(r.day)),
+    days: rows.map((r) => r.day),
+    series: [
+      { key: 'd1', label: 'Day 1', values: col('d1') },
+      { key: 'd7', label: 'Day 7', values: col('d7') },
+      { key: 'd30', label: 'Day 30', values: col('d30') },
+    ],
+    new_users: col('new_customers'),
+    glitchless: ok ? { d1: own.d1, d7: own.d7, d30: own.d30, new_players: own.new_players } : null,
+    no_player_ids: own.status === 'anonymous',
+    notes: [
+      `${name} counts a user as back on day 1, 7 or 30 when they played again that many days after their first day in the experience, by their Roblox account. A cohort is the users who first played that day (UTC); its D7 comes in a week later, its D30 a month later.`,
+      ...(rows.some((r) => Number.isFinite(r.d30)) ? [] : ['No cohort in this window is 30 days old yet: pick a longer window for D30.']),
+      ...(own.status === 'anonymous' ? [`The Roblox SDK sends no player IDs, so Glitchless can't count anyone coming back: this is the game's retention.`] : []),
+    ],
+  };
+}
+
+// Roblox's paying users a day (the average of the window's days) and the share of its daily active users who paid
+// (weighted by each day's).
+function payingOf(w) {
+  const days = w.whole.filter((r) => Number.isFinite(r.paying_users));
+  const conv = w.whole.filter((r) => Number.isFinite(r.payer_pct));
+  const weighted = conv.length && conv.every((r) => r.active_customers > 0);
+  return {
+    per_day: days.length ? round(days.reduce((a, r) => a + r.paying_users, 0) / days.length, 1) : null,
+    pct: conv.length ? round(weighted ? conv.reduce((a, r) => a + r.payer_pct * r.active_customers, 0) / conv.reduce((a, r) => a + r.active_customers, 0) : conv.reduce((a, r) => a + r.payer_pct, 0) / conv.length, 2) : null,
+  };
+}
+
+// A source's retention over the context's window (Roblox's), for a query beside its vitals; null when the game isn't
+// connected to it.
+export function storeRetention(ctx, source) {
+  const st = pickSource(ctx, source);
+  if (!st || REVENUE_SOURCES[source]?.lacks?.includes('retention')) return null;
+  const r = retentionOf(ctx, st, windowOf(ctx, st, null));
+  if (r.empty) return { empty: true, why: r.why };
+  // Each cohort day as the retention panel's rows: its new users and how many of them came back (from Roblox's rates).
+  const rows = r.days.map((day, i) => {
+    const players = r.new_users[i];
+    const row = { day, players };
+    const returned = {};
+    for (const [k, s] of [['d1', 0], ['d7', 1], ['d30', 2]]) {
+      row[k] = r.series[s].values[i];
+      returned[k] = row[k] != null && players != null ? Math.round((players * row[k]) / 100) : null;
+    }
+    return { ...row, returned };
+  });
+  return { d1: r.d1, d7: r.d7, d30: r.d30, cohorts: r.cohorts, rows, new_users: rows.reduce((a, x) => a + (x.players ?? 0), 0), from_day: r.from_day, to_day: r.to_day, glitchless: r.glitchless, notes: r.notes };
+}
+
+const unsplit = (name, version) => `${name} can't split this game's revenue by app version (${name === 'Roblox' ? 'its revenue has no place version' : 'its revenue chart has no app version segment'}), so there is no revenue of ${version} alone: read it without the version filter.`;
 
 // A stock measure (MRR, active subscriptions, active trials) at the start of the window's last day, with its change
 // since the first; before any day has it, the source's overview figure now. Always the whole game's.
@@ -641,6 +764,7 @@ function byDay(w) {
 // Newest version first; the source's "Other" (versions past its top 20) last.
 function byVersion(ctx, st, w, currency) {
   const name = sourceName(st.store);
+  if (REVENUE_SOURCES[st.store]?.lacks?.includes('by_version')) return { empty: true, why: `${name} doesn't split revenue by version (its revenue has no place version). For the game's own purchases by version: a breakdown of purchase by $version with sum amount.` };
   const rows = w.byVersion.filter((r) => !w.version || r.version === w.version);
   const j = w.joined;
   if (!rows.length && j) {
@@ -837,17 +961,24 @@ export function revenueQuery(ctx, params = new URLSearchParams(), { currency = n
   };
   const v = byVersion(ctx, st, w, currency);
   const products = payments ? byProduct(st, w) : null;
-  const countries = byCountry(st, w, payments ? 'revenue' : 'installs');
-  // (A payments source sells in no store: no split by one.)
-  const stores = payments ? null : byStore(ctx, st, w);
+  const lacks = REVENUE_SOURCES[st.store].lacks ?? [];
+  const roblox = st.store === 'roblox';
+  const countries = lacks.includes('by_country') ? { why: `Glitchless doesn't read ${name}'s revenue by country.` } : byCountry(st, w, payments ? 'revenue' : 'installs');
+  // (A payments source sells in no store: no split by one; Roblox is its own.)
+  const stores = payments || roblox ? null : byStore(ctx, st, w);
+  const paying = roblox ? payingOf(w) : null;
+  const kept = roblox ? retentionOf(ctx, st, w) : null;
   return {
     ...head,
     from_day: w.lo,
     to_day: w.hi,
     totals: payments
       ? { revenue: w.revenue, transactions: w.transactions, refunds: w.refunds, refund_count: w.refund_count, disputes: w.disputes, fees: w.fees, net: w.net, new_customers: w.new_customers, other_payments: w.other_payments, days: w.days.length, incomplete: w.incomplete }
-      : { revenue: w.revenue, transactions: w.transactions, installs: c.installs, active_users_per_day: c.active_per_day, days: w.days.length, incomplete: w.incomplete },
-    ...(payments ? {} : { latest: { mrr: stock('mrr'), actives: stock('actives'), trials: stock('trials') } }),
+      : roblox
+        ? { revenue: w.revenue, installs: c.installs, active_users_per_day: c.active_per_day, paying_users_per_day: paying.per_day, payer_pct: paying.pct, days: w.days.length, incomplete: w.incomplete }
+        : { revenue: w.revenue, transactions: w.transactions, installs: c.installs, active_users_per_day: c.active_per_day, days: w.days.length, incomplete: w.incomplete },
+    ...(payments || roblox ? {} : { latest: { mrr: stock('mrr'), actives: stock('actives'), trials: stock('trials') } }),
+    ...(roblox ? { devex: devexOf(w.revenue), retention: kept.empty ? { empty: true, why: kept.why } : { d1: kept.d1, d7: kept.d7, d30: kept.d30, cohorts: kept.cohorts, glitchless: kept.glitchless } } : {}),
     new_players: c.new_players,
     new_players_pct: c.new_players_pct,
     players_per_day: c.players_per_day,
@@ -863,7 +994,9 @@ export function revenueQuery(ctx, params = new URLSearchParams(), { currency = n
       transactions: r.transactions ?? null,
       ...(payments
         ? { refunds: r.refunds ?? null, refund_count: r.refund_count ?? null, disputes: r.disputes ?? null, fees: r.fees ?? null, net: r.net ?? null, new_customers: r.new_customers ?? null }
-        : { installs: r.new_customers ?? null, active_users: r.active_customers ?? null, mrr: r.mrr ?? null, actives: r.actives ?? null, trials: r.trials ?? null }),
+        : roblox
+          ? { installs: r.new_customers ?? null, active_users: r.active_customers ?? null, paying_users: r.paying_users ?? null, payer_pct: r.payer_pct ?? null, playtime_min: r.playtime_min ?? null, session_min: r.session_min ?? null, d1: r.d1 ?? null, d7: r.d7 ?? null, d30: r.d30 ?? null }
+          : { installs: r.new_customers ?? null, active_users: r.active_customers ?? null, mrr: r.mrr ?? null, actives: r.actives ?? null, trials: r.trials ?? null }),
       ...(r.incomplete ? { incomplete: true } : {}),
       sessions: ctx.daily ? null : (started.get(r.day) ?? 0),
       players: m.players.get(r.day) ?? (ctx.daily ? null : 0),
@@ -876,6 +1009,6 @@ export function revenueQuery(ctx, params = new URLSearchParams(), { currency = n
     ...(countries.rows ? (payments ? {} : { countries_as_of: countries.as_of }) : { countries_why: countries.why }),
     ...(stores ? { stores: stores.rows ? stores.rows.map(({ store, name, revenue, purchases, share_pct, platform, sessions, players, per_player }) => ({ store, name, revenue, purchases, share_pct, platform, sessions, players, per_player })) : null, ...(stores.rows ? {} : { stores_why: stores.why }) } : {}),
     ...(payments ? { products: products.rows ?? null, ...(products.rows ? {} : { products_why: products.why }), platforms: v.platforms ?? null, unjoined: v.unjoined ?? null } : {}),
-    notes: [...new Set([...(v.rows && payments ? v.notes : w.notes), ...(products?.notes ?? []), ...c.notes])],
+    notes: [...new Set([...(v.rows && payments ? v.notes : w.notes), ...(products?.notes ?? []), ...c.notes, ...(kept && !kept.empty ? kept.notes : [])])],
   };
 }

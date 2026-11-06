@@ -168,8 +168,14 @@ published place, and the key is the player's data under Roblox's erasure request
 
 ## 7. Privacy
 
-The Roblox SDK is anonymous only: there is no install or full mode, so it can't count returning players (Roblox's
-Creator Dashboard has retention). Every session has a random ID, and no user ID, name or display name is sent.
+The Roblox SDK is anonymous only: there is no install or full mode, so it can't count returning players. Roblox can,
+by account: on Glitchless Cloud, connect the experience in Settings → Integrations → Roblox (its universe ID, or its
+roblox.com address) with an Open Cloud API key the user makes in Creator Dashboard → Open Cloud → API Keys, with the
+experience under Access Permissions → `universe-analytics` and only `universe.analytics:read`. Roblox's D1, D7 and D30
+retention, daily active and new users, Robux and its crash rate and frame rate by place version then show on the
+game's Roblox page and in `glitchless_store` (`show: "vitals"`, `store: "roblox"`) and `glitchless_revenue`. Without a
+key it still brings players now and the thumbs up and down. The user pastes the key there themselves; it never goes in
+the game. Every session has a random ID, and no user ID, name or display name is sent.
 Roblox's rules count those identifiers as protected data; `roblox/PRIVACY.md` has what Roblox's policies say, every
 field sent, and a paragraph for the game's privacy notice. If the game sets properties, the notice needs the
 properties line.
@@ -188,4 +194,6 @@ heatmaps and puts deaths on the map; ask the user first.
    `glitchless_triage` (game set) shows the sessions, `glitchless_servers` the server's frames, and
    `glitchless_session` one player's frame windows, level and errors.
 
-A published game's first sessions arrive once real players join a server running the new version.
+A published game's first sessions arrive once real players join a server running the new version. Each publish is a
+new place version (`game.PlaceVersion`), which the SDK sends as the game's version, so `glitchless_compare_versions`
+and Roblox's own vitals line up version by version.

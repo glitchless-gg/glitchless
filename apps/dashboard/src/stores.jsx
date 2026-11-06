@@ -1,13 +1,14 @@
 // The store panels of a board (server/src/reviews.js), for a game connected to a store (Steam, Google Play, the App
 // Store): its reviews over time with each release marked and a row per build (what players said, what Glitchless
 // measured on it), the store's own vitals next to Glitchless's, players online next to the sessions measured, and units,
-// returns and wishlists by day. And a revenue source's (RevenueCat's or Stripe's, server/src/revenue.js): its revenue,
+// returns and wishlists by day; Roblox's vitals by place version and by platform, and its rating as thumbs up and down.
+// And a revenue source's (RevenueCat's, Stripe's or Roblox's, server/src/revenue.js): its revenue,
 // installs, active users, MRR, subscriptions and trials (Stripe: refunds and new paying customers) as numbers (Board.jsx
 // draws them as stats, with revenueStat), revenue per day next to the game's own purchase events (Stripe: and its
 // refunds), installs and active users per day next to the new players and players Glitchless measured, revenue by
 // version next to what Glitchless measured, installs and revenue by country on a world map (world.jsx) with a ranked
-// list, revenue by store next to the sessions on each store's platform, and revenue by product (Stripe). And a store's
-// score: its reviews' average stars next to the store's own rating. storeLine is a panel's one short line, storeInfo
+// list, revenue by store next to the sessions on each store's platform, revenue by product (Stripe), and Roblox's
+// retention by cohort day (RobloxRetention), the only retention a Roblox game has. And a store's score: its reviews' average stars next to the store's own rating. storeLine is a panel's one short line, storeInfo
 // what its info icon says (how the store counts, what Glitchless measured beside it, the server's notes); storeCsv is
 // what their CSV button downloads.
 import { useState } from 'react';
@@ -19,8 +20,8 @@ export const STORE_TYPES = new Set(['store_reviews', 'store_vitals', 'store_play
 // The store_revenue measures that are one number.
 export const REVENUE_STATS = new Set(['revenue', 'per_player', 'installs', 'active_users', 'mrr', 'actives', 'trials', 'refunds', 'customers']);
 // What of Glitchless's own measures each store vital compares with (server/src/reviews.js VITALS), and their names.
-const VS = { slow_rendering_20fps: 'slow20_pct', slow_rendering_30fps: 'slow30_pct', crash_rate: 'crashed_pct', hang_rate: 'hitches_per_min', launch_time: 'ttff_p50', animation_hitch_rate: 'hitches_per_min' };
-const MEASURED = { slow20_pct: ['Sessions under 20 fps', '%'], slow30_pct: ['Sessions under 30 fps', '%'], crashed_pct: ['Sessions crashed', '%'], hitches_per_min: ['Hitches a minute', ''], ttff_p50: ['First frame p50', 'ms'] };
+const VS = { slow_rendering_20fps: 'slow20_pct', slow_rendering_30fps: 'slow30_pct', crash_rate: 'crashed_pct', hang_rate: 'hitches_per_min', launch_time: 'ttff_p50', animation_hitch_rate: 'hitches_per_min', client_crash_rate: 'crashed_pct', fps_p50: 'fps_p50', fps_p10: 'fps_p10' };
+const MEASURED = { slow20_pct: ['Sessions under 20 fps', '%'], slow30_pct: ['Sessions under 30 fps', '%'], crashed_pct: ['Sessions crashed', '%'], hitches_per_min: ['Hitches a minute', ''], ttff_p50: ['First frame p50', 'ms'], fps_p50: ['Median session', 'fps'], fps_p10: ['Slowest tenth', 'fps'] };
 const DAY = 86_400_000;
 const SOURCE = {
   build: (s) => `Builds set live on ${s}’s default branch`,
@@ -41,6 +42,7 @@ export function StorePanelBody({ p }) {
   if (p.type === 'store_revenue' && p.measure === 'by_product') return <RevenueProducts p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_country') return <Countries p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_store') return <RevenueStores p={p} />;
+  if (p.type === 'store_revenue' && p.measure === 'retention') return <RobloxRetention p={p} />;
   if (p.type === 'store_score') return <Score p={p} />;
   return null;
 }
@@ -55,6 +57,14 @@ export function revenueStat(p) {
   const value = p.currency ? fmtMoney(p.value, p.currency) : fmtNum(p.value);
   const notes = [p.note, ...(p.notes ?? [])];
   const anonymous = p.anonymous && !notes.some((n) => /player IDs/.test(n ?? '')) && 'Glitchless counts new players only when the game sends player IDs (install mode).';
+  if (p.measure === 'revenue' && p.devex) {
+    // Roblox's: Robux, and what they'd be worth through DevEx.
+    return {
+      value,
+      sub: `About ${fmtMoney(p.devex.usd, 'USD')} through DevEx`,
+      info: [`Robux the experience earned on Roblox over ${days(p)}.`, p.paying?.per_day != null && `${fmtNum(p.paying.per_day, 1)} paying users a day${p.paying.pct != null ? `, ${fmtPct(p.paying.pct, 1)} of daily active users` : ''}.`, p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`, ...notes],
+    };
+  }
   if (p.measure === 'revenue') {
     // Stripe's: payments rather than transactions, and what's left after refunds, disputes and its fees.
     const what = p.net != null ? ['payment', 'payments'] : ['transaction', 'transactions'];
@@ -67,6 +77,11 @@ export function revenueStat(p) {
   if (p.measure === 'refunds') return { value, sub: `${fmtNum(p.refund_count)} ${p.refund_count === 1 ? 'refund' : 'refunds'}${p.share_pct != null ? `, ${fmtPct(p.share_pct)} of revenue` : ''}`, info: [`Refunds on ${p.store_name}.`, p.disputes && `And ${money(p, p.disputes)} in disputes.`, ...notes] };
   if (p.measure === 'customers') return { value, sub: p.glitchless ? `${fmtNum(p.glitchless.new_players)} new players measured` : `First-time buyers on ${p.store_name}`, info: [`First-time buyers on ${p.store_name} over ${days(p)}.`, p.glitchless && `Glitchless measured ${fmtNum(p.glitchless.new_players)} new players.`, anonymous, ...notes] };
   if (p.measure === 'per_player') return { value, sub: `${money(p, p.total)} over ${fmtNum(p.players)} ${p.players_are_sessions ? 'sessions' : 'players'}`, info: [`${p.store_name}'s revenue over the ${p.players_are_sessions ? 'sessions' : 'players'} Glitchless measured.`, p.players_are_sessions && 'The game sends no player IDs, so this is per session.', ...notes] };
+  if (p.store === 'roblox' && (p.measure === 'installs' || p.measure === 'active_users')) {
+    const sessions = p.glitchless?.players_per_day;
+    if (p.measure === 'installs') return { value, sub: `First day in the experience, ${days(p)}`, info: [`Roblox's new users: people on their first day in the experience, by Roblox account, over ${days(p)}.`, ...notes] };
+    return { value, sub: sessions != null ? `${fmtNum(sessions)} sessions a day measured` : 'A day, by Roblox account', info: [`Roblox's daily active users, the average of ${fmtNum(p.days)} ${p.days === 1 ? 'day' : 'days'}.`, sessions != null && `Glitchless measured ${fmtNum(sessions)} sessions a day (the Roblox SDK is anonymous, so sessions, not players).`, ...notes] };
+  }
   if (p.measure === 'installs' || p.measure === 'active_users') {
     if (p.from_overview) return { value, sub: `On ${p.store_name}, the last 28 days`, info: [`From ${p.store_name}'s overview.`, ...notes] };
     if (p.measure === 'installs')
@@ -88,7 +103,8 @@ export function storeLine(p) {
   if (p.type === 'store_reviews') return `${fmtNum(p.total)} reviews, ${fmtPct(p.positive_pct, 0)} positive · ${fmtNum(p.perf_negative)} about performance`;
   if (p.type === 'store_revenue') {
     if (p.measure === 'by_day') return `${money(p, p.total)} on ${p.store_name}`;
-    if (p.measure === 'players_by_day') return `${fmtNum(p.installs)} installs on ${p.store_name}${p.new_players != null ? ` · ${fmtNum(p.new_players)} new players measured` : ''}`;
+    if (p.measure === 'players_by_day') return `${fmtNum(p.installs)} ${p.store === 'roblox' ? 'new users' : 'installs'} on ${p.store_name}${p.new_players != null ? ` · ${fmtNum(p.new_players)} new players measured` : ''}`;
+    if (p.measure === 'retention') return `D1 ${fmtPct(p.d1, 0)} · D7 ${fmtPct(p.d7, 0)} · D30 ${fmtPct(p.d30, 0)}, ${fmtNum(p.cohorts)} cohort ${p.cohorts === 1 ? 'day' : 'days'}`;
     if (p.measure === 'by_version' && p.payers > 0) return `${fmtNum(p.payers)} ${p.payers === 1 ? 'player' : 'players'} paid${p.payers_pct != null ? ` (${fmtPct(p.payers_pct)} of those measured)` : ''}`;
   }
   return null;
@@ -104,8 +120,8 @@ export function storeInfo(p) {
       p.summary && `On ${p.store_name} overall: ${p.summary.desc} (${fmtNum(p.summary.positive)} positive, ${fmtNum(p.summary.negative)} negative).`,
       p.source && `${SOURCE[p.source]?.(p.store_name)}. Frame p95 and crash-free are what Glitchless measured on that build's version.`,
     ];
-  if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).`];
-  if (p.type === 'store_players') return [p.why_no_coverage || `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`];
+  if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).`, p.about];
+  if (p.type === 'store_players') return [p.why_no_coverage || (p.store === 'roblox' ? 'Roblox is asked how many are playing now once an hour. The gap is players in servers whose experience runs without the Roblox SDK, or with HTTP requests turned off.' : `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`)];
   if (p.type === 'store_sales') return [`By day, as ${p.store_name} reports them${p.store === 'steam' ? ' (units and returns by Pacific day, wishlists by GMT day), from the Financial API key' : ''}.`];
   if (p.type === 'store_score') return scoreInfo(p);
   if (p.type !== 'store_revenue') return notes;
@@ -115,7 +131,8 @@ export function storeInfo(p) {
       p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`,
       ...notes.filter((n) => !/add up to/.test(n)),
     ];
-  if (p.measure === 'players_by_day') return [`Installs are ${p.store_name}'s new customers, by UTC day.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`, ...notes];
+  if (p.measure === 'players_by_day') return [p.store === 'roblox' ? `Roblox's new and daily active users, by Roblox account and UTC day, next to the sessions Glitchless measured.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}` : `Installs are ${p.store_name}'s new customers, by UTC day.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`, ...notes];
+  if (p.measure === 'retention') return [p.glitchless && `Glitchless's own, from player IDs: D1 ${fmtPct(p.glitchless.d1, 0)}, D7 ${fmtPct(p.glitchless.d7, 0)}.`, ...notes];
   if (p.measure === 'by_version')
     return [
       p.unjoined ? `Left: the payments on ${p.store_name} tied to a session Glitchless measured, by that session's version.` : `Left: what ${p.store_name} counted on each version (production purchases only).`,
@@ -372,6 +389,13 @@ function Score({ p }) {
   const o = p.overall;
   const s = p.synced;
   const steam = p.store === 'steam';
+  if (p.store === 'roblox')
+    return (
+      <div className="score">
+        <Figure label="Thumbs up" value={o.positive_pct == null ? '–' : fmtPct(o.positive_pct, 0)} sub={`of ${fmtNum(o.votes)} ${o.votes === 1 ? 'vote' : 'votes'}`} />
+        <Figure label="Favorites" value={fmtNum(o.favorites)} sub={`${fmtNum(o.visits)} visits`} />
+      </div>
+    );
   return (
     <div className="score">
       {o && p.store === 'app_store' && <Figure label="Apple's rating" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}${o.current ? ` · ${o.current.version ?? 'this version'}: ${stars(o.current.average)}` : ''}`} />}
@@ -388,6 +412,7 @@ function scoreInfo(p) {
   return [
     o && p.store === 'app_store' && `Apple's rating: ${stars(o.average)} from ${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}.${o.current ? ` ${o.current.version ?? 'This version'}: ${stars(o.current.average)} from ${fmtNum(o.current.count)}.` : ''}`,
     o && p.store === 'steam' && `Steam's summary of every review: ${fmtPct(o.positive_pct, 0)} positive of ${fmtNum(o.count)}.`,
+    o && p.store === 'roblox' && `${fmtNum(o.up)} thumbs up and ${fmtNum(o.down)} down, all time${o.day ? `, read ${o.day}` : ''}.`,
     s && `${p.store === 'steam' ? 'The positive share' : 'The average'} of the ${fmtNum(s.reviews)} written ${s.reviews === 1 ? 'review' : 'reviews'} synced in this window${s.since ? ` (since ${fmtTime(s.since, true)})` : ''}.`,
     s?.stars && `Stars: ${s.stars.map((n, i) => `${i + 1}★ ${n}`).join(', ')}.`,
     ...(p.notes ?? []),
@@ -520,6 +545,7 @@ function Vitals({ p }) {
           ))}
         </div>
       )}
+      {p.platforms?.rows?.length > 0 && <Platforms p={p} unit={unit} />}
       {d && (
         <div className="muted" style={{ marginTop: 10, fontSize: 12.5, display: 'grid', gap: 4 }}>
           {d.slow_rendering_by_gpu?.length > 0 && <div>Slowest GPUs ({d.day}): {worst(d.slow_rendering_by_gpu)}</div>}
@@ -539,6 +565,69 @@ function Vitals({ p }) {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+// Roblox's vitals by platform over its last week, next to what Glitchless measured on the same platform in the window
+// (the Roblox SDK names a session's platform in Roblox's words).
+function Platforms({ p, unit }) {
+  const x = p.platforms;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div className="muted" style={{ fontSize: 12.5, marginBottom: 4 }}>
+        By platform, {x.from} to {x.to} on Roblox{x.measured ? '' : ' (Glitchless counts sessions by platform over 31 days or less)'}
+      </div>
+      <div className="tablewrap">
+        <table className="dt wrap-th">
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th className="num">Crash rate</th>
+              <th className="num">Crashes</th>
+              <th className="num">Median player</th>
+              <th className="num">Slowest 10%</th>
+              <th className="num" style={{ borderLeft: '1px solid var(--border)' }}>
+                Sessions
+              </th>
+              <th className="num">Sessions crashed</th>
+              <th className="num">Median session</th>
+            </tr>
+          </thead>
+          <tbody>
+            {x.rows.map((r) => (
+              <tr key={r.platform}>
+                <td>{r.platform}</td>
+                <td className="num">{unit(r.client_crash_rate, '%')}</td>
+                <td className="num">{fmtNum(r.client_crashes)}</td>
+                <td className="num">{unit(r.fps_p50, 'fps')}</td>
+                <td className="num">{unit(r.fps_p10, 'fps')}</td>
+                <td className="num" style={{ borderLeft: '1px solid var(--border)' }}>
+                  {fmtNum(r.glitchless?.sessions)}
+                </td>
+                <td className="num">{unit(r.glitchless?.crashed_pct, '%')}</td>
+                <td className="num">{unit(r.glitchless?.fps_p50, 'fps')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const RETENTION_COLORS = { d1: '#1fae84', d7: '#3d8cf5', d30: '#f2a93b' };
+
+// Roblox's retention by the day users first played: D1, D7 and D30 over the window, and each cohort day's.
+function RobloxRetention({ p }) {
+  return (
+    <>
+      <div className="row" style={{ gap: 18, marginBottom: 6 }}>
+        <Figure label="Day 1" value={p.d1 == null ? '–' : fmtPct(p.d1, 1)} />
+        <Figure label="Day 7" value={p.d7 == null ? '–' : fmtPct(p.d7, 1)} />
+        <Figure label="Day 30" value={p.d30 == null ? '–' : fmtPct(p.d30, 1)} sub={p.d30 == null ? 'no cohort 30 days old yet' : null} />
+      </div>
+      <TimeSeries ts={p.ts} height={130} format={(v) => fmtPct(v, 0)} series={p.series.filter((s) => s.values.some((v) => v != null)).map((s) => ({ ...s, color: RETENTION_COLORS[s.key] }))} />
     </>
   );
 }
@@ -610,6 +699,7 @@ export function storeCsv(p) {
   if (p.type === 'store_players') return [['Time', ...p.series.map((s) => s.label)], ...p.ts.map((t, i) => [iso(t), ...p.series.map((s) => s.values[i])])];
   if (p.type === 'store_score') {
     const o = p.overall;
+    if (p.store === 'roblox') return [['What', 'Value'], ['Thumbs up', o.up], ['Thumbs down', o.down], ['Thumbs up (%)', o.positive_pct], ['Favorites', o.favorites], ['Visits', o.visits]];
     return [
       ['What', 'Value', 'Count'],
       ...(o && p.store === 'app_store' ? [["Apple's rating (stars)", o.average, o.count]] : []),
@@ -630,6 +720,7 @@ export function storeCsv(p) {
     }
     if (p.measure === 'by_product') return [['Product', 'Product ID', `Revenue${cur}`, 'Share (%)', 'Payments', `Refunds${cur}`, 'Refunds'], ...p.rows.map((r) => [r.name, r.product, r.revenue, r.share_pct, r.transactions, r.refunds, r.refund_count])];
     if (p.measure === 'players_by_day') return [['Day', ...p.series.map((s) => s.label)], ...p.days.map((d, i) => [d, ...p.series.map((s) => s.values[i])])];
+    if (p.measure === 'retention') return [['First played', 'New users', 'D1 (%)', 'D7 (%)', 'D30 (%)'], ...p.days.map((d, i) => [d, p.new_users[i], ...p.series.map((s) => s.values[i])])];
     if (p.measure === 'by_country') {
       if (p.has?.installs === false) return [['Country code', 'Country', `Revenue${cur}`, 'Payments'], ...p.rows.map((r) => [r.country, r.name, r.revenue, r.purchases])];
       return [['Country code', 'Country', 'Installs', `Revenue${cur}`, 'Purchases'], ...p.rows.map((r) => [r.country, r.name, r.installs, r.revenue, r.purchases])];
