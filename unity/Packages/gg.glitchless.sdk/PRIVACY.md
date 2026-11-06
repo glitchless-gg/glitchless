@@ -1,6 +1,6 @@
 # What Glitchless for Unity sends
 
-This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/SteamInfo.cs`, `Runtime/GameWords.cs`, `Runtime/Netcode.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
+This file lists every field the Unity SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Runtime/GlitchlessCore.cs`, `Runtime/DeviceInfo.cs`, `Runtime/WebPage.cs` (with `Runtime/Plugins/WebGL/Glitchless.jslib`), `Runtime/SteamInfo.cs`, `Runtime/GameWords.cs`, `Runtime/Netcode.cs`, `Runtime/GlitchlessRunner.cs` and `Runtime/BugReports.cs`, and checked against what reached a local server in `npm run test:unity`. Keep it in step with those files. The browser, Godot and Unreal SDKs have their own lists, and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -12,7 +12,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `persistentDataPath/glitchless/player_id` (in WebGL builds, in PlayerPrefs as `glitchless.player_id`, which is the browser's localStorage). Not tied to any account, device ID or advertising ID | the same ID as install mode |
-| Device | OS name, a low/mid/high tier, render pipeline and graphics API, screen size, refresh rate, whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
+| Device | OS name, a low/mid/high tier, render pipeline and graphics API, screen size, refresh rate, whether it is a Steam Deck, on iOS whether it came from the App Store or TestFlight, and in WebGL builds the browser's name and major version and the pixel ratio | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless `Positions = true`: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
 | Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on or off choice, once the game asks for one | unsent batches with their IDs, the player ID, the game version that last ran, and the player's choice | the same as install mode |
 
@@ -21,6 +21,8 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 `Positions = true` turns positions on in anonymous and install mode. They are places in the game's own world, not the player's location.
 
 On Android, every mode reads one system setting, `firebase.test.lab`, and the GPU's name: Google Play's pre-launch report runs on Google's test phones, which set that setting or draw in software (SwiftShader), and a session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. Both are read on the device, only to mark the session; the setting is not sent, and the GPU's name is sent only in full mode, as before.
+
+In a WebGL build, every mode asks the page for the browser's user agent string, whether the browser says it is a phone (`navigator.userAgentData.mobile`, where the browser has it), the pixel ratio and the screen size. Only what the browser SDK sends is sent: the browser's name and major version, the OS name, `mobile`, `dpr` and `screen`. The user agent string itself is read on the device and not sent.
 
 On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
 
@@ -42,14 +44,14 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session) set so far) | the first batch of a session |
-| `session_end` | `reason` (`background`, `quit`, `measure`), `duration_s` | going to the background on a phone, quitting |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic` for bots, batch mode and Firebase Test Lab), `privacy` (`anonymous`, `install` or `full`), `device` (below), `props` (the game's [properties](#properties-the-games-words-about-the-session) set so far); in WebGL builds `engine` (`{name: "unity", version, renderer}`: the Unity version and `webgl` or `webgpu`, the same for every player of a build) | the first batch of a session |
+| `session_end` | `reason` (`background`, `quit`, `measure`, `pagehide` in WebGL builds), `duration_s` | going to the background on a phone, quitting, a WebGL build's page going away |
 | `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, update/physics/render/GPU ms, draw calls, SetPass calls, batches, triangles, GC collections, GC heap and system memory MB; in development builds also mesh, material, texture, object and GameObject counts and allocation per frame; `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each at its highest in the window; the counts outside `ctx` are their value as the window closed); `net` while connected to a game server ([Network quality](#network-quality)) | every 5 s |
 | `hitch` | duration, likely causes (`gpu_or_os` when the time went outside what the SDK times in the game), the same timings and counts for that one frame, `ctx`, `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
 | `load` | when the first frame was drawn, `ttff_ms` (app start to first frame), `first_launch` (whether this is the first launch of this game version on the device), `ttp_ms` (to first touch or key) | once |
 | `error` | `kind`, `message`, `stack` (function names, script file paths inside the project, lines), `source`, `line`, `fn`, `fingerprint`, `attrs` (only what the game passes to `Glitchless.Error`), `recent` (the last 6 game event names) | each error, at most 25 of a kind per session |
 | `level_start` / `level_complete` / `level_fail` | `duration_s`, `score`, `cause`, as the game passes them; `level_start` also when a scene that is a level becomes active, and `attrs` (what kind of attempt: difficulty, party size, a build) when the game passes them | the game calls them, or a scene loads |
-| `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`, `disconnect`) when Glitchless sends it | the game calls it, or the game goes to the background (phones), quits or loses its connection mid-level |
+| `level_abandon` | `duration_s`; `reason` (`background`, `quit`, `measure`, `pagehide`, `disconnect`) when Glitchless sends it | the game calls it, or the game goes to the background (phones), quits, its web page goes away or it loses its connection mid-level |
 | `death` | `cause`; **full** or `Positions`: `x`, `y`, `z` | the game calls it |
 | `custom` | `name`, `attrs`: the game's own words via `Track()`; in a TestFlight or development install on iOS a purchase (an event named `purchase`, or any with a `currency`) also gets `sandbox: true` | the game calls it |
 | `counts` | the window's `duration_s`, `dropped`, and per name and group: `name`, `attrs` (up to 4 of the game's words and booleans), `n` (how many), `sums` (up to 4 of the game's numbers, added up), `first_ts` | every 5 s while the game counts something with `Glitchless.Count()` |
@@ -65,14 +67,15 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | field | example | mode |
 | --- | --- | --- |
-| `browser`, `browser_version` | `Unity`, `6000.3.5f2`: the engine, the same for every player of a build | all |
-| `os` | `iOS`; `SteamOS` on a Steam Deck running it (or one Steam started a Windows player on) | all |
-| `mobile` | `true` | all |
+| `browser`, `browser_version` | `Unity`, `6000.3.5f2`: the engine, the same for every player of a build. In WebGL builds the browser and its major version, as the browser SDK names them: `Chrome`, `141` | all |
+| `os` | `iOS`; `SteamOS` on a Steam Deck running it (or one Steam started a Windows player on); in WebGL builds the OS the browser names (`macOS`, `Windows`, `Android`…) | all |
+| `mobile` | `true`; in WebGL builds, whether the browser says it is a phone | all |
 | `device_tier` | `low` / `mid` / `high`, from core count and memory | all |
 | `gpu_tier` | the same as `device_tier` on phones; `low` on a Steam Deck; on other desktops, from the GPU name | all |
 | `renderer`, `driver` | `urp`, `Metal` | all |
-| `screen`, `refresh_hz` | `[1290, 2796]`, `120`: `refresh_hz` is the screen's rate as the OS reports it, often its highest, not the rate the game ran at (that is each frame window's `hz`) | all |
-| `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` in Linux players, and through Proton's `Z:` drive in Windows players; read on the device and not sent) | all |
+| `screen`, `refresh_hz` | `[1290, 2796]`, `120`: `refresh_hz` is the screen's rate as the OS reports it, often its highest, not the rate the game ran at (that is each frame window's `hz`). In WebGL builds `screen` is the page's, in CSS pixels | all |
+| `dpr` | `2`: the page's pixel ratio, to 2 places, in WebGL builds; `null` elsewhere | all |
+| `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` in Linux players, and through Proton's `Z:` drive in Windows players; read on the device and not sent). In WebGL builds, a user agent that names the Deck or the Deck's GPU, as the browser SDK tells | all |
 | `distribution` | iOS only: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there; left out when it can't tell | all |
 | `model`, `os_version` | `iPhone16,1`, `iOS 27.1` | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |

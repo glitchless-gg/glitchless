@@ -30,12 +30,14 @@ export function appOptions() {
 }
 
 // Jam rooms (rooms.js, SPEC §3j): their records and games' files under the data folder, served on a port of their own
-// (play.js; GLITCHLESS_PLAY_PORT, default PORT + 1000, so 8777). The jam's own pages are at /jam/ (the organiser's) and
-// /jam/<CODE> (a room's). GLITCHLESS_PUBLIC_URL is where phones reach this server
-// (http://192.168.1.5:7777 on a meetup's Wi-Fi): the arcade's links and QR codes use it. Games may send telemetry to it.
+// (play.js; GLITCHLESS_PLAY_PORT, default PORT + 1000, so 8777, or PORT - 1000 when that would pass 65535, as it does
+// for a test's free port over 64535: a port out of range would stop the server at start, a port in use only leaves
+// rooms without games). The jam's own pages are at /jam/ (the organiser's) and /jam/<CODE> (a room's).
+// GLITCHLESS_PUBLIC_URL is where phones reach this server (http://192.168.1.5:7777 on a meetup's Wi-Fi): the arcade's
+// links and QR codes use it. Games may send telemetry to it.
 export function roomsOptions(env = process.env) {
   const port = Number(env.PORT || 7777);
-  const playPort = Number(env.GLITCHLESS_PLAY_PORT || port + 1000);
+  const playPort = Number(env.GLITCHLESS_PLAY_PORT || (port + 1000 <= 65535 ? port + 1000 : port - 1000));
   const app = new URL(env.GLITCHLESS_PUBLIC_URL || `http://localhost:${port}`);
   const play = env.GLITCHLESS_PLAY_URL || `${app.protocol}//${app.hostname}:${playPort}/r/`;
   const dir = path.join(env.GLITCHLESS_DATA_DIR || path.join(ROOT, 'data'), 'rooms');

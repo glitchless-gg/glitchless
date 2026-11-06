@@ -120,6 +120,9 @@ namespace GlitchlessSdk
                     Delete = name => { PlayerPrefs.DeleteKey("glitchless." + name); PlayerPrefs.Save(); },
                 } : null,
                 Device = DeviceInfo.Collect,
+                // A web build's browser_version is the browser's: the Unity version goes here, as the browser SDK's engine
+                // adapters send theirs.
+                EngineInfo = web ? () => new Dictionary<string, object> { ["name"] = "unity", ["version"] = Application.unityVersion, ["renderer"] = SystemInfo.graphicsDeviceType.ToString() == "WebGPU" ? "webgpu" : "webgl" } : (Func<Dictionary<string, object>>)null,
                 Steam = SteamInfo.Read,
                 Engine = SampleEngine,
                 StartupMs = () => Time.realtimeSinceStartupAsDouble * 1000,
@@ -132,7 +135,7 @@ namespace GlitchlessSdk
                 AppVersion = Application.version,
                 IsBatchMode = Application.isBatchMode,
                 IsDebugBuild = UnityEngine.Debug.isDebugBuild,
-                IsMobile = Application.isMobilePlatform,
+                IsMobile = DeviceInfo.IsMobile,
                 IsWeb = web,
 #if UNITY_SERVER
                 IsServerBuild = true,
@@ -165,6 +168,7 @@ namespace GlitchlessSdk
             StartRecorders();
             lastGc = GC.CollectionCount(0);
             PlayerLoopHooks.Install();
+            WebPage.Listen(OnPage); // a WebGL build: the page hiding and going away (nothing elsewhere)
 
             var m = Core.FlagValue("--glitchless-measure");
             if (m != null)
@@ -554,7 +558,7 @@ namespace GlitchlessSdk
 
         void OnApplicationPause(bool paused)
         {
-            if (Core == null) return;
+            if (Core == null || WebPage.InPage) return; // the page says when it hides and goes (OnPage)
             if (Application.isMobilePlatform)
             {
                 if (paused) Core.OnBackground();
@@ -570,6 +574,21 @@ namespace GlitchlessSdk
             if (Core == null) return;
             if (focused) Core.SkipNextFrame();
             else if (Core.Inited) Core.Flush();
+        }
+
+        // A WebGL build's page. Hidden: what is waiting goes by beacon and the session goes on. Going away (closed, another
+        // page, or into the back-forward cache): the session ends as a phone's does in the background, reason "pagehide",
+        // and the last batch goes by beacon; Unity calls neither OnApplicationQuit nor OnDestroy as a tab closes. Shown
+        // again, or back from the cache: the gap is not a frame, and an ended session goes on or starts anew.
+        static void OnPage(int what)
+        {
+            if (Core == null || quitting) return;
+            switch (what)
+            {
+                case WebPage.Hidden: Core.OnPageHidden(); break;
+                case WebPage.Leaving: Core.OnBackground("pagehide"); break;
+                default: Core.OnForeground(); break;
+            }
         }
 
         static void OnQuitting()
@@ -657,7 +676,8 @@ namespace GlitchlessSdk
         }
     }
 
-    /// <summary>Sends batches with UnityWebRequest, which works on every platform including WebGL.</summary>
+    /// <summary>Sends batches with UnityWebRequest, which works on every platform including WebGL; as a WebGL build's page
+    /// hides or goes, by navigator.sendBeacon (WebPage.Beacon) instead, since nothing can wait there.</summary>
     sealed class UnityTransport : ITransport
     {
         readonly List<UnityWebRequest> live = new List<UnityWebRequest>(); // a batch, and any bug report on its own
@@ -688,9 +708,11 @@ namespace GlitchlessSdk
             };
         }
 
-        // The game is closing, so there are no more frames: wait here, up to the deadline.
+        // The game is closing, so there are no more frames: wait here, up to the deadline. Never in a WebGL build: its one
+        // thread would wait out the whole deadline with the request unable to move (the core beacons there instead).
         public long SendNow(string url, byte[] body, string contentType, int timeoutMs)
         {
+            if (Application.platform == RuntimePlatform.WebGLPlayer) return 0;
             using (var req = Make(url, body, contentType, Math.Max(1, (timeoutMs + 999) / 1000)))
             {
                 var op = req.SendWebRequest();
@@ -709,6 +731,9 @@ namespace GlitchlessSdk
         {
             foreach (var req in live.ToArray()) req.Abort();
         }
+
+        // A WebGL build's page: navigator.sendBeacon, through the jslib. False anywhere else.
+        public bool Beacon(string url, byte[] body, string contentType) => WebPage.Beacon(url, body);
 
         static UnityWebRequest Make(string url, byte[] body, string contentType, int timeoutS) =>
             new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST)

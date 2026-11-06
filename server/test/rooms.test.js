@@ -12,6 +12,7 @@ import path from 'node:path';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { createApp } from '../src/app.js';
 import { AuthError } from '../src/auth.js';
+import { roomsOptions } from '../src/config.js';
 import { createPlay, playHeaders } from '../src/play.js';
 import { FileRoomStore, DirFiles } from '../src/stores/rooms-file.js';
 import { slugify, checkPath, checkHtml, withBase, awardsOf, gameNumbers, withLiveStarts, LIMITS, CODE_RE } from '../src/rooms.js';
@@ -480,6 +481,22 @@ test('the games port sends the same headers Glitchless Cloud puts on CloudFront,
   const { server, base } = await listen(createApp({ store: (await STORES.file()).store, auth: { resolveIngest: () => ({ projectId: 'p' }), resolveReader: () => ({ projectId: 'p', scopes: ['read'] }) }, logger: quiet }));
   assert.equal((await fetch(`${base}/v1/rooms/ABCDE`)).status, 404);
   server.close();
+});
+
+test("the games port is PORT + 1000, or PORT - 1000 when that would pass 65535, so a server on a test's high free port still starts", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-play-port-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const at = (env) => roomsOptions({ GLITCHLESS_DATA_DIR: dir, ...env });
+  assert.equal(at({}).playPort, 8777);
+  assert.equal(at({ PORT: '64535' }).playPort, 65535);
+  assert.equal(at({ PORT: '65100' }).playPort, 64100);
+  assert.equal(at({ PORT: '65100', GLITCHLESS_PLAY_PORT: '9000' }).playPort, 9000, 'the setting still wins');
+  // A port past 65535 made the play URL invalid, and the rooms threw on it before the server could listen.
+  const { rooms } = at({ PORT: '65535' });
+  assert.equal(rooms.urls.play, 'http://localhost:64535/r/');
+  const { server, base } = await listen(createApp({ store: (await STORES.file()).store, rooms, auth: { resolveIngest: () => ({ projectId: 'p' }), resolveReader: () => ({ projectId: 'p', scopes: ['read'] }) }, logger: quiet }));
+  t.after(() => server.close());
+  assert.equal((await fetch(`${base}/v1/health`)).status, 200);
 });
 
 test("survey templates: an organiser keeps their own beside the default, makes a room with one, and edits the room's survey until its first answer", async (t) => {

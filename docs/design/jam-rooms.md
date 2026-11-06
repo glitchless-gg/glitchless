@@ -428,8 +428,9 @@ URLs (per-file uploads through the API fit a jam's games).
 Where the build differs from the design above:
 
 - **The open-source server's games port** is `PORT + 1000` (8777 for 7777; `GLITCHLESS_PLAY_PORT`), not 7778, so it
-  never lands on another local server's port; the local cloud's is 8788. A port in use leaves rooms without games, not
-  the server down. `GLITCHLESS_PUBLIC_URL` is where phones reach the server (the arcade's links and QR codes).
+  never lands on another local server's port; the local cloud's is 8788. From a PORT over 64535 it's PORT − 1000, since
+  a port past 65535 would stop the server at start. A port in use leaves rooms without games, not the server down.
+  `GLITCHLESS_PUBLIC_URL` is where phones reach the server (the arcade's links and QR codes).
 - **Rate limits.** A room's phones usually share the venue's one address, so public reads are limited loosely per
   address (20 a second) and votes and survey answers per person (5 a second), with a loose limit per address.
 - **Removing a game**: the organiser sends `DELETE …/games/{slug}?by=organiser`; without it, the maker leaves.

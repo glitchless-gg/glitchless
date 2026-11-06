@@ -47,6 +47,10 @@ namespace GlitchlessSdk
         long SendNow(string url, byte[] body, string contentType, int timeoutMs);
         /// <summary>Gives up on the requests Send started that are still going.</summary>
         void Abort();
+        /// <summary>Queues a POST that goes even after the page has gone, without waiting: navigator.sendBeacon in a WebGL
+        /// build, where SendNow can't wait (one thread). True once queued; false where there is none or it was turned
+        /// down. A game's own transport needn't have one: then a web build's last batch as the page goes is lost.</summary>
+        bool Beacon(string url, byte[] body, string contentType) => false;
     }
 
     public sealed class GlitchlessStats
@@ -107,6 +111,7 @@ namespace GlitchlessSdk
         public Func<bool, Dictionary<string, object>> Device = full => new Dictionary<string, object>();
         public Func<Dictionary<string, object>> Steam = () => null; // the game's Steamworks facts (SteamInfo.Read), null until it answers
         public Func<Dictionary<string, object>> Engine; // mesh, texture, object counts and memory, where Unity has them
+        public Func<Dictionary<string, object>> EngineInfo = () => null; // session_start.engine {name, version, renderer}: WebGL builds, whose browser_version is the browser's
         public Func<double> StartupMs; // time since the app started, for time to first frame
         public Func<string[]> Args = () => Environment.GetCommandLineArgs();
         public Func<int[]> ScreenSize = () => null;
@@ -1738,22 +1743,25 @@ namespace GlitchlessSdk
         // ───────────────────────────── lifecycle ─────────────────────────────
 
         /// <summary>A phone app in the background is usually never seen again: iOS and Android stop it
-        /// without warning. So going to the background ends the session, and the last batch goes out now.</summary>
-        public void OnBackground()
+        /// without warning. So going to the background ends the session, and the last batch goes out now. A WebGL build's
+        /// page going away (pagehide) is the same, with reason "pagehide": a page the browser brings back from its
+        /// back-forward cache goes on through OnForeground.</summary>
+        public void OnBackground(string reason = "background")
         {
             pausedAt = Ticks;
             skipNext = true;
             pendingLong = null;
             if (Inited && Enabled && !ended)
             {
-                EndLevel("background");
+                EndLevel(reason);
                 ended = true;
-                Push(SessionEnd("background"));
+                Push(SessionEnd(reason));
             }
             if (Inited && Enabled)
             {
                 writeAtOnce = true; // the OS may stop the game before a thread-pool write finishes
-                Flush();
+                if (IsWeb) FlushIntoOutbox(); // a request started now can't finish: SendNow beacons it
+                else Flush();
                 KeepHeldCounts();
                 SendNow(SendDeadlineMs);
                 FinishWrites();
@@ -1771,6 +1779,27 @@ namespace GlitchlessSdk
             var closing = shut;
             shut = true; // add them to the outbox without starting a send: SendNow sends
             Flush(closeWindow: false);
+            shut = closing;
+        }
+
+        /// <summary>A WebGL build's page was hidden: another tab or app, the phone locked. The browser may freeze the page
+        /// or throw it away from here with no other word, so what is waiting goes now, by beacon (SendNow), as the browser
+        /// SDK sends on visibilitychange. The session goes on: the page going away ends it (OnBackground("pagehide")), and
+        /// the page shown again is OnForeground.</summary>
+        public void OnPageHidden()
+        {
+            skipNext = true;
+            if (!Inited || !Enabled) return;
+            FlushIntoOutbox();
+            SendNow(SendDeadlineMs);
+        }
+
+        // Flush, without starting a request: SendNow sends what it added.
+        void FlushIntoOutbox()
+        {
+            var closing = shut;
+            shut = true;
+            Flush();
             shut = closing;
         }
 
@@ -2020,6 +2049,8 @@ namespace GlitchlessSdk
                 ["page"] = null,
                 ["nav_ms"] = null,
             };
+            var engine = EngineInfo?.Invoke();
+            if (engine != null) e["engine"] = engine;
             // The properties set so far; later changes go out as props events.
             sentProps.Clear();
             foreach (var kv in props) sentProps[kv.Key] = kv.Value;
@@ -2324,10 +2355,15 @@ namespace GlitchlessSdk
         }
 
         /// <summary>Sends what is waiting before the game closes or goes to the background, blocking for
-        /// at most budgetMs. Whatever isn't sent stays saved for the next launch.</summary>
+        /// at most budgetMs. Whatever isn't sent stays saved for the next launch. A WebGL build doesn't block (Beacon).</summary>
         public void SendNow(int budgetMs)
         {
-            if (outbox.Count == 0 || !Sampled || IsWeb || Transport == null) return;
+            if (outbox.Count == 0 || !Sampled || Transport == null) return;
+            if (IsWeb)
+            {
+                Beacon();
+                return;
+            }
             if (inFlight >= 0)
             {
                 // It needs frames to finish; send it here instead. The server may have it already: its batch_id lets
@@ -2348,6 +2384,29 @@ namespace GlitchlessSdk
                 SaveOutbox(); // at once: the OS may stop the game before the next one
             }
             SaveOutbox();
+        }
+
+        // A WebGL build has one thread, so a request waited on could never move: a wait would stall the page for the whole
+        // budget and send nothing. Each batch goes by navigator.sendBeacon instead, which the browser sends after the page
+        // has gone, and nothing waits. The batch on its way (SendNext) goes again too, since the browser drops a request
+        // it started once the page goes: its batch_id lets the server store it once, and its own answer is ignored. A bug
+        // report keeps the request of its own (a screenshot is over the beacon's size anyway). The browser takes about
+        // 64 KB of beacons at a time: a batch it turns down stays for the next send, should the page come back (a web
+        // build keeps no outbox on disk).
+        void Beacon()
+        {
+            var sent = 0;
+            foreach (var b in outbox.ToArray())
+            {
+                if (b.Direct || !CanSend(b)) continue;
+                if (!Transport.Beacon(IntakeUrl, Encode(Body(b)), "text/plain")) continue;
+                if (b.Id == inFlight) inFlight = -1;
+                sent += b.Events.Count;
+                Stats.Sent += b.Events.Count;
+                Stats.LastStatus = "ok";
+                outbox.Remove(b);
+            }
+            Debug(sent > 0 ? $"sent {sent} events by beacon" : $"no beacon taken: {OutboxEvents} events wait");
         }
 
         public int OutboxEvents

@@ -7,8 +7,8 @@ namespace GlitchlessSdk.Tests
 {
     /// <summary>
     /// The C# sketch and fingerprint must agree with the JavaScript SDK bit for bit: the server merges
-    /// sketches from every SDK and groups errors by fingerprint. Fixtures/js-fixture.json is written by
-    /// unity/test/make-fixtures.mjs from packages/sdk/src.
+    /// sketches from every SDK and groups errors by fingerprint. So must a web build's reading of its page.
+    /// Fixtures/js-fixture.json is written by unity/test/make-fixtures.mjs from packages/sdk/src.
     /// </summary>
     public class ParityTests
     {
@@ -78,6 +78,32 @@ namespace GlitchlessSdk.Tests
                 Assert.AreEqual(f["normalized"], Fingerprint.NormalizeMessage((string)f["message"]));
                 Assert.AreEqual(f["fingerprint"], Fingerprint.Of((string)f["kind"], (string)f["message"], (string)f["fn"]), (string)f["message"]);
             }
+        }
+
+        // A Unity web build reads its page as the browser SDK does (WebPage.cs, device.js), so the two split by browser
+        // and OS alike. The fixture's user agents include the browser SDK's quirks (Edge and Opera read as Chrome):
+        // a change to either side shows up here.
+        [Test]
+        public void UserAgentsReadAsTheBrowserSdkReadsThem()
+        {
+            var agents = ((List<object>)Fixture["user_agents"]).Cast<Dictionary<string, object>>().ToList();
+            Assert.Greater(agents.Count, 10);
+            foreach (var a in agents)
+            {
+                var ua = (string)a["ua"];
+                var f = WebPage.ParseUserAgent(ua, a["uad_mobile"] as bool?);
+                Assert.AreEqual(a["browser"], f.Browser, $"browser of {ua}");
+                Assert.AreEqual((string)a["browser_version"] == "" ? null : a["browser_version"], f.BrowserVersion, $"version of {ua}");
+                Assert.AreEqual(a["os"], f.Os, $"os of {ua}");
+                Assert.AreEqual(a["mobile"], f.Mobile, $"mobile for {ua}");
+            }
+        }
+
+        [Test]
+        public void SteamDecksInABrowserAsTheBrowserSdkSeesThem()
+        {
+            foreach (var d in ((List<object>)Fixture["steam_decks"]).Cast<Dictionary<string, object>>())
+                Assert.AreEqual(d["steam_deck"], WebPage.IsSteamDeck((string)d["ua"], (string)d["gpu"]), $"{d["ua"]} on {d["gpu"]}");
         }
 
         [Test]

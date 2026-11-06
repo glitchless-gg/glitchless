@@ -54,6 +54,18 @@ namespace GlitchlessSdk.Tests
 
         public void Abort() => Aborts++;
 
+        // navigator.sendBeacon, as a WebGL build's page has it: BeaconRoom is how many more the browser takes.
+        public readonly List<string> Beacons = new List<string>();
+        public int BeaconRoom = int.MaxValue;
+
+        public bool Beacon(string url, byte[] body, string contentType)
+        {
+            if (BeaconRoom <= 0) return false;
+            BeaconRoom--;
+            Beacons.Add(Text(body));
+            return true;
+        }
+
         public static string Text(byte[] body)
         {
             if (body.Length < 2 || body[0] != 0x1f || body[1] != 0x8b) return Encoding.UTF8.GetString(body);
@@ -633,10 +645,115 @@ namespace GlitchlessSdk.Tests
             transport.Status = 202;
             core.OnBackground();
             Assert.IsTrue(transport.Events(transport.SentNow).Any(e => (string)e["type"] == "session_end" && (string)e["reason"] == "background"));
+            Assert.IsEmpty(transport.Beacons, "a player that can wait sends with SendNow");
             now += 10_000;
             core.OnForeground();
             Assert.AreEqual(first, core.SessionId, "a short trip away resumes the session");
             core.OnBackground();
+            now += 400_000;
+            core.OnForeground();
+            Assert.AreNotEqual(first, core.SessionId, "a long one starts a new session");
+        }
+
+        // A WebGL build: no folder, the player ID in PlayerPrefs, and the page's lifecycle (WebPage) in place of a phone's.
+        GlitchlessCore WebCore()
+        {
+            var prefs = new Dictionary<string, string>();
+            return new GlitchlessCore
+            {
+                Transport = transport,
+                SaveDir = null,
+                Ids = new IdStorage { Read = n => prefs.TryGetValue(n, out var v) ? v : null, Write = (n, v) => prefs[n] = v, Delete = n => prefs.Remove(n) },
+                Clock = () => now,
+                UnixNow = () => 1_761_000_000_000L + (long)now,
+                Args = () => new string[0],
+                Log = _ => { },
+                Device = full => new Dictionary<string, object> { ["browser"] = "Chrome", ["browser_version"] = "141", ["os"] = "macOS" },
+                EngineInfo = () => new Dictionary<string, object> { ["name"] = "unity", ["version"] = "6000.3.27f1", ["renderer"] = "webgl" },
+                AppVersion = "1.2.3",
+                IsWeb = true,
+            };
+        }
+
+        [Test]
+        public void AWebPageGoingAwayEndsTheSessionByBeaconWithoutWaiting()
+        {
+            var core = WebCore();
+            core.Init(Options());
+            core.OnSceneActive("Level1", 1);
+            Frames(core, 30);
+            transport.Hold = true; // the timer's batch is still on its way as the page goes
+            core.Flush();
+            Assert.AreEqual(1, transport.Sent.Count);
+            var onItsWay = FakeTransport.BatchId(transport.Sent[0]);
+            Frames(core, 10);
+            core.OnBackground("pagehide");
+            Assert.IsEmpty(transport.SentNow, "nothing waits on WebGL's one thread");
+            Assert.AreEqual(0, transport.Aborts, "the request on its way isn't stopped: the browser drops it as the page goes, or it lands");
+            CollectionAssert.Contains(transport.Beacons.Select(FakeTransport.BatchId).ToList(), onItsWay, "the batch on its way goes again by beacon, under its own batch_id");
+            var beaconed = transport.Events(transport.Beacons).ToList();
+            Assert.IsTrue(beaconed.Any(e => (string)e["type"] == "session_end" && (string)e["reason"] == "pagehide"));
+            Assert.IsTrue(beaconed.Any(e => (string)e["type"] == "level_abandon" && (string)e["reason"] == "pagehide"));
+            var start = beaconed.Single(e => (string)e["type"] == "session_start");
+            Assert.AreEqual("Chrome", ((Dictionary<string, object>)start["device"])["browser"]);
+            Assert.AreEqual("6000.3.27f1", ((Dictionary<string, object>)start["engine"])["version"], "the Unity version, where the browser SDK's adapters send theirs");
+            Assert.AreEqual(0, core.OutboxEvents);
+            var sent = core.Stats.Sent;
+            transport.Pending[0](202); // the first request's answer, late: it changes nothing
+            Assert.AreEqual(sent, core.Stats.Sent);
+            Assert.AreEqual(1, transport.Sent.Count, "and starts no request after the session ended");
+        }
+
+        [Test]
+        public void AHiddenWebPageSendsByBeaconAndTheSessionGoesOn()
+        {
+            var core = WebCore();
+            core.Init(Options());
+            Frames(core, 30);
+            var session = core.SessionId;
+            core.OnPageHidden();
+            Assert.IsEmpty(transport.Sent, "no request is started that the page may never finish");
+            var beaconed = transport.Events(transport.Beacons).Select(e => (string)e["type"]).ToList();
+            CollectionAssert.Contains(beaconed, "session_start");
+            CollectionAssert.Contains(beaconed, "frame_window", "the window so far goes too");
+            CollectionAssert.DoesNotContain(beaconed, "session_end");
+            now += 3_600_000; // an hour in another tab is still the same session: only leaving the page ends it
+            core.OnForeground();
+            Frames(core, 30);
+            core.Flush();
+            Assert.AreEqual(session, core.SessionId);
+            Assert.IsNotEmpty(transport.Sent, "shown again, batches go by request as before");
+            Assert.IsFalse(transport.Events().Any(e => (string)e["type"] == "app_resume" || (string)e["type"] == "session_start"));
+        }
+
+        [Test]
+        public void ABeaconTheBrowserTurnsDownWaitsForTheNextSend()
+        {
+            var core = WebCore();
+            core.Init(Options());
+            Frames(core, 30);
+            transport.BeaconRoom = 0; // over the browser's 64 KB of beacons
+            core.OnPageHidden();
+            Assert.IsEmpty(transport.Beacons);
+            Assert.Greater(core.OutboxEvents, 0, "kept, should the page come back");
+            core.OnForeground();
+            core.Flush();
+            Assert.IsTrue(transport.Events().Any(e => (string)e["type"] == "session_start"), "and sent by request once it does");
+            Assert.AreEqual(0, core.OutboxEvents);
+        }
+
+        [Test]
+        public void AWebPageBackFromTheCacheGoesOnOrStartsAnew()
+        {
+            var core = WebCore();
+            core.Init(Options());
+            Frames(core, 30);
+            var first = core.SessionId;
+            core.OnBackground("pagehide");
+            now += 10_000;
+            core.OnForeground(); // pageshow from the back-forward cache
+            Assert.AreEqual(first, core.SessionId, "a short trip away resumes the session");
+            core.OnBackground("pagehide");
             now += 400_000;
             core.OnForeground();
             Assert.AreNotEqual(first, core.SessionId, "a long one starts a new session");

@@ -37,17 +37,34 @@ export function collectDevice(gl) {
   };
 }
 
-function parseUserAgent(nav) {
+// Each browser's own token and its major version, the first rule that matches winning. Order, not position in the
+// string, decides: Edge and Opera also say Chrome/ (and before their own token), and every browser on iOS also says
+// Safari/. Edge on Android (EdgA) and iOS (EdgiOS) is Edge, Firefox on iOS (FxiOS) is Firefox, Chrome on iOS (CriOS)
+// is Chrome. Other Chromium browsers (Samsung Internet, Brave, Vivaldi) and Android's web view are Chrome with
+// Chromium's version. No word boundaries: headless Chrome says HeadlessChrome/.
+const BROWSERS = [
+  [/Edg(?:e|A|iOS)?\/(\d+)/, 'Edge'],
+  [/OPR\/(\d+)/, 'Opera'],
+  [/(?:Firefox|FxiOS)\/(\d+)/, 'Firefox'],
+  [/(?:Chrome|CriOS)\/(\d+)/, 'Chrome'],
+  [/Version\/(\d+)/, 'Safari'],
+  [/Safari\/(\d+)/, 'Safari'],
+];
+
+// The browser, its major version, the OS and whether it is a phone. Exported for the Unity SDK's parity fixture
+// (unity/test/make-fixtures.mjs): a Unity web build reads its page the same way.
+export function parseUserAgent(nav) {
   const ua = nav.userAgent || '';
   const uad = nav.userAgentData;
   let browser = 'Other';
   let browserVersion = '';
-  const m =
-    ua.match(/(Edg|OPR|Firefox|CriOS|Chrome|Version)\/(\d+)/) ||
-    ua.match(/(Safari)\/(\d+)/);
-  if (m) {
-    browser = { Edg: 'Edge', OPR: 'Opera', CriOS: 'Chrome', Version: 'Safari' }[m[1]] || m[1];
-    browserVersion = m[2];
+  for (const [re, name] of BROWSERS) {
+    const m = ua.match(re);
+    if (m) {
+      browser = name;
+      browserVersion = m[1];
+      break;
+    }
   }
   let os = 'Other';
   if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';

@@ -15,22 +15,29 @@ namespace GlitchlessSdk
     /// Every mode says whether it is a Steam Deck (steam_deck), and a Deck on SteamOS is os "SteamOS".
     /// Full mode adds the model, OS version, GPU name, core count and memory. Never sent in either mode:
     /// SystemInfo.deviceUniqueIdentifier and SystemInfo.deviceName (often the owner's name).
-    /// PRIVACY.md lists every field; keep the two in step.
+    /// In a WebGL build the page says the browser, OS, whether it is a phone, the pixel ratio and the screen
+    /// (WebPage), in the browser SDK's words. PRIVACY.md lists every field; keep the two in step.
     /// </summary>
     public static class DeviceInfo
     {
-        public static Dictionary<string, object> Collect(bool full)
+        public static Dictionary<string, object> Collect(bool full) => Collect(full, WebPage.Read());
+
+        /// <summary>The device with what a WebGL build's page said (WebPage.Read; null anywhere else).</summary>
+        public static Dictionary<string, object> Collect(bool full, WebPage.Facts page)
         {
-            var mobile = Application.isMobilePlatform;
+            var mobile = page?.Mobile ?? Application.isMobilePlatform;
             var cores = SystemInfo.processorCount;
             var memGb = SystemInfo.systemMemorySize > 0 ? SystemInfo.systemMemorySize / 1024.0 : -1;
             var tier = DeviceTier(cores, memGb);
-            var deck = SteamDeck;
+            var deck = page?.SteamDeck ?? SteamDeck;
             var d = new Dictionary<string, object>
             {
-                ["browser"] = "Unity", // the runtime, in the field the dashboard groups by
-                ["browser_version"] = Application.unityVersion,
-                ["os"] = SteamOs ? "SteamOS" : OsName(),
+                // The runtime, in the field the dashboard groups by; in a WebGL build, the browser the page runs in, its
+                // major version and the OS under it, as the browser SDK names them (the Unity version goes in
+                // session_start.engine there).
+                ["browser"] = page != null ? page.Browser : "Unity",
+                ["browser_version"] = page != null ? page.BrowserVersion : Application.unityVersion,
+                ["os"] = page != null ? page.Os : SteamOs ? "SteamOS" : OsName(),
                 ["mobile"] = mobile,
                 ["device_tier"] = tier,
                 // Every phone GPU is "low" next to a desktop one, so on phones the GPU tier is the device tier. A Steam
@@ -38,8 +45,8 @@ namespace GlitchlessSdk
                 ["gpu_tier"] = mobile ? tier : deck ? "low" : GpuTier(SystemInfo.graphicsDeviceName),
                 ["renderer"] = RenderPipeline(),
                 ["driver"] = SystemInfo.graphicsDeviceType.ToString(),
-                ["screen"] = ScreenSize(),
-                ["dpr"] = null,
+                ["screen"] = page?.Screen ?? ScreenSize(), // a page's in CSS pixels, as the browser SDK's
+                ["dpr"] = page?.Dpr,
                 ["refresh_hz"] = RefreshRate(),
             };
             d["steam_deck"] = deck;
@@ -59,7 +66,12 @@ namespace GlitchlessSdk
         /// <summary>The kind of connection, for net.link: wifi or cellular on a phone, cellular wherever the OS says
         /// so; null where it can't tell (a desktop's local network may be Wi-Fi or a cable) or there is none. Never the
         /// network's name or address.</summary>
-        public static string Link() => LinkFor(Application.internetReachability, Application.isMobilePlatform);
+        public static string Link() => LinkFor(Application.internetReachability, IsMobile);
+
+        static bool? isMobile; // read once a launch
+
+        /// <summary>A phone or tablet: in a WebGL build, what the page says (WebPage), as device.mobile does.</summary>
+        public static bool IsMobile => isMobile ??= WebPage.Read()?.Mobile ?? Application.isMobilePlatform;
 
         public static string LinkFor(NetworkReachability reach, bool mobile)
         {
