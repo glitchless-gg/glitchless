@@ -113,7 +113,11 @@ Give the game its own colour with `accent` ("#rrggbb", such as the main colour o
 series and the map on its boards and share links. `logo` and `banner` (its key art, the header behind each board's
 title, cropped to a strip around its `focus`) take the game's own pictures, a file or base64, also alone; use what the
 game already has (its icon, its store or itch.io art) and ask before making one. `glitchless_dashboard` says whether
-the game has them.
+the game has them. Through the hosted server (connected by URL, which can't read your files) a `file` is answered with
+an upload link: run the `curl` it gives (`curl -X PUT --data-binary @file '<link>'`, no key) within 10 minutes. The link
+takes one picture for that slot and then stops working; curl's answer says what was saved, or what to fix (a picture
+refused for its size or type can go to the same link again). Don't send a big picture as base64: a banner is about a
+quarter of a million characters. `upload: true` asks for a link from any server.
 
 | type | fields |
 | --- | --- |
@@ -161,7 +165,8 @@ above) the left edge is `bounds.min[0]` (x), the right `bounds.max[0]`, the top 
 `bounds.max[1]`. Read those from the level's own data (the floor's corners), never guess them; the tool says when
 the picture's shape doesn't match the bounds. One picture of the whole hub (no level, no zone) serves its zones too:
 a zone without a picture of its own is drawn over it, and one of its own gives a closer look. Through the hosted
-server, which can't read your files, it gives the `curl` to run instead (`PUT /v1/maps` with a secret key).
+server, which can't read your files, a `file` is answered with an upload link for that place and those bounds: run the
+`curl` it gives within 10 minutes, as for the logo and banner above.
 
 **A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], …]` on the
 level's plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,

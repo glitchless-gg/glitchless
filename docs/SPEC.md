@@ -561,8 +561,8 @@ dark scrim, so the title reads on any picture in either theme (a short strip on 
 and the accent on links, the selected page, stats, the map's installs and the main chart series (not when it is close
 to one of the other series' colours), darkened or lightened in each theme to 3:1 on a panel (4.5:1 for links). Agents
 set the accent, the logo and the banner with `glitchless_set_dashboard`'s `accent`, `logo` and `banner` (a file on its
-computer with the local MCP server, or base64; the banner with its `focus`) and see the brand in `glitchless_dashboard`;
-people do the same in Edit pages → Look.
+computer, which the local MCP server reads and the hosted one answers with an upload link, below; or base64; the banner
+with its `focus`) and see the brand in `glitchless_dashboard`; people do the same in Edit pages → Look.
 
 | panel `type` | fields | shows |
 | --- | --- | --- |
@@ -739,8 +739,9 @@ they are on the whole picture); a level never borrows, having a world of its own
 
 **Backgrounds** ([`server/src/maps.js`](../server/src/maps.js)). A picture of a level, a zone or the whole game and the
 world bounds its edges stand for, with no SDK code, so a hub's paths read as the room they crossed. An agent uploads
-one with `glitchless_set_dashboard`'s `background` (a file on its computer with the local MCP server, or base64; it
-can be sent alone), and `glitchless_dashboard` lists a game's backgrounds, or with:
+one with `glitchless_set_dashboard`'s `background` (a file on its computer, which the local MCP server reads and the
+hosted one answers with an upload link, below; or base64; it can be sent alone), and `glitchless_dashboard` lists a
+game's backgrounds, or with:
 
 | Route | Scope | |
 | --- | --- | --- |
@@ -752,6 +753,29 @@ can be sent alone), and `glitchless_dashboard` lists a game's backgrounds, or wi
 A server whose store has no `putMap` answers `PUT` and `DELETE` with 501. On Glitchless Cloud the routes take a
 secret key (`gl_sk_…`, or a workspace key, `gl_ws_…`, with the dashboard scope) or a member's session (Owners,
 Admins and Developers), like the dashboard's.
+
+**Upload links** ([`server/src/upload-links.js`](../server/src/upload-links.js)). An agent on the hosted MCP server
+can't send a file in its tool call (the server can't read the agent's computer, and a banner in base64 is about a
+quarter of a million characters), and an app connected over OAuth has no key to upload with. So
+`glitchless_set_dashboard` answers a `logo`, `banner` or `background` given as a `file` there (or with `upload: true`,
+on any server) with an upload link: a short-lived address for one picture, which the agent sends with one
+`curl -X PUT --data-binary @<file> '<link>'` and no key. The picture is checked as its slot's own route checks it and
+saved as that route saves it, by the client that made the link (`updated_by`).
+
+| Route | Scope | |
+| --- | --- | --- |
+| `POST /v1/uploads?service=&slot=` | `dashboard` | `slot` is `logo`, `banner` or `background`; a background also takes its place, `axis`, `min` and `max` as `PUT /v1/maps` does, checked now (400). → 201 `{upload: {url, path, service, slot, level?, zone?, axis?, min?, max?, expires_at, expires_in_s, max_bytes, max_width, max_height, types, curl}}`: `url` is `<origin>/v1/uploads/gl_up_<43 characters>`. A game makes at most 30 an hour (429). A server whose store keeps no branding or backgrounds answers 501 for that slot, and one without links 501 |
+| `PUT /v1/uploads/<token>` | none: the token is the credential | the body is the picture, within the slot's limits (a logo 100 KB and 1024 × 1024 pixels, a banner 300 KB and 4096 × 2048, a background 256 KB and 4096 × 4096; PNG, JPEG or WebP by content). → the slot's answer with `saved`, a sentence saying what was saved: 200 `{service, slot, saved, brand}` or 201 `{service, slot, saved, map}`. A picture refused for its size (413), type (415) or pixels (400) leaves the link open. A link that was used or has ended: 410; not a link: 404; an address sending more than 2 a second (bursts of 4): 429 with `Retry-After` |
+
+A link lasts 10 minutes and takes one picture: the first good one spends it, so two requests racing for a link save
+one picture. It is shown once, in the answer that makes it: a server keeps only its SHA-256 and never logs it. The
+host keeps links through `createApp({ uploads })`: `create(reader, {service, slot, params, by})` → `{token,
+expiresAt}`, `peek(token)` and `claim(token)` → the link while it is open (claim once), and an optional `origin` the
+links are made at (else the address the request came to). The open-source server keeps them in its process (`memoryUploads`),
+so they end with it; Glitchless Cloud keeps them in its control table (`UPLOAD#<sha256>`, with the hour's count under
+`UPLOADS#<project>`) at the api host, so a link made through one server instance works on another, and refuses one
+whose game has gone. The MCP server makes the link at the address it reaches the API by; one too old to make links
+gets the earlier answer (base64, or a curl with a secret key).
 
 **Tables** (`server/src/tables.js`). Every other panel adds events up; a `table` lists them, so a game can read each
 one: Starlift's Daily Launch, each run under its day with the best score first.
@@ -2688,7 +2712,7 @@ hooks passed to `createApp({ auth })` ([`server/src/auth.js`](../server/src/auth
 | hook | called for | returns | refuses with |
 | --- | --- | --- | --- |
 | `resolveIngest(token, req)` | `POST /v1/intake?token=` | `{ projectId, keyId?, rps? }` | `AuthError(403)` |
-| `resolveReader(req)` | every other `/v1/` route but `/v1/health` | `{ projectId, scopes, keyId?, rps?, share? }` (`read`: queries and live tail; `delete`: `DELETE /v1/data` and `DELETE /v1/report`; `dashboard`: save or reset a dashboard; `sourcemaps`: upload source maps). `rps` rate-limits the reader per `keyId`; `share: { service, page }` limits it to one board (§3c) | `AuthError(401 \| 403)` |
+| `resolveReader(req)` | every other `/v1/` route but `/v1/health`, jam rooms' (§3j) and the `PUT` to an upload link (§3b, whose token is its credential) | `{ projectId, scopes, keyId?, rps?, share? }` (`read`: queries and live tail; `delete`: `DELETE /v1/data` and `DELETE /v1/report`; `dashboard`: save or reset a dashboard, its branding and backgrounds, and make upload links; `sourcemaps`: upload source maps). `rps` rate-limits the reader per `keyId`; `share: { service, page }` limits it to one board (§3c) | `AuthError(401 \| 403)` |
 
 Client tokens ship inside game builds, so they are write-only: a reader hook never accepts one. Intake
 stamps `project_id` on every event and stores it under that project; queries, the live tail, the agent

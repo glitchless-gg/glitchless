@@ -11,7 +11,8 @@
 //     `rps` overrides the per-key ingest rate (requests per second, per server process; 0 = unlimited).
 //
 //   resolveReader(req) → { projectId, scopes, keyId?, rps?, share? }
-//     For every other /v1/ route except /v1/health. Scopes: see SCOPES below. `rps` rate-limits the
+//     For every other /v1/ route except /v1/health, jam rooms' (their own checks) and the PUT to an upload link
+//     (upload-links.js: its token is its credential). Scopes: see SCOPES below. `rps` rate-limits the
 //     reader per `keyId`, as for ingest. `share: { service, page, from?, to? }` makes it a share reader: a
 //     read-only link to one board page that anyone may hold. It may only GET that board and the `services`
 //     query (its service only), over at most SHARE_MAX_DAYS, with session and player ids, devices, stacks,

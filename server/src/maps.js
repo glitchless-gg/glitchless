@@ -36,13 +36,20 @@ function pair(v, name) {
   return nums;
 }
 
-// A map event from an upload: the place, its axis and bounds from the query, the picture as a data URL.
-export function mapUpload(service, params, bytes, now = Date.now()) {
+// Where an upload goes, from the query: { place, axis, bounds }. An upload link (upload-links.js) checks it when it is
+// made, so a mistake shows before the picture is sent.
+export function mapTarget(params) {
   const place = placeParam(params);
   const axis = params.get('axis') || 'xz';
   if (!AXES.includes(axis)) throw new MapError(400, 'axis is xz (seen from above: x across, z down the picture) or xy (a side view: x across, y up)');
   const bounds = { min: pair(params.get('min'), 'min'), max: pair(params.get('max'), 'max') };
   if (!(bounds.max[0] > bounds.min[0] && bounds.max[1] > bounds.min[1])) throw new MapError(400, 'max must be above min on both coordinates: min is the smallest a and b the picture covers, max the largest');
+  return { place, axis, bounds };
+}
+
+// A map event from an upload: the place, its axis and bounds from the query, the picture as a data URL.
+export function mapUpload(service, params, bytes, now = Date.now()) {
+  const { place, axis, bounds } = mapTarget(params);
   if (!bytes?.length) throw new MapError(400, 'send the picture itself as the body: a PNG, JPEG or WebP image');
   if (bytes.length > MAP_UPLOAD.maxBytes) throw new MapError(413, `a background is at most ${MAP_UPLOAD.maxBytes / 1024} KB: save it as a JPEG about 1024 pixels across`);
   const img = sniffImage(bytes);

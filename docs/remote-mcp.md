@@ -88,6 +88,22 @@ An app sees only the tools its scopes allow. Every tool takes `game` (a name or 
 act on the computer the server runs on: `glitchless_sign_in` (OAuth replaces it), `glitchless_playtest` (plays the game
 in Chrome on that computer) and `glitchless_deck` (a Steam Deck on that network).
 
+**Pictures by upload link.** The server can't read files on the agent's computer, and an app connected over OAuth
+holds no key to upload with. So `glitchless_set_dashboard` answers a `logo`, `banner` or heatmap `background` given as
+a `file` with an upload link, and the agent sends the picture itself with one command and no key:
+
+```bash
+curl -X PUT --data-binary @key-art.jpg 'https://api.glitchless.gg/v1/uploads/gl_up_…'
+```
+
+A link is shown once, lasts 10 minutes and takes one picture for its one slot (the logo, the banner, or one place's
+background with the bounds it was made with), then stops working; a used or expired link answers `410`. curl's answer
+says what was saved, or what to fix: a picture refused for its size or type (a logo at most 100 KB and 1024 × 1024
+pixels, a banner 300 KB and 4096 × 2048, a background 256 KB and 4096 × 4096; PNG, JPEG or WebP) can go to the same
+link again until it expires. Making one needs the dashboard scope, a game makes at most 30 an hour, and Glitchless keeps
+only each link's hash. `upload: true` asks for a link without a file named; base64 (`image`) still works for a small
+picture. The routes are in [SPEC §3b Upload links](SPEC.md#3b-dashboards-and-boards).
+
 ## For MCP client developers
 
 | | |

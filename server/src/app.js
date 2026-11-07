@@ -24,6 +24,7 @@ import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBod
 import { createRooms, RoomError, LIMITS as ROOM_LIMITS } from './rooms.js';
 import { createRoomsApi } from './rooms-api.js';
 import { mapUpload, mapBody, mapImage, placeParam, MapError, MAP_UPLOAD } from './maps.js';
+import { memoryUploads, uploadTarget, uploadBody, savedLine, isUploadToken, slotLimits, UploadError, UPLOAD_LINKS } from './upload-links.js';
 import { placeOf, placeKey, mapId, mapSortKey } from './places.js';
 import { testerIndex } from './testers.js';
 
@@ -94,12 +95,15 @@ const MIME = {
 // query reads as testers'; a host that keeps none leaves it out.
 // rooms: jam rooms (rooms.js, SPEC §3j): { store, files, urls: { app, play }, abuse?, notify?, requireService? }; a host
 // without them answers /v1/rooms with 404. handle.rooms is then the rooms themselves (for the host's sweep).
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, testers = null, rooms = null, clientAddress = (req) => req.socket?.remoteAddress }) {
+// uploads: where upload links are kept (upload-links.js: { create, peek, claim, origin? }); the default keeps them in
+// this process.
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, testers = null, rooms = null, uploads = memoryUploads(), clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
   const limiter = new RateLimiter();
   const readLimiter = new RateLimiter();
+  const uploadLimiter = new RateLimiter();
   const counters = { received: 0, requests: 0, startedAt: Date.now() };
   const sourcemaps = createSourcemaps(store, { logger });
   // Players now, counted in this process unless the host counts them itself (auth.playersNow).
@@ -183,6 +187,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       // Jam rooms (rooms-api.js): public pages, organisers, makers and voters, each with its own check.
       if (p === '/v1/rooms' || p.startsWith('/v1/rooms/')) return roomsApi ? await roomsApi(req, res, url) : json(res, 404, { error: 'this server has no jam rooms' });
 
+      // An upload link (upload-links.js) takes its one picture with no key: the token in its path is the credential.
+      if (p.startsWith('/v1/uploads/')) return await uploadByLink(req, res, p.slice('/v1/uploads/'.length));
+
       // Everything else under /v1/ reads (or deletes) one project's data, never the intake token's.
       const reader = p.startsWith('/v1/') ? checkIdentity(await auth.resolveReader(req)) : null;
       if (reader) {
@@ -208,7 +215,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           } catch {
             return json(res, 400, { error: 'invalid JSON' });
           }
-          const dashboard = { ...validateDashboard(input), updated_at: Date.now(), updated_by: String(req.headers['x-glitchless-client'] || 'api').slice(0, 40) };
+          const dashboard = { ...validateDashboard(input), updated_at: Date.now(), updated_by: clientOf(req) };
           await store.putDashboard(reader.projectId, service, dashboard);
           clearCache(reader.projectId);
           return json(res, 200, { service, dashboard });
@@ -246,14 +253,11 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         }
         if (req.method !== 'PUT' && req.method !== 'DELETE') return json(res, 405, { error: 'GET, PUT or DELETE' });
         if (!allow('dashboard')) return;
-        const brand = await store.getBrand(projectId, service);
         try {
+          if (kind && req.method === 'PUT') return json(res, 200, { service, brand: await saveBrandImage(projectId, service, kind, await readBody(req, BRAND_IMAGES[kind].maxBytes), clientOf(req)) });
+          const brand = await store.getBrand(projectId, service);
           let next = { ...brand };
-          if (kind && req.method === 'PUT') {
-            const bytes = await readBody(req, BRAND_IMAGES[kind].maxBytes);
-            next[kind] = checkImage(kind, bytes);
-            await store.putBrandImage(projectId, service, kind, bytes);
-          } else if (kind) next[kind] = null;
+          if (kind) next[kind] = null;
           else if (req.method === 'PUT') {
             let input;
             try {
@@ -264,7 +268,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
             if ('accent' in input) next.accent = checkAccent(input.accent);
             if ('banner_focus' in input) next.banner_focus = checkFocus(input.banner_focus);
           } else next = null; // DELETE /v1/brand: back to no branding
-          next = hasBrand(next) ? { ...next, updated_at: Date.now(), updated_by: String(req.headers['x-glitchless-client'] || 'api').slice(0, 40) } : null;
+          next = hasBrand(next) ? { ...next, updated_at: Date.now(), updated_by: clientOf(req) } : null;
           await store.putBrand(projectId, service, next);
           // An image the brand no longer names goes once the brand stops naming it.
           for (const k of Object.keys(BRAND_IMAGES)) if (brand?.[k] && !next?.[k]) await store.putBrandImage(projectId, service, k, null);
@@ -361,6 +365,26 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           return json(res, 201, { service, map: mapBody(service, map) });
         } catch (err) {
           if (err instanceof MapError || err instanceof IntakeError) return json(res, err.status, { error: err.status === 413 ? `a background is at most ${MAP_UPLOAD.maxBytes / 1024} KB: save it as a JPEG about 1024 pixels across` : err.message });
+          throw err;
+        }
+      }
+
+      // Upload links (upload-links.js, SPEC §3b): one picture for one slot of one game, sent with no key to the link
+      // within UPLOAD_LINKS.minutes, for an agent that can't send a file in its tool call. Made with the dashboard scope.
+      if (p === '/v1/uploads') {
+        if (req.method !== 'POST') return json(res, 405, { error: 'POST' });
+        if (!allow('dashboard')) return;
+        if (!uploads) return json(res, 501, { error: 'this server makes no upload links: send the picture to its own route with a key' });
+        const service = url.searchParams.get('service');
+        if (!service || service.length > 128) return json(res, 400, { error: 'service is required' });
+        try {
+          const { slot, params } = uploadTarget(url.searchParams);
+          if (slot === 'background' ? !store.putMap : !store.getBrand) return json(res, 501, { error: `this server keeps no ${slot === 'background' ? 'uploaded backgrounds' : 'branding'}` });
+          const link = { service, slot, params, by: clientOf(req) };
+          const { token, expiresAt } = await uploads.create(reader, link);
+          return json(res, 201, { upload: uploadBody(uploads.origin || originOf(req), token, link, expiresAt) });
+        } catch (err) {
+          if (err instanceof UploadError || err instanceof MapError) return json(res, err.status, { error: err.message });
           throw err;
         }
       }
@@ -681,6 +705,51 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     }
   }
 
+  // A brand image saved (PUT /v1/brand/logo or /banner, or an upload link): checked, then its bytes, then the brand
+  // naming them. → the brand as the API answers it.
+  async function saveBrandImage(projectId, service, kind, bytes, by) {
+    const brand = await store.getBrand(projectId, service);
+    const next = { ...brand, [kind]: checkImage(kind, bytes), updated_at: Date.now(), updated_by: by };
+    await store.putBrandImage(projectId, service, kind, bytes);
+    await store.putBrand(projectId, service, next);
+    clearCache(projectId);
+    return brandBody(service, next);
+  }
+
+  // PUT /v1/uploads/<token>: the picture is checked as its slot's route checks it before the link is spent, so one
+  // refused for its size or type can be fixed and sent again; then the link is claimed (once, whichever request comes
+  // first) and the picture saved as its route saves it. The token is never logged, here or in an error.
+  async function uploadByLink(req, res, token) {
+    if (req.method !== 'PUT') return json(res, 405, { error: "PUT the picture itself as the body: curl -X PUT --data-binary @<file> '<this link>'" });
+    const wait = uploadLimiter.take(`upload\n${clientAddress(req) ?? ''}`, UPLOAD_LINKS.putRps);
+    if (wait) {
+      res.setHeader('Retry-After', String(wait));
+      return json(res, 429, { error: 'too many uploads from this address: wait a moment and send it again' });
+    }
+    const gone = { error: `this upload link is used up or has expired: each takes one picture, within ${UPLOAD_LINKS.minutes} minutes of being made. Ask glitchless_set_dashboard for a new one (upload: true)` };
+    if (!uploads || !isUploadToken(token)) return json(res, 404, { error: 'no such upload link' });
+    const link = await uploads.peek(token);
+    if (!link) return json(res, 410, gone);
+    const { maxBytes } = slotLimits(link.slot);
+    try {
+      const bytes = await readBody(req, maxBytes);
+      // Checked as the slot's route checks it: a map event, or a brand image (saveBrandImage checks it again, cheaply).
+      const map = link.slot === 'background' ? mapUpload(link.service, new URLSearchParams(link.params), bytes) : (checkImage(link.slot, bytes), null);
+      if (!(await uploads.claim(token))) return json(res, 410, gone);
+      if (map) {
+        await store.putMap(link.projectId, map);
+        clearCache(link.projectId);
+        return json(res, 201, { service: link.service, slot: link.slot, saved: savedLine(link, { map }), map: mapBody(link.service, map) });
+      }
+      const brand = await saveBrandImage(link.projectId, link.service, link.slot, bytes, link.by);
+      return json(res, 200, { service: link.service, slot: link.slot, saved: savedLine(link, { brand }), brand });
+    } catch (err) {
+      if (err instanceof IntakeError && err.status === 413) return json(res, 413, { error: `a ${link.slot} is at most ${maxBytes / 1024} KB${link.slot === 'background' ? ': save it as a JPEG about 1024 pixels across' : ''}. The link still works until it expires: send a smaller picture to it` });
+      if (err instanceof BrandError || err instanceof MapError) return json(res, err.status, { error: `${err.message}. The link still works until it expires: send a fixed picture to it` });
+      throw err;
+    }
+  }
+
   // `shares: false` keeps share links' answers, which may be SHARE_MAX_AGE_S old (new events don't clear them).
   // GET /v1/brand (the brand as JSON) or one of its images: served with its own type, never sniffed or run, and kept for
   // good at the address that names its hash.
@@ -767,6 +836,17 @@ function shareOnly(req, url, share) {
   const from = Math.max(pinned(share) ? share.from : (num(q.get('from')) ?? to - days * DAY), to - SHARE_MAX_DAYS * DAY);
   url.search = new URLSearchParams({ service: share.service, page: share.page, from, to }).toString();
   return null;
+}
+
+// Who changed a game's dashboard or brand, as its client names itself.
+function clientOf(req) {
+  return String(req.headers['x-glitchless-client'] || 'api').slice(0, 40);
+}
+
+// The address a request came to, for links made from it (upload links, when the host names none).
+function originOf(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || (req.socket?.encrypted ? 'https' : 'http');
+  return `${proto}://${req.headers['x-forwarded-host'] || req.headers.host || 'localhost'}`;
 }
 
 // Hooks are written elsewhere (the hosted control plane), so check what they return before trusting it.

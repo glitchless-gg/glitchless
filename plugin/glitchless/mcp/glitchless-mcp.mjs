@@ -37881,14 +37881,33 @@ ${brief || "None in this window. A game sends them with track(name, attrs), and 
 // src/pictures.js
 import fs3 from "node:fs/promises";
 import path3 from "node:path";
-async function readPicture({ file: file2, image }, url2) {
-  if (file2) {
-    if (isRemote()) throw new Error(`this server can't read files on your computer: pass the picture as image (base64), or upload it yourself with a secret key that has the dashboard scope: curl -X PUT '${url2}' -H 'x-glitchless-api-key: <key>' --data-binary @${file2}`);
-    return { bytes: await fs3.readFile(path3.resolve(file2)), type: TYPES[path3.extname(file2).toLowerCase()] || "application/octet-stream" };
+async function readPicture(svc, slot, params, { file: file2, image, upload: asked }, what, route) {
+  if (asked && image) throw new Error("give image (the picture as base64) or upload: true (a link to send it to), not both");
+  if (asked || file2 && isRemote()) {
+    const link = await uploadLink(svc, slot, params, file2, what);
+    if (link) return { link };
+    if (isRemote() || !file2) throw new Error(`this server makes no upload links${isRemote() ? " and can't read files on your computer" : ""}: pass the picture as image (base64), or upload it yourself with a secret key that has the dashboard scope: curl -X PUT '${route}' -H 'x-glitchless-api-key: <key>' --data-binary @${file2 ? shellArg(file2) : "<file>"}`);
   }
+  if (file2) return { bytes: await fs3.readFile(path3.resolve(file2)), type: TYPES[path3.extname(file2).toLowerCase()] || "application/octet-stream" };
   return { bytes: Buffer.from(image.replace(/^data:[^,]*,/, ""), "base64"), type: "application/octet-stream" };
 }
-async function saveBackground(svc, { level, zone, file: file2, image, axis, bounds, remove: remove2 }) {
+async function uploadLink(svc, slot, params, file2, what) {
+  let made;
+  try {
+    made = (await write("POST", `/v1/uploads?${new URLSearchParams({ service: svc, slot, ...params })}`)).upload;
+  } catch (err) {
+    if (/→ HTTP (404|405|501)\b/.test(err.message)) return null;
+    throw err;
+  }
+  const url2 = `${base()}${made.path}`;
+  const minutes = Math.max(1, Math.round(made.expires_in_s / 60));
+  const command = `curl -X PUT --data-binary @${file2 ? shellArg(file2) : "<file>"} '${url2}'`;
+  return `To send ${what}, run this within ${minutes} minutes: \`${command}\`. The link takes one picture (PNG, JPEG or WebP, at most ${Math.round(made.max_bytes / 1024)} KB and ${made.max_width} \xD7 ${made.max_height} pixels) and then stops working; it needs no key. curl's answer says what was saved, or what to fix: a picture refused for its size or type can be fixed and sent to the same link until it expires.`;
+}
+function shellArg(f) {
+  return /^[\w@%+=:,./-]+$/.test(f) ? f : `'${f.replace(/'/g, "'\\''")}'`;
+}
+async function saveBackground(svc, { level, zone, file: file2, image, upload: asked, axis, bounds, remove: remove2 }) {
   if (level && zone) throw new Error("give level or zone, not both (neither: the whole game)");
   const place2 = level ? { level } : zone ? { zone } : {};
   const name = level ? `level ${level}` : zone ? `zone ${zone}` : "the whole game";
@@ -37897,12 +37916,13 @@ async function saveBackground(svc, { level, zone, file: file2, image, axis, boun
     await write("DELETE", `/v1/maps?${where2}`);
     return { text: `Removed the uploaded background of ${name}.` };
   }
-  if (!file2 && !image) throw new Error("give background.file or background.image (the picture), or background.remove: true");
+  if (!file2 && !image && !asked) throw new Error("give background.file or background.image (the picture), background.upload: true (a link to send it to), or background.remove: true");
   if (!bounds) throw new Error('give bounds: the world coordinates the picture covers, { "min": [a, b], "max": [a, b] }');
   where2.set("axis", axis || "xz");
   where2.set("min", bounds.min.join(","));
   where2.set("max", bounds.max.join(","));
-  const { bytes, type } = await readPicture({ file: file2, image }, `${base()}/v1/maps?${where2}`);
+  const { bytes, type, link } = await readPicture(svc, "background", Object.fromEntries([...where2].filter(([k]) => k !== "service")), { file: file2, image, upload: asked }, `the background of ${name}`, `${base()}/v1/maps?${where2}`);
+  if (link) return { text: link, link: true };
   const { map: map2 } = await upload("PUT", `/v1/maps?${where2}`, bytes, type);
   const [w, h] = map2.size;
   const shape = w / h / ((bounds.max[0] - bounds.min[0]) / (bounds.max[1] - bounds.min[1]));
@@ -37915,24 +37935,31 @@ async function listBackgrounds(svc) {
 function round(v) {
   return Math.round(v * 100) / 100;
 }
-async function saveBrandImage(svc, kind, { file: file2, image, remove: remove2, focus }) {
+async function saveBrandImage(svc, kind, { file: file2, image, upload: asked, remove: remove2, focus }) {
   const q = `service=${encodeURIComponent(svc)}`;
   const said = [];
+  let saved = false;
   if (remove2) {
     await write("DELETE", `/v1/brand/${kind}?${q}`);
     said.push(`Removed the ${kind}.`);
-  } else if (file2 || image) {
-    const { bytes, type } = await readPicture({ file: file2, image }, `${base()}/v1/brand/${kind}?${q}`);
-    const { brand } = await upload("PUT", `/v1/brand/${kind}?${q}`, bytes, type);
-    const b = brand?.[kind];
-    said.push(`Saved the ${kind}${b ? `: ${b.width} \xD7 ${b.height} pixels` : ""}.`);
+    saved = true;
+  } else if (file2 || image || asked) {
+    const { bytes, type, link } = await readPicture(svc, kind, {}, { file: file2, image, upload: asked }, `the ${kind}`, `${base()}/v1/brand/${kind}?${q}`);
+    if (link) said.push(link);
+    else {
+      const { brand } = await upload("PUT", `/v1/brand/${kind}?${q}`, bytes, type);
+      const b = brand?.[kind];
+      said.push(`Saved the ${kind}${b ? `: ${b.width} \xD7 ${b.height} pixels` : ""}.`);
+      saved = true;
+    }
   }
   if (focus) {
     await write("PUT", `/v1/brand?${q}`, { banner_focus: focus });
     said.push(`The banner keeps its ${focus} in view.`);
+    saved = true;
   }
-  if (!said.length) throw new Error(`give ${kind}.file or ${kind}.image (the picture), ${kind}.remove: true${kind === "banner" ? ", or banner.focus" : ""}`);
-  return said.join(" ");
+  if (!said.length) throw new Error(`give ${kind}.file or ${kind}.image (the picture), ${kind}.upload: true (a link to send it to), ${kind}.remove: true${kind === "banner" ? ", or banner.focus" : ""}`);
+  return { text: said.join(" "), saved };
 }
 var TYPES, backgroundSchema, picture, logoSchema, bannerSchema;
 var init_pictures = __esm({
@@ -37943,15 +37970,17 @@ var init_pictures = __esm({
     backgroundSchema = external_exports.object({
       level: external_exports.string().optional().describe("The level, as the game passes it to levelStart"),
       zone: external_exports.string().optional().describe("Or the zone, as the game passes it to setZone (leave out level and zone for the whole game)"),
-      file: external_exports.string().optional().describe("The picture: a PNG, JPEG or WebP file on this computer. Only the local server (npx glitchless-mcp) reads files; the hosted one takes image"),
-      image: external_exports.string().optional().describe("The picture as base64 (or a data: URL), where the server can't read your files"),
+      file: external_exports.string().optional().describe("The picture: a PNG, JPEG or WebP file on this computer. The local server (npx glitchless-mcp) reads it; the hosted one answers with an upload link to send it to with one curl"),
+      image: external_exports.string().optional().describe("Or the picture as base64 (or a data: URL); a big one is long in a call, so prefer file"),
+      upload: external_exports.boolean().optional().describe("Answer with an upload link instead of saving now: send the picture to it with one curl (curl -X PUT --data-binary @file '<link>') within 10 minutes; it takes one picture and needs no key. The hosted server does this for file by itself"),
       axis: external_exports.enum(["xz", "xy"]).optional().describe("xz: seen from above, x across and z down the picture (default); xy: a side view, x across and y up"),
       bounds: external_exports.object({ min: external_exports.tuple([external_exports.number(), external_exports.number()]), max: external_exports.tuple([external_exports.number(), external_exports.number()]) }).optional().describe(`The world coordinates the picture covers on the axis's two coordinates: { "min": [x, z], "max": [x, z] } for xz, e.g. { "min": [-120, -80], "max": [120, 80] }`),
       remove: external_exports.boolean().optional().describe("Remove this place's uploaded background (an SDK's capture, if any, shows again)")
     }).describe("A place's heatmap background, so the Heatmaps view and positions panels (where players went and died) read as the room they happened in: a top-down picture of a hub, a lobby or a level and the world bounds its edges stand for, with no SDK code. The place is a level, a zone the game sets with setZone, or neither: the whole game, for a game whose players move about with no level set (a hub); a zone with no picture of its own uses the whole game's. With axis xz (seen from above, the default) the picture's left edge is bounds.min[0] (x) and its right edge bounds.max[0], its top edge bounds.min[1] (z) and its bottom edge bounds.max[1]; with xy (a side view) its top is bounds.max[1] (y). Get the bounds from the game's own level data (the floor's corners), not by guessing. An upload is drawn over whatever an SDK captured for that place; remove: true goes back to the capture. PNG, JPEG or WebP, at most 256 KB and 4096 pixels a side: a JPEG about 1024 pixels across fits. Send it alone to change only the background, one place a call; glitchless_dashboard lists the game's backgrounds");
     picture = {
-      file: external_exports.string().optional().describe("A PNG, JPEG or WebP file on this computer. Only the local server (npx glitchless-mcp) reads files; the hosted one takes image"),
-      image: external_exports.string().optional().describe("The picture as base64 (or a data: URL), where the server can't read your files"),
+      file: external_exports.string().optional().describe("A PNG, JPEG or WebP file on this computer. The local server (npx glitchless-mcp) reads it; the hosted one answers with an upload link to send it to with one curl"),
+      image: external_exports.string().optional().describe("Or the picture as base64 (or a data: URL); a banner is long in a call, so prefer file"),
+      upload: external_exports.boolean().optional().describe("Answer with an upload link instead of saving now: send the picture to it with one curl (curl -X PUT --data-binary @file '<link>') within 10 minutes; it takes one picture and needs no key. The hosted server does this for file by itself"),
       remove: external_exports.boolean().optional().describe("Remove it")
     };
     logoSchema = external_exports.object(picture).describe("The game's logo, shown by its name on its boards and share links: PNG, JPEG or WebP (never SVG), at most 100 KB and 1024 \xD7 1024 pixels; the dashboard fits it inside 256 px. Use the game's own logo or icon from its files; ask before making one up");
@@ -37968,7 +37997,7 @@ var init_dashboard = __esm({
     init_pictures();
     tool(
       "glitchless_dashboard",
-      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (people upload those in the dashboard: Edit pages \u2192 Look).",
+      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (set with glitchless_set_dashboard's logo and banner, or by people in the dashboard: Edit pages \u2192 Look).",
       { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
       async ({ service, hours, page, ...f }) => {
         const svc = await resolveService(service);
@@ -38055,7 +38084,7 @@ var init_dashboard = __esm({
       "glitchless_set_dashboard",
       {
         title: "Save dashboard",
-        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum, of completed ones only with event "purchase:result=done"; a Roblox game's money is in Robux: currency "ROBUX", and devex true on a panel adds an estimate in dollars), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. For balance and outcomes, a breakdown with rate gives each row its rate and interval next to the overall one (win rate by hero: event "match_end", by "hero", rate "won"); per "$hours" turns counts and sums into rates per hour played (gold per hour); a distribution panel or a stat with of and quantile shows how long matches or runs last; a stat with first gives the median seconds from a session's start to its first event of a kind (time in the lobby: first "hall_left"), and one with never the share of ended sessions that never sent it (never left the lobby), so the game needn't time it by hand; a breakdown of steps or days takes order "value" (day 1 to 7 in order); a table lists an event's events one by one, grouped and sorted (daily runs by day, best score first: type "table", event "daily_run", group_by "day_label", sort "-score", of "score"); a list attribute (deck, build, boons) splits by element. Split by what the game set for the session with setProperties ($rank, $class, $region), and give a page where to show only some sessions (a page for the high ranks); a levels panel by a levelStart attribute shows clears by tier or difficulty, and count "runs" runs per biome. A multiplayer game gets a Network page (ping_p95 and disconnect_pct stats, net panels by $region or $link), and one whose dedicated servers run the SDK in server mode a Servers page (servers_now, server_tick_p95, a servers panel by players) or the built-in servers view; a game that sets match groups can keep the built-in matches view. An open world or an avatar hub that names its zones (setZone) gets where play time goes and how each zone runs: a breakdown by $zone without event (time in each zone), zone_time_pct and zone_median_s stats with zone, and frame_time by $zone (hitches per zone); don't send zone timing as custom events. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map), logo and banner their logo and header picture (the game's key art, behind each board's title), and background gives a level, a zone or the whole game a heatmap background (a top-down picture and its world bounds); each can be sent alone. Needs a secret key with the dashboard scope.`,
+        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum, of completed ones only with event "purchase:result=done"; a Roblox game's money is in Robux: currency "ROBUX", and devex true on a panel adds an estimate in dollars), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. For balance and outcomes, a breakdown with rate gives each row its rate and interval next to the overall one (win rate by hero: event "match_end", by "hero", rate "won"); per "$hours" turns counts and sums into rates per hour played (gold per hour); a distribution panel or a stat with of and quantile shows how long matches or runs last; a stat with first gives the median seconds from a session's start to its first event of a kind (time in the lobby: first "hall_left"), and one with never the share of ended sessions that never sent it (never left the lobby), so the game needn't time it by hand; a breakdown of steps or days takes order "value" (day 1 to 7 in order); a table lists an event's events one by one, grouped and sorted (daily runs by day, best score first: type "table", event "daily_run", group_by "day_label", sort "-score", of "score"); a list attribute (deck, build, boons) splits by element. Split by what the game set for the session with setProperties ($rank, $class, $region), and give a page where to show only some sessions (a page for the high ranks); a levels panel by a levelStart attribute shows clears by tier or difficulty, and count "runs" runs per biome. A multiplayer game gets a Network page (ping_p95 and disconnect_pct stats, net panels by $region or $link), and one whose dedicated servers run the SDK in server mode a Servers page (servers_now, server_tick_p95, a servers panel by players) or the built-in servers view; a game that sets match groups can keep the built-in matches view. An open world or an avatar hub that names its zones (setZone) gets where play time goes and how each zone runs: a breakdown by $zone without event (time in each zone), zone_time_pct and zone_median_s stats with zone, and frame_time by $zone (hitches per zone); don't send zone timing as custom events. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map), logo and banner their logo and header picture (the game's key art, behind each board's title), and background gives a level, a zone or the whole game a heatmap background (a top-down picture and its world bounds); each can be sent alone. A picture is a file on this computer, which the local server (npx glitchless-mcp) reads, or base64. The hosted server can't read your files: for file (or upload: true on any server) it answers with an upload link instead, and you send the picture with one curl (curl -X PUT --data-binary @file '<link>', no key). A link lasts 10 minutes, takes one picture for its one slot (the logo, the banner, or one place's background with the bounds it was made with) and then stops working; a picture refused for its size or type can be sent again until it expires, and a game gets at most 30 links an hour. Each slot's limit: a logo at most 100 KB and 1024 \xD7 1024 pixels, a banner 300 KB and 4096 \xD7 2048, a background 256 KB and 4096 \xD7 4096, all PNG, JPEG or WebP. Needs a secret key with the dashboard scope.`,
         inputSchema: {
           service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
           pages: external_exports.array(pageSchema).max(20).optional().describe("Every page, in order: at most 20 (boards and built-in views together)"),
@@ -38072,12 +38101,16 @@ var init_dashboard = __esm({
       },
       async ({ service, pages, currency, reset, accent, logo, banner, background }) => {
         const svc = await resolveService(service);
-        const look = accent !== void 0 || logo || banner;
-        if (!reset && !pages?.length && !look && !background) throw new Error("give pages, accent, logo, banner, background, or reset: true");
+        if (!reset && !pages?.length && accent === void 0 && !logo && !banner && !background) throw new Error("give pages, accent, logo, banner, background, or reset: true");
         const said = [];
+        let look = accent !== void 0;
         if (accent !== void 0) said.push(`Accent: ${(await write("PUT", `/v1/brand?service=${encodeURIComponent(svc)}`, { accent })).brand?.accent ?? "none"}.`);
-        if (logo) said.push(await saveBrandImage(svc, "logo", logo));
-        if (banner) said.push(await saveBrandImage(svc, "banner", banner));
+        for (const [kind, picture2] of [["logo", logo], ["banner", banner]]) {
+          if (!picture2) continue;
+          const { text, saved } = await saveBrandImage(svc, kind, picture2);
+          said.push(text);
+          look ||= saved;
+        }
         const bg = background ? await saveBackground(svc, background) : null;
         if (bg) said.push(bg.text);
         const colour = said.length ? ` ${said.join(" ")}` : "";
