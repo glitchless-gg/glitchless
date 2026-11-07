@@ -18,12 +18,12 @@
     "source": "github",
     "subfolder": "packages/mcp"
   },
-  "version": "0.15.0",
+  "version": "0.16.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "glitchless-mcp",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "transport": {
         "type": "stdio"
       },
