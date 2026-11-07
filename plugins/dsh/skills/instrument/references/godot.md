@@ -28,6 +28,15 @@ there: it is false in a debug build without `--glitchless`. Glitchless saves the
 collecting anything, pass `"opt_in": true` to `init` and call `set_enabled(true)` when the player says yes. With the
 toggle, Google Play's Data safety form can say collection is optional (PRIVACY.md, "For the store forms").
 
+## Runs from the editor
+
+Every run the Godot editor starts is a debug build, and a debug build sends nothing without `--glitchless` (README,
+"Off in debug builds"). So a game with no players yet sends nothing at all, and Glitchless looks empty to its developer.
+If the game has no players yet, or the user asks for their own runs or playtests to show, add `--glitchless` to
+`run/main_run_args` in the `[editor]` section of `project.godot` (after any arguments already there; the editor adds
+them to every run). Tell the user it's there, that it counts their runs as a player's, and to take it out once the game
+has players. Don't pass `"enabled": true` to `init` instead: that turns on every debug build for good.
+
 ## Streams, properties, matches and zones
 
 - **Count a stream, track a moment.** Shots, hits, kills, loot and gold go through

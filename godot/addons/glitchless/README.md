@@ -114,6 +114,16 @@ If the game already uses [GodotSteam](https://godotsteam.com), every session als
 
 As with the `Metrics` autoload in Linebreakers and Starlift, a debug build (the editor, or an export with debug on) sends nothing unless it is run with `--glitchless`. That keeps a developer's phone and the agents' bot runs out of the players' numbers. Release exports send by default.
 
+Every run the editor starts is a debug build, so a game that only runs in the editor so far sends nothing. To send your own runs, put `--glitchless` in *Project Settings → Editor → Run → Main Run Args* (turn on Advanced Settings to see it). The editor adds it to every run it starts. In `project.godot`:
+
+```ini
+[editor]
+
+run/main_run_args="--glitchless"
+```
+
+Those runs count as a player's sessions, so take it out once the game has players, or your own playtests mix with theirs.
+
 ### The player's off switch
 
 Give players a "Share performance data" toggle in the game's settings and wire it to `Glitchless.set_enabled()`. Turned off, Glitchless stops at once: nothing more is measured or sent, not even a check that the server is there, and what it hadn't sent yet is deleted, the outbox on the device included. The session just goes quiet: no `session_end` or `level_abandon` is sent, and the server doesn't count it as a crash. Turned back on, a new session starts in the same launch, as after a long time in the background, with the properties and groups the game had set.
