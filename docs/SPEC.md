@@ -1642,8 +1642,11 @@ game (with the question to ask), or add the person's own game, with the sentence
 That page's button approves the request, because the code that takes the person back lives two minutes.
 
 Every other `/v1/` route (queries, `/v1/dashboard`, source maps) takes the same key with the game named in
-`x-glitchless-project` (or `?project=`). `/v1/agent/` reads no cookies and sends no CORS headers: it's for programs,
-not web pages. In the browser, the dashboard registers the same abilities as WebMCP tools
+`x-glitchless-project` (or `?project=`). A secret key (`gl_sk_…`) reaches only its own game: a request may name the
+game it means in `x-glitchless-game` (its name or id, URI-encoded; the MCP server sends the `game` a call names), and
+one that names another game is refused (403, "this key is for the game "Starlift" only…"), so a write meant for
+another game never lands on the key's. Without the header the key reads its game as always. `/v1/agent/` reads no
+cookies and sends no CORS headers: it's for programs, not web pages. In the browser, the dashboard registers the same abilities as WebMCP tools
 (`document.modelContext`), acting as the signed-in person.
 
 ### 3h. Revenue: RevenueCat (Glitchless Cloud)

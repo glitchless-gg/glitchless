@@ -107,9 +107,13 @@ export async function projectFor(game) {
   return hit.id;
 }
 
+// A workspace key names the game in x-glitchless-project. A key for one game sends the game a call names (or
+// GLITCHLESS_GAME) as x-glitchless-game, so Glitchless Cloud refuses it when it isn't the key's game instead of
+// answering, or writing, for the key's own game.
 async function headers(extra = {}) {
   const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || 'mcp';
-  return { 'x-glitchless-client': client, ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...(isWorkspace() ? { 'x-glitchless-project': await projectFor(calls.getStore()?.game) } : {}), ...extra };
+  const named = !isWorkspace() && (calls.getStore()?.game || conn().game);
+  return { 'x-glitchless-client': client, ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...(isWorkspace() ? { 'x-glitchless-project': await projectFor(calls.getStore()?.game) } : {}), ...(named ? { 'x-glitchless-game': encodeURIComponent(named) } : {}), ...extra };
 }
 
 // A workspace key's own routes (/v1/agent/…, Glitchless Cloud).
@@ -262,7 +266,7 @@ export function toolList({ remote = false, scopes = null } = {}) {
 const titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, '').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}`;
 
 // Every tool takes `game` (by name or id): with a workspace key it picks the game, with a game key it's ignored.
-const gameField = z.string().optional().describe('The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.');
+const gameField = z.string().optional().describe('The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. With a key for one game (gl_sk_…), a call that names another game is refused: sign in to the workspace to reach every game.');
 
 // A server with the tools. remote: the HTTP server's set (no local tools, and instructions to match); scopes: show
 // only the tools these scopes allow; connection: what every call runs with (default: this process's own).

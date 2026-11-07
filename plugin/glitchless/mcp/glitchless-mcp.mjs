@@ -37113,7 +37113,8 @@ async function projectFor(game) {
 }
 async function headers(extra = {}) {
   const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || "mcp";
-  return { "x-glitchless-client": client, ...apiKey() ? { "x-glitchless-api-key": apiKey() } : {}, ...isWorkspace() ? { "x-glitchless-project": await projectFor(calls.getStore()?.game) } : {}, ...extra };
+  const named = !isWorkspace() && (calls.getStore()?.game || conn().game);
+  return { "x-glitchless-client": client, ...apiKey() ? { "x-glitchless-api-key": apiKey() } : {}, ...isWorkspace() ? { "x-glitchless-project": await projectFor(calls.getStore()?.game) } : {}, ...named ? { "x-glitchless-game": encodeURIComponent(named) } : {}, ...extra };
 }
 async function agent(method, p, body) {
   if (!isWorkspace()) throw new Error("This needs a workspace: sign in with glitchless_sign_in (or run `npx -y glitchless-mcp login`) on Glitchless Cloud.");
@@ -37293,7 +37294,7 @@ var init_context = __esm({
     tools = [];
     READS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
     titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())}`;
-    gameField = external_exports.string().optional().describe("The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. Ignored with a key for one game.");
+    gameField = external_exports.string().optional().describe("The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. With a key for one game (gl_sk_\u2026), a call that names another game is refused: sign in to the workspace to reach every game.");
     TEST_KINDS = { synthetic: "synthetic (bots, playtests, store test phones)", tester: "tester", simulated: "simulated", dev_builds: "on dev builds" };
   }
 });
