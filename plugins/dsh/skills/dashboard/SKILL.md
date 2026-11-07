@@ -92,7 +92,7 @@ Add the calls where the moment happens in code, then run the game (or let the bo
 
 ## 3. Design the dashboard
 
-A dashboard is the game's pages, in the order its sidebar shows them; the first opens first. Each page is a
+A dashboard is the game's pages, at most 20, in the order its sidebar shows them; the first opens first. Each page is a
 board, panels you choose, or a built-in view the game keeps: `events` (every event, breakdowns, funnels),
 `performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on a level, in a zone or anywhere), `sessions`
 (each with its replay), `versions`, `live` (events as they arrive; `options.events` keeps only some), `reports`

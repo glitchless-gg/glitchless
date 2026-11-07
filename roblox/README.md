@@ -209,7 +209,8 @@ the command bar, started or not. Then look straight down on that rectangle: an a
 `FieldOfView` low (5°) and move it high above the centre, looking down, so the view is close to flat, and screenshot
 the viewport cropped to the rectangle. The picture's top edge is the bounds' smallest z and its left edge their
 smallest x, as boards draw an xz map. `captureMap` in the command bar (Edit mode) draws the map and prints its bounds
-without sending it.
+without sending it. During a play test the command bar's `require` gets a copy of the module that was never started,
+so its `captureMap` waits for an `init` that never comes: call it from the game's own server Script, or in Edit mode.
 
 ## The player's off switch
 
