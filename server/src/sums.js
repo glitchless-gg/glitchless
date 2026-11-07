@@ -13,6 +13,7 @@ import { approximate } from './daily.js';
 import { hoursPlayed, perHour, measureOf, measureBy, rateOf, avgOf } from './rates.js';
 import { percentileOf } from './distributions.js';
 import { netStats, NET_METRICS } from './network.js';
+import { firstStat, neverStat } from './firsts.js';
 
 // One version's context: its rollup cells (as versions() hands them over) and its sessions, or over more than 31 days
 // its day groups and sampled sessions, with nothing cached from the whole range.
@@ -131,11 +132,15 @@ export function senders(ctx, f, of) {
 }
 
 // A stat panel's number on one version (versions()): a sum per session, player or session as `per` says, a
-// conversion, a count or sum per hour played (over the version's own hours), a rate, an average or a percentile. `v` is
+// conversion, a count or sum per hour played (over the version's own hours), a rate, an average, a percentile, the
+// time to a first event or the share of sessions that never sent it. `v` is
 // the version's summary (sessions, players) and `cells` its rollup cells.
 export function versionStat(ctx, p, v, cells, currency = null) {
   const sub = versionContext(ctx, v.version, cells);
   if (p.metric === 'hours_played') return round(hoursPlayed(sub), 2);
+  // Time to a first event and sessions that never sent it (firsts.js), over the version's own sessions.
+  if (p.first) return firstStat(sub, parseFunnel(p.first)[0], p.quantile ?? 50).value ?? null;
+  if (p.never) return neverStat(sub, parseFunnel(p.never)[0]).value ?? null;
   if (NET_METRICS[p.metric]) return netStats(sub)?.[p.metric] ?? null;
   if (p.metric) return perHour(cells.reduce((n, c) => n + (c.n[p.metric === 'deaths' ? 'death' : 'error'] || 0), 0), hoursPlayed(sub));
   const [f] = parseFunnel(p.event);

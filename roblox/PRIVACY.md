@@ -2,7 +2,8 @@
 
 This file lists every field the Roblox SDK sends, what it keeps, what Roblox's own rules say about sending data out of
 an experience, and what a game's privacy notice would need to say. It was written from `src/Server.luau`,
-`src/Client.luau`, `src/Session.luau`, `src/Frames.luau`, `src/Ticks.luau`, `src/Inbox.luau` and `src/Words.luau`, and
+`src/Client.luau`, `src/Session.luau`, `src/Frames.luau`, `src/Ticks.luau`, `src/Inbox.luau`, `src/Words.luau` and
+`src/Map.luau`, and
 checked against what reached a local Glitchless server from `lune run roblox/test/run`, `node --test
 roblox/test/e2e.mjs` and a play test in Roblox Studio (0.746). Keep it in step with those files. The browser, Godot,
 Unity, Unreal and GameMaker SDKs have their own lists.
@@ -20,6 +21,7 @@ The other Glitchless SDKs have three privacy modes; the Roblox SDK has only the 
 | Player ID | **none**. No Roblox user ID, name or display name is ever sent, and nothing ties one session to another: a player who comes back tomorrow is a new, unrelated session |
 | Device | the kind of device in Roblox's words (`Computer`, `Phone`, `Tablet`, `Console`, `VR`), the Roblox client's version, the screen size, the graphics quality setting, and whether it has touch, a keyboard or a gamepad |
 | Positions | **not sent** unless the game sets `positions = true`: then the server samples each player's character position 4 times a second, in studs, and deaths carry where they happened |
+| Extras | **not sent** unless the game turns each on (below): ProximityPrompts and seats used, as counts; whether the player followed a friend in, as true or false; how many of their friends are in the server, as a number |
 | Kept | nothing on the player's device. On the server, in memory only, until it is sent. The player's on/off choice in the game's own DataStore, once the game asks (below) |
 
 Install and full mode would add a stored random player ID, so returning players could be counted. On Roblox that ID
@@ -45,7 +47,7 @@ Roblox names a player's scripts and character after the player: an error in a Lo
 
 Every event has `type`, `ts` (milliseconds, Roblox's synced server time), `level` (the game's current level or null),
 and while set `zone`, `match`, `party` and `run`. The envelope has `service`, `env`, `version`, `session_id`, `sdk`
-(`glitchless-roblox/0.1.0`), `batch_id` (random, names the batch, never the player), and `role: "server"` on the
+(`glitchless-roblox/0.2.0`), `batch_id` (random, names the batch, never the player), and `role: "server"` on the
 server's own session.
 
 | event | fields | when |
@@ -63,11 +65,21 @@ server's own session.
 | `props` | the properties that changed (null for one removed) | at most once a window |
 | `group` | `kind`, `id` (hashed, or null when it ends), `attrs` | a match, party or run is set or ends |
 | `pos` | with `positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
+| `counts` entry `prompt` | with `prompts`: how many times the player triggered ProximityPrompts, by the prompt's `ActionText` and `ObjectText` (the game's words, players' names scrubbed out first) | once a window, when they triggered one |
+| `counts` entry `sit` | with `seats`: how many times the player's character sat in a Seat or VehicleSeat, by the seat's name (or its model's) and `vehicle` (true or false) | once a window, when they sat |
+| property `joined_with_friend` | with `joinedWithFriend`: `true` or `false`, whether the player followed someone into the server (`Player.FollowUserId` isn't 0). The followed player's ID is read on the server and never sent | in `session_start` |
+| gauge `friends_in_server` | with `friendsInServer`: in each frame window's `ctx`, how many of the player's friends are in the same server as the window ends. Never which players | every 5 s |
+| `map` | `level` or `zone` (or neither: the whole place), `axis: "xz"`, `bounds` (studs), `size`, `image`: a top-down JPEG of the place the server drew from its parts' colours (`captureMap`). Players' characters are left out; it holds nothing about any player. Sent in a batch of its own, with a session ID used for nothing else | when the game calls `captureMap` |
 | `server_window` | the server's frames (ticks as a sketch, rate reached, p50/p95/max, late frames, budget), Stats' Heartbeat and physics ms, players, the server's memory, data in and out, the players' round trips | every 5 s, the server's own session |
 
-What is never read or sent: a user ID, name or display name, the player's account age, locale, country or friends,
-chat, anything a player types, the server's JobId (it is hashed into the server's match ID), IP addresses (Roblox
-doesn't give them to scripts, and the requests come from Roblox's servers, not the player's device).
+What is never read or sent: a user ID, name or display name, the player's account age, locale, country or friends
+list, chat, anything a player types, the server's JobId (it is hashed into the server's match ID), IP addresses
+(Roblox doesn't give them to scripts, and the requests come from Roblox's servers, not the player's device).
+
+What is read on the server only when the game turns it on, and never sent: with `joinedWithFriend`, the user ID the
+player followed in (`FollowUserId`; only whether there is one goes); with `friendsInServer`, whether each pair of
+players in the same server are friends (`Player:IsFriendsWith`), kept in the server's memory while both are there,
+of which only each player's count goes. A player who turned Glitchless off isn't counted in anyone's.
 
 ## Turned off by the player
 
@@ -85,7 +97,14 @@ With `optIn = true`, nothing is sent for a player until the game calls `setEnabl
 ## Kept on the server
 
 The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store
-reads back the last 14 days; Glitchless Cloud keeps them for the plan's retention.
+reads back the last 14 days; Glitchless Cloud keeps them for the plan's retention. A `map` is kept apart from events,
+the latest for each level, zone and version.
+
+## Calls made before Glitchless starts
+
+Calls a game's scripts make before Glitchless has started (or before it saw a player join) wait in the module's
+memory, at most 128, and are made when it starts; nothing is kept between servers. A player's `setEnabled(false)`
+made then waits too, and is applied before anything of theirs is sent.
 
 ## Roblox's rules on sending data out of an experience
 
@@ -134,6 +153,11 @@ If your experience has a privacy notice (on its page, or a settings screen), a p
 > when you join, which is never saved, so visits can't be linked to each other. Reports carry no Roblox user name,
 > display name or ID, nothing you type and no location. They are deleted after *[30 days]*.
 
+If the game turns on `friendsInServer` or `joinedWithFriend`, add:
+
+> The reports also say how many of your Roblox friends are in the same server, and whether you joined by following
+> someone, but never who.
+
 If the game has the setting (`setEnabled`):
 
 > You can turn these reports off at any time in the game's settings (*[Settings → Share performance data]*). From then
@@ -142,7 +166,7 @@ If the game has the setting (`setEnabled`):
 ## When this file must change
 
 Read it again when any of these change: the events or fields in `src/Session.luau`, `src/Frames.luau`,
-`src/Ticks.luau` or `src/Server.luau`; what the client sends (`src/Client.luau`) or the server takes from it
+`src/Ticks.luau`, `src/Server.luau` or `src/Map.luau`; what the client sends (`src/Client.luau`) or the server takes from it
 (`src/Inbox.luau`); the scrub in `src/Words.luau`; what the Glitchless server stores (`server/src/ingest.js`,
 `server/src/stores/`); or Roblox's rules above. Then change your privacy notice before you publish the version that
 sends more.

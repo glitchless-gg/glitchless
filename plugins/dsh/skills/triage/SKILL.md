@@ -18,7 +18,8 @@ You have two sources of truth:
    - performance → `glitchless_performance` with `level`: look at `hitch_context` (which gauges spike during hitches, which events precede them) and `slowest_recent_hitches[].loaf` (script attribution).
    - memory → `glitchless_performance` `memory` + `by_level.geometries_max`.
    - stability → `glitchless_get_error` with the fingerprint: stack, `location`, breadcrumbs.
-   - design → `glitchless_player_funnel` with the level and `hotspots: true` for where players die, then without it for the level's funnel.
+   - design → `glitchless_player_funnel` with the level and `hotspots: true` for where players die, then without it for the level's funnel (`recent_rage_inputs` says where players mashed a key).
+   - one session (a crash, a rage quit, a playtest) → `glitchless_session`: a summary level by level; `level` or `types` gives its events.
    - the game's own metrics (plays, purchases, the paywall, whatever it sends with `track`) → `glitchless_events`,
      with a `funnel` for drop-off between steps; `glitchless_dashboard` shows the pages and panels this game cares about.
    - **a Roblox game** connected to Roblox (Settings → Integrations → Roblox) → `glitchless_store` with `show: "vitals"` and

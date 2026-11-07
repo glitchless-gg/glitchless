@@ -339,6 +339,10 @@ function Frames.close(self: Frames, extra: { [string]: any }?): (any, { any })
 		table.remove(hitches)
 	end
 	if w.frames == 0 then
+		-- no frames (a window closed as it began): its gauges carry into the next one
+		for k, v in w.ctx do
+			self.win.ctx[k] = math.max(self.win.ctx[k] or v, v)
+		end
 		return nil, hitches
 	end
 	local secs = math.max((t - w.startedAt) / 1000, 0.001)

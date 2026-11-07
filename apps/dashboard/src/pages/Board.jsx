@@ -11,7 +11,7 @@ import { useShell } from '../shell.js';
 import { useQuery } from '../api.js';
 import { saveDashboard, withPage } from '../dashboard.js';
 import { Widget, QueryValue, TimeSeries, BarList, Status, Findings } from '../components.jsx';
-import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, timeAgo, colorFor, causeColor, budgetLines } from '../format.js';
+import { fmtNum, fmtPct, fmtDuration, fmtTime, fmtMoney, fmtSum, fmtDevex, currencyName, timeAgo, colorFor, causeColor, budgetLines } from '../format.js';
 import { CsvButton, panelCsv, liveCsv, columnHeader } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
 import { StorePanelBody, STORE_TYPES, REVENUE_STATS, revenueStat, storeLine, storeInfo } from '../stores.jsx';
@@ -22,6 +22,7 @@ import { RetentionTable, RetentionOff } from './Players.jsx';
 import { PositionsMap } from '../heatmap.jsx';
 import { useBrand, BoardHero, BrandLogo } from '../brand.jsx';
 import { NetBody, netLine, netInfo, ServersBody, serversLine, serversInfo, RetentionBy, byWords } from '../genre.jsx';
+import { ZoneTimeBody, FrameRowsBody, zoneLine, zoneInfo, zoneStatSub, isZoneTime, isFrameRows } from '../zones.jsx';
 
 const SPAN = { s: 3, m: 6, l: 12 };
 
@@ -265,7 +266,7 @@ function Panel({ p }) {
   const pageOf = f.pageOf ?? ((v) => v);
   const more =
     p.type === 'positions'
-      ? `${pageOf('heatmaps')}?level=${encodeURIComponent(p.level)}`
+      ? `${pageOf('heatmaps')}?${p.level != null ? `level=${encodeURIComponent(p.level)}` : p.zone != null ? `zone=${encodeURIComponent(p.zone)}` : 'all=1'}`
       : p.type === 'net'
         ? `${pageOf('performance')}?section=network`
         : p.type === 'table'
@@ -306,15 +307,20 @@ const plural = (n, one, many = `${one}s`) => `${fmtNum(n)} ${n === 1 ? one : man
 function panelLine(p) {
   if (STORE_TYPES.has(p.type)) return storeLine(p);
   const more = p.more > 0 ? ` · ${p.more} more` : '';
+  // Time in each zone, frame time by zone or level (zones.jsx).
+  if (isZoneTime(p) || isFrameRows(p)) return zoneLine(p);
   if (p.type === 'breakdown') {
     // Rates and averages: the overall number every row is read against.
     if (p.rate) return `All: ${fmtRate(p.overall)} of ${plural(p.events, 'event')}${more}`;
-    if (p.avg) return `All: ${fmtUnit(p.overall)} on average, ${plural(p.events, 'event')}${more}`;
+    // An avg panel names its attribute; a count breakdown by a numeric attribute also carries avg, its mean value.
+    if (typeof p.avg === 'string') return `All: ${fmtUnit(p.overall)} on average, ${plural(p.events, 'event')}${more}`;
     if (p.per === '$hours') return `${p.sum ? fmtSum(p.total, p.currency) : fmtNum(p.total)} in ${fmtNum(p.hours, 1)} hours played${more}`;
-    if (p.sum) return `${fmtSum(p.total, p.currency)} from ${plural(p.count, 'event')}${more}`;
+    if (p.sum) return `${fmtSum(p.total, p.currency)} from ${plural(p.count, 'event')}${p.devex?.usd != null ? ` · ${fmtDevex(p.devex.usd)}` : ''}${more}`;
     if (p.counts === 'sessions') return `${plural(p.total, 'session')}${p.players != null ? ` from ${plural(p.players, 'player')}` : ''}${more}`;
     return `${p.sessions == null ? `${fmtNum(p.total)} in all` : `${fmtNum(p.total)} in ${plural(p.sessions, 'session')}`}${more}`;
   }
+  // A Robux series that opted in: what the window's Robux would be worth through DevEx, as an estimate.
+  if (p.type === 'series' && p.devex?.usd != null) return `${fmtSum(p.devex.robux, p.currency)} in all · ${fmtDevex(p.devex.usd)}`;
   if (p.type === 'frame_time') return p.kpis.avg_fps != null ? `${fmtNum(p.kpis.avg_fps)} fps on average` : null;
   // A Roblox game's retention is Roblox's (its SDK is anonymous): say whose it is.
   if (p.type === 'retention' && p.source) return `${p.source_name}'s, by ${p.source_name} account`;
@@ -348,6 +354,7 @@ function panelInfo(p) {
   if (STORE_TYPES.has(p.type)) return [...out, ...storeInfo(p)];
   if (p.empty) return out;
   if (p.type === 'retention' && p.source) out.push(...(p.notes ?? []));
+  if (isZoneTime(p) || isFrameRows(p)) return [...out, ...zoneInfo(p)];
   if (p.type === 'breakdown') {
     if (p.counts === 'sessions' && p.players == null) out.push('The game sends no player IDs, so these are sessions: players are not counted.');
     if (p.rate) {
@@ -357,6 +364,8 @@ function panelInfo(p) {
     if (p.list) out.push(`"${p.by}" is a list: each ${p.event} counts once under each value it has, so the rows add up to more than the events.`);
     if (p.small?.rows) out.push(`${plural(p.small.rows, 'row')} with fewer than ${fmtNum(p.small.min)} events (${plural(p.small.events, 'event')} in all) ${p.small.rows === 1 ? "isn't" : "aren't"} shown.`);
     if (p.per === '$hours') out.push(p.by?.startsWith('$') ? 'Each row is per hour played in it.' : 'Each row is per hour played in all, so they add up.');
+    // A sum of a filtered event by an attribute is read from each session's events (server/src/occurrence-sums.js).
+    if (p.sum && p.from === 'occurrences') out.push(`Added up from each session's ${p.event} events, one by one.`);
     if (p.estimated) out.push(`Estimated in part: ${plural(p.estimated, 'session')} sent more of these events than Glitchless keeps the attributes of (16 each).`);
     if (p.more > 0) out.push(`${plural(p.more, 'more value')} ${p.more === 1 ? "isn't" : "aren't"} shown.`);
   }
@@ -366,6 +375,9 @@ function panelInfo(p) {
     if (p.partial) out.push('This event sends more numbers than a minute keeps (32), so some values are not counted.');
     if (p.estimated) out.push(`Estimated in part: ${plural(p.estimated, 'session')} sent more of these events than Glitchless keeps the numbers of (16 each).`);
   }
+  if (p.type === 'stat' && p.first) out.push(`${(p.quantile ?? 50) === 50 ? 'Half' : `${p.quantile} in 100`} of the sessions that sent ${p.first} sent their first within ${fmtDuration(p.value)} of starting (${plural(p.sessions, 'session')}).${p.unknown ? ` ${plural(p.unknown, 'more session')} sent one past the first 16 of its events, so when isn't known.` : ''}`);
+  if (p.type === 'stat' && p.never) out.push(`Of the ${plural(p.base, 'session')} that ended in this window, ${fmtNum(p.count)} never sent ${p.never}. A session has ended once it said so, or after 30 minutes without a word (a closed game, a crash); sessions still playing aren't counted.`);
+  if (p.devex !== undefined) out.push(...devexInfo(p));
   if (p.type === 'stat' && p.unit === '%' && p.low != null) out.push(`From ${plural(p.events, 'event')}: it likely sits between ${fmtRate(p.low)} and ${fmtRate(p.high)} (95%).${p.expect != null ? ` The game expects ${fmtRate(p.expect)}.` : ''}`);
   if (p.type === 'series' && p.per === '$hours') out.push('Each point is per hour played in that stretch of time; stretches with under 6 minutes played have none.');
   if (p.type === 'series') {
@@ -385,7 +397,7 @@ function panelInfo(p) {
   if (p.type === 'levels' && p.rows?.some((r) => r.disconnects)) out.push('Disconnects: attempts that ended because the connection dropped. They count as abandons, never as fails or rage quits.');
   if (p.type === 'levels' && p.count === 'runs') out.push('Runs: each run (setGroup("run")) counted once at each level it reached, however many sessions it took.');
   if (p.type === 'table') out.push(...tableInfo(p));
-  if (p.type === 'positions') out.push(`${p.axis === 'xy' ? 'Side view' : 'Seen from above'}, ${p.bin} ${p.bin === 1 ? 'unit' : 'units'} a bin${p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}.${p.truncated ? ` Deaths: the ${fmtNum(p.deaths.length)} places with the most.` : ''}`);
+  if (p.type === 'positions') out.push(`${p.axis === 'xy' ? 'Side view' : 'Seen from above'}, ${p.bin} ${p.bin === 1 ? 'unit' : 'units'} a bin${p.path && p.path.bin !== p.bin ? ` (paths ${p.path.bin})` : ''}.${p.truncated ? ` Deaths: the ${fmtNum(p.deaths.length)} places with the most.` : ''}${p.level == null && p.zone == null ? ' Everywhere in the game, with or without a level.' : ''}${p.background ? ` Over ${p.background.uploaded ? 'an uploaded background' : 'a map the game captured'}.` : ''}`);
   return [...out, ...leftOut(p)];
 }
 
@@ -397,6 +409,11 @@ function statSub(p) {
   if (p.metric === 'server_tick_p95') return p.budget_ms ? `budget ${fmtNum(p.budget_ms, 1)} ms · ${plural(p.servers, 'server run')}` : plural(p.servers, 'server run');
   if (p.metric === 'server_crash_free_pct' || p.metric === 'players_per_server') return `over ${plural(p.servers, 'server run')}`;
   if (p.metric === 'disconnect_pct' || p.metric === 'disconnects_per_hour') return p.count != null ? plural(p.count, 'disconnect') : null;
+  if (p.zone) return zoneStatSub(p);
+  // A Robux sum that opted in: its estimate in dollars (what it is out of moves behind the info icon).
+  if (p.devex?.usd != null) return fmtDevex(p.devex.usd);
+  if (p.first) return `${(p.quantile ?? 50) === 50 ? 'median' : `${p.quantile}th percentile`} of ${plural(p.sessions, 'session')}`;
+  if (p.never) return `${fmtNum(p.count)} of ${plural(p.base, 'ended session')}`;
   if (p.unit === 'per hour') return `${p.total != null ? fmtSum(p.total, p.currency) : fmtNum(p.count)} in ${fmtNum(p.hours, 1)} hours played`;
   if (p.rate && p.events != null) return `of ${plural(p.events, 'event')}${p.expect != null ? ` · expected ${fmtPct(p.expect)}` : ''}`;
   if ((p.avg || p.of) && (p.events ?? p.count) != null) return `${p.of ? (p.quantile === 50 ? 'median' : `${p.quantile}th percentile`) : 'average'} of ${plural(p.events ?? p.count, 'event')}`;
@@ -443,10 +460,24 @@ function LivePanel({ p, span }) {
   );
 }
 
+// A money panel's DevEx estimate (server/src/robux.js), for its info icon: what a stat is out of (its line shows the
+// estimate instead), the rate and where it comes from, and why what the experience can cash out is less. A panel that
+// asked for one in another currency says why it has none.
+function devexInfo(p) {
+  const d = p.devex;
+  if (!d?.estimate) return [`No DevEx estimate: this panel's money is ${p.currency ? `in ${currencyName(p.currency)}` : 'not money (its events carry no currency)'}, and DevEx is for Robux.`];
+  const of = p.type !== 'stat' ? null : p.unit === 'per hour' ? `${fmtSum(p.total, p.currency)} in ${fmtNum(p.hours, 1)} hours played.` : p.base != null ? `${fmtSum(p.total, p.currency)} over ${plural(p.base, p.per === '$players' ? 'player' : 'session')}.` : null;
+  const since = new Date(d.since).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return [
+    of,
+    `An estimate, not money: Robux become dollars only through Roblox's Developer Exchange (DevEx), at its standard rate of $${d.rate} a Robux since ${since} ($${d.adult_rate} for some purchases by age-verified US adults). These are the prices players paid; Roblox keeps a share of each sale and pays out only once the creator has ${d.minimum.toLocaleString('en-US')} Earned Robux and asks, so what the experience can cash out is less.`,
+  ].filter(Boolean);
+}
+
 // Money left out of a panel's sums, for its info icon (which turns amber): amounts sent in another currency than the
 // game's, and sandbox purchases (TestFlight and other test installs, which nobody paid for).
 function leftOut({ mismatch, sandbox }) {
-  const parts = [...(mismatch || []).map((m) => `${fmtNum(m.events)} in ${m.currency} (${fmtMoney(m.sum, m.currency)})`), ...(sandbox ? [plural(sandbox, 'sandbox purchase')] : [])];
+  const parts = [...(mismatch || []).map((m) => `${fmtNum(m.events)} in ${currencyName(m.currency)} (${fmtMoney(m.sum, m.currency)})`), ...(sandbox ? [plural(sandbox, 'sandbox purchase')] : [])];
   if (!parts.length) return [];
   return [`Left out: ${parts.join(', ')}.`, mismatch?.length && 'One currency per game: amounts in another currency are not added in.', sandbox && 'Purchases from TestFlight and other test installs are free sandbox purchases, not revenue.'];
 }
@@ -467,11 +498,12 @@ function PanelBody({ p }) {
     case 'distribution':
       return <DistributionBody p={p} />;
     case 'breakdown':
+      if (isZoneTime(p)) return <ZoneTimeBody p={p} />;
       if (p.rate || typeof p.avg === 'string') return <RateBars p={p} />;
       // Per hour played: each row's count or sum over its hours.
       if (p.per === '$hours') return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.per_hour ?? 0, color: colorFor(r.value, i), display: r.per_hour == null ? '–' : `${p.currency ? fmtMoney(r.per_hour, p.currency) : fmtNum(r.per_hour, r.per_hour < 10 ? 2 : 1)} / h`, title: `${r.value}: ${p.sum ? fmtSum(r.sum, p.currency) : fmtNum(p.counts === 'sessions' ? r.sessions : r.count)} in ${fmtNum(r.hours, 1)} hours played${r.why ? ` (${r.why})` : ''}` }))} />;
       // Each bar says its number; its sessions and players are in its tooltip (and the CSV).
-      if (p.sum) return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: fmtSum(r.sum, p.currency), title: `${r.value}: ${fmtSum(r.sum, p.currency)} from ${plural(r.count, 'event')}` }))} />;
+      if (p.sum) return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: fmtSum(r.sum, p.currency), title: `${r.value}: ${fmtSum(r.sum, p.currency)} from ${plural(r.count, 'event')}${r.usd != null ? ` (${fmtDevex(r.usd).toLowerCase()})` : ''}` }))} />;
       // By $platform, $browser or $device_tier without an event: the sessions in each, and their players when the game
       // sends player IDs.
       if (p.counts === 'sessions') return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sessions, color: colorFor(r.value, i), display: r.players != null ? `${fmtNum(r.sessions)} · ${plural(r.players, 'player')}` : plural(r.sessions, 'session') }))} />;
@@ -486,6 +518,7 @@ function PanelBody({ p }) {
     case 'servers':
       return <ServersBody p={p} />;
     case 'frame_time':
+      if (isFrameRows(p)) return <FrameRowsBody p={p} />;
       return (
         <>
           <TimeSeries ts={p.ts} height={160} unit="ms" series={[{ label: 'p50', values: p.p50, color: '#3d8cf5' }, { label: 'p95', values: p.p95, color: '#ff6b57' }]} thresholds={budgetLines(p.budgets, p.budget_ms)} />

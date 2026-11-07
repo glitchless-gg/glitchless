@@ -13,7 +13,7 @@
 // what their CSV button downloads.
 import { useState } from 'react';
 import { TimeSeries, Status } from './components.jsx';
-import { fmtNum, fmtPct, fmtTime, fmtMoney } from './format.js';
+import { fmtNum, fmtPct, fmtTime, fmtMoney, fmtDevex } from './format.js';
 import { WorldMap, rampColor } from './world.jsx';
 
 export const STORE_TYPES = new Set(['store_reviews', 'store_vitals', 'store_players', 'store_sales', 'store_revenue', 'store_score']);
@@ -61,7 +61,7 @@ export function revenueStat(p) {
     // Roblox's: Robux, and what they'd be worth through DevEx.
     return {
       value,
-      sub: `About ${fmtMoney(p.devex.usd, 'USD')} through DevEx`,
+      sub: fmtDevex(p.devex.usd),
       info: [`Robux the experience earned on Roblox over ${days(p)}.`, p.paying?.per_day != null && `${fmtNum(p.paying.per_day, 1)} paying users a day${p.paying.pct != null ? `, ${fmtPct(p.paying.pct, 1)} of daily active users` : ''}.`, p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`, ...notes],
     };
   }

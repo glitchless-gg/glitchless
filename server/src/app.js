@@ -4,9 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parsePayload, normalize, IntakeError, decodeBody, FEATURES, companionOf, isCompanion, gameOf, withServers } from './ingest.js';
-import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapLevels, heatmapLevel, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount, errorFacts, playersView } from './analytics.js';
+import { buildContext, round, overview, performance, errorIssues, players, customEvents, eventFunnel, parseFunnel, heatmap, heatmapPlaces, heatmapPlace, sessionsList, sessionDetail, versions, playtestSummary, steamWhere, STEAM_DIMENSIONS, playersAreSessions, sessionCount, errorFacts, playersView } from './analytics.js';
 import { findings, gameEngine } from './findings.js';
-import { validateDashboard, autoDashboard, evaluateBoard, eventQuery, versionColumns, dashboardStats, pathLevels, levelRows, VIEWS, BoardError } from './board.js';
+import { validateDashboard, autoDashboard, evaluateBoard, eventQuery, versionColumns, dashboardStats, pathPlaces, levelRows, VIEWS, BoardError } from './board.js';
 import { defaultAuth, AuthError, RateLimiter, DEFAULT_INGEST_RPS, DEFAULT_SHARE_RPS, SHARE_MAX_DAYS, isProjectId } from './auth.js';
 import { reportsOf, reportSummary, reportDetail, reportTimeline } from './reports.js';
 import { createSourcemaps, MAX_UPLOAD_BYTES } from './sourcemaps.js';
@@ -23,6 +23,9 @@ import { markTestLab } from './test-lab.js';
 import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
 import { createRooms, RoomError, LIMITS as ROOM_LIMITS } from './rooms.js';
 import { createRoomsApi } from './rooms-api.js';
+import { mapUpload, mapBody, mapImage, placeParam, MapError, MAP_UPLOAD } from './maps.js';
+import { placeOf, placeKey, mapId, mapSortKey } from './places.js';
+import { testerIndex } from './testers.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
@@ -87,9 +90,11 @@ const MIME = {
 // none leaves it out.
 // resolved: (projectId) → the game's resolved errors (resolved.js), which its issues are marked with and its findings
 // leave out; a host that keeps none leaves it out.
+// testers: (projectId) → the players and sessions the game's team marked as its own play (testers.js), which every
+// query reads as testers'; a host that keeps none leaves it out.
 // rooms: jam rooms (rooms.js, SPEC §3j): { store, files, urls: { app, play }, abuse?, notify?, requireService? }; a host
 // without them answers /v1/rooms with 404. handle.rooms is then the rooms themselves (for the host's sweep).
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, rooms = null, clientAddress = (req) => req.socket?.remoteAddress }) {
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, testers = null, rooms = null, clientAddress = (req) => req.socket?.remoteAddress }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
@@ -316,6 +321,50 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         return json(res, 201, stored);
       }
 
+      // Heatmap backgrounds (maps.js, SPEC §3b): GET lists a game's maps (captured and uploaded) without their pictures;
+      // PUT uploads one for a level, a zone or the whole game (the body is the picture, the rest in the query) and DELETE
+      // removes the uploaded one, both with the dashboard scope. /v1/maps/image is one picture at its hashed address, for
+      // a share link's reader too when its board's positions panels draw that place.
+      if (p === '/v1/maps' || p === '/v1/maps/image') {
+        const service = url.searchParams.get('service');
+        if (!service || service.length > 128) return json(res, 400, { error: 'service is required' });
+        const { projectId } = reader;
+        try {
+          if (p === '/v1/maps/image') {
+            if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'GET' });
+            if (!allow('read')) return;
+            const key = reader.share && `${projectId}\nshare map\n${url.searchParams}`;
+            let a = key && cache.get(key);
+            if (!a || Date.now() - a.at >= SHARE_MAX_AGE_S * 1000) {
+              if (reader.share && limited(res, reader)) return;
+              a = { at: Date.now(), ...(await mapImageAnswer(projectId, service, url.searchParams.get('id'), reader.share)) };
+              if (key) cache.set(key, a);
+              if (cache.size > 200) cache.delete(cache.keys().next().value);
+            }
+            return send(res, a.status, a.body, a.type, a.headers);
+          }
+          if (req.method === 'GET') return allow('read') && json(res, 200, { service, maps: (await store.getMaps(projectId, service)).map((m) => mapBody(service, m)) });
+          if (req.method !== 'PUT' && req.method !== 'DELETE') return json(res, 405, { error: 'GET, PUT or DELETE' });
+          if (!allow('dashboard')) return;
+          if (!store.putMap || !store.deleteMap) return json(res, 501, { error: 'this server keeps no uploaded backgrounds' });
+          if (req.method === 'DELETE') {
+            const place = placeParam(url.searchParams);
+            const upload = (await store.getMaps(projectId, service)).find((m) => m.uploaded && placeKey(placeOf(m)) === placeKey(place));
+            if (!upload) return json(res, 404, { error: 'no uploaded background for that place' });
+            await store.deleteMap(projectId, service, mapSortKey(upload));
+            clearCache(projectId);
+            return json(res, 200, { service, deleted: mapBody(service, upload) });
+          }
+          const map = mapUpload(service, url.searchParams, await readBody(req, MAP_UPLOAD.maxBytes));
+          await store.putMap(projectId, map);
+          clearCache(projectId);
+          return json(res, 201, { service, map: mapBody(service, map) });
+        } catch (err) {
+          if (err instanceof MapError || err instanceof IntakeError) return json(res, err.status, { error: err.status === 413 ? `a background is at most ${MAP_UPLOAD.maxBytes / 1024} KB: save it as a JPEG about 1024 pixels across` : err.message });
+          throw err;
+        }
+      }
+
       if (p === '/v1/data' && req.method === 'DELETE') {
         if (!allow('delete')) return;
         const service = url.searchParams.get('service');
@@ -379,17 +428,20 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     if (type && sessionType && type !== sessionType) throw new QueryError(`type=${type} and session_type=${sessionType} disagree: send one`);
     if (!SESSION_TYPES.includes(type || sessionType || 'all')) throw new QueryError(`no session type "${type || sessionType}": use ${SESSION_TYPES.join(', ')}`);
     const q = { service, from, to, env: params.get('env') || null, version: params.get('version') || null, type: type || sessionType || 'all', sessions: ids?.length ? new Set(ids) : null, plan: reader.plan ?? null };
+    // The team's own play, marked afterwards (testers.js): its sessions are testers' in every answer, players' numbers
+    // and share links leave them out.
+    if (testers) q.testers = testerIndex(await testers(projectId));
     // A share link shows players: the sessions of people (no bots, playtests, store test phones or TestFlight testers) on
     // the game's prod environment when it has one (no dev builds), as findings read them.
     if (reader.share) {
       q.type = 'user';
       if (services.find((s) => s.service === service)?.envs?.includes('prod')) q.env = 'prod';
     }
-    // The levels a board's positions panels draw paths for: a store that keeps summaries reads their position
-    // samples apart (only a saved dashboard has positions panels).
+    // The places (a level, a zone, the whole game: places.js) a board's positions panels draw paths for: a store
+    // that keeps summaries reads their position samples apart (only a saved dashboard has positions panels).
     const saved = name === 'board' ? await store.getDashboard(projectId, service) : undefined;
-    const levels = saved ? pathLevels(boardPage(saved, params.get('page'))) : [];
-    if (levels.length) q.positions = levels;
+    const places = saved ? pathPlaces(boardPage(saved, params.get('page'))) : [];
+    if (places.length) q.positions = places;
     // Steam facts the sessions must have (steam_branch=beta…, SPEC §4c), and the one versions are grouped by instead.
     q.where = steamWhere(params);
     // Session properties the sessions must have (prop.rank=diamond, A6), and a board page's own `where`.
@@ -510,10 +562,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         if (page.panels.some((x) => x.metric === 'servers_now')) ctx.serversNow = hasServers ? await serversNow(projectId, service) : null;
         return { meta, board: { page: page.id, title: page.title, source: saved ? 'saved' : 'auto', updated_at: saved?.updated_at ?? null, updated_by: saved?.updated_by ?? null, spec: { panels: page.panels }, panels: evaluateBoard(ctx, page, { maps, shared: reader.share || false, currency: spec.currency }) } };
       }
+      // One place (places.js): level=, zone= or all=1 (the whole game); without one, the first level, else the whole game.
       case 'heatmap': {
         const maps = await store.getMaps(projectId, service);
-        const level = heatmapLevel(ctx, maps, params.get('level'));
-        return { meta, levels: heatmapLevels(ctx, maps), ...(level ? heatmap(ctx, level, maps) : {}) };
+        return { meta, ...heatmapPlaces(ctx, maps), ...heatmap(ctx, heatmapPlace(ctx, maps, params), maps) };
       }
       case 'sessions':
         return { meta, sessions: sessionsList(ctx) };
@@ -646,6 +698,28 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     };
   }
 
+  // One map's picture by its id (places.js mapId). A share link's reader gets only a picture of a place its board's
+  // positions panels draw: the game's own picture of its world, never anything about its players.
+  async function mapImageAnswer(projectId, service, id, share) {
+    const answer = (status, body) => ({ status, body: JSON.stringify(body), type: 'application/json', headers: { 'Cache-Control': 'no-store' } });
+    const map = id ? (await store.getMaps(projectId, service)).find((m) => m.image && mapId(m) === id) : null;
+    const image = map && mapImage(map);
+    if (!image) return answer(404, { error: 'no such background' });
+    if (share) {
+      const saved = await store.getDashboard(projectId, service);
+      const page = saved ? boardPage(saved, share.page) : null;
+      // Each positions panel's place, and for a zone the whole game's, which it draws when it has no map of its own.
+      const shown = new Set((page?.panels || []).filter((x) => x.type === 'positions').flatMap((x) => [placeKey(placeOf(x)), ...(x.zone != null ? ['all'] : [])]));
+      if (!shown.has(placeKey(placeOf(map)))) return answer(404, { error: 'no such background on this board' });
+    }
+    return {
+      status: 200,
+      body: image.bytes,
+      type: image.type,
+      headers: { 'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox", 'Content-Disposition': 'inline' },
+    };
+  }
+
   function clearCache(projectId, { shares = true } = {}) {
     for (const key of cache.keys()) if (key.startsWith(`${projectId}\n`) && (shares || !key.startsWith(`${projectId}\nshare `))) cache.delete(key);
   }
@@ -659,7 +733,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     return true;
   }
 
-  // The host changed what this project's answers depend on (its known findings, resolved errors): answer afresh.
+  // The host changed what this project's answers depend on (its known findings, resolved errors, testers): answer afresh.
   handle.forget = (projectId) => clearCache(projectId);
   handle.rooms = roomsApi?.rooms ?? null;
   return handle;
@@ -672,7 +746,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 // whole minute, so a game polling the same URL gets the same answer from a cache for a minute. Everything
 // else is refused. The request's parameters become exactly those, so no other filter or id reaches a query.
 // (The store still cuts a range to the reader's retention.)
-const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services', '/v1/brand', '/v1/brand/logo', '/v1/brand/banner']);
+const SHARE_QUERIES = new Set(['/v1/query/board', '/v1/query/services', '/v1/brand', '/v1/brand/logo', '/v1/brand/banner', '/v1/maps/image']);
 const pinned = (share) => Number.isFinite(share.from) && Number.isFinite(share.to);
 function shareOnly(req, url, share) {
   const q = url.searchParams;
@@ -681,6 +755,11 @@ function shareOnly(req, url, share) {
   // Its game's branding: the brand, or one image at its hashed address.
   if (url.pathname.startsWith('/v1/brand')) {
     url.search = new URLSearchParams({ service: share.service, ...(q.get('v') ? { v: q.get('v') } : {}) }).toString();
+    return null;
+  }
+  // A background its board's positions panels draw (mapImageAnswer checks which).
+  if (url.pathname === '/v1/maps/image') {
+    url.search = new URLSearchParams({ service: share.service, ...(q.get('id') ? { id: q.get('id') } : {}) }).toString();
     return null;
   }
   const to = pinned(share) ? share.to : (num(q.get('to')) ?? Math.floor(Date.now() / MINUTE) * MINUTE);

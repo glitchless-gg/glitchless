@@ -38,5 +38,5 @@ test("an agent sets the accent of a game's boards and reads the brand back", asy
   assert.match(await call('glitchless_set_dashboard', { accent: 'purple' }), /accent is a colour written "#rrggbb"/);
   assert.match(await call('glitchless_set_dashboard', { accent: null }), /Accent: none\./);
   assert.equal(await store.getBrand('default', 'starlift'), null, 'no accent, no logo, no banner: no brand');
-  assert.match(await call('glitchless_set_dashboard', {}), /give pages, accent, or reset: true/);
+  assert.match(await call('glitchless_set_dashboard', {}), /give pages, accent, logo, banner, background, or reset: true/);
 });

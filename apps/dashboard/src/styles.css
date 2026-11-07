@@ -132,7 +132,7 @@ main { display: flex; flex-direction: column; min-width: 0; height: 100%; overfl
 .qv .value .byscreen small { font-size: 12px; }
 .qv .qa { margin-left: auto; }
 .pages-currency { display: block; margin-bottom: 10px; font-size: 12.5px; }
-.pages-currency .input { width: 56px; display: inline-block; text-transform: uppercase; }
+.pages-currency .input { width: 68px; display: inline-block; text-transform: uppercase; }
 .btn.csv { height: 22px; padding: 0 7px; font-size: 11px; font-weight: 600; letter-spacing: .3px; color: var(--muted); }
 .btn.csv:hover { color: var(--text); }
 /* A panel's CSV button shows while the panel is pointed at or has focus. Without a mouse (a phone) it stays. */
@@ -373,6 +373,10 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .countries-list td.b { font-weight: 600; }
 .countries-list .dt th, .countries-list .dt td { padding: 6px 7px; }
 .countries-list .dt th { letter-spacing: 0; min-width: 0; }
+/* A frame_time panel by zone or level (zones.jsx): five columns that fit a phone. */
+.dt.frame-rows th, .dt.frame-rows td { padding: 6px 5px; }
+.dt.frame-rows td:first-child { overflow-wrap: anywhere; }
+.dt.frame-rows th { white-space: normal; vertical-align: bottom; letter-spacing: 0; }
 .countries-list .country { display: inline-flex; align-items: baseline; gap: 7px; }
 .countries-list .swatch { flex: none; display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .linkish { border: 0; background: none; color: var(--info); cursor: pointer; padding: 6px 10px; font-size: 12px; }

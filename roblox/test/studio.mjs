@@ -10,7 +10,9 @@
 // Then, over MCP: it copies roblox/src and the demo's scripts into the open place (so a run always tests the code on
 // disk, with no rebuild or reopen), points the demo at its server (the Intake attribute), starts a play test (a server
 // and one player), waits for the demo's race to end, stops it (which closes the server: BindToClose sends everything),
-// and checks what the Glitchless server received and what Studio's Output said.
+// and checks what the Glitchless server received and what Studio's Output said: the race, the extras the demo turns
+// on (a ProximityPrompt, a seat, joined_with_friend, friends_in_server), calls made before Glitchless started, and
+// the map the server drew of the track (decoded with macOS's sips).
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -146,6 +148,12 @@ return ${JSON.stringify(f.name)}`,
   );
 }
 
+// The maps the server kept (the file store keeps them apart from events).
+function maps() {
+  const file = path.join(dataDir, 'maps.json');
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+}
+
 function events() {
   if (!fs.existsSync(dataDir)) return [];
   return fs
@@ -177,6 +185,7 @@ before(async () => {
     if (!ids.length) await sleep(1000);
   }
   if (!ids.length) {
+    fs.mkdirSync(path.dirname(PLACE), { recursive: true }); // a fresh checkout has no roblox/.build
     execFileSync('rojo', ['build', 'roblox/place.project.json', '-o', PLACE], { cwd: REPO, stdio: 'ignore' });
     spawn(STUDIO, ['-task', 'EditFile', '-localPlaceFile', PLACE], { detached: true, stdio: 'ignore' }).unref();
     for (let i = 0; i < 120 && !ids.length; i++) {
@@ -215,7 +224,7 @@ game:GetService("HttpService").HttpEnabled = true`,
   consoleText = await runLog(); // with what BindToClose said
   // BindToClose sends the last batches as the server closes.
   for (let i = 0; i < 30 && events().filter((e) => e.type === 'session_end').length < 2; i++) await sleep(1000);
-  run = { player: player && { name: player[1], userId: player[2] }, console: consoleText, events: events() };
+  run = { player: player && { name: player[1], userId: player[2] }, console: consoleText, events: events(), maps: maps() };
 });
 
 after(() => {
@@ -228,14 +237,14 @@ const of = (service, type) => run.events.filter((e) => e.service === service && 
 
 test('Studio said nothing is wrong: the demo ran, no Glitchless warning but the unpublished place\'s DataStore', () => {
   assert.match(run.console, /trophy is missing/, 'the demo race ended');
-  const warnings = run.console.split('\n').filter((l) => l.includes('[glitchless]'));
+  const warnings = run.console.split('\n').filter((l) => l.includes('[glitchless]') && !l.includes('[glitchless] map of'));
   assert.ok(warnings.every((l) => /DataStore/.test(l)), warnings.join('\n'));
 });
 
 test("a player's session: its device, frames, loading time, stutters and an error from a LocalScript", () => {
   const [start] = of(SERVICE, 'session_start');
   assert.ok(start, `services: ${[...new Set(run.events.map((e) => e.service))]}`);
-  assert.equal(start.sdk, 'glitchless-roblox/0.1.0');
+  assert.equal(start.sdk, 'glitchless-roblox/0.2.0');
   assert.equal(start.session_type, 'tester', 'a Studio session is a tester\'s');
   assert.equal(start.device.os, 'Computer');
   assert.ok(start.device.screen[0] > 1 && start.device.screen[1] > 1, `the camera's real size: ${start.device.screen}`);
@@ -268,4 +277,36 @@ test("nothing names the player, and every sketch bucket is written as JavaScript
   assert.ok(!text.includes(run.player.name), `${run.player.name} is not sent`);
   assert.ok(!text.includes(run.player.userId), 'the user ID is not sent');
   for (const e of run.events) for (const sk of [e.ft, e.net?.rtt, e.tick]) if (sk) assert.ok(!('-0' in sk.b), JSON.stringify(sk.b));
+});
+
+test('the extras the demo turns on: a ProximityPrompt and a seat counted, joined_with_friend, friends_in_server', () => {
+  const [start] = of(SERVICE, 'session_start');
+  assert.equal(start.props?.joined_with_friend, false, `props: ${JSON.stringify(start.props)}`);
+  const counted = (name) => of(SERVICE, 'counts').flatMap((e) => e.counts).filter((c) => c.name === name);
+  const prompt = counted('prompt');
+  const demo = run.console.split('\n').filter((l) => l.includes('[demo]')).join('\n');
+  assert.ok(prompt.some((c) => c.attrs.action === 'Open' && c.attrs.object === 'Garage'), `${JSON.stringify(prompt)}\n${demo}`);
+  const sit = counted('sit');
+  assert.ok(sit.some((c) => c.attrs.seat === 'Bench' && c.attrs.vehicle === false), JSON.stringify(sit));
+  const fw = of(SERVICE, 'frame_window');
+  assert.ok(fw.every((w) => w.ctx.friends_in_server === 0), JSON.stringify(fw.map((w) => w.ctx)));
+});
+
+test('calls made before Glitchless started arrive: the server\'s before init, the LocalScript\'s first', () => {
+  assert.ok(of(`${SERVICE}.server`, 'custom').some((e) => e.name === 'before_init'), 'the server Script\'s call before init');
+  assert.ok(of(SERVICE, 'custom').some((e) => e.name === 'client_ready'), 'the LocalScript\'s first call');
+});
+
+test("the server drew the track's map and sent it under the race's level: a JPEG macOS can open", () => {
+  const map = run.maps.find((m) => m.service === SERVICE && m.level === 'desert_loop');
+  assert.ok(map, `maps: ${run.maps.map((m) => `${m.service}/${m.level}`)}`);
+  assert.equal(map.axis, 'xz');
+  assert.deepEqual(map.bounds, { min: [-60, -42], max: [60, 42] }, 'the track folder\'s parts');
+  assert.ok(map.image.startsWith('data:image/jpeg;base64,') && map.image.length <= 60_000, `${map.image.length} characters`);
+  const jpg = path.join(tmp, 'map.jpg');
+  fs.writeFileSync(jpg, Buffer.from(map.image.slice(map.image.indexOf(',') + 1), 'base64'));
+  const info = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', jpg], { encoding: 'utf8' });
+  assert.match(info, new RegExp(`pixelWidth: ${map.size[0]}`), info);
+  assert.match(info, new RegExp(`pixelHeight: ${map.size[1]}`), info);
+  if (process.env.GLITCHLESS_MAP_OUT) fs.copyFileSync(jpg, process.env.GLITCHLESS_MAP_OUT);
 });

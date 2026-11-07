@@ -26,6 +26,8 @@ unity/Builds/
 unity/Assets/Samples/
 unity/Assets/Samples.meta
 unity/Assets/Overhead/Overhead.unity*
+unity/Assets/MapProbe/MapProbe.unity*
+unity/Assets/MapProbe/Resources*
 unity/*.csproj
 unity/*.sln
 

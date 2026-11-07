@@ -13,6 +13,9 @@
 --     (Sender.luau), and everything at once when the server closes (BindToClose).
 -- Players are anonymous: their sessions carry random IDs, never a user ID, name or display name, and every text sent
 -- is scrubbed of the names and user IDs of the players in the server (PRIVACY.md).
+-- Extras the game turns on, each off by default, counts and true/false only: ProximityPrompts triggered (`prompts`),
+-- seats sat in (`seats`), whether the player followed a friend in (`joinedWithFriend`), and how many of their friends
+-- are in the server (`friendsInServer`). And a top-down map of the place for heatmaps (`captureMap`, Map.luau).
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -27,11 +30,12 @@ local Session = require(script.Parent.Session)
 local Ticks = require(script.Parent.Ticks)
 local Sender = require(script.Parent.Sender)
 local Inbox = require(script.Parent.Inbox)
+local Map = require(script.Parent.Map)
 
 local Server = {}
 Server.__index = Server
 
-local SDK = "glitchless-roblox/0.1.0"
+local SDK = "glitchless-roblox/0.2.0"
 local MAX_SERVER_SESSION_MS = 6 * 3600 * 1000
 local NAME_MEMORY_S = 120 -- a player who left is still scrubbed from text this long (their character's errors)
 
@@ -57,6 +61,10 @@ export type Options = {
 	region: string?,
 	client: boolean?,
 	debug: boolean?,
+	prompts: boolean?,
+	seats: boolean?,
+	joinedWithFriend: boolean?,
+	friendsInServer: boolean?,
 	-- for tests: the service objects and clocks to use
 	request: ((any) -> (boolean, any))?,
 }
@@ -135,6 +143,13 @@ function Server.start(module: Instance, options: Options)
 		lastPosAt = os.clock(),
 		lastBeat = nil :: number?,
 		datastore = nil :: any,
+		gone = setmetatable({}, { __mode = "k" }) :: { [Player]: boolean }, -- players who left (their Player lingers)
+		friendPairs = {} :: { [string]: boolean }, -- "<user ID>:<user ID>", smaller first → friends (friendsInServer)
+		friendJobs = {} :: { any },
+		friendsBusy = false,
+		-- init.luau's: calls made for a player before Glitchless saw them join, made when it does (or dropped)
+		onPlayer = nil :: ((Player) -> ())?,
+		onPlayerGone = nil :: ((Player) -> ())?,
 	}, Server)
 	self.warn = function(key: string, message: string)
 		warnOnce(self, key, message)
@@ -282,8 +297,12 @@ function Server.playerAdded(self: Server, player: Player)
 		level = nil :: string?,
 	}
 	self.entries[player] = entry
+	if self.options.friendsInServer then
+		self:queueFriends(player)
+	end
 	if not entry.sampled then
 		self:tell(player, { op = "state", on = false })
+		self:added(player)
 		return
 	end
 	entry.session = self:newSession("player", nil)
@@ -293,10 +312,37 @@ function Server.playerAdded(self: Server, player: Player)
 	if entry.session.autoMatch then
 		entry.session:setGroup("match", self.matchId, nil)
 	end
-	self:readChoice(entry)
-	if self.options.deaths ~= false then
-		self:watchDeaths(entry)
+	if self.options.joinedWithFriend then
+		-- Followed a friend into this server (joined from their profile or a friend's join button): only the yes or no
+		-- is kept, never whose ID it was.
+		local ok, follow = pcall(function()
+			return player.FollowUserId
+		end)
+		entry.followed = ok and type(follow) == "number" and follow ~= 0
+		entry.session:setProperties({ joined_with_friend = entry.followed })
 	end
+	self:readChoice(entry)
+	if self.options.deaths ~= false or self.options.seats then
+		self:watchCharacter(entry)
+	end
+	self:added(player)
+end
+
+-- The calls the game made for this player before Glitchless saw them join are made now.
+function Server.added(self: Server, player: Player)
+	if self.onPlayer then
+		self.onPlayer(player)
+	end
+end
+
+-- A player in the server whose join Glitchless hasn't handled yet (the game's PlayerAdded ran before Glitchless's, or
+-- Glitchless.init came after they joined): calls for them wait for it.
+function Server.awaiting(self: Server, player: any): boolean
+	return typeof(player) == "Instance"
+		and player:IsA("Player")
+		and self.entries[player] == nil
+		and not self.gone[player]
+		and player.Parent == Players
 end
 
 -- The player's saved choice (SPEC §4d), from the game's DataStore: "off" ends the session before anything is sent.
@@ -306,6 +352,11 @@ function Server.readChoice(self: Server, entry: any)
 			return
 		end
 		entry.ready = true
+		if entry.chosen ~= nil then
+			-- the player chose while the saved choice was being read: theirs stands
+			self:tell(entry.player, { op = "state", on = entry.on and entry.sampled })
+			return
+		end
 		local on = if choice == "off" then false elseif choice == "on" then true else not self.options.optIn
 		if not on then
 			self:turnOff(entry, false)
@@ -353,6 +404,7 @@ end
 function Server.turnOff(self: Server, entry: any, save: boolean)
 	entry.on = false
 	if save then
+		entry.chosen = false
 		self:saveChoice(entry.player, false)
 	end
 	local s = entry.session
@@ -370,6 +422,7 @@ function Server.turnOff(self: Server, entry: any, save: boolean)
 end
 
 function Server.turnOn(self: Server, entry: any)
+	entry.chosen = true
 	if entry.on then
 		self:saveChoice(entry.player, true)
 		return
@@ -389,12 +442,22 @@ function Server.turnOn(self: Server, entry: any)
 	if s.autoMatch then
 		s:setGroup("match", self.matchId, nil)
 	end
+	if entry.followed ~= nil then
+		s:setProperties({ joined_with_friend = entry.followed })
+	end
 	self:tell(entry.player, { op = "state", on = true })
 end
 
 function Server.playerRemoving(self: Server, player: Player, reason: any)
 	local entry = self.entries[player]
 	self:remember(player, os.clock() + NAME_MEMORY_S)
+	self.gone[player] = true
+	if self.onPlayerGone then
+		self.onPlayerGone(player)
+	end
+	if self.options.friendsInServer then
+		self:forgetFriends(player)
+	end
 	if not entry then
 		return
 	end
@@ -409,10 +472,21 @@ function Server.playerRemoving(self: Server, player: Player, reason: any)
 	self:flushSession(s, true)
 end
 
-function Server.watchDeaths(self: Server, entry: any)
+-- Each character the player spawns: its Humanoid's deaths (`deaths`) and the seats it sits in (`seats`).
+function Server.watchCharacter(self: Server, entry: any)
 	local function watch(character: Model)
 		local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 10)
 		if not humanoid or not humanoid:IsA("Humanoid") then
+			return
+		end
+		if self.options.seats then
+			humanoid.Seated:Connect(function(active, seat)
+				if active and seat then
+					pcall(self.sat, self, entry, seat)
+				end
+			end)
+		end
+		if self.options.deaths == false then
 			return
 		end
 		humanoid.Died:Connect(function()
@@ -447,6 +521,150 @@ function Server.positionOf(self: Server, player: Player): { x: number, y: number
 		return { x = p.X, y = p.Y, z = p.Z }
 	end
 	return nil
+end
+
+-- ───────────────────────────── extras the game turns on ─────────────────────────────
+
+-- A ProximityPrompt the player triggered (`prompts`): one more `prompt` in their counters, grouped by the prompt's
+-- ActionText and ObjectText, the game's words, scrubbed of players' names first (a prompt on a player's plot can say
+-- whose it is).
+function Server.promptTriggered(self: Server, prompt: any, player: Player)
+	local entry = self.entries[player]
+	local s = entry and entry.session
+	if not s then
+		return
+	end
+	local names = self:scrubList()
+	local what = {}
+	local action = Words.name(prompt.ActionText)
+	if action then
+		what.action = Words.scrub(action, names)
+	end
+	local object = Words.name(prompt.ObjectText)
+	if object then
+		what.object = Words.scrub(object, names)
+	end
+	s:count("prompt", what)
+end
+
+-- The player's character sat in a seat (`seats`): one more `sit`, grouped by the seat's name (its model's when the seat
+-- still has its class's name) and whether it drives (`vehicle`, a VehicleSeat).
+function Server.sat(self: Server, entry: any, seat: Instance)
+	local s = entry.session
+	if not s or not (seat:IsA("Seat") or seat:IsA("VehicleSeat")) then
+		return
+	end
+	local name = seat.Name
+	local parent = seat.Parent
+	if (name == "Seat" or name == "VehicleSeat") and parent and parent ~= workspace then
+		name = parent.Name
+	end
+	local word = Words.name(name)
+	s:count("sit", { seat = if word then Words.scrub(word, self:scrubList()) else nil, vehicle = seat:IsA("VehicleSeat") })
+end
+
+local function pairKey(a: Player, b: Player): string
+	local x, y = a.UserId, b.UserId
+	if x > y then
+		x, y = y, x
+	end
+	return tostring(x) .. ":" .. tostring(y)
+end
+
+-- A player joined (`friendsInServer`): whether they are friends with each player already here is asked of Roblox
+-- (Player:IsFriendsWith, which waits on a web request), one pair at a time in a thread of its own, never in a frame,
+-- and kept while both are in the server.
+function Server.queueFriends(self: Server, player: Player)
+	for _, other in Players:GetPlayers() do
+		if other ~= player then
+			table.insert(self.friendJobs, { a = player, b = other, tries = 0 })
+		end
+	end
+	if #self.friendJobs == 0 or self.friendsBusy then
+		return
+	end
+	self.friendsBusy = true
+	task.spawn(function()
+		while #self.friendJobs > 0 and not self.closing do
+			local job = table.remove(self.friendJobs, 1)
+			local key = pairKey(job.a, job.b)
+			if self.entries[job.a] and self.entries[job.b] and self.friendPairs[key] == nil then
+				local ok, yes = pcall(function()
+					return job.a:IsFriendsWith(job.b.UserId)
+				end)
+				if ok then
+					self.friendPairs[key] = yes == true
+				elseif job.tries < 2 then
+					-- Roblox's web request failed: try again in a moment, twice at most
+					job.tries += 1
+					table.insert(self.friendJobs, job)
+					task.wait(2)
+				end
+			end
+		end
+		self.friendsBusy = false
+	end)
+end
+
+function Server.forgetFriends(self: Server, player: Player)
+	local id = tostring(player.UserId)
+	for key in self.friendPairs do
+		local a, b = string.match(key, "^(.-):(.*)$")
+		if a == id or b == id then
+			self.friendPairs[key] = nil
+		end
+	end
+end
+
+-- How many of the player's friends are in the server now. A player who turned Glitchless off isn't counted in anyone's.
+function Server.friendsOf(self: Server, player: Player): number
+	local n = 0
+	for other, entry in self.entries do
+		if other ~= player and entry.on and self.friendPairs[pairKey(player, other)] then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- ───────────────────────────── the map ─────────────────────────────
+
+-- Draws a top-down map of the place (or of `options.area`, within `options.bounds`) and sends it as a `map` event for
+-- the level `options.level`, the zone `options.zone`, or the whole place (neither), in a batch of its own: a map is
+-- the game's, not a player's, so it goes under the game's service with no session_start (it starts no session).
+-- Returns the map ({ axis, bounds, size, image, top, bottom }), or nil and why.
+function Server.captureMap(self: Server, options: any): (any, string?)
+	local map, why = Map.capture(options)
+	if not map then
+		self.warn("map:" .. tostring(why), "the map wasn't drawn: " .. tostring(why))
+		return nil, why
+	end
+	local names = self:scrubList()
+	local level, zone = Words.name(options.level), Words.name(options.zone)
+	local e = {
+		type = "map",
+		ts = nowMs(),
+		level = if level then Words.scrub(level, names) else nil,
+		zone = if zone then Words.scrub(zone, names) else nil,
+		axis = map.axis,
+		bounds = map.bounds,
+		size = map.size,
+		image = map.image,
+	}
+	self.sender:add({
+		service = self.service,
+		env = self.env,
+		version = self.version,
+		session_id = "s_" .. randomHex(24),
+		sdk = SDK,
+		batch_id = "b_" .. randomHex(16),
+		events = Json.array({ e }),
+	}, false)
+	self.sender:pump()
+	if self.debug then
+		print(string.format("[glitchless] map of %s sent: %d×%d px, %.0f KB, bounds min [%g, %g], max [%g, %g] (x, z)", if level then "level " .. level elseif zone then "zone " .. zone else "the place", map.size[1], map.size[2], #map.image / 1024, map.bounds.min[1], map.bounds.min[2], map.bounds.max[1], map.bounds.max[2]))
+	end
+	return map, nil
 end
 
 -- ───────────────────────────── what clients send ─────────────────────────────
@@ -525,7 +743,11 @@ function Server.apply(self: Server, entry: any, s: any, e: any)
 		e.ts = t
 	end
 	local ty = e.type
-	if ty == "frame_window" or ty == "counts" then
+	if ty == "frame_window" and self.options.friendsInServer then
+		e.ctx = e.ctx or {}
+		e.ctx.friends_in_server = self:friendsOf(entry.player)
+		s:push(e)
+	elseif ty == "frame_window" or ty == "counts" then
 		s:push(e)
 	elseif ty == "hitch" then
 		e.recent = s:recentBefore(e.ts, 1500)
@@ -605,6 +827,14 @@ function Server.connect(self: Server)
 	table.insert(c, Players.PlayerRemoving:Connect(function(player, reason)
 		self:playerRemoving(player, reason)
 	end))
+	if self.options.prompts then
+		table.insert(c, game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt, player)
+			local ok, err = pcall(self.promptTriggered, self, prompt, player)
+			if not ok then
+				self.warn("prompt", "a ProximityPrompt couldn't be counted: " .. tostring(err))
+			end
+		end))
+	end
 	table.insert(c, self.remote.OnServerEvent:Connect(function(player, message)
 		local ok, err = pcall(self.onClient, self, player, message)
 		if not ok then

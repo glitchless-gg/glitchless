@@ -1,0 +1,18 @@
+{
+    "name": "GlitchlessSdk.MapProbe",
+    "rootNamespace": "GlitchlessSdk.MapProbe",
+    "references": [
+        "GlitchlessSdk"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "GLITCHLESS_MAP_PROBE"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

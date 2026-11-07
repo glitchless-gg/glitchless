@@ -101,6 +101,7 @@ test('every tool has a title and all four annotation hints, true to what it does
   const by = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
   const writes = tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name).sort();
   assert.deepEqual(writes, ['glitchless_create_game', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts', 'glitchless_set_dashboard', 'glitchless_share_links']);
+  assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the pages, and removes a background or a logo');
   assert.equal(by.glitchless_set_alerts.openWorldHint, true, 'a test alert posts to Discord, Slack or email');
   assert.equal(by.glitchless_share_links.destructiveHint, true, 'it revokes a link');
   assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the saved dashboard');

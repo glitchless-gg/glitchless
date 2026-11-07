@@ -155,15 +155,15 @@ export function Pages() {
         <p className="muted">The first page opens first. To change a board&rsquo;s panels, open it and choose Edit panels.</p>
         <label className="muted pages-currency">
           Money is in{' '}
-          <input className="input" value={money} maxLength={3} placeholder="USD" onChange={(e) => (setCurrency(e.target.value), setNote(null))} aria-label="Currency" />{' '}
-          <span title="Revenue panels add up purchases in this currency and name the ones sent in another. Empty: the currency most purchases are sent in.">(ISO code; empty: from the events)</span>
+          <input className="input" value={money} maxLength={5} placeholder="USD" onChange={(e) => (setCurrency(e.target.value), setNote(null))} aria-label="Currency" />{' '}
+          <span title="Revenue panels add up purchases in this currency and name the ones sent in another. ROBUX for a Roblox game's Robux. Empty: the currency most purchases are sent in.">(ISO code or ROBUX; empty: from the events)</span>
         </label>
         <button className="btn" onClick={() => setJson(json == null ? JSON.stringify({ ...(money.trim() ? { currency: money.trim().toUpperCase() } : {}), pages }, null, 2) : null)}>
           {json == null ? 'Edit as JSON' : 'Close JSON'}
         </button>
       </Widget>
       {json != null && (
-        <Widget span={12} title="The whole dashboard as JSON" sub="currency (optional, e.g. USD), and pages: { id, title, icon, panels } for a board, { id, title, view, options } for a built-in view">
+        <Widget span={12} title="The whole dashboard as JSON" sub="currency (optional, e.g. USD or ROBUX), and pages: { id, title, icon, panels } for a board, { id, title, view, options } for a built-in view">
           <textarea className="board-editor" spellCheck={false} value={json} onChange={(e) => (setJson(e.target.value), setNote(null))} />
         </Widget>
       )}

@@ -343,7 +343,7 @@ type and device, and Glitchless Cloud doesn't count it again toward the plan's p
 | `death` | `x, y, z, cause` |
 | `pos` | `pts: [[ts, x, y, z], …]` (batched samples) |
 | `custom` | `name, attrs`. See below |
-| `map` | `axis, bounds, image` (JPEG data URL, ≤ 60 KB) |
+| `map` | `axis, bounds, image` (JPEG data URL, ≤ 60 KB; intake drops one over 120,000 characters), `size` (the picture's `[w, h]` in pixels; it covers `bounds` exactly). A heatmap background of one place (§3b Positions): a map with a `level` is that level's (the zone the SDKs also stamp on it doesn't count), one with only a `zone` that zone's, and one with neither the whole game's (a hub, a lobby). `bounds = {min: [a, b], max: [a, b]}` in world units on the `axis`'s two coordinates (`xz`: seen from above, the picture's left edge `min[0]`, its top edge `min[1]`; `xy`: a side view, its top edge `max[1]`). `uploaded` is the server's own: intake drops it, and only `PUT /v1/maps` makes an uploaded background |
 | `session_end` | `reason` (`pagehide` \| `hidden_timeout`), `duration_s` |
 | `bug_report` | `note` (typed by the player), `screenshot` (JPEG data URL, ≤ 200,000 characters; dropped when larger, keeping the note), `x, y, z`, `recent` (last game events), `frames` (the last windows' fps and p95), `device`. See below |
 | `counts` | a window's counters (§1 `count`): `duration_s`, `dropped`, `counts: [{name, attrs, n, sums?, first_ts}]`. See below |
@@ -414,6 +414,15 @@ match or run used as a list; what should be measured once a match or run goes on
 `run_end`), since rates and distributions split by another attribute read each session's first 16 of an event (§3b).
 A list holds the game's words, like any attribute: never a list of people (party members' names, friends).
 
+**Purchases.** Every SDK follows one convention: `track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })`
+when the store confirms it. `amount` is a number in the currency's units (4.99, not 499); `currency` is an ISO 4217
+code, or `ROBUX` for a Roblox experience's developer products and passes, with the price in Robux (`amount: 99`), in
+any case (stored upper-cased); `item` is what was bought. A game that also reports purchases that didn't go through
+sends the same event with a word for how it ended (`result: 'done'` or `'cancelled'`) and the amount on each, and
+reads its revenue from `purchase:result=done` (§3b), which a sum can split by `item` too. `sandbox: true` marks a
+purchase nobody paid for (§3b). A number sent next to a `currency` is money, so other numbers (gems granted) go on an
+event of their own; receipts, order IDs and payment details are never sent.
+
 **`error`.** `fingerprint` groups occurrences into one issue: the kind, the message (numbers of 3+ digits and hex
 masked) and the function of the top frame, the first frame that isn't in a `glitchless*` file. File names are left
 out, so a dev server's `fx.js` and a bundle's `index-3f2a.js` group alike. `stack` is the browser's own stack
@@ -466,7 +475,8 @@ sessions to compute exact-within-2% global percentiles (never average percentile
 Header `x-glitchless-api-key: …` when the server has a read key configured. Every query reads only the project
 its key belongs to (§6); `service` picks a game inside that project. `type` keeps one session type (`user`, `tester`,
 `synthetic`, `simulated`; `all`, the default, keeps every session; `session_type` is the same filter): `type=tester` finds
-the TestFlight testers that players' numbers leave out. Another type answers 400, rather than every session, and
+the TestFlight testers that players' numbers leave out, and the players and sessions the game's team marked as its own
+play (§3e Testers), whose `user` sessions read as `tester` in every query, before this filter. Another type answers 400, rather than every session, and
 `meta.type` says which type was kept. Each Steam fact (§4c: `steam_branch`,
 `steam_build`, `steam_hardware`, `steam_controller`, `steam_language`, `proton`, `big_picture`, `family_shared`,
 `timed_trial`) is a filter too: `steam_branch=beta` keeps only the sessions that ran the beta (`meta.where` says so).
@@ -479,19 +489,19 @@ the sessions, so over 31 days or less (Glitchless Cloud reads a longer range's l
 | --- | --- |
 | `services` | `{services:[{service, versions[], envs[], last_seen, server?}], max_range_days}`: the longest range this store answers for the reader (the plan's retention on Glitchless Cloud; `null`: no limit). A game's servers (its companion service, A9) go under it as `server: {service, versions, envs, last_seen}`; a companion whose game sent nothing yet is listed with `server_of`. Without `service=`, queries read the game that sent last, never a companion |
 | `overview` | `{kpis, series, top_errors, funnel, findings}`; `kpis.hours_played` is the hours the game was on screen (§4); `kpis.pct_frames_over_budget` the share of frames over their own screen's budget and `kpis.frame_budgets` the share of frame windows at each budget (`{"8.33": 60, "16.67": 40}`; §4 Frame budget) |
-| `performance` | `{kpis, distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, by_display, by_zone?, hitches, memory, load, network?}`; the Steam breakdowns hold only sessions that sent the fact (§4c). Every row's `pct_over_budget` (and `kpis.pct_frames_over_budget`) is the share of its frames over their own screen's budget; `kpis.frame_budget_ms` is the median window's, for reference (§4 Frame budget). `by_display` has a row per screen players had, the fastest first: `{key: "120 Hz", hz, budget_ms, windows_pct, sessions, p50, p95, p99, pct_over_budget, …}`, each session under the median of its windows' budgets and `windows_pct` its rate's share of the frame windows (over 31 days, from the days stored since screens were kept). `network` (A8, a game with network data): `{kpis: {ping_p50, ping_p95, lag_pct, loss_pct, jitter_ms, connected_h, disconnects, disconnect_reasons, reconnects, disconnects_per_hour, hours, disconnect_pct}, by_level, by_version, by_platform, by_link}`, each row `{key, …the same, sessions}`. `by_prop=<key>` adds `by_prop: {key, rows: [{key: value, sessions, all_sessions, p50, p95, p99, pct_over_budget, hitches_per_min, crash_free_pct, …}]}`: frame time and hitches per value of a session property from the sessions' own frame windows, crash-free sessions from every session with it, and `network.by_prop` the same network rows per value (ping by `region`) |
+| `performance` | `{kpis, distribution, by_level, by_gpu_tier, by_browser, by_version, by_platform, by_steam_branch, by_steam_build, by_display, by_zone?, hitches, memory, load, network?}`; the Steam breakdowns hold only sessions that sent the fact (§4c). Every row's `pct_over_budget` (and `kpis.pct_frames_over_budget`) is the share of its frames over their own screen's budget; `kpis.frame_budget_ms` is the median window's, for reference (§4 Frame budget). `by_zone` (a game that sets zones) has a row per zone, by name, with the other rows' frame time and hitches, and its time: `seconds` played there, `share_pct` of all play, `sessions` that went there and `median_s`, their median time in it (§3b Zones); a hitch in `hitches` says its `zone` when it had one. `by_display` has a row per screen players had, the fastest first: `{key: "120 Hz", hz, budget_ms, windows_pct, sessions, p50, p95, p99, pct_over_budget, …}`, each session under the median of its windows' budgets and `windows_pct` its rate's share of the frame windows (over 31 days, from the days stored since screens were kept). `network` (A8, a game with network data): `{kpis: {ping_p50, ping_p95, lag_pct, loss_pct, jitter_ms, connected_h, disconnects, disconnect_reasons, reconnects, disconnects_per_hour, hours, disconnect_pct}, by_level, by_version, by_platform, by_link}`, each row `{key, …the same, sessions}`. `by_prop=<key>` adds `by_prop: {key, rows: [{key: value, sessions, all_sessions, p50, p95, p99, pct_over_budget, hitches_per_min, crash_free_pct, …}]}`: frame time and hitches per value of a session property from the sessions' own frame windows, crash-free sessions from every session with it, and `network.by_prop` the same network rows per value (ping by `region`) |
 | `errors` | `{issues:[{fingerprint, message, kind, location, fn, source, line, count, sessions, players, first_seen, last_seen, first_version, versions, levels, stack, sample_session, breadcrumbs, no_players?, resolved?, came_back?}], engine}`; for a web build with source maps (§3d), original frames with `frames` and `minified`. An issue the game's owner resolved has `resolved` and comes last, one back since `came_back` and comes first (§3e). Unless the query reads players only, it also reads the range's players (session type `user`, on `prod` when the game has it, as findings do): an issue none of them hit has `no_players`, its sessions by kind (`synthetic`, `tester`, `simulated`, and `dev_builds` for a player's session type on another env; `{}` beyond 31 days, where IDs aren't kept), and the dashboard's agent prompt for it asks to check it can happen on players' devices first. `engine` is the SDK most of the range's sessions came from (`godot`, `unity`, `unreal`, `gamemaker`, `phaser`, `babylon`, `playcanvas` or `web`): an issue's agent prompt checks a fix over WebMCP in a browser game and with a `--glitchless-measure` run in an engine's |
-| `players` | `{kpis, funnel, session_length, death_causes, rage_quits, retention}`. `funnel: [{level, sessions, players, completed, completion_pct, attempts, deaths, deaths_per_session, fails, abandons, abandoned, avg_complete_s, p50_complete_s, p90_complete_s, death_causes, rage_quits, rage_quit_pct}]`: `abandons` counts the attempts the player left (§2 `level_abandon`), `abandoned` the sessions that left the level without completing, failing or dying on it; `p50_complete_s` and `p90_complete_s` are the median and the slowest 1 in 10 of completed attempts' `duration_s` (clear times). `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range). `by_prop=<key>` adds `retention.by: {key, rows: [{value, new_players, d1, d7, d30}]}`: each player in the value of the first session they started on their first-seen day (31 days or less). `by=` (an attribute of the level starts, `$<property>` or a session split), `level=` and `count=runs` add `funnel_by`: the `levels` panel's answer (§3b) |
+| `players` | `{kpis, funnel, session_length, death_causes, rage_quits, rage_inputs, retention}`. `rage_inputs`: the latest 50 rage inputs (an SDK's `rage_input`, one key mashed; `kpis.rage_inputs` counts them all), newest first, `[{session_id, version, ts, level, key, presses, x?, y?, z?}]`: `x, y, z` is where the player stood, the session's latest position sample on that level at most 5 s before it (a game that sends positions); a session stored before 2026-11-07 lists its first 16 without a place, from its custom events. `funnel: [{level, sessions, players, completed, completion_pct, attempts, deaths, deaths_per_session, fails, abandons, abandoned, avg_complete_s, p50_complete_s, p90_complete_s, death_causes, rage_quits, rage_quit_pct}]`: `abandons` counts the attempts the player left (§2 `level_abandon`), `abandoned` the sessions that left the level without completing, failing or dying on it; `p50_complete_s` and `p90_complete_s` are the median and the slowest 1 in 10 of completed attempts' `duration_s` (clear times). `retention: {status, id_sessions_pct, new_players, d1, d7, d30, cohorts:[{day, players, d1, d7, d30, returned:{d1, d7, d30}}], first_seen}` (§4): cohorts oldest first, `dN` a percentage (null until day N has ended in the range), `returned` the counts; `d1`… over all cohorts that have one. `status` is `ok`, `anonymous` (no session in the range sent a player ID: nothing to count, not zero) or `empty`; `first_seen` is `index` (the store's first-seen index) or `range` (a store without one: new on the first day in the range). `by_prop=<key>` adds `retention.by: {key, rows: [{value, new_players, d1, d7, d30}]}`: each player in the value of the first session they started on their first-seen day (31 days or less). `by=` (an attribute of the level starts, `$<property>` or a session split), `level=` and `count=runs` add `funnel_by`: the `levels` panel's answer (§3b) |
 | `players_now` | `{players_now, window_s, servers_now?}`: sessions of the game that sent anything in the last two minutes (§4), whatever the range; a game with servers adds `servers_now: {servers, players}` (its companion's live sessions and the players their latest windows had connected) |
 | `servers` | A game's servers (A9), from its companion service: `{servers_now, players_on_servers, kpis: {servers, crashed, crash_free_pct, budget_ms, windows, hours, tick_p50, tick_p95, over_budget_pct, late_pct, tick_hz, players, players_max, cpu_pct, mem_mb, mem_max_mb, net_objects, rtt_p95}, series: {ts, tick_p50, tick_p95, players, servers}, by_level, by_version, by_players: [{value, lo, hi, windows, over_budget_pct, late_pct}], crashes: [{…error issue, crashed_servers, matches_ended, players_dropped}], memory, climbing, sessions}`; `by_players` in tenths of the servers' `max_players`. Any other query reads the companion itself with `service=<game>.server` |
 | `matches` | The range's matches (A7): `{matches:[{id, from, to, duration_s, sessions, level, attrs, outcomes:{complete, fail, abandon, disconnect}, disconnects, disconnect_reasons, ping_p50, ping_p95, lag_pct, server:{sessions, tick_p95, players_max} \| null}], total, sort}`, the most recent first, or `sort=lag` (worst ping p95 first) or `sort=disconnects`; `limit` (at most 200). `id=` gives one: `{match:{…as listed, slot_s: 30, slots:[t], sessions:[{session_id, version, platform, props, level, outcome, from_s, to_s, disconnects:[{t, reason}], ping_p50, ping_p95, slots:[{t, fps, frame_p95, ping_p50, ping_p95, loss_pct, hitches, spike?}]}], server:[{session_id, slots:[{t, tick_p95, late, players, net_objects}]}], lobby_spikes:[t], events:[{t, session_id, type, level, name, reason?}]}}`, `t` in seconds from the match's first event. A slot is a `spike` for a session whose ping was twice its own median and 50 ms over it; a lobby spike when 60% of the sessions with network data (4 or more) spiked at once (§4). Read from raw events, the game's and its servers' (§6); Glitchless Cloud reads a longer range's last 31 days |
-| `heatmap` | `{level, map, deaths:[{x,y,z,cause,version}], density:{…}, stats}` (requires `level`); `stats` is the level's funnel row plus `no_win`, true for a game nobody wins (§4), which has runs rather than a completion rate |
-| `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, events}` (its timeline includes its bug reports). Each session has its `p50`, `p95`, `budget_ms` (its screen's: the median of its windows') and `pct_over_budget` (§4 Frame budget) |
+| `heatmap` | One place (§3b Positions): `level=`, `zone=` or `all=1` (the whole game); without one, the first level, else the whole game. `{levels, zones, no_level, level, zone, axis, bounds, map, deaths:[{x,y,z,cause,version}], hotspots, density:{…}, stats}`: `levels` and `zones` are the places with a map, deaths or positions, `no_level` true when players moved or died with no level set; `level` and `zone` say which place this is (both null: the whole game); `map` is its background `{image, size, version, uploaded}` or null. A level's `stats` is its funnel row plus `no_win`, true for a game nobody wins (§4), which has runs rather than a completion rate; a zone's or the whole game's `{sessions, deaths, deaths_per_session, rage_quits, rage_quit_pct}` (sessions that sent a position or died there) |
+| `sessions` | `{sessions:[…]}` ; `session?id=` → `{session, timeline, frames, positions, maps}` (its timeline includes its bug reports, and each `rage_input` there has `x, y, z` when it has a place, as in `players`). Each session has its `p50`, `p95`, `budget_ms` (its screen's: the median of its windows') and `pct_over_budget` (§4 Frame budget), and `marked_tester: true` when the game's team marked it as its own play (§3e Testers): sent as `user`, read as `tester` |
 | `reports` | Players' bug reports, newest first (at most 500): `{reports:[{id, ts, session_id, level, version, env, note, position: {x, y, z} \| null, device (one line), has_screenshot}]}`. Filters: `env`, `version`, `type`, `sessions`, the Steam facts |
 | `report` | One bug report: `id=` → `{report:{…as listed, sdk, recent, frames, screenshot}}` (`screenshot=0` leaves the picture out), from any time the store still keeps; `{error}` if there is none |
 | `versions` | `{versions:[{version, sessions, first_seen, first_seen_ever, crash_free_pct, frame_p95, pct_frames_over_budget, frame_budgets, level_completion_pct, rage_quit_pct, errors_per_session, …, board:[…], events:{name: per_session}}], has:{frames, levels, deaths, fails, geometry}, board:[{title, unit, metric, event, per, sum?, currency?}]}`. Versions come oldest first in release order (§4), so the last two are the newest and the one before it whatever the range; `first_seen` is a version's first session start in the range, `first_seen_ever` when the store first saw it (null when it can't say). `board` holds each version's value of the stats on the game's boards (each once, in the order of the top-level `board`, §3b); `unit` is `per session` for counts and sums compared per session, `per player` for a sum per player, `%` or a metric's unit, and a sum that is money has its `currency`; a rate is `%` (and carries `rate`), an average carries `avg`, a percentile `of` and `quantile` (in the panel's `unit`), and a count or sum per hour played is `per hour`, each over the version's own hours; `has` says which built-in measures the game reports. `by=steam_branch` (or `steam_build`) compares Steam branches or builds the same way instead (§4c): each row's `version` is the branch or build, `by` names the fact; builds come in build order, branches in the order the range first saw them. `by=<property key>` compares the values of a session property (class against class), the most sessions first, each value's rates, averages, percentiles and counts per hour played from its own sessions |
 | `findings` | Ranked findings with evidence — what the MCP server hands to coding agents. With `kpis=1`, the overview's `kpis` and `deployments` too, for the same range and filters (`glitchless_triage` gives them first) |
-| `events` | The game's own metrics (`custom` events and counters): `{ts, sessions, hours, events:[{name, counted?, count, sessions, players, per_session, series, attrs:[{key, list?, values:[{value, count, sessions}], avg, p50?, p90?, p99?}], sums:[{attr, currency, sum, events}]}]}`. `counted: true` marks a name sent with `count()` (§2 `counts`): its numbers have sums and averages but no percentiles. `hours` is the hours played in the range (§4), to turn any count into a rate per hour. `properties: [{key, values: [{value, sessions, players}], identifier_like}]` lists the sessions' properties (§2 `props`), the top 40 values each; `identifier_like: true` marks one with more than 200 values on a day, which is an ID and splits as `(too many values)`. A list attribute says `list: true` and counts each element as a value (the events that have it, so they add up to more than `count`); a numeric one has its `p50`, `p90` and `p99` (§3b distributions). `sums` adds up each numeric attribute, per currency (null for events sent without one, §3b), the most sent first. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]`. With `name=` (or `event=`, the same event with a filter such as `match_end:mode=ranked`) and `rate=` (`won`, or `result=win`) or `avg=` (a numeric attribute), it adds `measure`: the stat panel's answer, or with `by=` (and `min=`, `limit=`) the breakdown panel's rows; with `of=` (a numeric attribute, and optionally `by=`, `bins=`, `limit=`), `distribution`: the distribution panel's answer (§3b). A field that can't be read is a 400 saying what to fix |
+| `events` | The game's own metrics (`custom` events and counters): `{ts, sessions, hours, events:[{name, counted?, count, sessions, players, per_session, series, attrs:[{key, list?, values:[{value, count, sessions}], avg, p50?, p90?, p99?}], sums:[{attr, currency, sum, events}]}]}`. `counted: true` marks a name sent with `count()` (§2 `counts`): its numbers have sums and averages but no percentiles. `hours` is the hours played in the range (§4), to turn any count into a rate per hour. `properties: [{key, values: [{value, sessions, players}], identifier_like}]` lists the sessions' properties (§2 `props`), the top 40 values each; `identifier_like: true` marks one with more than 200 values on a day, which is an ID and splits as `(too many values)`. A list attribute says `list: true` and counts each element as a value (the events that have it, so they add up to more than `count`); a numeric one has its `p50`, `p90` and `p99` (§3b distributions). `sums` adds up each numeric attribute, per currency (null for events sent without one, §3b), the most sent first. `name=` keeps one event, `sdk=1` adds the SDKs' own; `funnel=open,paywall,buy=done` adds `funnel:[{step, sessions, pct_of_first, pct_of_previous, median_s_from_previous}]`. With `name=` (or `event=`, the same event with a filter such as `match_end:mode=ranked`) and `rate=` (`won`, or `result=win`) or `avg=` (a numeric attribute), it adds `measure`: the stat panel's answer, or with `by=` (and `min=`, `limit=`) the breakdown panel's rows; with `of=` (a numeric attribute, and optionally `by=`, `bins=`, `limit=`), `distribution`: the distribution panel's answer (§3b); with `first=1`, `first: {event, sessions, median_s, p90_s, unknown?, ended, never, never_pct}`: the seconds from sessions' start to their first such event and the ended sessions that never sent it (§3b, 31 days or less). A field that can't be read is a 400 saying what to fix |
 | `dashboard` | The game's pages, in order: `{dashboard:{source, updated_at, updated_by, spec:{currency?, pages}, pages:[{id, title, icon, view, options} or {id, title, icon, panels: count}]}}`, `source` being `saved` or `auto` (§3b) |
 | `board` | One board page with each panel's data: `page=` its id (default: the first board) → `{board:{page, title, source, updated_at, updated_by, spec:{panels}, panels:[…]}}`; a built-in view's id gives `{error, view}` |
 | `store_reviews` | One store's reviews of the game (Steam, Google Play, the App Store), filtered, with counts by build, topic and device (§3f); `{connected: false}` without a store |
@@ -516,13 +526,18 @@ performance, errors, players, heatmaps, sessions, versions, live, reports, serve
 `id` (default: from the view or the title) is the page's address, `#/<id>`; `icon` is one of board, overview,
 events, perf, errors, players, heatmap, sessions, versions, live, flag, bolt, play, clock, bug, money. At most 20 pages and 24
 panels a board. A built-in view a dashboard leaves out still opens from links (`#/errors/<fingerprint>`,
-`#/sessions/<id>`, `#/reports/<id>`). The live view takes `options.events`: names or types to show. The reports view
+`#/sessions/<id>`, `#/reports/<id>`). The live view takes `options.events`: names or types to show. The heatmaps view
+draws one place (the `heatmap` query, §3) over its background: a game of levels alone picks a level with a row of
+buttons; with zones, or players moving with no level set (a hub), one list holds the levels, the zones and Everywhere
+(`#/heatmaps?level=`, `?zone=`, `?all=1`; a positions panel's More opens its own place). A session's replay draws its
+samples with no level over the whole game's background, else their zone's. The reports view
 (Bug Reports) lists what players sent, newest first, with each screenshot, its session's replay (opened at the
 report's moment) and the events and frame rate before it.
 
 A dashboard is saved per game: `GET /v1/dashboard?service=` needs the read scope; `PUT /v1/dashboard?service=` with
 `{currency?, pages}` and `DELETE` (back to the automatic dashboard) need the `dashboard` scope. `currency` (an ISO
-4217 code such as `USD`) is the game's one currency for money (below). A game without a saved one gets
+4217 code such as `USD`, or `ROBUX` for a Roblox game's Robux; any case, stored upper-cased) is the game's one
+currency for money (below). A game without a saved one gets
 the automatic dashboard, made from the data it sent in the last week: an Overview board (the stats every game has,
 findings, its own events, then levels, frame time, errors and deaths only if it reports them), then Events if it
 sends custom events, Performance if it sends frame times, Errors, Bug Reports if players sent bug reports, Players,
@@ -545,18 +560,19 @@ max-age=31536000, immutable` (`no-cache` at another). The dashboard shows the ba
 dark scrim, so the title reads on any picture in either theme (a short strip on a phone), the logo by the game's name,
 and the accent on links, the selected page, stats, the map's installs and the main chart series (not when it is close
 to one of the other series' colours), darkened or lightened in each theme to 3:1 on a panel (4.5:1 for links). Agents
-set the accent with `glitchless_set_dashboard`'s `accent` and see the brand in `glitchless_dashboard`; people upload
-the images in Edit pages → Look.
+set the accent, the logo and the banner with `glitchless_set_dashboard`'s `accent`, `logo` and `banner` (a file on its
+computer with the local MCP server, or base64; the banner with its `focus`) and see the brand in `glitchless_dashboard`;
+people do the same in Edit pages → Look.
 
 | panel `type` | fields | shows |
 | --- | --- | --- |
-| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now, hours_played, runs, ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct, servers_now, server_tick_p95, server_crash_free_pct, players_per_server) or `event`, optional `per`, optional `sum`, or `rate` (with `expect`), `avg`, or `of` with `quantile` (and `unit`) | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). Per `$hours`, a count or sum per hour played (below); the `deaths` and `errors` metrics take it too. `rate` and `avg`, the event's rate (with its interval) or average (below); `of` with `quantile`, one percentile of a numeric attribute (the median match, below). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons |
-| `series` | `event`, optional `by`, `limit`, `sum`, `rate` or `avg`, `per` (`$hours`) | the event's count (or its `sum`, rate or average) over time, split by an attribute's top values; `by` can also be `$version`, `$level`, or the sessions' `$platform`, `$browser` or `$device_tier` (below; counts only) |
-| `breakdown` | `event`, `by`, `limit`, `sum`, or `rate` or `avg` with `min`, `expect` and `order`; `per` (`$hours`) | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item), each value's rate or average (below), or each row per hour played; `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), with `(none)` for sessions without it, or the sessions' `$platform`, `$browser` or `$device_tier` (below). By a list attribute, a row per element (below) |
+| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, players_now, hours_played, runs, ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct, servers_now, server_tick_p95, server_crash_free_pct, players_per_server, and with `zone` zone_time_pct, zone_median_s) or `event`, optional `per`, optional `sum` (with `devex`), or `rate` (with `expect`), `avg`, or `of` with `quantile` (and `unit`); or `first` (an event, with `quantile`) or `never` (an event) | one number; `event` per another event is a percentage; per `$players` or `$sessions`, the share of them that sent the event (conversion). With `sum`, the attribute added up (revenue), per `$players` or `$sessions` divided by them (revenue per player). Per `$hours`, a count or sum per hour played (below); the `deaths` and `errors` metrics take it too. `rate` and `avg`, the event's rate (with its interval) or average (below); `of` with `quantile`, one percentile of a numeric attribute (the median match, below). `players_now` is the sessions playing now, whatever the range, and is left out of version comparisons. `first`, the median seconds from a session's start to its first such event; `never`, the share of ended sessions that never sent it (below). `devex` on a Robux sum, an estimate in dollars (below). `zone_time_pct` is one zone's share of play time and `zone_median_s` the median time in it of the sessions that went there (Zones, below) |
+| `series` | `event`, optional `by`, `limit`, `sum` (with `devex`), `rate` or `avg`, `per` (`$hours`) | the event's count (or its `sum`, rate or average) over time, split by an attribute's top values; `by` can also be `$version`, `$level`, or the sessions' `$platform`, `$browser` or `$device_tier` (below; counts only) |
+| `breakdown` | `event`, `by`, `limit`, `order`, `sum` (with `devex`), or `rate` or `avg` with `min` and `expect`; `per` (`$hours`) | the attribute's values with counts and sessions, or with each value's `sum`, largest first (revenue by item; of a filtered event too: completed purchases by item, below), each value's rate or average (below), or each row per hour played; `order` `count` (the most first) or `value` (the values' own order: streak day 1, 2 … 10), before the top `limit` rows are taken; `by` can also be a Steam fact of the sessions that sent the event (`$steam_branch`, `$steam_build`, `$steam_hardware`…, §4c), with `(none)` for sessions without it, or the sessions' `$platform`, `$browser` or `$device_tier` (below). By a list attribute, a row per element (below). By `$zone` without an `event`, the time played in each zone (Zones, below) |
 | `distribution` | `event`, `of`, optional `by`, `limit` (rows, at most 8, default 5), `bins` (bars, 2 to 40, default 20), `unit` | how a numeric attribute spreads: percentiles and a histogram, and with `by` a row per value (below) |
 | `funnel` | `steps` | sessions through the steps, in order |
 | `levels` | `label`, `by`, `level`, `count` | starts, completion, fails, deaths, disconnects and times per level (the median clear time and the slowest 1 in 10, from completed attempts); columns only for what the game reports. `by` splits each level's attempts: an attribute of their `level_start` (`tier`; a list counts under each element), a session property (`$class`) or a session split; `level` keeps one level's rows; `count: "runs"` counts each run once at each level it reached (below) |
-| `frame_time`, `errors`, `deaths`, `events` | `limit` (errors), `by` and `level` (deaths, as on `levels`) | frame-time p50/p95, top errors, deaths by level and cause (with `by`, per level and value), every custom event |
+| `frame_time`, `errors`, `deaths`, `events` | `by` (`$zone` or `$level`) and `limit` (frame_time), `limit` (errors), `by` and `level` (deaths, as on `levels`) | frame-time p50/p95 over time, or with `by` a row per zone or level (Zones, below); top errors, deaths by level and cause (with `by`, per level and value), every custom event |
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
 | `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, Roblox, §3f, §3k): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
@@ -568,7 +584,7 @@ the images in Edit pages → Look.
 | `retention` | `limit` (days, 1 to 90; default 14), `by` (a session property) | D1, D7 and D30 by first-seen day (§4), the latest days; with `by` (`$spender`), each value's too (`by: {key, rows: [{value, new_players, d1, d7, d30}]}`, 31 days or less); a game that sends no player IDs gets `anonymous: true` and a line on turning install mode on |
 | `versions` | `by` | the board's own stat panels, version by version in release order (§4; rows `{version, sessions, first_seen, first_seen_ever, values}`); with `by` `$steam_branch` or `$steam_build`, Steam branch by branch (the beta against `public`) or build by build; with `by` a session property (`$class`), value by value |
 | `live` | `events` | events as they arrive, optionally only these names or types |
-| `positions` | `level`, `show` (`deaths`, `path` or `both`; default `deaths`), `bin` | where players died on one level, and where they went, as counts per bin (below) |
+| `positions` | `level` or `zone` (or neither: the whole game), `show` (`deaths`, `path` or `both`; default `deaths`), `bin` | where players died in one place, and where they went, as counts per bin over its background (below) |
 | `table` | `event`, `columns`, `group_by`, `sort`, `of`, `limit` | one event's events one by one, each a row of its attributes (and its time, version, platform, level or session), under one header per value of `group_by` with that group's events, sessions and the lowest, average and highest `of`; rows in `sort` order, at most `limit` a group (below) |
 
 A board page can carry `where`: session properties (§2 `props`) its sessions must have, a value or a list of up to 20
@@ -626,10 +642,32 @@ worst by lag or disconnects on request, each opening its match page (`#/matches/
 ping slot by slot from the match's start, the server's ticks under them, outcomes and disconnects, and the slots where
 the whole lobby lagged.
 
-**Zones** (decision 6). `$zone` splits series and breakdowns (counts, sums, rates, per hour played) and distributions
-the way `$level` does: the cells are kept per zone as well as per level (only for games that set one), so zones are
-exact over any range. The `performance` query adds `by_zone` (frame time per zone; its sessions are null, as the cells
-carry no session IDs).
+**Zones** (decision 6, [`server/src/zones.js`](../server/src/zones.js)). `$zone` splits series and breakdowns (counts,
+sums, rates, per hour played) and distributions the way `$level` does: the cells are kept per zone as well as per level
+(only for games that set one), so zones are exact over any range.
+
+Time in a zone is played time: the `duration_s` of the frame windows drawn there, as hours played count it (§4), not
+the time between events. A frame window never spans two zones, none is drawn while the game is in the background or
+unfocused, and every SDK sends one with its duration; events have no end, come unevenly, and the time after the last
+one in a zone is unknown. So a zone's `seconds` and `share_pct` (of all play time) come from the cells and are exact
+over any range. Each session keeps its own seconds per zone (32 zones; past that the rest under `(other)`), so
+`sessions` (the sessions that drew frames in the zone), `sessions_pct` (of the sessions that drew any), `players` (null
+for a game that sends no player IDs) and `median_s` (the median time in the zone of those sessions) come from the
+sessions over 31 days or less, and past that from the day rollups (64 zones per version a day; their medians and
+players are estimated past 512 values, `meta.approximate` `zone_time`, §7). Time outside every zone is the row
+`(none)`, so the shares add up to all play time; it has its time only (its sessions, players and median are null).
+
+- A breakdown by `$zone` without an `event` answers `{counts: "time", total (seconds played), sessions, rows: [{value,
+  seconds, share_pct, sessions, sessions_pct, players, median_s}], more}`, most time first (`limit`, default 10, at most
+  20). It takes no `sum`, `rate`, `avg` or `per`.
+- A stat with `metric` `zone_time_pct` or `zone_median_s` names its `zone` (as the game passes it to `setZone`):
+  `{value, unit, sessions, …}`; a versions panel compares it version by version.
+- A `frame_time` panel with `by` `$zone` or `$level` answers `{by, rows: [{value, frames, seconds, share_pct, p50, p95,
+  p99, pct_over_budget, hitches, hitches_per_min, sessions}], more, kpis}`, most played first (`limit`, default 10, at
+  most 20); frames outside every zone, or outside every level, are `(none)`.
+- The `performance` query's `by_zone` carries each zone's time next to its frame time and hitches (§3); the
+  Performance view shows them in its By zone table (most played first), and the automatic board adds the breakdown by `$zone` for a game that
+  sets zones.
 
 **By a session property** (`server/src/properties.js`). `by: "$<key>"` works wherever `$platform` does: series and
 breakdowns (counts, rates and averages, per hour played), distributions, `retention` and `versions`. Each session is
@@ -664,13 +702,21 @@ days or less; a longer range says so.
   { "type": "series", "event": "play", "by": "$device_tier", "title": "Plays, by GPU tier" } ]
 ```
 
-**Positions** (`levelPositions` in `server/src/analytics.js`). A `positions` panel answers
+**Positions** (`levelPositions` in `server/src/analytics.js`, places in `server/src/places.js`). A `positions` panel
+shows one place: a `level`, a `zone` (what the game passes to `setZone`), or with neither the whole game, every
+position and death in the window with or without a level, for a game whose players move about with no level set (a
+hub, a lobby: no pretend level needed, so none shows up in the levels funnel). Samples and deaths are in a place when
+they carry its level or zone (§2 Zones). It answers
 
 ```json
 { "level": "cave", "axis": "xy", "bounds": { "min": [0, 0], "max": [300, 20] }, "bin": 2,
+  "background": { "url": "/v1/maps/image?service=dead-reckoning&id=3f2a9c0d1e4b5a67", "id": "3f2a9c0d1e4b5a67",
+                  "size": [1024, 68], "uploaded": false },
   "deaths": [[101, 13, 6], [137, 13, 4]], "total": 10, "truncated": false,
   "path": { "bin": 5, "cells": [[2.5, 7.5, 2], …], "samples": 60, "truncated": false } }
 ```
+
+with `zone` in place of `level` for a zone, and neither for the whole game.
 
 `a` and `b` are world coordinates on the level's plane: `axis` is the captured map's, else `xz` (top-down) once
 positions or deaths leave z = 0, else `xy` (a side view; side-scrollers send z ≈ 0), as the Heatmaps view decides.
@@ -681,9 +727,31 @@ Bins are squares `bin` world units wide on a fixed grid, so a bin stays where it
 `show` `path` or `both`, `path` counts position samples (`setPosition`) the same way on a coarser grid (about 64
 bins across, never finer than `bin`); `show: "path"` leaves `deaths`, `total` and `truncated` out. `bounds` are the
 captured map's, else the data's rounded out to whole bins. Nothing in the answer names a session, player, version
-or time. A level with nothing to place says why (`{empty: true, why}`). Stores that keep summaries read the paths
-apart, for the levels a board draws paths of (Glitchless Cloud: the last 31 days of a longer range, which
+or time. A place with nothing to place says why (`{empty: true, why}`). Stores that keep summaries read the paths
+apart, for the places a board draws paths of (Glitchless Cloud: the last 31 days of a longer range, which
 `meta.note` says).
+
+The place's map (§2 `map`) gives the plane and bounds, and `background` says where its picture is: never the picture
+itself, so a game polling the panel downloads nothing more, and the dashboard fetches it once. A place draws its own
+map: an uploaded background first, else the capture from the range's version, else the newest capture. A zone
+without one draws the whole game's the same way (a zone is an area of the same world, so its positions land where
+they are on the whole picture); a level never borrows, having a world of its own. No map, no `background`.
+
+**Backgrounds** ([`server/src/maps.js`](../server/src/maps.js)). A picture of a level, a zone or the whole game and the
+world bounds its edges stand for, with no SDK code, so a hub's paths read as the room they crossed. An agent uploads
+one with `glitchless_set_dashboard`'s `background` (a file on its computer with the local MCP server, or base64; it
+can be sent alone), and `glitchless_dashboard` lists a game's backgrounds, or with:
+
+| Route | Scope | |
+| --- | --- | --- |
+| `PUT /v1/maps?service=&level= or &zone=&axis=&min=a,b&max=a,b` | `dashboard` | the body is the picture: PNG, JPEG or WebP, checked by its content (never SVG or HTML: 415), at most 256 KB (413: a JPEG about 1024 pixels across fits) and 4096 × 4096 pixels. Neither `level` nor `zone`: the whole game; both: 400. `axis` `xz` (default, seen from above) or `xy` (a side view); `min` and `max` the smallest and largest world coordinates the picture covers on the axis's two coordinates (§2 `map`). Kept as a `map` event with `uploaded: true` and no version, until it is replaced or deleted or the game's data is cleared (no retention). → 201 `{service, map}` |
+| `GET /v1/maps?service=` | `read` | `{service, maps:[{level?, zone?, axis, bounds, size, uploaded, version, ts, id, url}]}`: every map, captured and uploaded, without its picture |
+| `DELETE /v1/maps?service=&level= or &zone=` | `dashboard` | removes the place's uploaded background (its capture, if any, shows again); 404 without one |
+| `GET /v1/maps/image?service=&id=` | `read` | one picture at its address: `id` is the first 16 hex characters of the SHA-256 of its data URL, so a new picture gets a new address. Its own type, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cache-Control: private, max-age=31536000, immutable`. A share link's reader too, for the places its board's positions panels draw (§3c) |
+
+A server whose store has no `putMap` answers `PUT` and `DELETE` with 501. On Glitchless Cloud the routes take a
+secret key (`gl_sk_…`, or a workspace key, `gl_ws_…`, with the dashboard scope) or a member's session (Owners,
+Admins and Developers), like the dashboard's.
 
 **Tables** (`server/src/tables.js`). Every other panel adds events up; a `table` lists them, so a game can read each
 one: Starlift's Daily Launch, each run under its day with the best score first.
@@ -754,6 +822,21 @@ currency count in it; amounts in another currency are never added in: a money pa
 them in `mismatch: [{currency, sum, events}]`. A sum of events that never carry a currency (coins, seconds) is a
 plain number. The dashboard shows money with the currency's symbol and two decimals.
 
+**Robux** (`server/src/robux.js`). `ROBUX` is a currency like any other here: a board in Robux names the dollars it
+left out, and one in dollars names the Robux; they are never added together or converted. The dashboard shows Robux
+whole after Roblox's hexagon, `⬡ 2,400` (`⬡ 24.5k`, on an axis `⬡ 2.4k`), the same as the Roblox integration's
+revenue panels (§3k). No font the dashboard loads has ⬡ (U+2B21), so the system's draws it (Apple Symbols, Segoe UI
+Symbol, Noto Sans Symbols 2, DejaVu Sans). Robux become money only through Roblox's Developer Exchange, so a `stat`,
+`series` or `breakdown` with `sum` can opt in to an estimate in US dollars with `devex: true`. In Robux, the answer adds
+`devex: {estimate: true, robux, usd, rate, adult_rate, minimum, since, source}` (the shape of §3k's `devex`, plus
+where the rate comes from): `usd` is the stat's number (and `total_usd` the total under a per-player one), a
+breakdown's total with `usd` on each row, a series' whole window. In any other currency `devex` is null. The rate is
+`DEVEX` in `server/src/revenue.js`, DevEx's standard rate ($0.0038 an Earned Robux since 5 September 2025, read from
+Roblox's Developer Exchange page on 7 November 2026); the dashboard says "Estimated $1.06 through DevEx" and, behind
+the info icon, that it is the price players paid at that rate and that what the experience can cash out is less
+(Roblox keeps a share of each sale, and pays out from 30,000 Earned Robux on request). The CSV names the column
+"Estimated USD at the DevEx rate". A shared board hides it with the sums.
+
 **Sandbox purchases.** A purchase made where the store charges nothing (TestFlight, a build from Xcode, a store's
 test account) says `sandbox: true`. The engine SDKs add it themselves on iOS, to an event named `purchase` or one that
 carries a `currency`, when the install is a TestFlight or development one (§4b); a game adds it on any platform from
@@ -772,8 +855,17 @@ that isn't named `purchase` and carries no currency (a game's own sandbox mode) 
 ```
 
 A stat with `sum` answers `{value, currency, mismatch?, events}`, or with `per` `{value, currency, total, base}`; a
-conversion `{value, unit: '%', count, base}`. A sum split `by` an attribute takes the event by name only (the cells
-add up one attribute value at a time); by `$version` or `$level` it can be filtered (`purchase:store=ios`). Over
+conversion `{value, unit: '%', count, base}`. The cells add up one attribute value at a time, so a sum of a filtered
+event `by` `$version`, `$level` or `$zone` (`purchase:store=ios`) reads them, exact over any range, and one split by
+another attribute (`"event": "purchase:result=done", "by": "item", "sum": "amount"`: completed purchases by item, with
+cancelled ones still carrying their amount) reads the occurrences (`server/src/occurrence-sums.js`, below), and says
+`from: "occurrences"`: each currency kept apart as the cells keep them, sandbox purchases counted and left out
+(`sandbox`), only occurrences inside the window, and rows `{value, count, sessions, sum}` (a value bought only in
+another currency has a row with no sum). That is exact over 31 days or less while no session sent more than 16 of the
+event (`estimated` counts those that did); over more than 31 days it reads each day's sample of 256 sessions, exact
+for a game with fewer sessions a day than that and an estimate past it (`meta.approximate` names
+`event_occurrences`). A counter (`count()`) keeps its words but not its numbers in its occurrence, so it adds nothing
+there. Over
 more than 31 days, players who sent an event are counted per name (a conversion per `$players` of `purchase=gems`
 says so instead of answering); `$sessions` always answers. In a version comparison a sum is per session unless its
 `per` says per player.
@@ -809,7 +901,9 @@ events, rows, more, small, line, list?, estimated?, from}`: each row `{value, ra
 value to read each row against; `line` is `expect` (a percentage the game intends or publishes, such as a gacha's
 odds: 0.6 for 0.6%) or else `overall`, and `off` marks a row whose interval misses it. Rows with fewer than `min`
 events (default 30 for a rate, 10 for an average) are left out and counted in `small: {rows, events, min}`. `order` is
-`rate` (the default; `avg` too: the highest first), `count` or `value` (the values' own order: heat 0, 1, 2). A `series`
+`rate` (the default; `avg` too: the highest first), `count` or `value` (the values' own order: heat 0, 1, 2); a
+breakdown by count or sum takes `count` (its default for counts; a sum's is the largest first) or `value` too
+(streak days 1 to 7, then 10 after 9), and refuses `rate` and `avg`. A `series`
 gives the rate or average per bucket, overall or one line per value `by` `$version`, `$level` or an attribute. Rates
 keep one decimal, two under 10% (`0.41`). `from` says where the numbers came from: `cells`, `sessions` or
 `occurrences`. The dashboard draws each row as a bar with its interval as a whisker and the line across the rows; a row
@@ -826,6 +920,28 @@ The cells sketch each event's numeric attributes at 5% relative accuracy (below)
 or for a filtered event, the values come from the occurrences: exact (not sketched). In words: "Half of matches end
 within 14 minutes, and 1 in 10 lasts over 26". The answer's histogram is `histogram`, not `bins`, so it never takes
 the place of the panel's own `bins` (how many bars).
+
+**Time to a first event, and never** (`server/src/firsts.js`). A `stat` with `first` (an event, filtered as any
+panel's) is the seconds from a session's start (its first event) to its first event that matches, the median over
+the sessions that sent one, or `quantile` (1 to 99): `{value, unit: 's', quantile, sessions, unknown?}`. A session
+keeps its earliest 16 occurrences of each event, so its first is always kept; for a filtered event, a session whose 16
+have no match though its counts say it sent one has no time and counts in `unknown`. A `stat` with `never` (an event)
+is the share of the window's ended sessions that never sent it: `{value, unit: '%', count, base}` (`base` the ended
+sessions, `count` those that never sent it). A session has ended once it sent `session_end`, or nothing for 30 minutes
+before the window's end (a closed tab, a crash); sessions still playing are left out. So a game measures how long
+players stay in its lobby before first leaving it, and how many never leave, from the one event it sends when they
+leave, instead of timing it by hand:
+
+```json
+[ { "type": "stat", "first": "hall_left", "title": "Time in the hall" },
+  { "type": "stat", "never": "hall_left", "title": "Never left the hall" },
+  { "type": "stat", "first": "purchase:result=done", "quantile": 90, "title": "First purchase, 9 in 10 within" } ]
+```
+
+Events a Roblox server sends for a player (`Glitchless.track(player, …)` in a server Script, §5e) go into that
+player's session, so they count from the player joining the server. Both read the sessions, so over 31 days or less;
+a longer range says so. A versions panel compares them version by version, and the events query answers both with
+`first=1` (§3). In words: "Half of the players leave the hall within 42 s; 15% of sessions end without leaving it".
 
 **Lists.** A breakdown by a list attribute has a row per element: `{value, count, sessions, share}`, the events whose
 list has it and `share`, their percentage of the event's events; the rows add up to more than the events, and the
@@ -912,7 +1028,10 @@ who opens one sees what everyone sees. A share reader may only:
 - `GET /v1/query/board`, for its page, and
 - `GET /v1/query/services`, which lists its service only, with `max_range_days` at most 30 and `window`: a
   pinned link's `{from, to}`, or null, and
-- `GET /v1/brand` and its images (§3b), for its service; their answers are kept for a minute, as its board's are.
+- `GET /v1/brand` and its images (§3b), for its service; their answers are kept for a minute, as its board's are, and
+- `GET /v1/maps/image` (§3b Backgrounds) for a background its board's positions panels draw (the place each panel
+  shows, and for a zone the whole game's); any other is 404. A background is the game's own picture of its world, never anything about its players,
+  so a shared positions panel keeps its `background` and the shared page draws it, as the members' board does.
 
 Everything else is 403: other pages, services and queries, `/v1/live`, `/v1/dashboard` and `/v1/data`. The
 request's parameters are replaced by `service`, `page`, `from` and `to` (a pinned link's own, whatever the request
@@ -938,8 +1057,9 @@ says (so only share links'), keyed on the query string, cookies and the share, k
 - errors panels: anything but the message, kind, counts, last seen and levels (no stacks)
 - findings: their evidence; an error finding's summary becomes its counts, with no breadcrumbs, code location
   or suggested fix, and a bug-report finding's becomes its counts, without the players' notes
-- positions panels: anything but `level`, `axis`, `bounds`, `bin`, `deaths`, `total`, `truncated` and `path`
-  (`bin`, `cells`, `samples`, `truncated`): counts per bin, never a session, player, version or time
+- positions panels: anything but `level`, `zone`, `axis`, `bounds`, `bin`, `deaths`, `total`, `truncated`,
+  `background` and `path` (`bin`, `cells`, `samples`, `truncated`): counts per bin, never a session, player, version
+  or time; the background by its address
 - table panels: session IDs. A `$session` column numbers sessions 1, 2, 3 in the order the table first shows them
   (the column says `numbered: true`), so a reader still sees which rows came from one session but never which session
   it was; the board writes `#1`. Groups keep only `value`, `events`, `sessions`, `min`, `avg`, `max`, `rows` and
@@ -1165,12 +1285,33 @@ resolved, and came back in 1.1.3." The new_error rule skips a resolved issue and
 when it came back, once per version it is back in (key `error-<fingerprint>-back-<version>`): "An error you resolved in
 1.1.2 came back in Starlift 1.1.3: 12 players hit it in the last day." A self-hosted server keeps none.
 
+**Testers** ([`server/src/testers.js`](../server/src/testers.js), Glitchless Cloud): players and sessions a game's team
+marked as its own play (the developer's playtest, a friend trying a build), kept beside the known findings with the alert
+settings. An SDK can say a build is the team's from the start (`sessionType: "tester"`), but a jam game's first player is
+its developer, long before anyone sets that, and a game of a few players reads its developer's ten minutes as a tenth of
+its play. Each entry is `{player} or {session}, note, by, at, sessions`:
+
+- `player` is a player ID (install or full mode, §4b): every session it sent, before the mark and after.
+- `session` is one session's ID: for a game in anonymous mode (no player IDs), or one playtest of a player who also plays.
+- `note` (optional) says who, in 200 characters at most; `by` and `at` are who marked it and when; `sessions` how many
+  sessions it had over the last 30 days then. Marking one that sent no session in the last 30 days of any of the game's
+  services is refused (404 `PLAYER_NOT_FOUND` or `SESSION_NOT_FOUND`), so a typo marks nobody.
+
+A game keeps 200 entries at most. Every query reads them before anything else (`analytics.js` `sessionContext`): a
+session they match that its SDK sent as `user` reads as `tester`, with `marked_tester: true` in its summary; a bot's or a
+store test phone's stays `synthetic`. So the queries' `type=user` (and `type=tester`), findings (players' production
+sessions, §3a), share links, the alert rules, the weekly summary and the version kept when an error is resolved all read
+them as testers, retroactively, and unmarking one reads its sessions as sent again; changing them answers afresh at once.
+Day rollups (ranges past 31 days of every session type) count session types as they were sent. A self-hosted server
+keeps none.
+
 **Glitchless Cloud.** Settings → Alerts, per game: a webhook URL, email to every active member of the workspace,
 which rules, the weekly summary, an env, and the known findings (each saved at once, its finding suggested from the
 last 7 days' findings). Changing them, and the test button, needs the exporters' permission
 (Owner, Admin). An agent reads them with `glitchless_alerts` and changes all but the webhook URL with
-`glitchless_set_alerts`, `glitchless_mark_known` and `glitchless_resolve_error` (§3g's `/v1/agent/games/{game}/alerts`,
-`…/known` and `…/resolved`). The Errors page resolves an issue (Resolve, with an optional note and whether any version
+`glitchless_set_alerts`, `glitchless_mark_known` (a finding, or with `player` or `session` a tester) and
+`glitchless_resolve_error` (§3g's
+`/v1/agent/games/{game}/alerts`, `…/known`, `…/resolved` and `…/testers`). The Errors page resolves an issue (Resolve, with an optional note and whether any version
 brings it back), lists the resolved ones apart, and unresolves them; changing any of these answers afresh at once.
 Discord (`discord.com/api/webhooks/…`) and Slack (`hooks.slack.com/services/…`) URLs are recognised; any other public
 https URL takes the format chosen (Slack's suits Mattermost, Discord's Guilded). The URL is sealed like an exporter's secrets (KMS, encryption context `{project}`) and never returned: the dashboard
@@ -1466,6 +1607,7 @@ says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this ser
 | `GET /v1/agent/games` | Every game: id, name, client token, the services reporting to it | read |
 | `POST /v1/agent/games` | `{ name }` → the new game, its client token and the intake URL; `{ demo: true }` → the demo game (below) | manage |
 | `GET /v1/agent/games/{game}` | One game | read |
+| `PATCH /v1/agent/games/{game}` | `{ name }` (60 characters at most) renames it, as Settings does (`glitchless_create_game`'s `rename`): its client token, service and data stay; later calls find it by the new name → `{ game: {id, name} }` | manage |
 | `GET /v1/agent/games/{game}/shares` | Its share links | manage |
 | `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, from?, to? }` → the link (shown once) | manage |
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
@@ -1473,6 +1615,8 @@ says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this ser
 | `POST /v1/agent/games/{game}/known` | `{ finding, note, until?, until_worse? }` marks one known; `{ finding, clear: true }` clears it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_mark_known`) | manage |
 | `GET /v1/agent/games/{game}/resolved` | Its resolved errors (§3e) | read |
 | `POST /v1/agent/games/{game}/resolved` | `{ fingerprint, note?, any_version?, all_sessions? }` resolves one (404 `ERROR_NOT_FOUND` when no issue has it over the last 90 days); `{ fingerprint, clear: true }` unresolves it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_resolve_error`) | manage |
+| `GET /v1/agent/games/{game}/testers` | The players and sessions marked as its team's own play (§3e Testers) | read |
+| `POST /v1/agent/games/{game}/testers` | `{ player, note? }` or `{ session, note? }` marks one, so its sessions read as `tester` in every query (404 `PLAYER_NOT_FOUND` or `SESSION_NOT_FOUND` when it sent no session in the last 30 days); `{ player or session, clear: true }` unmarks it. Owner or Admin, as for the alert settings (`glitchless_mark_known`'s `player` or `session`) | manage |
 | `GET /v1/agent/games/{game}/alerts` | Its alert settings, the last 20 sends and the defaults, as `GET /api/projects/{p}/alerts` answers them (§3e; `glitchless_alerts`) | read |
 | `POST /v1/agent/games/{game}/alerts` | Any of `{ rules: {rule: bool}, weekly, email, env, webhook: null }`, as the dashboard's `PATCH` takes them; `webhook: null` removes the webhook. A webhook URL is refused (`WEBHOOK_IN_SETTINGS`): the person pastes it in Settings → Alerts, so it never passes through a chat. Owner or Admin (`glitchless_set_alerts`) | manage |
 | `POST /v1/agent/games/{game}/alerts/test` | A test alert to every channel → `{ sent }`, 10 an hour (`glitchless_set_alerts` with `test: true`) | manage |
@@ -1996,7 +2140,8 @@ September 2025; $0.0054 for some purchases by age-verified US adults in eligible
 Earned Robux and Roblox approves the request. The revenue panel says what the window's Robux would be worth at the
 standard rate and that it takes that; `DEVEX` in `server/src/revenue.js` holds the rates. A game's own purchase events
 in Robux (`currency: "ROBUX"`) sit next to Roblox's count; when they add up to more, the line says why: Roblox counts
-what the experience earned, after its share of each sale.
+what the experience earned, after its share of each sale. Robux read the same here and on the game's boards (§3b
+Robux): `⬡ 2,400`, and "Estimated $9.12 through DevEx" under the revenue.
 
 **Retention where people look for it.** The game's **Roblox page** (`roblox`, on the automatic dashboard and added to
 saved ones on the first connection, after the first page): the Roblox rating (`store_score`), daily active users, new
@@ -2109,8 +2254,8 @@ answers may change). The public stats' shapes were read from games.roblox.com.
 - **Hours played**: the frame windows' `duration_s` added up: the time the game was on screen drawing frames. A
   window over a minute counts at most its `frames` at its `ft_max`: an older SDK held a window open through time in
   the background (Godot SDK 0.2.0: 3 frames over 7.5 hours), and a frozen frame is its own longest frame. The
-  cells keep it per minute, env, version and level, so it is exact over any range (daily rollups included), overall
-  and by version and level; by a session split it comes from each session's own frame windows (31 days or less). A
+  cells keep it per minute, env, version, level and zone, so it is exact over any range (daily rollups included), overall
+  and by version, level and zone (time in each zone, §3b Zones); by a session split it comes from each session's own frame windows (31 days or less). A
   game in the background has none, so an idle game's time away isn't play: it sends that as a number
   (`track('return', { away_s })`). Rates per hour played divide by it (§3b).
 - **Rate interval**: a rate's 95% Wilson interval, so 54% of 40 matches isn't read as surely as 54% of 4,000. A row is
@@ -2408,7 +2553,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.6.4"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 6.3 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.7.0"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
@@ -2423,6 +2568,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 | `load` | `ts` is the first frame; `ttff_ms` counts from Unity's start (`Time.realtimeSinceStartup` at the end of the first frame); `first_launch` from `persistentDataPath/glitchless/launched` (PlayerPrefs `glitchless.launched` in WebGL) |
 | `error` | `kind`: `exception` (uncaught; unhandled, like `js`), `log_error`, `assert`, `manual`, `warning`; adds `recent` (last 6 game events). Not sent: the SDK's own warnings (they start with `[glitchless]`) |
 | `death` | `x`, `y`, `z` only when positions are on |
+| `map` | `Glitchless.CaptureMap(level, Rect area, MapOptions?)` (a side view, `xy`) or `CaptureMap(level, Bounds area, …)` (from above, `xz`; `MapOptions.Axis` turns either). An orthographic camera of its own (`Runtime/MapCapture.cs`) renders exactly the area into a render texture, with the main camera's background, layers and sorting: a render request (`RenderPipeline.StandardRequest`) in a scriptable pipeline (URP, HDRP), `Camera.Render()` in the built-in one. One step a frame, each frame left out of the frame stats: the render; the read-back the next frame (drawn by then, so it doesn't wait on the GPU, in WebGL too); each JPEG quality (75, 60, 45, 30, then two thirds the size) until the data URL is at most 60,000 characters. Bounds with a height has the camera look down from its top (a roof above is left out) or along z from its front. `size` is the browser SDK's (640 wide, 1024 when over 4 times wider than tall, the height following, at least 48), except that a level taller than wide gets that height with its width following, and the longer side is at most 1024. `Exclude` hides those renderers (`forceRenderingOff`) and world-space canvases for the one render. A level's map is taken once a launch and sent once per level and version from a device (`persistentDataPath/glitchless/maps`, WebGL PlayerPrefs `glitchless.maps`: the version, then a level a line; not kept in the Editor, where each Play takes it again). None without positions on, from a server, while off, from an unsampled session, or with no graphics device (`-nographics`). Before `Init` it waits with the other events, and the first flush drops it if it isn't wanted |
 | `session_end` | `reason`: `background` (phones), `pagehide` (WebGL: the page went away), `quit`, `measure`; a server's `max_duration` and `match_end` (below). A WebGL build can't wait for a send (one thread): when its page is hidden (`visibilitychange`) it sends what is waiting with `navigator.sendBeacon` and the session goes on, as the browser SDK does; on `pagehide` the session ends and the last batch goes by beacon too, and a page back from the back-forward cache (`pageshow`) goes on as a phone back from the background. A batch on its way goes again by beacon under its `batch_id`; one the browser turns down (about 64 KB at a time) waits for the next send |
 | `custom` | also `screen_change`, `app_resume`. `Track()` adds `sandbox: true` to a purchase in a TestFlight or development install (§3b) |
 | `bug_report` | `BugReports` in the options adds the F8 form: IMGUI (no EventSystem), with `Time.timeScale` 0 and the Input System's actions off while open, and `OnOpen`/`OnClose`. `Glitchless.ReportBug(note)` sends one from the game's own UI. `screenshot` is `ScreenCapture` at the end of the frame with its longer side at most 960 px, none with `-nographics` |
@@ -2497,7 +2643,7 @@ On the server, findings for a `gamemaker` game name GameMaker's fixes (texture g
 
 ## 5e. Roblox SDK
 
-`roblox/` (Luau; a ModuleScript `Glitchless` for ReplicatedStorage, by Rojo, Wally `glitchless-gg/glitchless` or the `.rbxm` model) sends the same envelope with `"sdk": "glitchless-roblox/0.1.0"` and the same event types. See its [README](../roblox/README.md) and [PRIVACY.md](../roblox/PRIVACY.md). Positions are studs, y up. Only server scripts can make HTTP requests on Roblox, so the server does all the sending: it keeps a session for each player in the experience (PlayerAdded to PlayerRemoving) and one of its own, fed by the game's calls from server scripts (the player first: `Glitchless.track(player, name, attrs)`; the server's own under `Glitchless.server`) and by what each player's client measured and sent it over the module's RemoteEvent (`GlitchlessRemote`). `init` on the server puts the shipped `GlitchlessClient` LocalScript in StarterPlayerScripts, so clients need no code. Differences:
+`roblox/` (Luau; a ModuleScript `Glitchless` for ReplicatedStorage, by Rojo, Wally `glitchless-gg/glitchless` or the `.rbxm` model) sends the same envelope with `"sdk": "glitchless-roblox/0.2.0"` and the same event types. See its [README](../roblox/README.md) and [PRIVACY.md](../roblox/PRIVACY.md). Positions are studs, y up. Only server scripts can make HTTP requests on Roblox, so the server does all the sending: it keeps a session for each player in the experience (PlayerAdded to PlayerRemoving) and one of its own, fed by the game's calls from server scripts (the player first: `Glitchless.track(player, name, attrs)`; the server's own under `Glitchless.server`) and by what each player's client measured and sent it over the module's RemoteEvent (`GlitchlessRemote`). `init` on the server puts the shipped `GlitchlessClient` LocalScript in StarterPlayerScripts, so clients need no code. Differences:
 
 | | |
 | --- | --- |
@@ -2518,8 +2664,11 @@ On the server, findings for a `gamemaker` game name GameMaker's fixes (texture g
 | off switch | `Glitchless.setEnabled(player, on)` on the server, `Glitchless.setEnabled(on)` from a LocalScript, `isEnabled`, and `optIn` (§4d). The choice is saved in the game's own DataStore (`Glitchless`, key `u<UserId>`, `on` or `off`; `saveChoice = false` leaves it to the game) and read when the player joins, before anything of theirs is sent; a DataStore that can't be read (Studio without API access) leaves the default, with one warning in Studio |
 | sending | one session's batch a request (`Content-Type: application/json`, `HttpService:RequestAsync` with `Compress = Gzip` over 1 KB). Every session is cut on its own turn: every `flushInterval` (15 s), staggered, or longer when `requestsPerMinute` (100 by default, of the 500 a Roblox server may make) has to go round more sessions; a token bucket holds every request to it, `GET /v1/health` and retries included. 2xx clears a batch; 401 or 403 stops all sending; 400, 413 and 422 drop the batch; 429 waits `Retry-After`; anything else retries at 2, 4, 8… s up to 5 minutes, 12 tries. At most 300 batches wait. HTTP requests turned off (the experience's Allow HTTP Requests) is said once and retried every 30 s. `BindToClose` ends every session and sends everything, waiting up to 25 s. The server's session waits for `/v1/health` to list `server_mode` (asked at start, every 15 s until it answers) and is dropped by one that doesn't; counters are left out for one that doesn't list `counts` |
 | `server_window` | every 5 s: a tick is one of the server's frames, a Heartbeat to the next (Roblox runs a server at 60 frames a second and gives scripts no tick time of their own). `tick` (2% sketch), `tick_p50`, `tick_p95`, `tick_max`, `tick_hz` (reached), `late` (frames over `budget_ms`, 25: one and a half of the 1/60 s slot, as a frame window's slow frames), `tick_source: "heartbeat"`, `heartbeat_ms` and `physics_ms` (averages of Stats.HeartbeatTime and PhysicsStepTime: the frame's work), `players`, `players_max`, `mem_mb` (`Stats:GetTotalMemoryUsageMb()`), `in_kbps`, `out_kbps` (Stats' data rates ×8), `rtt_p95` (the players' `GetNetworkPing()` as the server sees them), `ctx` (`Glitchless.setContext` on the server); `cpu_pct` and `net_objects` null |
+| before it starts | a call made before Glitchless has started (a LocalScript before `GlitchlessClient`, a server Script before the one that calls `init`) or, on the server, for a player it hasn't seen join yet (the game's `PlayerAdded` handler ran first) waits in the module and is made when it starts, or when it sees the player (dropped if the player leaves first). At most 128 wait; only the latest `setZone`, properties (merged by key, a cleared one as removed), `setContext` gauges, `setEnabled` and group of each kind for each session are kept. A client's are made with the `ts` they were made at; a server's at the start (every session starts then). The client is still started only by its own script, since on Roblox the connections a call makes belong to the calling script, and a LocalScript that is destroyed (at a respawn) would take the measuring with it. `isEnabled()` before the start says whether a call made now is kept: `true` unless `setEnabled(false)` was called. `setEnabled` before the client finds its RemoteEvent is told to the server once it does, and a choice the player makes while the saved one is still being read stands |
+| extras | each off until `init` turns it on, counts and booleans only. `prompts`: `ProximityPromptService.PromptTriggered` on the server counts `prompt` in the player's counters (`counts`), by `action` (`ActionText`) and `object` (`ObjectText`), each through `Words.name` and scrubbed of players' names before it is counted, so they group. `seats`: `Humanoid.Seated` (active, a `Seat` or `VehicleSeat`) counts `sit` by `seat` (the seat's name, or its parent's when it is still `Seat` or `VehicleSeat`) and `vehicle` (boolean). `joinedWithFriend`: the session property `joined_with_friend`, `Player.FollowUserId ~= 0`, set at the join (and again on a session started by `setEnabled(true)`); the ID is never sent. `friendsInServer`: `ctx.friends_in_server` on each frame window as the server takes it, the player's friends in the server then, not counting players who turned Glitchless off; each pair is asked once (`Player:IsFriendsWith`, which yields: one pair at a time in one thread, never in a frame, twice more after a failure, then left out) and forgotten when either leaves. Findings don't read a `friend` gauge as a leak |
+| `map` | `Glitchless.captureMap(options)` on the server draws the place top-down (a Roblox script can't render or read a screen in a server: CaptureService captures only a player's own screen, when they choose, and reading pixels needs EditableImage, which needs an ID-verified owner): one `workspace:Raycast` straight down per pixel over the bounds' x and z (`axis: "xz"`, row 0 at the smallest z, column 0 at the smallest x), from `top` (default the bounds' highest part) to their lowest; through parts at least 0.95 transparent; players' characters, the camera and `exclude` left out. A pixel is its part's `Color` (terrain: `GetMaterialColor`, water `WaterColor`) × (0.6 + 0.4 × the slope's light) × (0.85 + 0.15 × its height), and × 0.6 where a neighbour is 1.5 studs or more lower; a miss is `rgb(24, 27, 33)`. `bounds` from `area` (every part in it) or the place's parts at least partly visible, or given. `size` 256 px on the longer side (16–512). A baseline JPEG in Luau (`Jpeg.luau`: no chroma subsampling, quality 80, then 65, 50, 35, then half the size) within 60,000 characters as a data URL. Sent as `{type: "map", ts, level?, zone?, axis, bounds: {min: [x, z], max: [x, z]}, size: [w, h], image}` (`level` or `zone` from the options, neither for the whole place) in a batch of its own: the game's `service`, no `role`, a fresh `session_id` used for nothing else, no `session_start`. At most 3 ms of a frame. Before `init` on a running server it waits up to a minute; on a client it warns; in Studio's Edit mode it draws and prints without sending. `Glitchless.mapBounds(area?, exclude?)` returns and prints (`[glitchless] map bounds: {JSON}`) the bounds, `top` and `bottom` anywhere, for an agent taking the picture with Studio's MCP `screen_capture` |
 
-Not in 0.1.0: install and full mode, bug reports (a Roblox script can't capture the screen, and a typed note would be a player's free text off the platform), `netSample`/`disconnect` for other netcode, and measure runs. `roblox/test` runs the core under Lune with a fake of Roblox's services (`lune run roblox/test/run`), checks the sketch, fingerprints, property rules and match hashes against the JavaScript SDK (`js-fixture.json`), and plays a race over real HTTP against `server/src/local.js` (`node --test roblox/test/e2e.mjs`, whose batches are `server/test/fixtures/sdk-payloads/roblox.json`). `node --test roblox/test/studio.mjs` plays the demo place in real Roblox Studio through Studio's MCP server (`execute_luau`, `start_stop_play`, `get_console_output`), against a local server of its own.
+Not in 0.2.0: install and full mode, bug reports (a Roblox script can't capture the screen, and a typed note would be a player's free text off the platform), `netSample`/`disconnect` for other netcode, and measure runs. `roblox/test` runs the core under Lune with a fake of Roblox's services (`lune run roblox/test/run`), checks the sketch, fingerprints, property rules and match hashes against the JavaScript SDK (`js-fixture.json`), and plays a race over real HTTP against `server/src/local.js` (`node --test roblox/test/e2e.mjs`, whose batches are `server/test/fixtures/sdk-payloads/roblox.json`). `node --test roblox/test/studio.mjs` plays the demo place in real Roblox Studio through Studio's MCP server (`execute_luau`, `start_stop_play`, `get_console_output`), against a local server of its own.
 
 On Glitchless Cloud a Roblox game can also be connected to Roblox itself (Settings → Integrations → Roblox, §3k): its
 players now and thumbs up, and with an Open Cloud key Roblox's daily active and new users, Robux, D1/D7/D30 retention
@@ -2566,7 +2715,11 @@ releases an ID whose events it failed to store, so the game's retry is taken. A 
 Optionally `getBrand(projectId, service)`, `putBrand(…, brand)`, `getBrandImage(…, kind)` and `putBrandImage(…, kind,
 bytes)` keep a game's branding (§3b): what it is in one item and each image's bytes in one of their own (the file
 store: `brands.json` and `brand/<project>/<service>.<kind>`; Glitchless Cloud: items under `P#<project>#BRAND`, an
-image at most 300 KB of a 400 KB item). A store without them answers `/v1/brand` with 501.
+image at most 300 KB of a 400 KB item). A store without them answers `/v1/brand` with 501. Optionally `putMap(projectId,
+map)` and `deleteMap(projectId, service, key)` keep uploaded backgrounds (§3b), next to the `map` events `put` keeps:
+every map is stored under the sort key `places.js` `mapSortKey` gives (`<level>#<version>` as before, a zone's
+`~zone~<zone>#<version>`, the whole game's `~all~#<version>`, an upload `#~upload` with no TTL), so a capture and an
+upload of one place never replace each other. A store without them answers `PUT /v1/maps` with 501.
 
 **Jam rooms** (§3j) have stores of their own, not the events store's: `rooms.store` keeps rooms (`claimRoom`, `getRoom`,
 `putRoom`, `deleteRoom`, `rooms(owner)`, `allRooms`), their games (`games`, `getGame`, `putGame(code, game, {create})`,
@@ -2637,7 +2790,7 @@ days (`meta.resolution: 'day'`):
   an attribute. Splits by a session split or a Steam fact say they need 31 days or less.
 - **Exact while small, then estimated** (named in `meta.approximate`): distinct players (overall, per level, per
   event, per error) and error sessions (HyperLogLog past 128–512 per day), returning players and retention past
-  31 days (a uniform sample of 512 players a day), medians of per-session values and levels' clear times (3 then 2
+  31 days (a uniform sample of 512 players a day), medians of per-session values, levels' clear times and time in each zone (3 then 2
   significant digits past 512 values), ordered funnels (256 sessions a day, weighted), GPUs past the top 30 a day, difficulty hotspots past
   100 deaths per level a day.
 - **Over the last 31 days of the range** (`meta.note`): heatmaps and session-type filters, which read raw rows;

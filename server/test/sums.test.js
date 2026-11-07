@@ -162,9 +162,9 @@ test('sums, per and currency are checked before they are saved', () => {
   bad({ type: 'stat', metric: 'players', sum: 'amount' }, /sum goes with event/);
   bad({ type: 'stat', event: 'purchase', sum: 'amount', per: 'paywall' }, /\$players, \$sessions or \$hours/);
   bad({ type: 'stat', event: 'purchase', sum: '$version' }, /numeric attribute/);
-  bad({ type: 'breakdown', event: 'purchase=gems_500', sum: 'amount', by: 'store' }, /event is a name only/);
-  bad({ type: 'series', event: 'purchase:store=ios', sum: 'amount', by: 'item' }, /event is a name only/);
-  // By $version a filtered event is fine: the cells are per version already.
+  // A filtered event by an attribute reads the occurrences (board-money.test.js); by $version the cells are per version.
+  assert.equal(validateBoard({ panels: [{ type: 'breakdown', event: 'purchase=gems_500', sum: 'amount', by: 'store' }] }).panels[0].event, 'purchase=gems_500');
+  assert.equal(validateBoard({ panels: [{ type: 'series', event: 'purchase:store=ios', sum: 'amount', by: 'item' }] }).panels[0].by, 'item');
   assert.deepStrictEqual(validateBoard({ panels: [{ type: 'series', event: 'purchase:store=ios', sum: 'amount', by: '$version' }] }).panels[0], { type: 'series', event: 'purchase:store=ios', sum: 'amount', by: '$version' });
   assert.deepStrictEqual(validateBoard({ panels: [{ type: 'stat', event: 'purchase', per: '$players' }] }).panels[0], { type: 'stat', event: 'purchase', per: '$players' });
   const pages = [{ title: 'Money', panels: [{ type: 'stat', event: 'purchase', sum: 'amount' }] }];

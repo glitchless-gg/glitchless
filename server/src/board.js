@@ -11,8 +11,8 @@
 //
 //   { currency?, pages: [{ id, title, icon, panels: [...] } | { id, title, icon, view, options }] }
 //
-// `currency` (ISO 4217, e.g. "USD") is the game's one currency for money (sums.js): without it, the one most
-// of its events were sent in.
+// `currency` (ISO 4217, e.g. "USD", or "ROBUX": robux.js) is the game's one currency for money (sums.js): without
+// it, the one most of its events were sent in.
 //
 // Board panels each take { type, title, note, size: 's' | 'm' | 'l' }:
 //
@@ -25,7 +25,9 @@
 //               kills per hour played), and so does a deaths or errors metric's. `rate` is the share of the
 //               event's events where a flag holds (won) or a word is sent (result=win), with its interval;
 //               `avg` a numeric attribute's mean; `of` with `quantile` (1 to 99) one percentile of a numeric
-//               attribute (distributions.js: the median match)
+//               attribute (distributions.js: the median match). `first` (an event) is the median seconds from a
+//               session's start to its first such event (or `quantile`), and `never` (an event) the share of ended
+//               sessions that never sent it (firsts.js: time in the lobby, and the sessions that never left it)
 //   series      an event's count over time, optionally split `by` an attribute (top `limit` values); with
 //               `sum`, the attribute's sum over time; with `rate` or `avg`, the rate or average in each bucket
 //   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
@@ -38,14 +40,20 @@
 //               each have their rate with its interval (or average) next to the overall one, leaving out rows
 //               of fewer than `min` events, in `order`, and marking rows whose interval misses `expect` (a
 //               percentage the game intends) or the overall rate. By a list attribute (a deck) each element is
-//               a row: the events whose list has it
+//               a row: the events whose list has it. A breakdown by $zone without an event is the time played in
+//               each zone: its share of play time, the sessions that went there and their median time in it (zones.js).
+//               A count or sum breakdown takes `order` count or value too
+//               (streak days 1 to 7 in order). A sum of a filtered event by an attribute (completed purchases by
+//               item) reads the occurrences (occurrence-sums.js). A money panel with `devex` adds an estimate in
+//               US dollars of its Robux at Roblox's DevEx rate (robux.js)
 //   distribution how a numeric attribute (`of`) of an event spreads: percentiles and a histogram of `bins`
 //               bars, optionally split `by` an attribute, $version, $level or a session split (top `limit`
 //               rows); `unit` is shown after its numbers
 //   funnel      sessions that went through `steps` in order ("paywall,buy=tapped,buy=done")
 //   levels      starts, completions, fails and deaths per level, with clear times; `label` is what the game
 //               calls a level
-//   frame_time  frame-time p50 and p95 over time against the frame budgets of players' screens
+//   frame_time  frame-time p50 and p95 over time against the frame budgets of players' screens; `by` $zone or $level,
+//               p50, p95 and hitches per minute played in each (zones.js)
 //   errors      the top error issues (`limit`)
 //   deaths      deaths by level and cause
 //   events      every custom event the game sends, with counts and sessions
@@ -63,9 +71,10 @@
 //   versions    this page's stat panels, version by version; `by` a Steam fact ($steam_branch, $steam_build)
 //               compares Steam branches or builds instead: the beta against public
 //   live        events as they arrive, optionally only `events` (names or types)
-//   positions   where players died on one `level`, and with `show` 'path' or 'both' where they went, as
-//               counts per `bin` world units (analytics.js levelPositions); counts only, so a game can read
-//               it through a share link and draw its own dead (`show` defaults to 'deaths')
+//   positions   where players died on one `level`, in one `zone`, or (neither) anywhere in the game, such as a hub
+//               with no levels (places.js), and with `show` 'path' or 'both' where they went, as counts per `bin`
+//               world units (analytics.js levelPositions), over the place's background picture; counts only, so a
+//               game can read it through a share link and draw its own dead (`show` defaults to 'deaths')
 //   table       one `event`'s occurrences one by one (tables.js): `columns` (its attributes, $time, $version,
 //               $platform, $level, $session), grouped `group_by` an attribute with each group's events, sessions and
 //               the lowest, average and highest `of`, in `sort` order ("-score"), `limit` rows a group
@@ -89,6 +98,11 @@ import { hoursPlayed, hoursBy, hoursSeries, perHour, hoursRound, measureOf, meas
 import { distributionOf, percentileOf, BINS, ROWS } from './distributions.js';
 import { eachOccurrence, occurrenceGroups, bucketOf } from './occurrences.js';
 import { tablePanel, validTablePanel, forShareTable, TABLE_BUILTINS } from './tables.js';
+import { placeOf, placeKey, placeWords } from './places.js';
+import { zoneBreakdown, zoneStat, frameRows, ZONE_METRICS, FRAME_BY } from './zones.js';
+import { boardCurrency, devexEstimate, devexUsd, ROBUX } from './robux.js';
+import { occurrenceSums } from './occurrence-sums.js';
+import { firstStat, neverStat, firstQuery } from './firsts.js';
 
 export const PANEL_TYPES = ['stat', 'series', 'breakdown', 'distribution', 'funnel', 'levels', 'frame_time', 'errors', 'deaths', 'events', 'findings', 'sessions', 'versions', 'live', 'reports', 'retention', 'positions', 'net', 'servers', 'table'];
 export const SIZES = { s: 3, m: 6, l: 12 };
@@ -114,6 +128,8 @@ export const STATS = {
   ...NET_METRICS,
   // The game's servers (A9, servers.js), from its companion service.
   ...SERVER_METRICS,
+  // One zone's share of play time, and the median time in it of the sessions that went there (zones.js; `zone`).
+  ...ZONE_METRICS,
 };
 // Stats a metric can give per hour played (`per` $hours).
 const PER_HOUR_METRICS = new Set(['deaths', 'errors']);
@@ -154,6 +170,8 @@ const STEAM_BY = STEAM_DIMENSIONS.map((d) => `$${d}`);
 const PER = { $players: 'player', $sessions: 'session' };
 const HOURS = '$hours';
 const ORDERS = ['rate', 'avg', 'count', 'value'];
+// The orders of a breakdown by count or sum (no rate or average to order by).
+const COUNT_ORDERS = ['count', 'value'];
 // What a positions panel draws: where players died, where they went, or both.
 const SHOW = ['deaths', 'path', 'both'];
 
@@ -171,8 +189,9 @@ export function validateDashboard(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BoardError('a dashboard is an object: { pages: [...] }');
   if (!Array.isArray(input.pages) || !input.pages.length) throw new BoardError('pages must be a non-empty array');
   if (input.pages.length > MAX_PAGES) throw new BoardError(`at most ${MAX_PAGES} pages`);
-  const currency = input.currency == null ? null : String(input.currency).trim().toUpperCase();
-  if (currency != null && !/^[A-Z]{3}$/.test(currency)) throw new BoardError('currency is a three-letter ISO 4217 code, e.g. "USD"');
+  // An ISO 4217 code, or ROBUX for a Roblox game's Robux (robux.js).
+  const currency = input.currency == null ? null : boardCurrency(input.currency);
+  if (input.currency != null && !currency) throw new BoardError('currency is a three-letter ISO 4217 code, e.g. "USD", or "ROBUX" for Robux');
   const ids = new Set();
   const pages = input.pages.map((p, i) => {
     const at = `pages[${i}]`;
@@ -308,12 +327,25 @@ function validatePanel(p, at) {
     if (!v || v.startsWith('$')) throw new BoardError(`${at}.sum is a numeric attribute of the event to add up, e.g. "amount"`);
     out.sum = v;
   };
+  // An estimate in US dollars of the Robux a sum adds up, at Roblox's DevEx rate (robux.js): opt in, always labelled one.
+  const devex = () => {
+    if (p.devex == null || p.devex === false) return;
+    if (p.devex !== true) throw new BoardError(`${at}.devex is true or left out`);
+    if (!out.sum) throw new BoardError(`${at}.devex goes with sum: an estimate in US dollars of the Robux it adds up`);
+    out.devex = true;
+  };
   // A rate (a flag, "won", or a word outcome, "result=win") or an average (a numeric attribute) instead of a count;
   // never with sum. Rates and averages by an attribute take every event of the name (the cells count them together),
   // and a filtered event reads the sessions' occurrences (rates.js).
   const measure = ({ rows = false } = {}) => {
     if (p.rate == null && p.avg == null) {
-      for (const k of ['min', 'expect', 'order']) if (p[k] != null) throw new BoardError(`${at}.${k} goes with rate or avg`);
+      for (const k of ['min', 'expect']) if (p[k] != null) throw new BoardError(`${at}.${k} goes with rate or avg`);
+      // A breakdown by count or sum takes its rows in count order (the most first) or the values' own (day 1, 2, 3).
+      if (p.order != null) {
+        if (!rows) throw new BoardError(`${at}.order goes with a breakdown's rows`);
+        if (!COUNT_ORDERS.includes(p.order)) throw new BoardError(`${at}.order on a breakdown by ${out.sum ? 'sum' : 'count'} is ${COUNT_ORDERS.join(' or ')}${ORDERS.includes(p.order) ? ` (${p.order} goes with ${p.order})` : ''}`);
+        out.order = p.order;
+      }
       return;
     }
     if (p.rate != null && p.avg != null) throw new BoardError(`${at}: rate or avg, not both`);
@@ -353,20 +385,32 @@ function validatePanel(p, at) {
     if (STEAM_BY.includes(p.by) && out.sum) throw new BoardError(`${at}: a sum can't be split by ${p.by}`);
     out.per = HOURS;
   };
-  // Sums are kept per name and one attribute value, so a sum split by an attribute takes the event by name.
+  // Sums are kept per name and one attribute value; a filtered event split by another attribute reads the occurrences.
   const sumSplit = () => {
     if ((out.rate || out.avg) && STEAM_BY.includes(out.by) && p.type === 'series') throw new BoardError(`${at}: a series can't be split by ${out.by}`);
-    if (out.sum && out.by && !out.by.startsWith('$') && parseFunnel(out.event)[0].value != null) throw new BoardError(`${at}: with sum and by an attribute, event is a name only ("purchase", not "purchase=done")`);
     if (out.sum && STEAM_BY.includes(out.by)) throw new BoardError(`${at}: a sum can't be split by ${out.by} (sums are kept per minute, not per session); count instead, or filter the board (?${out.by.slice(1)}=…)`);
     if (out.sum && isSessionBy(out.by)) throw new BoardError(`${at}: a sum can't be split by ${out.by} (sums are kept per minute, not per session); count instead${out.by === '$platform' ? ', or for revenue by store a store_revenue panel with measure by_store' : ''}`);
   };
   switch (p.type) {
     case 'stat':
-      if ((p.metric == null) === (p.event == null)) throw new BoardError(`${at} (stat) needs either metric (${Object.keys(STATS).join(', ')}) or event`);
-      if (p.metric != null) {
+      if (['metric', 'event', 'first', 'never'].filter((k) => p[k] != null).length !== 1) throw new BoardError(`${at} (stat) needs one of metric (${Object.keys(STATS).join(', ')}), first (an event: the seconds from a session's start to its first one), never (an event: the share of ended sessions that never sent it) or event`);
+      // Time to a first event, and sessions that never sent it (firsts.js): an event of their own, nothing to add up.
+      if (p.first != null || p.never != null) {
+        const k = p.first != null ? 'first' : 'never';
+        for (const x of ['sum', 'rate', 'avg', 'of', 'per', 'devex']) if (p[x] != null) throw new BoardError(`${at}.${x} goes with event, not ${k}`);
+        out[k] = event(k);
+        if (p.quantile != null) {
+          if (k !== 'first') throw new BoardError(`${at}.quantile goes with first or of`);
+          if (!Number.isInteger(p.quantile) || p.quantile < 1 || p.quantile > 99) throw new BoardError(`${at}.quantile is the percentile of the seconds to "${out.first}" to show, 1 to 99 (50, the default: the median)`);
+          out.quantile = p.quantile;
+        }
+      } else if (p.metric != null) {
         if (!STATS[p.metric]) throw new BoardError(`${at}.metric must be one of ${Object.keys(STATS).join(', ')}`);
-        for (const k of ['sum', 'rate', 'avg', 'of']) if (p[k] != null) throw new BoardError(`${at}.${k} goes with event, not metric`);
+        for (const k of ['sum', 'rate', 'avg', 'of', 'devex']) if (p[k] != null) throw new BoardError(`${at}.${k} goes with event, not metric`);
         out.metric = p.metric;
+        // A zone's time (zones.js) names the zone: setZone's name.
+        if (ZONE_METRICS[p.metric]) out.zone = need('zone');
+        else if (p.zone != null) throw new BoardError(`${at}.zone goes with metric ${Object.keys(ZONE_METRICS).join(' or ')}`);
         if (p.per != null) {
           if (p.per !== HOURS || !PER_HOUR_METRICS.has(p.metric)) throw new BoardError(`${at}.per with a metric is ${HOURS}, for ${[...PER_HOUR_METRICS].join(' or ')} per hour played`);
           out.per = HOURS;
@@ -374,6 +418,7 @@ function validatePanel(p, at) {
       } else {
         out.event = event('event');
         sum();
+        devex();
         measure();
         if (p.of != null || p.quantile != null) {
           const v = text(p.of, 64);
@@ -395,6 +440,7 @@ function validatePanel(p, at) {
     case 'series':
       eventOrSessions();
       sum();
+      devex();
       measure();
       by(false);
       sumSplit();
@@ -402,8 +448,16 @@ function validatePanel(p, at) {
       limit(8);
       break;
     case 'breakdown':
+      // Without an event, a breakdown by $zone is the time played in each zone (zones.js).
+      if (p.event == null && p.by === '$zone') {
+        for (const k of ['sum', 'rate', 'avg', 'per', 'min', 'expect', 'order']) if (p[k] != null) throw new BoardError(`${at}.${k} goes with event; without one, a breakdown by $zone is the time played in each zone`);
+        out.by = '$zone';
+        limit(20);
+        break;
+      }
       eventOrSessions();
       sum();
+      devex();
       measure({ rows: true });
       by(true, { steam: true });
       sumSplit();
@@ -446,6 +500,14 @@ function validatePanel(p, at) {
       break;
     case 'deaths':
       attempts();
+      break;
+    // Frame time over time, or `by` $zone or $level: p50, p95 and hitches per minute played in each (zones.js).
+    case 'frame_time':
+      if (p.by != null) {
+        if (!FRAME_BY.includes(p.by)) throw new BoardError(`${at}.by is ${FRAME_BY.join(' or ')}: frame time in each zone or level`);
+        out.by = p.by;
+      }
+      limit(20);
       break;
     // The game's servers (A9): tick time against its budget (by players connected, $level or $version), players, or
     // crashes, from its companion service.
@@ -492,8 +554,10 @@ function validatePanel(p, at) {
       out.event = event('event');
       Object.assign(out, validTablePanel(p, at, BoardError));
       break;
+    // One level, one zone, or the whole game (places.js).
     case 'positions':
-      out.level = need('level');
+      if (p.level != null && p.zone != null) throw new BoardError(`${at} shows one level or one zone (or, with neither, the whole game), not both`);
+      for (const k of ['level', 'zone']) if (p[k] != null) out[k] = need(k);
       if (p.show != null) {
         if (!SHOW.includes(p.show)) throw new BoardError(`${at}.show must be one of ${SHOW.join(', ')}`);
         out.show = p.show;
@@ -508,10 +572,12 @@ function validatePanel(p, at) {
   return out;
 }
 
-// The levels a board's positions panels draw paths for: a store without raw events reads those levels'
+// The places (places.js) a board's positions panels draw paths for: a store without raw events reads those places'
 // position samples apart (q.positions, app.js).
-export function pathLevels(page) {
-  return [...new Set((page?.panels || []).filter((p) => p.type === 'positions' && (p.show === 'path' || p.show === 'both')).map((p) => p.level))];
+export function pathPlaces(page) {
+  const places = new Map();
+  for (const p of page?.panels || []) if (p.type === 'positions' && (p.show === 'path' || p.show === 'both')) places.set(placeKey(placeOf(p)), placeOf(p));
+  return [...places.values()];
 }
 
 // A board for a game that has none: the numbers every game has, then the game's own events, then the
@@ -533,6 +599,8 @@ export function autoBoard(ctx) {
     panels.push(attr ? { type: 'breakdown', event: e.name, by: attr.key, title: `${e.name} by ${attr.key}`, size: 'm' } : { type: 'series', event: e.name, title: e.name, size: 'm' });
   }
   if (levelFunnel(ctx).length) panels.push({ type: 'levels', size: 'l' });
+  // A game that names its zones (setZone): where play time goes.
+  if (cellsOf(ctx).some(({ c }) => c.zone != null && c.sec)) panels.push({ type: 'breakdown', by: '$zone', size: 'm' });
   if (k.frame_p95 != null) panels.push({ type: 'frame_time', size: 'm' });
   if (k.errors) panels.push({ type: 'errors', size: 'm' });
   if (k.deaths) panels.push({ type: 'deaths', size: 'm' });
@@ -560,7 +628,7 @@ const SHARED_AS_IS = new Set(['stat', 'series', 'breakdown', 'distribution', 'fu
 const SHARED_SESSION = ['version', 'env', 'session_type', 'start', 'duration_s', 'levels', 'completed', 'deaths', 'errors', 'hitches', 'p50', 'p95', 'crashed', 'rage_quit', 'ended', 'ttff_ms', 'events'];
 const SHARED_ISSUE = ['fingerprint', 'message', 'kind', 'count', 'sessions', 'last_seen', 'levels'];
 const SHARED_FINDING = ['id', 'severity', 'category', 'title', 'summary', 'suggestion', 'impact', 'impact_pct'];
-const SHARED_POSITIONS = ['level', 'axis', 'bounds', 'bin', 'deaths', 'total', 'truncated'];
+const SHARED_POSITIONS = ['level', 'zone', 'axis', 'bounds', 'bin', 'deaths', 'total', 'truncated', 'background'];
 const SHARED_PATH = ['bin', 'cells', 'samples', 'truncated'];
 function forShare(p, ctx, board, maps, currency, shared) {
   const redacted = p.type === 'sessions' || p.type === 'errors' || p.type === 'findings' || p.type === 'positions' || p.type === 'table';
@@ -642,15 +710,19 @@ function panelData(ctx, p, board, maps, currency) {
         const hours = hoursPlayed(ctx);
         return hours ? { value: hoursRound(hours), unit: 'h' } : { empty: true, why: 'No frames in this window: hours played are the time the game was on screen.' };
       }
+      if (ZONE_METRICS[p.metric]) return zoneStat(ctx, p);
       if (p.metric && p.per === HOURS) return perHourStat(ctx, kpis(ctx)[p.metric] ?? 0);
       if (p.metric) {
         const value = kpis(ctx)[p.metric];
         return value == null ? { empty: true, why: `No ${STATS[p.metric].label.toLowerCase()} in this window.` } : { value, unit: STATS[p.metric].unit || null };
       }
+      // Time to a first event, and the ended sessions that never sent it (firsts.js).
+      if (p.first) return firstStat(ctx, parseFunnel(p.first)[0], p.quantile ?? 50, p.first);
+      if (p.never) return neverStat(ctx, parseFunnel(p.never)[0]);
       const [f] = parseFunnel(p.event);
       if (p.rate || p.avg) return measureStat(ctx, p, f);
       if (p.of) return quantileStat(ctx, p, f);
-      if (p.sum) return sumStat(ctx, p, f, currency);
+      if (p.sum) return withDevex(p, sumStat(ctx, p, f, currency));
       if (PER[p.per]) return conversion(ctx, p, f);
       if (p.per === HOURS) return hasEvent(ctx, f.name) ? perHourStat(ctx, eventCount(ctx, f)) : missing(f.name);
       const count = eventCount(ctx, f);
@@ -665,7 +737,7 @@ function panelData(ctx, p, board, maps, currency) {
       const [f] = parseFunnel(p.event);
       if (!hasEvent(ctx, f.name)) return missing(f.name);
       if (p.rate || p.avg) return measureSeries(ctx, p, f);
-      if (p.sum) return hourly(ctx, p, sumSeries(ctx, p, f, currency));
+      if (p.sum) return withDevex(p, hourly(ctx, p, sumSeries(ctx, p, f, currency)));
       if (!p.by) return hourly(ctx, p, { ts: ctx.buckets, series: [{ label: p.event, values: eventCount(ctx, f, 'series') }] });
       let values;
       if (p.by.startsWith('$')) values = f.all ? occurrenceRows(ctx, f, p.by) : eventsBy(ctx, f, p.by.slice(1));
@@ -681,13 +753,14 @@ function panelData(ctx, p, board, maps, currency) {
       return hourly(ctx, p, { ts: ctx.buckets, series });
     }
     case 'breakdown': {
+      if (!p.event && p.by === '$zone') return zoneBreakdown(ctx, p);
       if (p.rate || p.avg) return measureBreakdown(ctx, p);
       if (isSessionBy(p.by)) return perHourRows(ctx, p, sessionBreakdown(ctx, p));
       const [f] = parseFunnel(p.event);
-      if (p.sum) return perHourRows(ctx, p, sumBreakdown(ctx, p, f, currency));
+      if (p.sum) return withDevex(p, perHourRows(ctx, p, sumBreakdown(ctx, p, f, currency)));
       if (STEAM_BY.includes(p.by) && ctx.daily) return overDays(p.by);
       if (p.by.startsWith('$')) {
-        const rows = (f.all ? occurrenceRows(ctx, f, p.by) : eventsBy(ctx, f, p.by.slice(1))).map(({ series, ...r }) => r);
+        const rows = inOrder((f.all ? occurrenceRows(ctx, f, p.by) : eventsBy(ctx, f, p.by.slice(1))).map(({ series, ...r }) => r), p.order);
         if (!rows.length) return missing(f.name);
         const top = rows.slice(0, p.limit || 10);
         return perHourRows(ctx, p, { total: rows.reduce((s, r) => s + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null });
@@ -698,13 +771,13 @@ function panelData(ctx, p, board, maps, currency) {
       if (!a) return { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
       // A filtered event split by another attribute reads the occurrences (the cells count one attribute at a time).
       if (f.value != null) {
-        const rows = occurrenceRows(ctx, f, p.by).map(({ series, ...r }) => r);
+        const rows = inOrder(occurrenceRows(ctx, f, p.by).map(({ series, ...r }) => r), p.order);
         if (!rows.length) return missing(p.event);
         const top = rows.slice(0, p.limit || 10);
         const total = eventCount(ctx, f);
         return perHourRows(ctx, p, { total, sessions: null, rows: a.list ? top.map((r) => ({ ...r, share: round((r.count / (total || 1)) * 100, 1) })) : top, more: rows.length - top.length, avg: null, ...(a.list ? { list: true } : {}), from: 'occurrences' });
       }
-      const top = a.values.slice(0, p.limit || 10);
+      const top = inOrder(a.values, p.order).slice(0, p.limit || 10);
       // A list (a deck): each element's row counts the events whose list has it, so rows add up to more than the events.
       if (a.list) return perHourRows(ctx, p, { total: e.count, sessions: e.sessions, rows: top.map((r) => ({ ...r, share: round((r.count / (e.count || 1)) * 100, 1) })), more: a.values.length - top.length, avg: null, list: true });
       return perHourRows(ctx, p, { total: e.count, sessions: e.sessions, rows: top, more: a.values.length - top.length, avg: a.avg });
@@ -726,6 +799,10 @@ function panelData(ctx, p, board, maps, currency) {
     case 'frame_time': {
       const o = cachedOverview(ctx);
       if (o.kpis.frame_p95 == null) return { empty: true, why: 'No frame times in this window.' };
+      if (p.by) {
+        const r = frameRows(ctx, p);
+        return r.empty ? r : { ...r, budget_ms: o.kpis.frame_budget_ms, kpis: { p50: o.kpis.frame_p50, p95: o.kpis.frame_p95, avg_fps: o.kpis.avg_fps, pct_over_budget: o.kpis.pct_frames_over_budget } };
+      }
       return { ts: o.series.ts, p50: o.series.p50, p95: o.series.p95, budget_ms: o.kpis.frame_budget_ms, budgets: o.kpis.frame_budgets, kpis: { p50: o.kpis.frame_p50, p95: o.kpis.frame_p95, avg_fps: o.kpis.avg_fps, pct_over_budget: o.kpis.pct_frames_over_budget } };
     }
     case 'errors': {
@@ -774,7 +851,7 @@ function panelData(ctx, p, board, maps, currency) {
       return list.length ? { reports: list, total: ctx.reports.length } : { empty: true, why: 'No bug reports in this window.' };
     }
     case 'positions':
-      return levelPositions(ctx, p.level, maps, { show: p.show || 'deaths', bin: p.bin ?? null });
+      return levelPositions(ctx, placeOf(p), maps, { show: p.show || 'deaths', bin: p.bin ?? null });
     case 'table':
       return tablePanel(ctx, p);
     case 'net':
@@ -857,7 +934,7 @@ function sessionRows(ctx, p) {
 function sessionBreakdown(ctx, p) {
   const { rows, players, f, split, why } = sessionRows(ctx, p);
   if (why) return { empty: true, why };
-  const top = rows.slice(0, p.limit || 10).map(({ series, spread, ...r }) => r);
+  const top = inOrder(rows, p.order, f ? 'count' : 'sessions').slice(0, p.limit || 10).map(({ series, spread, ...r }) => r);
   return { total: rows.reduce((s, r) => s + r.count, 0), sessions: f ? rows.reduce((s, r) => s + r.sessions, 0) : null, rows: top, more: rows.length - top.length, avg: null, counts: f ? 'events' : 'sessions', split, ...(players != null ? { players } : {}) };
 }
 
@@ -878,9 +955,29 @@ function sessionSeries(ctx, p) {
 
 // Money panels say their currency, name the events sent in another one rather than adding them up, and count the
 // sandbox purchases they leave out (TestFlight and other test installs: rollups.js isSandboxPurchase).
+// Sums read from the occurrences (a filtered event by an attribute) count their own sandbox purchases, and say so.
 function money(s, ctx, f) {
-  const sandbox = f.value == null && (s.currency || f.name === 'purchase') ? sandboxPurchases(ctx, f.name) : 0;
-  return { currency: s.currency, ...(s.mismatch.length ? { mismatch: s.mismatch } : {}), ...(sandbox ? { sandbox } : {}) };
+  const sandbox = s.sandbox ?? (f.value == null && (s.currency || f.name === 'purchase') ? sandboxPurchases(ctx, f.name) : 0);
+  return { currency: s.currency, ...(s.mismatch.length ? { mismatch: s.mismatch } : {}), ...(sandbox ? { sandbox } : {}), ...(s.from ? { from: s.from, ...(s.estimated ? { estimated: s.estimated } : {}) } : {}) };
+}
+
+// The sums of a panel's event: from the cells, or from the occurrences when the cells can't cross its filter with its
+// split (a filtered event by an attribute, a list that contains all of several values: occurrence-sums.js).
+function sumsOf(ctx, f, sum, split, currency) {
+  const crossed = !!f.all || (f.value != null && split != null && !['$version', '$level', '$zone'].includes(split));
+  return crossed ? { ...occurrenceSums(ctx, f, sum, split, { currency }), from: 'occurrences' } : sumsBy(ctx, f, sum, { split, currency });
+}
+
+// A Robux panel that opts in (`devex`) adds what its Robux would be worth at DevEx's standard rate (robux.js), always
+// as an estimate: the number's (a stat), the total's and each row's (a breakdown), the window's (a series). Any other
+// currency gets none (`devex: null`, in place of the spec's `true`).
+function withDevex(p, answer) {
+  if (!p.devex || answer.empty) return answer;
+  if (answer.currency !== ROBUX) return { ...answer, devex: null };
+  const perHour = p.per === HOURS;
+  if (answer.rows) return { ...answer, rows: answer.rows.map((r) => ({ ...r, usd: devexUsd(perHour ? r.per_hour : r.sum) })), devex: devexEstimate(answer.total) };
+  if (answer.series) return { ...answer, devex: devexEstimate(perHour ? null : round(answer.series.reduce((t, x) => t + x.values.reduce((a, v) => a + (v || 0), 0), 0), 2)) };
+  return { ...answer, devex: { ...devexEstimate(answer.value), ...(answer.total != null ? { total_usd: devexUsd(answer.total) } : {}) } };
 }
 
 function sandboxPurchases(ctx, name) {
@@ -895,7 +992,7 @@ function sumStat(ctx, p, f, currency) {
   const e = eventIndex(ctx).get(f.name);
   if (!e) return missing(f.name);
   if (!e.attrs.has(p.sum)) return noSum(p);
-  const s = sumsBy(ctx, f, p.sum, { currency });
+  const s = sumsOf(ctx, f, p.sum, null, currency);
   const g = s.groups.get('');
   const total = g?.sum ?? 0;
   if (!p.per) return { value: total, unit: null, ...money(s, ctx, f), events: g?.events ?? 0 };
@@ -919,7 +1016,7 @@ function conversion(ctx, p, f) {
 
 function sumSeries(ctx, p, f, currency) {
   if (!eventIndex(ctx).get(f.name).attrs.has(p.sum)) return noSum(p);
-  const s = sumsBy(ctx, f, p.sum, { split: p.by || null, currency });
+  const s = sumsOf(ctx, f, p.sum, p.by || null, currency);
   if (!p.by) return { ts: ctx.buckets, series: [{ label: p.sum, values: s.groups.get('')?.series ?? ctx.buckets.map(() => 0) }], ...money(s, ctx, f) };
   const values = [...s.groups.values()].sort((a, b) => b.sum - a.sum || (a.value < b.value ? -1 : 1));
   if (!values.length) return p.by.startsWith('$') ? noSum(p) : { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
@@ -930,26 +1027,29 @@ function sumSeries(ctx, p, f, currency) {
   return { ts: ctx.buckets, series, ...money(s, ctx, f) };
 }
 
-// A breakdown by sum: each value's sum, with its count and sessions as the breakdown by count has them.
+// A breakdown by sum: each value's sum, with its count and sessions as the breakdown by count has them. A filtered event
+// by an attribute reads all three from the occurrences (completed purchases by item: occurrence-sums.js).
 function sumBreakdown(ctx, p, f, currency) {
   const e = eventIndex(ctx).get(f.name);
   if (!e) return missing(f.name);
   if (!e.attrs.has(p.sum)) return noSum(p);
-  let counts;
-  if (p.by.startsWith('$')) counts = eventsBy(ctx, f, p.by.slice(1));
+  if (!p.by.startsWith('$') && !e.attrs.has(p.by)) return { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
+  const s = sumsOf(ctx, f, p.sum, p.by, currency);
+  let rows;
+  if (s.from) rows = [...s.groups.values()].map(({ value, count, sessions, sum }) => ({ value, count, sessions, sum }));
   else {
-    const a = customEvents(ctx, { name: f.name, sdk: true }).events[0].attrs.find((x) => x.key === p.by);
-    if (!a) return { empty: true, why: `"${f.name}" events have no "${p.by}" attribute in this window.` };
-    counts = a.values;
+    const counts = p.by.startsWith('$') ? eventsBy(ctx, f, p.by.slice(1)) : customEvents(ctx, { name: f.name, sdk: true }).events[0].attrs.find((x) => x.key === p.by).values;
+    const byValue = new Map(counts.map((x) => [String(x.value), x]));
+    rows = [...new Set([...s.groups.keys(), ...byValue.keys()])].map((value) => ({ value, count: byValue.get(value)?.count ?? 0, sessions: byValue.get(value)?.sessions ?? null, sum: s.groups.get(value)?.sum ?? 0 }));
   }
-  const s = sumsBy(ctx, f, p.sum, { split: p.by, currency });
-  const byValue = new Map(counts.map((x) => [String(x.value), x]));
-  const rows = [...new Set([...s.groups.keys(), ...byValue.keys()])]
-    .map((value) => ({ value, count: byValue.get(value)?.count ?? 0, sessions: byValue.get(value)?.sessions ?? null, sum: s.groups.get(value)?.sum ?? 0 }))
-    .sort((a, b) => b.sum - a.sum || b.count - a.count || (a.value < b.value ? -1 : 1));
-  if (!rows.length) return missing(f.name);
+  rows = inOrder(
+    rows.sort((a, b) => b.sum - a.sum || b.count - a.count || (a.value < b.value ? -1 : 1)),
+    p.order,
+  );
+  if (!rows.length) return missing(p.event);
   const top = rows.slice(0, p.limit || 10);
-  return { total: round(rows.reduce((t, r) => t + r.sum, 0), 2), count: rows.reduce((t, r) => t + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null, ...money(s, ctx, f) };
+  const list = s.from && !p.by.startsWith('$') && !!e.attrs.get(p.by)?.list;
+  return { total: round(rows.reduce((t, r) => t + r.sum, 0), 2), count: rows.reduce((t, r) => t + r.count, 0), sessions: null, rows: top, more: rows.length - top.length, avg: null, ...(list ? { list: true } : {}), ...money(s, ctx, f) };
 }
 
 // ── the events query's measures ──
@@ -957,8 +1057,18 @@ function sumBreakdown(ctx, p, f, currency) {
 // What the events query adds for one event (`name`): with `rate` or `avg`, the rate or average (`measure`), per value
 // `by` an attribute, $version, $level or a session split, as a stat or breakdown panel answers it; with `of`, the
 // distribution of that numeric attribute (`distribution`), optionally `by`, as a distribution panel answers it. A
-// filter is written as a panel's event is ("match_end:mode=ranked"). BoardError says what to fix.
+// filter is written as a panel's event is ("match_end:mode=ranked"). With `first`, the seconds from sessions' start to
+// their first such event and the share of ended sessions that never sent it (`first`). BoardError says what to fix.
 export function eventQuery(ctx, params) {
+  // With `first`: when sessions first sent the event, and the ended sessions that never did (firsts.js).
+  const which = params.get('event') || params.get('name');
+  if (!params.get('first') || !which) return measureQuery(ctx, params);
+  const [f] = parseFunnel(which);
+  if (!f?.name) throw new BoardError('first needs name: the event');
+  return { ...measureQuery(ctx, params), first: firstQuery(ctx, f, which) };
+}
+
+function measureQuery(ctx, params) {
   const name = params.get('name');
   const [rate, avg, of, by] = ['rate', 'avg', 'of', 'by'].map((k) => params.get(k) || null);
   if (!rate && !avg && !of) return {};
@@ -1131,6 +1241,15 @@ function naturalCompare(a, b) {
   return String(a).localeCompare(String(b), undefined, { numeric: true });
 }
 
+// A count or sum breakdown's rows in its `order`: count (the most first: `key`, the events or the sessions counted) or
+// value (the values' own order: day 1, 2, 3 … 10). Without one they keep theirs (the most first, the largest sum first,
+// GPU tiers high to low). Sorted before the top rows are taken, as a rate breakdown's are.
+function inOrder(rows, order, key = 'count') {
+  if (order === 'value') return [...rows].sort((a, b) => naturalCompare(a.value, b.value));
+  if (order === 'count') return [...rows].sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0) || naturalCompare(a.value, b.value));
+  return rows;
+}
+
 // A sum stat with the dashboard's currency, for versions() (sums.js versionStat).
 function withCurrency(p, currency) {
   return p.sum && currency ? { ...p, currency } : p;
@@ -1141,7 +1260,7 @@ export function dashboardStats(dashboard) {
   const seen = new Set();
   const out = [];
   for (const p of dashboard.pages.flatMap((page) => page.panels || [])) {
-    const key = p.type === 'stat' && !LIVE_STATS.has(p.metric) && JSON.stringify([p.metric, p.event, p.sum, p.per, p.rate, p.avg, p.of, p.quantile]);
+    const key = p.type === 'stat' && !LIVE_STATS.has(p.metric) && JSON.stringify([p.metric, p.zone, p.event, p.sum, p.per, p.rate, p.avg, p.of, p.quantile, p.first, p.never]);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     out.push(withCurrency(p, dashboard.currency));
@@ -1157,11 +1276,14 @@ export function versionColumns(stats, ctx = null) {
     title: s.title || defaultTitle(s),
     unit: columnUnit(s),
     metric: s.metric,
+    ...(s.zone ? { zone: s.zone } : {}),
     event: s.event,
     per: s.per,
     ...(s.rate ? { rate: s.rate } : {}),
     ...(s.avg ? { avg: s.avg } : {}),
     ...(s.of ? { of: s.of, quantile: s.quantile } : {}),
+    ...(s.first ? { first: s.first, quantile: s.quantile ?? 50 } : {}),
+    ...(s.never ? { never: s.never } : {}),
     ...(s.sum ? { sum: s.sum, currency: ctx ? sumsBy(ctx, parseFunnel(s.event)[0], s.sum, { currency: s.currency }).currency : null } : {}),
   }));
 }
@@ -1171,7 +1293,8 @@ const PER_SESSION = new Set(['errors', 'deaths']);
 // unit, else per session (counts and sums: versions with more players compare).
 function columnUnit(s) {
   if (s.per === HOURS) return 'per hour';
-  if (s.rate) return '%';
+  if (s.first) return 's';
+  if (s.rate || s.never) return '%';
   if (s.avg) return null;
   if (s.of) return s.unit ?? null;
   if (s.metric) return PER_SESSION.has(s.metric) ? 'per session' : STATS[s.metric].unit || null;
@@ -1190,10 +1313,13 @@ function defaultTitle(p) {
   const by = (k) => (SESSION_SPLITS[k?.slice(1)] ? SESSION_SPLITS[k.slice(1)].label : k?.startsWith('$') ? k.slice(1) : k);
   switch (p.type) {
     case 'stat':
+      if (p.zone) return p.metric === 'zone_time_pct' ? `Play time in ${p.zone}` : `Median time in ${p.zone}`;
       if (p.metric) return `${STATS[p.metric].label}${p.per === HOURS ? ' per hour played' : ''}`;
       if (p.rate) return `${p.event}: ${p.rate}`;
       if (p.avg) return `Average ${p.avg} of ${p.event}`;
       if (p.of) return `${p.event} ${p.of}, ${p.quantile === 50 ? 'median' : `p${p.quantile}`}`;
+      if (p.first) return `Time to first ${p.first}${(p.quantile ?? 50) === 50 ? '' : `, p${p.quantile}`}`;
+      if (p.never) return `Sessions that never sent ${p.never}`;
       if (p.per === HOURS) return `${p.event}${p.sum ? ` ${p.sum}` : ''} per hour played`;
       if (p.sum) return `${p.event} ${p.sum}${p.per ? ` per ${PER[p.per]}` : ''}`;
       if (PER[p.per]) return p.per === '$players' ? `Players who sent ${p.event}` : `Sessions that sent ${p.event}`;
@@ -1201,6 +1327,7 @@ function defaultTitle(p) {
     case 'series':
       return `${p.event ?? 'Sessions'}${p.sum ? ` ${p.sum}` : ''}${p.rate ? ` ${p.rate}` : ''}${p.avg ? ` average ${p.avg}` : ''}${p.per === HOURS ? ' per hour played' : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'breakdown':
+      if (!p.event && p.by === '$zone') return 'Time by zone';
       return `${p.event ?? 'Sessions'}${p.sum ? ` ${p.sum}` : ''}${p.rate ? ` ${p.rate}` : ''}${p.avg ? ` average ${p.avg}` : ''}${p.per === HOURS ? ' per hour played' : ''} by ${STEAM_BY.includes(p.by) ? STEAM_LABELS[p.by.slice(1)] : by(p.by)}`;
     case 'distribution':
       return `${p.event} ${p.of}${p.by ? ` by ${STEAM_BY.includes(p.by) ? STEAM_LABELS[p.by.slice(1)] : by(p.by)}` : ''}`;
@@ -1212,7 +1339,7 @@ function defaultTitle(p) {
     case 'levels':
       return `${p.label ? `${p.label}s` : 'Levels'}${p.level ? ` (${p.level})` : ''}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'frame_time':
-      return 'Frame time';
+      return `Frame time${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'errors':
       return 'Top errors';
     case 'deaths':
@@ -1234,7 +1361,7 @@ function defaultTitle(p) {
     case 'table':
       return `${p.event}${p.group_by ? ` by ${TABLE_BUILTINS[p.group_by]?.toLowerCase() ?? p.group_by}` : ''}`;
     case 'positions':
-      return `${p.show === 'path' ? 'Where players went' : p.show === 'both' ? 'Where players went and died' : 'Where players died'} on ${p.level}`;
+      return `${p.show === 'path' ? 'Where players went' : p.show === 'both' ? 'Where players went and died' : 'Where players died'}${placeWords(placeOf(p))}`;
     case 'net':
       return `${p.show === 'loss' ? 'Packet loss' : p.show === 'disconnects' ? 'Disconnects and why' : 'Ping'}${p.by ? ` by ${by(p.by)}` : ''}`;
     case 'servers':

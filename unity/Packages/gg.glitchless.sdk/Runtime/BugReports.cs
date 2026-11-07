@@ -90,8 +90,8 @@ namespace GlitchlessSdk
             return null;
         }
 
-        // Each pixel of the smaller picture is the average of the ones it covers.
-        static byte[] Shrink(byte[] src, int w, int h, int tw, int th)
+        // Each pixel of the smaller picture is the average of the ones it covers. (A level's map shrinks the same way.)
+        internal static byte[] Shrink(byte[] src, int w, int h, int tw, int th)
         {
             var dst = new byte[tw * th * 3];
             for (var y = 0; y < th; y++)

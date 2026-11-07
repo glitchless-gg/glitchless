@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { causeColor } from './format.js';
+import { useBrandImage } from './brand.jsx';
 
 // Binned deaths (a positions panel's, with `n` each) are one colour, sized by how many fell there.
 const BINNED_DEATH = '#ff6b57';
 
-// World-space heatmap over the level thumbnail the SDK captured (glitchless.captureMap). `maxHeight` keeps a
-// tall level to that height (narrower, centred) instead of the width it would need.
+// World-space heatmap over the place's background: the picture an SDK captured (glitchless.captureMap) or one
+// uploaded for a level, a zone or the whole game (PUT /v1/maps). `maxHeight` keeps a tall level to that height
+// (narrower, centred) instead of the width it would need.
 export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotspots = [], path, cursor, events = [], zoom = 1, showDensity = true, showDeaths = true, maxHeight = null }) {
   const wrap = useRef(null);
   const canvas = useRef(null);
@@ -165,7 +167,7 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
     }
   }, [img, width, bounds, axis, density, deaths, hotspots, path, cursor, events, zoom, showDensity, showDeaths, maxHeight]);
 
-  if (!bounds) return <div className="empty">No position data for this level yet.</div>;
+  if (!bounds) return <div className="empty">No position data here yet.</div>;
   return (
     <div ref={wrap} style={{ width: '100%', overflowX: zoom > 1 ? 'auto' : 'hidden' }}>
       <div className="heatwrap" style={{ width: zoom > 1 ? `${zoom * 100}%` : '100%' }}>
@@ -176,11 +178,14 @@ export function LevelMap({ map, bounds, axis = 'xy', density, deaths = [], hotsp
 }
 
 // A board's positions panel (server/src/board.js): deaths counted per bin, over the coarse grid of where
-// players went when the panel shows paths.
+// players went when the panel shows paths, over its place's background. The panel names the picture's address
+// (`background.url`), fetched with the dashboard's headers like a brand image, so a share link's page draws it too.
 export function PositionsMap({ p, maxHeight = 360 }) {
   const deaths = useMemo(() => (p.deaths || []).map(([a, b, n]) => (p.axis === 'xy' ? { x: a, y: b, n } : { x: a, z: b, n })), [p.deaths, p.axis]);
   const density = useMemo(() => (p.path?.cells.length ? pathGrid(p.path, p.bounds, p.axis) : null), [p.path, p.bounds, p.axis]);
-  return <LevelMap bounds={p.bounds} axis={p.axis} deaths={deaths} density={density} maxHeight={maxHeight} />;
+  const src = useBrandImage(p.background);
+  const map = useMemo(() => (src ? { image: src } : null), [src]);
+  return <LevelMap map={map} bounds={p.bounds} axis={p.axis} deaths={deaths} density={density} maxHeight={maxHeight} />;
 }
 
 // A path's cells ([a, b, n], bin wide) as the dense grid LevelMap draws: row 0 at the top of the picture

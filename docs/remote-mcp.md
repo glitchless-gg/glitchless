@@ -76,10 +76,10 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 | `glitchless_bug_reports` | Bug reports | read | yes | no | yes | no |
 | `glitchless_store` | Store | read | yes | no | yes | no |
 | `glitchless_revenue` | Revenue | read | yes | no | yes | no |
-| `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages | yes | no |
-| `glitchless_create_game` | Create game | manage | no | no | no | no |
+| `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages, and removes a background, logo or banner | yes | no |
+| `glitchless_create_game` | Create or rename game | manage | no | no | no | no |
 | `glitchless_share_links` | Share links | manage | no | yes: it revokes a link | no | yes: a share link is public |
-| `glitchless_mark_known` | Mark finding known | manage | no | yes: it replaces a note, and clears one | yes | no |
+| `glitchless_mark_known` | Mark known | manage | no | yes: it replaces a note, clears one, and marks or unmarks a tester | yes | no |
 | `glitchless_resolve_error` | Resolve error | manage | no | yes: it hides an issue, and unresolves one | no: resolving again starts it over | no |
 | `glitchless_alerts` | Alerts | read | yes | no | yes | no |
 | `glitchless_set_alerts` | Change alerts | manage | no | yes: it replaces settings and removes a webhook | no | yes: a test alert posts to Discord, Slack or email |

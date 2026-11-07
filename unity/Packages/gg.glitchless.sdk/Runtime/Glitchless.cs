@@ -18,6 +18,7 @@ namespace GlitchlessSdk
     ///   Glitchless.SetProperty("rank", "diamond"); // what holds for the session
     ///   Glitchless.SetGroup("match", lobby.Id); // every event from here on belongs to this match
     ///   Glitchless.ReportBug(note); // or BugReports = new BugReportOptions() in the options: F8 opens a form
+    ///   Glitchless.CaptureMap("level-2", new Rect(0, 0, 96, 18)); // the level's picture, under its heatmaps
     ///   Glitchless.SetEnabled(shareToggle.isOn); // the player's "Share performance data" setting
     ///
     /// Scenes are levels on their own (see GlitchlessOptions.SceneLevels). Netcode for GameObjects and Mirror are
@@ -149,6 +150,19 @@ namespace GlitchlessSdk
         public static void SetPosition(Vector3 position) => Core?.SetPosition(position.x, position.y, position.z);
 
         public static void SetPosition(Vector2 position) => Core?.SetPosition(position.x, position.y, 0);
+
+        /// <summary>A picture of the level, which the dashboard draws its heatmaps, paths and deaths on. Call it once the
+        /// level is built (each time it starts is fine: a level's map is taken once a launch, and sent once per level and
+        /// version from a device). `level` is its name as LevelStart has it (null: the level now); `area` the part of the
+        /// world to draw, in world units, on x and y for a 2D game or a side view: <c>new Rect(0, 0, room.Width,
+        /// room.Height)</c>. A camera of its own renders it over the next few frames, one step a frame, so no frame stalls,
+        /// in a WebGL build too. Sent only with positions on (Full mode, or Positions = true); safe before Init.</summary>
+        public static void CaptureMap(string level, Rect area, MapOptions options = null) => GlitchlessRunner.CaptureMap(MapRequest.From(level, area, options));
+
+        /// <summary>The same for a 3D level, seen from above (x and z): `area` is the box to draw, such as its renderers'
+        /// bounds put together. The camera looks down from the box's top, so a roof above it stays out; a box with no
+        /// height sees everything below. MapOptions.Axis = MapAxis.XY draws it from the side instead.</summary>
+        public static void CaptureMap(string level, Bounds area, MapOptions options = null) => GlitchlessRunner.CaptureMap(MapRequest.From(level, area, options));
 
         /// <summary>Reports an exception the game caught itself.</summary>
         public static void Error(Exception exception, Dictionary<string, object> attrs = null)

@@ -67,7 +67,7 @@ test('a board is checked before it is saved, and says what to fix', () => {
     [{ panels: [{ type: 'funnel', steps: 'open' }] }, /at least two/],
     [{ panels: [{ type: 'series', event: 'a,b' }] }, /one event/],
     [{ panels: [{ type: 'levels', size: 'xl' }] }, /size/],
-    [{ panels: [{ type: 'positions' }] }, /needs level/],
+    [{ panels: [{ type: 'positions', level: 'cave', zone: 'hall' }] }, /one level or one zone/],
     [{ panels: [{ type: 'positions', level: 'cave', show: 'ghosts' }] }, /show must be one of deaths, path, both/],
     [{ panels: [{ type: 'positions', level: 'cave', bin: 0 }] }, /bin/],
     [{ panels: [{ type: 'positions', level: 'cave', bin: '5' }] }, /bin/],

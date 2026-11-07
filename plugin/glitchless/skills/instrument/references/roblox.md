@@ -52,7 +52,7 @@ It reads and changes the user's open places: say what you will do before you do 
 
 Put the module in ReplicatedStorage, the way the project manages code:
 
-- **Wally** (a `wally.toml`): add `Glitchless = "glitchless-gg/glitchless@0.1.0"` under `[dependencies]`, run
+- **Wally** (a `wally.toml`): add `Glitchless = "glitchless-gg/glitchless@0.2.0"` under `[dependencies]`, run
   `wally install`, and require `ReplicatedStorage.Packages.Glitchless`.
 - **Rojo without Wally**: copy `~/.glitchless/roblox/src` into the project (for example `src/shared/Glitchless`) so it
   syncs to `ReplicatedStorage.Glitchless`. Keep the files as they are: `init.luau` makes the folder the module, and
@@ -89,6 +89,9 @@ Glitchless.init({
   `require(ReplicatedStorage.Glitchless).init()` from a LocalScript.
 - In Studio, sessions are marked `tester` and `env` is `dev`, so test plays stay out of player numbers. Nothing else
   marks bots: Roblox has none.
+- Calls made before Glitchless starts wait for it: a LocalScript that runs before `GlitchlessClient`, a server Script
+  that runs before the one calling `init`, a `PlayerAdded` handler that runs before Glitchless's. Don't poll
+  `isEnabled()` before calling, and don't call `init()` from the game's LocalScripts to hurry it.
 
 ## 4. Levels, deaths and the game's own events
 
@@ -116,8 +119,10 @@ Glitchless.setContext({ effects = #workspace.Effects:GetChildren() }) -- gauges 
   `Glitchless.death(player, { cause = "lava" })` where it handles the death: the first such call turns the automatic
   ones off, so each death is sent once, with its cause.
 - **Purchases**: in `ProcessReceipt`, after granting the item:
-  `Glitchless.track(player, "purchase", { item = productName, robux = price })`. Robux aren't a currency boards add up
-  as revenue, so send `robux` as a number and no `currency`; never send the receipt or purchase ID.
+  `Glitchless.track(player, "purchase", { item = productName, amount = price, currency = "ROBUX" })`, the price in
+  Robux. Boards keep Robux apart from dollars (the dashboard's `currency: "ROBUX"`), and a panel can add an estimate in
+  dollars at Roblox's DevEx rate. A purchase that didn't go through can be the same event with `result = "cancelled"`
+  (and `result = "done"` on the ones that did); never send the receipt or purchase ID.
 - **The server's own session** (the map it runs, its rounds): `Glitchless.server.levelStart(mapName)`,
   `Glitchless.server.track("round_started", { players = #Players:GetPlayers() })`.
 - Never put a player's name, display name or user ID in an event, a level name or a property. The server scrubs
@@ -144,6 +149,21 @@ end
 ```
 
 Parties (players who queued together) use `"party"`. IDs are hashed before they're sent.
+
+### Extras for hangouts and hubs
+
+Four more things the server reads by itself once `init` turns them on, each off by default. Ask the user which fit,
+and turn on those:
+
+| Option | Turn it on when | What arrives |
+| --- | --- | --- |
+| `prompts = true` | the game uses ProximityPrompts (doors, shops, NPCs, machines) | `prompt` counts by `action` and `object` (the prompt's ActionText and ObjectText) |
+| `seats = true` | players sit (sofas, cars, rides, arcade cabinets) | `sit` counts by `seat` (the seat's or its model's name) and `vehicle` |
+| `joinedWithFriend = true` | it's social: do players who follow a friend in stay longer? | the session property `joined_with_friend`, to split anything by |
+| `friendsInServer = true` | the same, while they play | the gauge `friends_in_server` on every frame window |
+
+They replace hand-written `count` calls for prompts and seats: don't add both. Name prompts' ActionText and
+ObjectText, and seats' models, in words a board can show ("Open", "Starter Pack"; "Sofa", "Kart").
 
 Glitchless uses up to 100 of a server's 500 HTTP requests a minute (`requestsPerMinute`). If the game makes many
 HTTP requests of its own, lower it; with many players, each one's batches simply come less often.
@@ -181,7 +201,25 @@ field sent, and a paragraph for the game's privacy notice. If the game sets prop
 properties line.
 
 Positions are off. With `positions = true` in `init`, the server samples each player's character position for
-heatmaps and puts deaths on the map; ask the user first.
+heatmaps and puts deaths on the map; ask the user first. The extras (section 5) are counts and true/false only; with
+`friendsInServer` or `joinedWithFriend`, the privacy notice gets the friends line in `roblox/PRIVACY.md`.
+
+### A map under the heatmap
+
+With positions on, give the heatmap a map. The server draws one itself, from the place's parts, one ray down per
+pixel; call it once the place is built, from a server Script:
+
+```lua
+task.spawn(Glitchless.captureMap)                                                -- the whole place
+task.spawn(Glitchless.captureMap, { zone = "hall", area = workspace.Zones.Hall })  -- a zone, by its volume
+task.spawn(Glitchless.captureMap, { level = "obby_1", area = workspace.Obby1 })    -- a level, by its folder
+```
+
+Its map is the parts' colours, lit and outlined (no textures or decals). For a picture that looks like the game,
+take one in Studio with Studio's MCP server: `execute_luau` (`datamodel_type: "Edit"`) with
+`return require(game.ReplicatedStorage.Glitchless).mapBounds(workspace.Zones.Hall)` for the rectangle on x and z,
+then `screen_capture` with `camera_position` high above its centre and `look_at_position` straight below. The
+picture's top edge is the smallest z, its left edge the smallest x. Hand it and the bounds to the game's map upload.
 
 ## 8. Check that it works
 

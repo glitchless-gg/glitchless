@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+- Heatmaps get a picture of the level under them. `Glitchless.CaptureMap(level, new Rect(0, 0, width, height))` for a 2D game or a side view, or `CaptureMap(level, bounds)` for a 3D level seen from above, takes the level's map as the browser SDK's `captureMap` does: an orthographic camera of its own renders exactly that area, and it goes as the same `map` event (`axis`, `bounds`, `size`, a JPEG of up to 60,000 characters), so the dashboard draws deaths and paths where they were. The work is spread over frames (the render, reading it back the next frame, then the JPEG), so no frame stalls, in WebGL builds too, and those frames stay out of the frame stats. Built-in pipeline and URP (2D and Universal renderers). `MapOptions.Exclude` leaves the player or a backdrop out. A level's map goes once per version from a device, only with positions on.
+
 ## 0.6.4
 
 - The bug report form keeps what players type in a web build. A web build says the on-screen keyboard is supported on a desktop too, so the form opened it, and every frame copied its text, which stayed empty, over the note: letters typed on the real keyboard showed for a frame and vanished, and nobody could type a report. The on-screen keyboard now opens only on phones and tablets (`Application.isMobilePlatform`), and only what changes on it reaches the note, so a key from a real keyboard isn't undone. Nothing new is sent.

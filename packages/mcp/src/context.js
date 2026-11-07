@@ -9,7 +9,7 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-export const VERSION = '0.14.1';
+export const VERSION = '0.15.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
@@ -165,6 +165,19 @@ export async function write(method, p, body) {
   return data;
 }
 
+// A body that isn't JSON (a picture: PUT /v1/maps), with the same headers as write().
+export async function upload(method, p, bytes, type) {
+  const res = await conn().fetch(`${base()}${p}`, { method, headers: await headers({ 'content-type': type }), body: bytes });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 403) throw new Error(`${data.error || 'forbidden'}. Uploading needs a key with the dashboard scope (a workspace key from glitchless_sign_in has it).`);
+  if (!res.ok) throw new Error(`Glitchless API ${method} ${p.split('?')[0]} → HTTP ${res.status}: ${data.error || ''}${signInHint(res.status)}`);
+  return data;
+}
+
+// Whether this call is answered by a server over HTTP (the hosted one, or `glitchless-mcp serve`), which can't read the
+// agent's files: a tool that takes a file path takes its contents there instead.
+export const isRemote = () => !!calls.getStore()?.remote;
+
 export async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
@@ -178,8 +191,16 @@ export function range(hours = 24) {
   return { from: to - hours * 3600e3, to };
 }
 
-export function reply(title, data) {
-  return { content: [{ type: 'text', text: `${title}${windowNote()}\n\n${JSON.stringify(data, null, 2)}` }] };
+// rows: one row of each list per line (a level, an event, a match), so a long answer stays short and still reads as JSON.
+export function reply(title, data, { rows = false } = {}) {
+  return { content: [{ type: 'text', text: `${title}${windowNote()}\n\n${rows ? rowsJSON(data) : JSON.stringify(data, null, 2)}` }] };
+}
+
+// JSON with a line per top-level field, and a line per element of a list of objects.
+function rowsJSON(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return JSON.stringify(data);
+  const field = (v) => (Array.isArray(v) && v.length && v.every((x) => x && typeof x === 'object') ? `[\n${v.map((x) => `    ${JSON.stringify(x)}`).join(',\n')}\n  ]` : JSON.stringify(v));
+  return `{\n${Object.entries(data).filter(([, v]) => v !== undefined).map(([k, v]) => `  ${JSON.stringify(k)}: ${field(v)}`).join(',\n')}\n}`;
 }
 
 export function fail(err) {
@@ -255,7 +276,7 @@ export function createServer({ remote = false, scopes = null, connection: c = nu
     const { inputSchema = {}, ...config } = t.config;
     server.registerTool(t.name, { ...config, title: titleOf(t), inputSchema: z.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
       const run = () =>
-        calls.run({ game: args.game, server }, async () => {
+        calls.run({ game: args.game, server, remote }, async () => {
           try {
             return await t.handler(args, ctx);
           } catch (err) {

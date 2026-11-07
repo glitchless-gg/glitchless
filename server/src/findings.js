@@ -19,7 +19,7 @@ import { cameBackLine } from './resolved.js';
 import { WEB_ENGINES, WEB_ENGINE_FATAL_WORDS, WEB_ENGINE_QUALITY_TIPS, WEB_ENGINE_SLOW_START_TIPS, webEngineErrorSuggestion, webEnginePerfSuggestion } from './web-engine-advice.js';
 
 const SEVERITY_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-const PROGRESS = /score|point|xp|coin|gold|money|cash|kill|time|elapsed|distance|depth|wave|level|round|turn|stage|streak|combo|best|second/i;
+const PROGRESS = /score|point|xp|coin|gold|money|cash|kill|time|elapsed|distance|depth|wave|level|round|turn|stage|streak|combo|best|second|friend/i;
 
 // Hitch causes (SPEC §2 `hitch`, and each engine's in §5–§5c) as a title names them. A load cause is the level
 // loading; a generic one says only where the frame's time went.
@@ -235,7 +235,8 @@ export function findings(ctx, maps = []) {
   }
 
   // 2d. Context gauges (setContext) that keep climbing: a leak in the game's own words. Progress counters
-  // (score, time, kills) climb by design, so they're left out by name.
+  // (score, time, kills) and friends arriving one by one (Roblox's friends_in_server) climb by design, so they're
+  // left out by name.
   const climbs = gaugeClimbs(ctx)
     .filter((g) => g.climbing >= 3 && g.climbing >= g.sessions * 0.6 && !PROGRESS.test(g.key))
     .sort((a, b) => b.climbing - a.climbing);

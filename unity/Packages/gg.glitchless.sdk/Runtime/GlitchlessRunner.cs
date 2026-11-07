@@ -137,6 +137,7 @@ namespace GlitchlessSdk
                 IsDebugBuild = UnityEngine.Debug.isDebugBuild,
                 IsMobile = DeviceInfo.IsMobile,
                 IsWeb = web,
+                RememberMaps = !Application.isEditor, // each Play takes a level's map again: its level is being worked on
 #if UNITY_SERVER
                 IsServerBuild = true,
 #endif
@@ -444,6 +445,33 @@ namespace GlitchlessSdk
             }
             if (Core == null) done?.Invoke(false, "offline");
             else Core.SendBugReport(snap, note, shot, done);
+        }
+
+        // ───────────────────────────── level maps ─────────────────────────────
+
+        readonly Queue<MapRequest> maps = new Queue<MapRequest>();
+        bool mapping;
+
+        // Glitchless.CaptureMap: the captures go one at a time (MapCapture.Take), so two levels' never share a frame.
+        internal static void CaptureMap(MapRequest r)
+        {
+            var core = EnsureRunning();
+            if (core != null && r.Level == null) r.Level = core.Level;
+            if (core != null && !r.Valid) core.MapFailed(r.Level ?? "", "it needs a level and bounds with a width and a height");
+            if (core == null || !r.Valid || !MapCapture.CanCapture || !core.WantsMap(r.Level) || !core.TakeMap(r.Level))
+            {
+                r.Options.Done?.Invoke(null);
+                return;
+            }
+            instance.maps.Enqueue(r);
+            if (!instance.mapping) instance.StartCoroutine(instance.TakeMaps());
+        }
+
+        IEnumerator TakeMaps()
+        {
+            mapping = true;
+            while (maps.Count > 0) yield return MapCapture.Take(Core, maps.Dequeue());
+            mapping = false;
         }
 
         // ───────────────────────────── errors ─────────────────────────────

@@ -35,10 +35,11 @@
 
 import { newCell, mergeCell, cellToJSON, cellFromJSON, addCell, meanOf, seconds, FIXED, OTHER } from './rollups.js';
 import { newFacts, addFactsCell } from './facts.js';
-import { MARK, sessionMs } from './session-state.js';
+import { MARK, sessionMs, rageInputsOf } from './session-state.js';
 import { sessionAttempts, attemptValues } from './levels.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, displayOf, displayRows, matchAttrs, stepLabel, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
+import { addZoneDay, zoneDayToJSON, zoneDayFromJSON, mergeZoneDays, withZoneTime } from './zones.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, displayOf, displayRows, matchAttrs, stepLabel, rageInputRow, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -48,6 +49,7 @@ export const CAPS = {
   quantiles: 512, // distinct values in a quantile map
   recent: 300, // latest sessions per (env, version) and day: the sessions list shows 300
   rageQuits: 50, // latest rage quits: the players page lists 50
+  rageInputs: 50, // latest rage inputs, with their level, time and place: the players query lists 50
   gpus: 30, // GPUs per (env, version) and day; the performance page lists the top 10
   deaths: 100, // deaths with coordinates per level, (env, version) and day
   sample: 256, // sessions with custom events per day, for ordered funnels
@@ -59,9 +61,11 @@ export const CAPS = {
   eventPlayers: [128, 8], // …per custom event
   errorSessions: [256, 10], // …sessions per error fingerprint
   errorPlayers: [128, 8], // …players per error fingerprint
+  zones: 64, // zones per (env, version) and day with their sessions' time (zones.js), the rest under (other)
+  zonePlayers: [128, 8], // …players per zone
 };
 // At query time nothing is capped: merged exact inputs stay exact. The two lists are display limits.
-export const UNCAPPED = Object.fromEntries(Object.entries(CAPS).map(([k, v]) => [k, Array.isArray(v) ? [Infinity, v[1]] : k === 'recent' || k === 'rageQuits' ? v : Infinity]));
+export const UNCAPPED = Object.fromEntries(Object.entries(CAPS).map(([k, v]) => [k, Array.isArray(v) ? [Infinity, v[1]] : k === 'recent' || k === 'rageQuits' || k === 'rageInputs' ? v : Infinity]));
 
 // The players page's session length buckets (analytics.js players()).
 const LENGTH_EDGES = [0, 30, 60, 120, 300, 600, 1200, Infinity];
@@ -149,9 +153,10 @@ function newGroup(env, version, caps) {
     lv: new Map(), // level → funnel row
     dc: {}, // death causes
     rq: [], // [last_ts, rage quit]
+    rin: [], // [ts, rage input] (analytics.js rageInputRow)
     recent: [], // [start, session summary]
     sdk: {}, // SDK → sessions
-    dx: new Map(), // level → deaths with coordinates
+    dx: new Map(), // level (null: none) → deaths with coordinates, with their zones
     ev: new Map(), // custom event → { s: sessions, pl: Distinct, a: Map<key, { v: value → sessions, s, c }> }
     cut: new Set(), // what a cap cut short
     caps,
@@ -244,17 +249,21 @@ function addSession(g, s, day, caps, newPlayers = null) {
       mergeCell(x.cell, s.cell);
     }
     for (const level of s.fwLevels) g.fwl.set(level ?? '(menu)', (g.fwl.get(level ?? '(menu)') || 0) + 1);
+    // Sessions per zone and their time in it (zones.js `zt`).
+    addZoneDay(g, s, caps);
   }
   // The level funnel (analytics.js funnel()).
   const started = new Set();
   const completed = new Set();
   const ended = new Set();
-  for (const { ts, k: kind, level, cause, x, y, z, d } of s.marks) {
+  for (const { ts, k: kind, level, zone, cause, x, y, z, d } of s.marks) {
     if (kind === MARK.death) {
       g.dc[cause] = (g.dc[cause] || 0) + 1;
-      if (level && isNum(x)) {
-        if (!g.dx.has(level)) g.dx.set(level, []);
-        g.dx.get(level).push([hashId([s.session_id, ts]), { ts, level, cause, x, y, z, rage_quit: !!(s.rage_quit && s.rage?.level === level && rageDeathTs(s.rage) === ts) }]);
+      // Deaths with no level (a hub's) are kept under null, for the zone's and the whole game's positions (places.js).
+      if (isNum(x)) {
+        const key = level || null;
+        if (!g.dx.has(key)) g.dx.set(key, []);
+        g.dx.get(key).push([hashId([s.session_id, ts]), { ts, level: key, zone: zone ?? null, cause, x, y, z, rage_quit: !!(s.rage_quit && (s.rage?.level ?? null) === key && rageDeathTs(s.rage) === ts) }]);
       }
     }
     if (!level) continue;
@@ -292,6 +301,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
   foldLevelAttrs(g, s, caps);
   if (s.rage_quit && s.rage?.level) levelRow(g, s.rage.level, caps).rq++;
   if (s.rage_quit) g.rq.push([s.last_ts, { session_id: s.session_id, version: s.version, ts: s.end ?? s.last_ts, ...s.rage }]);
+  for (const r of rageInputsOf(s)) g.rin.push([r.ts, rageInputRow(s, r)]);
   const summary = sessionSummary(s);
   // What the session sent, for a sessions list filtered by an event (board.js `sent`); not shown.
   const sent = Object.fromEntries(Object.entries(s.ev || {}).map(([n, v]) => [n, Object.fromEntries(Object.entries(v.a).map(([k, t]) => [k, Object.keys(t.v)]))]));
@@ -407,6 +417,7 @@ function countValue(g, counts, value, n, caps) {
 function seal(g, caps) {
   g.recent = newestFirst(g.recent).slice(0, caps.recent);
   g.rq = newestFirst(g.rq).slice(0, caps.rageQuits);
+  g.rin = newestFirst(g.rin).slice(0, caps.rageInputs);
   if (g.dev.g.size > caps.gpus) {
     g.dev.g = new Map(byDevice([...g.dev.g]).sort((a, b) => b[1].n - a[1].n).slice(0, caps.gpus));
     g.cut.add('gpus');
@@ -572,11 +583,13 @@ function groupToJSON(g) {
     nodes: qs(g.nodes),
     dev: Object.fromEntries(Object.entries(g.dev).map(([k, map]) => [k, [...map].map(([key, x]) => [key, x.n, cellToJSON(x.cell)])])),
     fwl: [...g.fwl],
+    zt: zoneDayToJSON(g),
     lv: [...g.lv].map(([level, l]) => [level, { ...l, pl: l.pl.toJSON(), dq: l.dq.toJSON(), ...(l.by ? { by: byToJSON(l.by) } : {}) }]),
     dc: g.dc,
     rq: g.rq,
+    rin: g.rin,
     sdk: g.sdk,
-    dx: [...g.dx].map(([level, list]) => [level, list.map(([, d]) => [d.ts, d.x, d.y, d.z, d.cause, d.rage_quit ? 1 : 0])]),
+    dx: [...g.dx].map(([level, list]) => [level, list.map(([, d]) => [d.ts, d.x, d.y, d.z, d.cause, d.rage_quit ? 1 : 0, ...(d.zone ? [d.zone] : [])])]),
     ev: [...g.ev].map(([name, e]) => [name, e.s, e.pl.toJSON(), [...e.a]]),
     cut: [...g.cut],
   };
@@ -593,7 +606,9 @@ function groupFromJSON(o) {
     ttp: q(o.ttp),
     pl: Sample.from(o.pl),
     px: new Map(o.px.map(([d, s]) => [d, Sample.from(s)])),
-    // Days stored before retention have no new players or ID counts, and before testers were told apart no testers.
+    // Days stored before retention have no new players or ID counts, before testers were told apart no testers, and
+    // before rage inputs were kept with their place none of those.
+    rin: o.rin ?? [],
     id: o.id ?? 0,
     tst: o.tst ?? 0,
     nw: Sample.from(o.nw),
@@ -605,10 +620,13 @@ function groupFromJSON(o) {
     // Days stored before screens were kept have none.
     dev: { p: new Map(), sb: new Map(), sv: new Map(), hz: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
+    // Days stored before time in zone was kept have none.
+    zt: zoneDayFromJSON(o.zt),
     // Days stored before clear times were kept have none.
     lv: new Map(o.lv.map(([level, l]) => [level, { ...l, pl: Distinct.from(l.pl), dq: l.dq ? q(l.dq) : q(), ...(l.by ? { by: byFromJSON(l.by, q) } : {}) }])),
     recent: [],
-    dx: new Map(o.dx.map(([level, list]) => [level, list.map(([ts, x, y, z, cause, rage]) => [0, { ts, level, cause, x, y, z, rage_quit: !!rage }])])),
+    // Days stored before zones were kept have none, nor deaths with no level.
+    dx: new Map(o.dx.map(([level, list]) => [level, list.map(([ts, x, y, z, cause, rage, zone]) => [0, { ts, level, zone: zone ?? null, cause, x, y, z, rage_quit: !!rage }])])),
     ev: new Map(o.ev.map(([name, s, pl, a]) => [name, { s, pl: Distinct.from(pl), a: new Map(a) }])),
     cut: new Set(o.cut),
     caps,
@@ -645,6 +663,7 @@ export function mergeDays(days, keep) {
   daily.all ||= newGroup(null, null, UNCAPPED);
   daily.all.recent = newestFirst(daily.all.recent);
   daily.all.rq = newestFirst(daily.all.rq);
+  daily.all.rin = newestFirst(daily.all.rin);
   // A game that never completes a level has no rage quits (analytics.js noWin(), as sessionContext does).
   const all = daily.all;
   daily.no_win = noWin({ sessions: all.n, starts: all.at, completes: all.co, fails: all.fa + all.de });
@@ -712,6 +731,7 @@ function mergeGroup(into, g) {
     }
   }
   for (const [level, n] of g.fwl) into.fwl.set(level, (into.fwl.get(level) || 0) + n);
+  mergeZoneDays(into, g);
   for (const [level, l] of g.lv) {
     const m = levelRow(into, level, UNCAPPED);
     for (const k of ['ss', 'sc', 'at', 'co', 'fa', 'de', 'ab', 'lo', 'dr', 'ds', 'dn', 'rq']) m[k] += l[k] ?? 0;
@@ -731,6 +751,7 @@ function mergeGroup(into, g) {
   }
   for (const [c, n] of Object.entries(g.dc)) into.dc[c] = (into.dc[c] || 0) + n;
   into.rq.push(...g.rq);
+  into.rin.push(...g.rin);
   into.recent.push(...g.recent);
   for (const [k, n] of Object.entries(g.sdk)) into.sdk[k] = (into.sdk[k] || 0) + n;
   for (const [level, list] of g.dx) {
@@ -854,6 +875,7 @@ export function dailyPerformance(ctx) {
   approximate(ctx, 'gpus', g.cut.has('gpus'));
   for (const l of p.by_level) l.sessions = g.fwl.get(l.key) || 0;
   for (const v of p.by_version) v.sessions = ctx.daily.byVersion.get(v.key)?.fw || 0;
+  if (p.by_zone) p.by_zone = withZoneTime(ctx, p.by_zone);
   approximate(ctx, 'load_times', g.ttff.approx || g.ttp.approx);
   p.kpis.ttff_p50 = g.ttff.quantile(0.5);
   p.kpis.ttff_p95 = g.ttff.quantile(0.95);
@@ -995,6 +1017,7 @@ export function dailyPlayers(ctx) {
     session_length: { labels: ['<30s', '30s–1m', '1–2m', '2–5m', '5–10m', '10–20m', '20m+'], counts: g.len },
     death_causes: g.dc,
     rage_quits: rageQuits,
+    rage_inputs: g.rin.slice(0, CAPS.rageInputs).map(([, r]) => r),
     retention: dailyRetention(ctx),
   };
 }

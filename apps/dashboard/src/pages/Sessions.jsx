@@ -255,8 +255,13 @@ export function SessionDetail({ route }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(4);
   const [showNoisy, setShowNoisy] = useState(false);
-  // Samples taken outside a level (title screen, reloads) have no map to draw on.
-  const positions = useMemo(() => (data?.positions || []).filter((p) => p[1] != null), [data]);
+  // Samples taken outside a level are drawn over the whole game's map or their zone's (a hub, a lobby); without
+  // either they have no picture to draw on, and are kept only in a game that never sets a level.
+  const positions = useMemo(() => {
+    const all = data?.positions || [];
+    const loose = data?.place_map || Object.keys(data?.zone_maps || {}).length || !all.some((p) => p[1] != null);
+    return loose ? all : all.filter((p) => p[1] != null);
+  }, [data]);
   const t0 = positions[0]?.[0] ?? data?.session?.start;
   const t1 = positions.at(-1)?.[0] ?? t0;
 
@@ -285,8 +290,9 @@ export function SessionDetail({ route }) {
     let i = 0;
     while (i < positions.length - 1 && positions[i + 1][0] <= t) i++;
     const level = positions[i][1];
+    const zone = level == null ? positions[i][5] ?? null : null;
     const levelPts = positions.filter((p) => p[1] === level && p[0] <= t).map((p) => [p[2], p[3], p[4]]);
-    return { level, cursor: [positions[i][2], positions[i][3], positions[i][4]], path: levelPts };
+    return { level, zone, cursor: [positions[i][2], positions[i][3], positions[i][4]], path: levelPts };
   }, [positions, t]);
 
   if (!data) return <div className="loading-bar" />;
@@ -300,7 +306,8 @@ export function SessionDetail({ route }) {
   // A dedicated server (A9): what it said about itself, and its ticks in place of frames.
   const server = data.timeline.find((e) => e.type === 'session_start')?.server;
   const ticks = data.timeline.filter((e) => e.type === 'server_window');
-  const map = state && data.maps?.[state.level];
+  const map = state && (state.level != null ? data.maps?.[state.level] : data.place_map || data.zone_maps?.[state.zone]);
+  const where = state && (state.level ?? state.zone ?? 'no level');
   const deathsHere = data.timeline.filter((e) => e.type === 'death' && e.level === state?.level && e.ts <= (t ?? 0));
   const frames = data.frames || [];
   const currentIdx = timeline.reduce((acc, e, i) => (e.ts <= (t ?? 0) ? i : acc), -1);
@@ -393,7 +400,7 @@ export function SessionDetail({ route }) {
       {!(server && !positions.length) && (
       <Widget
         span={8}
-        title={`Game replay${state ? ` — ${state.level}` : ''}`}
+        title={`Game replay${state ? ` — ${where}` : ''}`}
         sub="reconstructed from 4 Hz position telemetry — no video recorded"
         actions={
           <>
@@ -411,7 +418,7 @@ export function SessionDetail({ route }) {
             <div className="muted mono" style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5 }}>
               <span>{fmtTime(t0)}</span>
               <span>
-                +{fmtDuration(((t ?? t0) - t0) / 1000)} · {state.level}
+                +{fmtDuration(((t ?? t0) - t0) / 1000)} · {where}
               </span>
               <span>{fmtTime(t1)}</span>
             </div>

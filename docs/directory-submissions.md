@@ -6,7 +6,7 @@ because they change often. Claude: submitted 25 October 2026 and approved the sa
 (automated review). ChatGPT and Codex (one directory): not submitted yet. Cursor, Antigravity and the rest:
 [below](#cursor-marketplace).
 
-The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 23 tools. How it
+The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 22 tools. How it
 works and how people connect is in [remote-mcp.md](remote-mcp.md).
 
 ## Before submitting

@@ -46,7 +46,7 @@ test('glitchless_events measures a rate by an attribute, and a filtered event ke
   assert.deepStrictEqual(pick(seen[0].params, ['name', 'event', 'rate', 'by', 'min']), { name: 'match_end', event: 'match_end:mode=ranked', rate: 'won', by: 'hero', min: '10' });
   assert.match(r.content[0].text, /3\.5 hours played/);
   assert.match(r.content[0].text, /match_end:mode=ranked rate of won by hero: 1 rows, overall 50%/);
-  assert.match(r.content.map((c) => c.text).join('\n'), /"value": "ember",\s+"rate": 62\.5/);
+  assert.match(r.content.map((c) => c.text).join('\n'), /"value": ?"ember",\s*"rate": ?62\.5/);
 });
 
 test('glitchless_events gives a distribution, and the dashboard keeps its percentiles', async (t) => {

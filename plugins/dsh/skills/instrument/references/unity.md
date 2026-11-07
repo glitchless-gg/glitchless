@@ -22,7 +22,7 @@ Add one line to `dependencies` in `Packages/manifest.json`:
 "gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"
 ```
 
-Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.6.4`.
+Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.7.0`.
 
 ## 3. Initialize, without touching a scene file
 
@@ -68,10 +68,19 @@ call `Glitchless.LevelStart("world-1-2")` where a level begins (that turns scene
 | where the player is in an open world | `Glitchless.SetZone("westfall")` |
 | a purchase the store confirmed | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" })` |
 | counts of anything that scales, each frame | `Glitchless.SetContext("enemies", enemies.Count)` |
-| the player's place, each frame | `Glitchless.SetPosition(player.position)` |
+| the player's place, each frame | `Glitchless.SetPosition(player.position)` (sent with `Positions = true` in the options, or Full mode) |
+| a level is built (its picture under the heatmaps) | `Glitchless.CaptureMap("level-2", new Rect(0, 0, width, height))`: 2D or a side view; a 3D level from above: `Glitchless.CaptureMap("arena", bounds)` |
 | a caught exception | `Glitchless.Error(e)` |
 
 Uncaught exceptions, `Debug.LogError` and engine errors are reported without any code.
+
+**Heatmaps.** With positions on, call `CaptureMap` where a level is built, so the dashboard draws deaths and paths
+over a picture of it. Give it the level's area in world units: a tile room `new Rect(0, 0, room.Width, room.Height)`
+(a long stage whole, not the screen the camera shows); a 3D level its renderers' bounds put together
+(`var b = renderers[0].bounds; foreach (var r in renderers) b.Encapsulate(r.bounds);`), whose top is where the camera
+looks down from, so leave a roof above it out. Pass what shouldn't be in the picture:
+`new MapOptions { Exclude = new[] { player.gameObject, backdrop.gameObject } }` (a backdrop that follows the camera
+would cover the level). Calling it every time the level starts is fine: each level's map goes once per version.
 
 Track a moment, count a stream: anything that happens several times a second (each bullet, each coin) goes through
 `Count`, which adds it up on the device; a `Track` for each would fill the SDK's queue. Properties hold for the whole

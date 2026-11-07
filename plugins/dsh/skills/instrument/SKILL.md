@@ -65,7 +65,10 @@ Settings, for every engine:
   Android the Godot SDK marks debug builds and sideloaded ones (adb, an APK file) `tester` the same way; a game sold
   as an APK outside the stores (itch.io) passes `session_type: "user"`. Google Play's testing tracks can't be told
   apart on the device: if the developer ships test builds there, give the testing-track build its own env (`beta`)
-  from a build flag.
+  from a build flag. The developer's own play (checking the setup, a playtest) counts as a player's: on Glitchless
+  Cloud, once it arrives, offer to mark their player as the team's with `glitchless_mark_known`'s `player` (`glitchless_session`
+  without a session id lists the latest sessions with their `player_id`). It then reads as `tester` everywhere, past
+  sessions too.
 - **Version.** Find where the game's version lives and pass it; bump it on every release so Glitchless can compare versions.
 
 ## Every engine: the game's own metrics, and its board
@@ -125,8 +128,9 @@ purchases, a platformer about where players die. Glitchless doesn't assume a gen
    - **Groups and zones.** `setGroup('match', id)` with the match ID the game's server made, the same on every
      player and on the server (the SDKs hash it the same way before sending it, by default); `setGroup('match', null)`
      ends it. `setGroup('party', id)` for a party (never a guild or friends list), `setGroup('run')` for a roguelite
-     run (the SDK makes its ID). `setZone(name)` for where the player is in an open world (an MMO zone, a room): not a
-     level, it never ends in a win or a fail.
+     run (the SDK makes its ID). `setZone(name)` for where the player is in an open world or a hub (an MMO zone, a room, a
+     lobby hall): not a level, it never ends in a win or a fail. Time in each zone and frame time per zone come from the
+     frames drawn there, so don't send zone entries or zone timing as events.
 
    Purchases have one convention in every engine, so boards can add them up into revenue: a `purchase` event
    when the store confirms it, with `amount` (a number in the currency's units: 4.99, not 499), `currency` (the
@@ -141,8 +145,8 @@ purchases, a platformer about where players die. Glitchless doesn't assume a gen
    - Unity: `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });`
    - Unreal: `FGlitchless::Track(TEXT("purchase"), {{TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}}, {{TEXT("amount"), 4.99}});`
      (in Blueprint, Track Event with `amount` in Numbers)
-   - Roblox: Robux aren't a currency revenue adds up: `Glitchless.track(player, "purchase", { item = "gems_500", robux = 99 })`
-     in `ProcessReceipt`, with no `currency`
+   - Roblox: the price in Robux, `Glitchless.track(player, "purchase", { item = "gems_500", amount = 99, currency = "ROBUX" })`
+     in `ProcessReceipt` (boards show Robux with ⬡, never added to dollars; give the dashboard `currency: "ROBUX"`)
 2. A multiplayer game also reports its network, and its dedicated servers (follow the engine reference's
    multiplayer section):
    - **Ping, loss and disconnects.** The Unity SDK reads Netcode for GameObjects and Mirror by itself, Godot its

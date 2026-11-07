@@ -66,7 +66,7 @@ namespace GlitchlessSdk
     /// </summary>
     public sealed class GlitchlessCore
     {
-        public const string SdkVersion = "0.6.4";
+        public const string SdkVersion = "0.7.0";
         public const string Sdk = "glitchless-unity/" + SdkVersion;
 
         const double HitchMs = 50; // one frame over 50 ms is a stutter a player sees
@@ -1998,7 +1998,7 @@ namespace GlitchlessSdk
             if (!e.ContainsKey("level")) e["level"] = Level;
             Stamp(e);
             QueueEvent(e);
-            if ((string)e["type"] == "session_end") return;
+            if ((string)e["type"] == "session_end" || (string)e["type"] == "map") return;
             history.Add(Slim(e));
             if (history.Count > BugRecent) history.RemoveAt(0);
         }
@@ -2165,6 +2165,96 @@ namespace GlitchlessSdk
             });
         }
 
+        // ───────────────────────────── level maps ─────────────────────────────
+
+        const string MapsName = "maps"; // the levels this device sent a map of: the version on the first line, then a level a line
+        readonly HashSet<string> mapsTaken = new HashSet<string>(); // levels captured, or on their way, this launch
+        HashSet<string> mapsSent; // read from the device once Init has said the version
+
+        /// <summary>Keeps the levels whose map went on the device, so a level's goes once a version (SPEC §5b map). The
+        /// Editor turns it off: each Play takes them again, as levels there are being worked on.</summary>
+        public bool RememberMaps = true;
+
+        /// <summary>Whether a map of this level would go: Glitchless is on, this is a player's session (not a server), and,
+        /// once Init has said, positions are on (a map is the ground positions and deaths are drawn on), the session is
+        /// sampled, and this device hasn't sent this level's map for this version.</summary>
+        internal bool WantsMap(string level)
+        {
+            if (string.IsNullOrEmpty(level) || Dropping || IsServer) return false;
+            if (!Inited) return true; // kept with the rest until Init; the first Flush drops it if it isn't wanted (SendMapsOnce)
+            return positionsOn && Sampled && !MapsSent().Contains(level);
+        }
+
+        /// <summary>Holds the level for one capture this launch: false when one was taken already or is on its way.</summary>
+        internal bool TakeMap(string level) => mapsTaken.Add(level);
+
+        /// <summary>A capture that sent nothing: a later CaptureMap of the level may try again.</summary>
+        internal void MapNotTaken(string level) => mapsTaken.Remove(level);
+
+        internal void MapFailed(string level, string why) => Warn("map " + why, $"CaptureMap(\"{level}\") sent no map: {why}");
+
+        /// <summary>A level's map (SPEC §2 map): `image` a JPEG data URL; the bounds on the plane's two axes, in world units;
+        /// `w` and `h` the picture's pixels. Kept with the session's events (nothing goes before Init) and sent with the
+        /// next batch, in a batch of its own, being big. False when it isn't wanted after all.</summary>
+        internal bool SendMap(string level, string axis, double minA, double minB, double maxA, double maxB, int w, int h, string image, MapCost cost = default)
+        {
+            if (!WantsMap(level) || string.IsNullOrEmpty(image)) return false;
+            Push(new Dictionary<string, object>
+            {
+                ["type"] = "map",
+                ["level"] = level,
+                ["axis"] = axis,
+                ["bounds"] = new Dictionary<string, object> { ["min"] = new List<object> { Sketch.Round(minA, 4), Sketch.Round(minB, 4) }, ["max"] = new List<object> { Sketch.Round(maxA, 4), Sketch.Round(maxB, 4) } },
+                ["size"] = new List<object> { (long)w, (long)h },
+                ["image"] = image,
+            });
+            string Ms(double v) => v.ToString("0.0", CultureInfo.InvariantCulture);
+            Debug($"map of {level}: {w}x{h} at JPEG quality {cost.Quality}, {image.Length} characters; render {Ms(cost.RenderMs)} ms, read back {Ms(cost.ReadMs)} ms, JPEG {Ms(cost.EncodeMs)} ms, {cost.Frames} frames");
+            return true;
+        }
+
+        // Each Flush once Init has said the version: a level's map goes once a version from a device, and only with positions
+        // on. A map taken before Init that isn't wanted goes no further.
+        void SendMapsOnce(List<Dictionary<string, object>> events)
+        {
+            if (!events.Exists(IsMap)) return;
+            var sent = MapsSent();
+            var added = false;
+            events.RemoveAll(e =>
+            {
+                if (!IsMap(e)) return false;
+                var level = e["level"] as string;
+                if (!positionsOn || IsServer || level == null || sent.Contains(level)) return true;
+                sent.Add(level);
+                added = true;
+                return false;
+            });
+            if (added && RememberMaps)
+            {
+                var lines = new List<string> { version };
+                foreach (var l in sent)
+                    if (l.IndexOf('\n') < 0) lines.Add(l);
+                TryIo(() => WriteId(MapsName, string.Join("\n", lines)));
+            }
+        }
+
+        static bool IsMap(Dictionary<string, object> e) => e["type"] is string t && t == "map";
+
+        HashSet<string> MapsSent()
+        {
+            if (mapsSent != null) return mapsSent;
+            mapsSent = new HashSet<string>();
+            if (!RememberMaps) return mapsSent;
+            TryIo(() =>
+            {
+                var lines = (ReadId(MapsName) ?? "").Split('\n');
+                if (lines[0].Trim() != version) return; // another version's list: its levels' maps are taken again
+                for (var i = 1; i < lines.Length; i++)
+                    if (lines[i].Length > 0) mapsSent.Add(lines[i]);
+            });
+            return mapsSent;
+        }
+
         static readonly string[] SlimKeys = { "name", "cause", "kind", "reason", "duration_s", "score", "duration_ms", "causes", "x", "y", "z" };
 
         /// <summary>A game event as a bug report lists it: when, what, and the few fields that say what happened.</summary>
@@ -2211,6 +2301,7 @@ namespace GlitchlessSdk
                 Stats.LastStatus = "unsampled";
                 return;
             }
+            SendMapsOnce(queue);
             if (queue.Count > 0)
             {
                 AddBatches(queue);

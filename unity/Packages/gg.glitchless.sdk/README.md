@@ -4,7 +4,7 @@ Game observability for Unity 6.3 LTS and later. Glitchless records how your game
 
 - **Stutter.** Every frame is timed from `Time.unscaledDeltaTime`. Each frame window carries a mergeable frame-time sketch and where the time went: physics, your `Update` code, rendering, the GPU. Each hitch (a frame over 50 ms and twice the recent median) comes with its likely causes: a garbage collection, a shader compile, a scene load, a burst of new objects, or long script, physics or render work. When none of those fit and the parts Glitchless times add up to little of the frame, the cause is `gpu_or_os`: the time went to the GPU, presenting the frame or the OS.
 - **Errors.** Uncaught exceptions, `Debug.LogError`, assertions and engine errors, through `Application.logMessageReceivedThreaded`, grouped by the same fingerprint the web and Godot SDKs use, with the game events just before each one.
-- **Levels and players.** Scenes are levels on their own. Deaths, level fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection.
+- **Levels and players.** Scenes are levels on their own. Deaths, level fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection, drawn over a picture of each level the SDK takes for you ([level maps](#level-maps)).
 - **Leaks.** Mesh, material, texture and object counts per level load, where a development build has them.
 - **Multiplayer.** Ping, jitter and disconnects from Netcode for GameObjects or Mirror, with nothing to set up; which match, party or run each event belongs to; and a server mode that measures a dedicated server's ticks and players without counting it as a player.
 - **Bug reports from players**, when you turn them on: F8 (or your own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
@@ -24,7 +24,7 @@ https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchles
 Or add it to `Packages/manifest.json`, pinned to a release:
 
 ```json
-"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.6.4"
+"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk#gg.glitchless.sdk/v0.7.0"
 ```
 
 Once it's listed on [OpenUPM](https://openupm.com): `openupm add gg.glitchless.sdk`.
@@ -110,6 +110,7 @@ Bots are not players: sessions in batch mode, with `--autoplay` or `--glitchless
 | the player moves to another part of an open world | `Glitchless.SetZone("westfall")` |
 | counts of anything that scales, every frame | `Glitchless.SetContext("enemies", enemies.Count)` |
 | the player's place, every frame | `Glitchless.SetPosition(player.position)` (sent only when positions are on) |
+| a level is built | `Glitchless.CaptureMap("level-2", new Rect(0, 0, 96, 18))`: its picture under the heatmaps ([below](#level-maps)) |
 | an exception you caught | `Glitchless.Error(e)` |
 | a player's bug report from your own UI | `Glitchless.ReportBug(note)`, or `Glitchless.OpenBugReport()` for the built-in form ([below](#bug-reports)) |
 | the player turns "Share performance data" off or on in your settings | `Glitchless.SetEnabled(on)` ([above](#a-share-performance-data-setting)); `Glitchless.Enabled` says whether Glitchless is on now |
@@ -135,6 +136,25 @@ Use the game's own words for names, causes and levels, never anything a player t
 - `LevelForScene = name => name.StartsWith("World") ? name : null` to choose yourself;
 - `SceneLevels = false` to turn it off;
 - any `Glitchless.LevelStart()` call, which turns scene levels off for the rest of the session. Use this when one scene plays many levels.
+
+## Level maps
+
+The dashboard draws a level's heatmap, its players' paths and its deaths over a picture of the level. `Glitchless.CaptureMap` takes that picture: call it once the level is built.
+
+```csharp
+// A 2D game or a side view: the part of the world to draw, on x and y, in world units.
+Glitchless.CaptureMap("day1-room3", new Rect(0, 0, room.Width, room.Height),
+    new MapOptions { Exclude = new[] { player.gameObject, backdrop.gameObject } });
+
+// A 3D level, seen from above (x and z): the box to draw. The camera looks down from its top, so a roof above it stays out.
+Glitchless.CaptureMap("arena", new Bounds(new Vector3(0, 5, 0), new Vector3(200, 10, 120)));
+```
+
+- **What it is.** A camera of its own, orthographic, renders exactly that area, and Glitchless sends it as a JPEG of up to 60,000 characters: 640 pixels wide, 1024 for a level more than 4 times wider than tall, the height following (a level taller than wide gets that height instead). It's the browser SDK's map event, so the dashboard puts positions and deaths where they were: x to the right, y up in a side view, and from above the smallest z at the top.
+- **No frame stalls**, in a WebGL build too: the render goes in one frame, reading it back in the next (by then the GPU has drawn it, so the read doesn't wait), and the JPEG after that. Those frames are left out of the frame stats, as a bug report's screenshot is, and captures go one at a time. See [What it costs](#what-it-costs).
+- **What it draws.** It copies the main camera's background, layers and sorting. `MapOptions` sets `Exclude` (the player, a backdrop that follows the camera, effects: their renderers are hidden for that one render with `forceRenderingOff`, nothing of yours is disabled), `Background`, `Layers`, `Width` and `Axis` (`MapAxis.XY` draws `Bounds` from the side). The built-in pipeline and URP (its 2D and Universal renderers) are tested; HDRP takes the same render request.
+- **Once each.** A level's map is taken once a launch and sent once per level and version from a device (the list is kept in `persistentDataPath/glitchless/maps`, PlayerPrefs in WebGL), so calling it every time a level starts is fine; a new version takes them again. The Editor takes them again every Play, as levels there are being changed.
+- **When it sends nothing.** Without positions (`Positions = true`, or Full mode): a map is only the ground deaths and paths are drawn on. Nor from a game server, while Glitchless is off, or with `-nographics`. It's safe before `Init`: the map waits with the rest. `MapOptions.Done` hears the picture that went, or null.
 
 ## Multiplayer
 
@@ -265,6 +285,7 @@ It isn't a profiler: it starts no profiler session and wraps none of your code. 
 
 - **The outbox file is written on a thread-pool thread**, so no frame waits on the disk (a full offline outbox is a 550 KB file, 0.5 to 1.3 ms for that thread), and each batch is turned into JSON once, however many times the outbox is saved. Quitting and going to the background write it at once instead, since the OS may stop the game before the thread finishes.
 - **Unity's garbage collector** runs when an allocation needs it, in Glitchless's code as in yours: a save then took 0.2 to 0.6 ms instead of 20 to 60 µs. The script marks those timings. A handful of timings (about 1 in 100 over the runs, a window close or a flush) took 3 to 6 ms with no collection seen, and a control timed the same way, with nothing of Glitchless's in it, never did: that isn't explained yet.
+- **A level's map** ([level maps](#level-maps)) is the one bigger piece of work, once per level and version on a device, and it is spread over frames. Measured with [`unity/test/map.mjs`](https://github.com/glitchless-gg/glitchless/blob/main/unity/test/map.mjs) in a release WebGL build (URP's 2D renderer) in Chromium on the same Mac: over three runs, a 1024 by 192 side view took about 3 ms to render, 2.5 to 4.5 ms to read back and 4 ms for the JPEG, each in a frame of its own, and a 640 by 384 view from above 1 ms, 3 to 4.5 ms and 2 to 3 ms. Every frame during the captures took 15 to 18 ms at 60 Hz, as before them. In the Editor, URP's first render of a session takes far longer (about 170 ms, compiling what it hasn't used yet); later ones about 8 ms.
 - **A phone is slower**, often several times per operation, and IL2CPP (phones and consoles) compiles differently from this Mono build. To run it on your Mac: `node unity/test/overhead.mjs` builds the player (`SampleBuilder.BuildOverhead`, from `unity/Assets/Overhead`) and prints the numbers.
 
 ## For coding agents
@@ -292,4 +313,4 @@ In the Editor, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))` does t
 
 ## Tests
 
-The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking; counters, properties, groups, zones, ping and disconnects, Mirror through stand-ins, server mode, and the player's off switch) and PlayMode tests (the runner, the bug report form pausing the game and staying shut while Glitchless is off, and a real Netcode for GameObjects server and client in one run, which compiles only where NGO 2.x is installed). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.
+The package has EditMode tests (the frame-time sketch and error fingerprints are checked bucket for bucket against the JavaScript SDK; bug reports' contents, sending and screenshot shrinking; counters, properties, groups, zones, ping and disconnects, Mirror through stand-ins, server mode, and the player's off switch) and PlayMode tests (the runner, the bug report form pausing the game and staying shut while Glitchless is off, level maps rendered in 2D and 3D and read back where the dashboard draws each point, and a real Netcode for GameObjects server and client in one run, which compiles only where NGO 2.x is installed). Add `"testables": ["gg.glitchless.sdk"]` to your `Packages/manifest.json` to see them in the Test Runner.

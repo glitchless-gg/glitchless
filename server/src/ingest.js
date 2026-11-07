@@ -145,6 +145,8 @@ export function normalize({ envelope, events }, now = Date.now()) {
     // Clamp client clocks: anything more than 1h in the future or 7d in the past is "now".
     if (typeof e.ts !== 'number' || e.ts > now + 3_600_000 || e.ts < now - 7 * 86_400_000) e.ts = now;
     if (e.type === 'map' && (typeof e.image !== 'string' || e.image.length > 120_000)) continue;
+    // Only PUT /v1/maps makes an uploaded background (maps.js); a game's own map is a capture.
+    if (e.type === 'map') delete e.uploaded;
     if (e.type === 'error' && isNoise(e)) continue;
     // A report keeps the player's note even when its screenshot is too big or not an image.
     if (e.type === 'bug_report' && e.screenshot != null && (typeof e.screenshot !== 'string' || !e.screenshot.startsWith('data:image/') || e.screenshot.length > 200_000)) delete e.screenshot;

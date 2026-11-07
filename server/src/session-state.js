@@ -12,6 +12,7 @@
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, overBudget, MINUTE, OTHER, ATTRS, FIXED } from './rollups.js';
+import { addZoneWindow, mergeZoneSeconds } from './zones.js';
 
 // 'script' is a Godot GDScript runtime error, an Unreal Blueprint runtime error, and 'exception' an
 // unhandled Unity exception: the function stops part way, like an uncaught JS exception.
@@ -23,6 +24,10 @@ const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception', 'crash'
 const HALT_KINDS = new Set(['game_loop_stopped', 'crash']);
 const RAGE_QUIT_WINDOW_MS = 20_000;
 const CRASH_WINDOW_MS = 10_000;
+// Rage inputs a session keeps with their level, time and place (the funnel and the session show them), and how long
+// before one a position sample may be to be its place.
+const RAGE_INPUTS = 20;
+const POS_NEAR_MS = 5_000;
 // Time away a session's length keeps: the SDKs' session timeout, a player back within 5 minutes plays on in the
 // same session (sessionMs).
 const AWAY_MS = 5 * 60_000;
@@ -153,7 +158,7 @@ export function addToSession(s, e) {
       else if (e.ended) touchGroup(s, e.kind, e.ended, e.ts);
       break;
     case 'death':
-      s.marks.push({ ts: e.ts, k: MARK.death, level: e.level, cause: e.cause, x: e.x, y: e.y, z: e.z });
+      s.marks.push({ ts: e.ts, k: MARK.death, level: e.level, cause: e.cause, x: e.x, y: e.y, z: e.z, ...(e.zone ? { zone: e.zone } : {}) });
       played(s, e.ts);
       break;
     case 'error':
@@ -165,7 +170,7 @@ export function addToSession(s, e) {
       break;
     case 'custom':
       if (e.name === 'webgl_context_restored') setContext(s, e.ts, false);
-      if (e.name === 'rage_input') s.rage_inputs++;
+      if (e.name === 'rage_input') addRageInput(s, e);
       if (e.name === 'annotation') s.annotations.push({ ts: e.ts, note: e.attrs?.note });
       if (!SDK_CUSTOM.has(e.name)) played(s, e.ts);
       addCustom(s, e);
@@ -190,6 +195,8 @@ export function addToSession(s, e) {
       s.hitches += e.hitches || 0;
       s.frozen += e.frozen || 0;
       s.fwLevels.add(e.level);
+      // Its played seconds per zone (zones.js `zs`): time in each zone, per session.
+      addZoneWindow(s, e);
       if (s.fwAt == null || e.ts >= s.fwAt) [s.fwAt, s.fwFrozen] = [e.ts, (e.frozen || 0) > 0];
       if (e.geometries != null) s.geo = addCount(s.geo, e.geometries, e.ts);
       if (isNum(e.textures)) s.tex = addCount(s.tex, e.textures, e.ts);
@@ -206,6 +213,10 @@ export function addToSession(s, e) {
         n.lastAt = e.ts;
       }
       break;
+    // Positions (when the game sends them): only the latest is kept here, for the place of a rage input.
+    case 'pos':
+      for (const p of Array.isArray(e.pts) ? e.pts : []) if (Array.isArray(p) && isNum(p[0])) addPosition(s, [p[0], e.level ?? null, p[1], p[2], p[3]]);
+      break;
     case 'load':
       if (e.ttff_ms != null) [s.ttffAt, s.ttff, s.first_launch] = [e.ts, e.ttff_ms, typeof e.first_launch === 'boolean' ? e.first_launch : null];
       if (e.ttp_ms != null) [s.ttpAt, s.ttp] = [e.ts, e.ttp_ms];
@@ -216,6 +227,38 @@ export function addToSession(s, e) {
 
 function played(s, ts) {
   if (s.last_play == null || ts > s.last_play) s.last_play = ts;
+}
+
+// Rage inputs (the SDKs' rage_input: one key mashed), in time order: { ts, level, key, n (presses), pt, x, y, z }, the
+// first RAGE_INPUTS of a session. Each takes its place from the session's latest position sample on its level at most
+// POS_NEAR_MS before it (pt is that sample's time); `lastPos` is the session's latest sample, [ts, level, x, y, z]. A
+// store's parts of a session split by time, so merging finds an input's sample in its own part or as the earlier part's
+// latest (mergeSession).
+function addRageInput(s, e) {
+  s.rage_inputs++;
+  const a = e.attrs || {};
+  const r = { ts: e.ts, level: e.level ?? null, key: a.key == null ? null : String(a.key).slice(0, 32), n: isNum(a.count) ? a.count : null };
+  placeAt(r, s.lastPos);
+  s.rin = mergeByTs(s.rin || [], [r], (x) => x.ts).slice(0, RAGE_INPUTS);
+}
+
+function addPosition(s, p) {
+  if (!s.lastPos || p[0] >= s.lastPos[0]) s.lastPos = p;
+  for (const r of s.rin || []) placeAt(r, p);
+}
+
+// r takes p as its place when p is on its level, before it, within POS_NEAR_MS, and later than the place it has.
+function placeAt(r, p) {
+  if (!p || p[0] > r.ts || r.ts - p[0] > POS_NEAR_MS || (p[1] ?? null) !== r.level) return;
+  if (r.pt != null && r.pt >= p[0]) return;
+  [r.pt, r.x, r.y, r.z] = [p[0], p[2] ?? null, p[3] ?? null, p[4] ?? null];
+}
+
+// A session's rage inputs, as kept; a session stored before they were kept has its first ones from its custom events'
+// occurrences (time, level and key, without a place).
+export function rageInputsOf(s) {
+  if (s.rin) return s.rin;
+  return (s.ev?.rage_input?.o || []).map(([ts, a, level]) => ({ ts, level: level ?? null, key: a?.key ?? null, n: isNum(a?.count) ? a.count : null }));
 }
 
 // A session's ping in each 30-second slot of each match it played (A8, finding 1: a whole lobby lagging at once points
@@ -474,6 +517,13 @@ export function mergeSession(a, b) {
   if (b.last_play != null && (a.last_play == null || b.last_play > a.last_play)) a.last_play = b.last_play;
   if (b.fwAt != null && (a.fwAt == null || b.fwAt >= a.fwAt)) [a.fwAt, a.fwFrozen] = [b.fwAt, b.fwFrozen];
   a.rage_inputs += b.rage_inputs;
+  if (a.rin?.length || b.rin?.length) {
+    const theirs = (b.rin || []).map((r) => ({ ...r }));
+    for (const r of a.rin || []) placeAt(r, b.lastPos);
+    for (const r of theirs) placeAt(r, a.lastPos);
+    a.rin = mergeByTs(a.rin || [], theirs, (x) => x.ts).slice(0, RAGE_INPUTS);
+  }
+  if (b.lastPos && (!a.lastPos || b.lastPos[0] >= a.lastPos[0])) a.lastPos = b.lastPos;
   for (const [k, x] of Object.entries(b.props || {})) setProp((a.props ||= {}), k, x);
   for (const g of b.groups || []) addGroup((a.groups ||= []), g);
   if (b.mslots) mergeSlots(a, b.mslots);
@@ -484,6 +534,7 @@ export function mergeSession(a, b) {
   a.frozen += b.frozen;
   a.frames += b.frames;
   mergeCell(a.cell, b.cell);
+  mergeZoneSeconds(a, b.zs);
   a.geo = mergeCount(a.geo, b.geo);
   a.tex = mergeCount(a.tex, b.tex);
   for (const [k, g] of Object.entries(b.gauges || {})) {

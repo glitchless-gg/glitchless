@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, QueryValue, TimeSeries, BarList, Sparkline, CodeBlock, Empty } from '../components.jsx';
-import { fmtNum, fmtPct, fmtSum, colorFor } from '../format.js';
+import { fmtNum, fmtPct, fmtSum, currencyName, colorFor } from '../format.js';
 import { CsvButton, eventsCsv, panelCsv } from '../csv.jsx';
 import { NoGame } from './Overview.jsx';
 import { FunnelTable } from './Board.jsx';
@@ -115,7 +115,7 @@ export function Events({ route }) {
                 .filter((x) => x.attr === a.key)
                 .map((x) => (
                   <div className="muted" key={x.currency || ''}>
-                    sum {fmtSum(x.sum, x.currency)} · {fmtNum(x.events)} events{x.currency ? ` in ${x.currency}` : ''}
+                    sum {fmtSum(x.sum, x.currency)} · {fmtNum(x.events)} events{x.currency ? ` in ${currencyName(x.currency)}` : ''}
                   </div>
                 ))}
             </div>

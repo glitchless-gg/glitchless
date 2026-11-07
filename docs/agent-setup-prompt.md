@@ -43,7 +43,7 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
 
 4. If your tool loads skills from a folder (for example ~/.claude/skills, ~/.codex/skills or the project's .agents/skills), copy ~/.glitchless/plugin/glitchless/skills/instrument, ~/.glitchless/plugin/glitchless/skills/dashboard and ~/.glitchless/plugin/glitchless/skills/triage there. If it doesn't, remember this for later: when I ask what's wrong with the game, read ~/.glitchless/plugin/glitchless/skills/triage/SKILL.md and follow it; when I ask for a dashboard or for metrics, read ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md.
 
-5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions arrive: call the glitchless_list_games tool, or ask me to look at {{DASHBOARD_URL}}.
+5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions arrive: call the glitchless_list_games tool, or ask me to look at {{DASHBOARD_URL}}. On Glitchless Cloud, my own play counts as a player's: ask me whether to mark it as the team's with the glitchless_mark_known tool and my player (glitchless_session lists the latest sessions with their player_id), so the game's player numbers start with real players.
 
 6. Give the game its own dashboard: follow ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my players (where they get stuck, which modes they play, whether they come back, what they buy), add the events that answer it, then save pages that fit this game with the glitchless_set_dashboard tool (with game set to this game's name if you're signed in to a workspace).
 

@@ -216,7 +216,8 @@ test('zones split like levels: $zone on breakdowns and series, and the performan
   assert.ok(hours.rows[0].hours > 0);
   const perf = performance(ctxOf());
   assert.deepEqual(perf.by_zone.map((z) => z.key), ['gea_kul', 'kehjistan']);
-  assert.ok(perf.by_zone.every((z) => z.sessions === null && z.frames > 0));
+  // Each session keeps its seconds per zone (zones.js), so a zone has its sessions and their time in it.
+  assert.deepEqual(perf.by_zone.map((z) => [z.sessions, z.frames > 0, z.median_s]), [[60, true, 5], [60, true, 15]]);
 });
 
 test("day rollups fold the level funnel by the first attributes of each level's starts, as the raw events do", () => {

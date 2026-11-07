@@ -27,9 +27,11 @@ stage is too hard?", "Does it stutter on phones?". Leave out what nobody would a
 | how often something happens, or which option players choose | `track(name, attrs)` | `stat`, `series`, `breakdown` |
 | how much: revenue, coins, seconds | a number in `track`'s attributes (`purchase` with `amount` and `currency`) | `stat` or `breakdown` with `sum` |
 | how many players do it at all (conversion) | `track(name)` | `stat` with `per: "$players"` |
+| how long until players first do something (leave the lobby, open the shop, first purchase), and how many never do | `track(name)` when it happens: nothing timed by hand | `stat` with `first: "hall_left"` (the median seconds from a session's start to its first one), `stat` with `never: "hall_left"` (the share of ended sessions that never sent it) |
 | a sequence (tutorial → first win, paywall → purchase) | one `track` per step | `funnel` |
 | progress or difficulty through stages, puzzles, waves, stops | `levelStart` / `levelComplete` / `levelFail` | `levels` |
-| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level), the Heatmaps view |
+| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level, one zone, or the whole game), the Heatmaps view |
+| where players go in a hub, a lobby or an open world with no levels | `setPosition`, and `setZone` for its areas (never a pretend level: it would show up in the levels funnel) | `positions` with `zone`, or with neither level nor zone, over a background picture (below) |
 | smoothness, and what makes it worse | automatic frame times, plus `setContext` gauges (enemies, particles) | `frame_time`, `stat: frame_p95` |
 | crashes and errors | automatic, plus `error()` for handled ones | `errors`, `stat: crash_free_pct` |
 | whether players come back (D1, D7, D30) | install mode: privacy `install` in the SDK, a stored random player ID (ask the user first: the privacy page must say so) | `retention`, the Players view |
@@ -44,7 +46,7 @@ stage is too hard?", "Does it stutter on phones?". Leave out what nobody would a
 | clears and wipes by difficulty, tier, group size or build | `levelStart(id, { tier, party_size, build: [...] })` | `levels` with `by: "tier"` (one level's rows: `level`), `deaths` with `by` |
 | runs that cross several levels (a roguelite) | `setGroup('run')` at the run's start | `levels` with `count: "runs"` (runs that reach each biome), `stat: runs` |
 | one match from every side, and whether the lobby or one player lagged | `setGroup('match', id)` with the ID the game's server made (`'party'` for a party; its size goes on `levelStart` as `party_size`) | the Matches view (each match's page), the lobby finding; clears by group size: `levels` by `party_size` |
-| where the player is in an open world (an MMO zone, a room) | `setZone(name)` | `by: "$zone"` on breakdowns and series (kept like levels: any range) |
+| where the player is in an open world or a hub (an MMO zone, a room, a lobby hall), and how long they stay | `setZone(name)`; nothing else: time in a zone is the frames drawn there, so never send zone timing as events | `breakdown` with `by: "$zone"` and no `event` (each zone's share of play time, the sessions that went there, their median time in it), `stat` `zone_time_pct` or `zone_median_s` with `zone`, `frame_time` with `by: "$zone"` (frame time and hitches per zone), `by: "$zone"` on any breakdown or series (kept like levels: any range) |
 | lag, packet loss and dropped players | read from the netcode by the SDK, or `netSample` / `disconnect` (the `instrument` skill) | `net` (ping, loss, disconnects), `stat: ping_p95`, `disconnect_pct`, the Network section of Performance |
 | dedicated servers: tick rate under load, crashes that end matches, leaks | the SDK in server mode on the server build (the `instrument` skill) | `servers` panels, `stat: servers_now` / `server_tick_p95` / `server_crash_free_pct`, the Servers view |
 
@@ -78,8 +80,12 @@ Rules that keep the numbers useful:
 - Never send anything that identifies a player: no names, emails, account ids or anything they typed.
 - Purchases: one `purchase` event when the store confirms it (not when the button is tapped), with `amount` (a
   number, in the currency's units: 4.99, not 499), `currency` (the ISO code the store charged in) and `item`. A
-  number sent next to `currency` counts as money, so put other numbers (gems granted) on an event of their own.
-  Never send receipts, order ids or payment details. Taps and failures are other events (`buy` with `step`).
+  Roblox game sells for Robux: `currency: "ROBUX"` and the price in Robux (`amount: 99`); Robux are kept apart and
+  never added to dollars. A game that also reports purchases that didn't go through sends them as the same event
+  with a `result` (`"done"`, `"cancelled"`) and the amount on each, and its revenue panels read
+  `"purchase:result=done"`. A number sent next to `currency` counts as money, so put other numbers (gems granted)
+  on an event of their own. Never send receipts, order ids or payment details. Taps are other events (`buy` with
+  `step`).
 
 Add the calls where the moment happens in code, then run the game (or let the bots play it) and check with
 `glitchless_events` that every event arrives with the attributes you expect.
@@ -88,7 +94,7 @@ Add the calls where the moment happens in code, then run the game (or let the bo
 
 A dashboard is the game's pages, in the order its sidebar shows them; the first opens first. Each page is a
 board, panels you choose, or a built-in view the game keeps: `events` (every event, breakdowns, funnels),
-`performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on the level), `sessions`
+`performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on a level, in a zone or anywhere), `sessions`
 (each with its replay), `versions`, `live` (events as they arrive; `options.events` keeps only some), `reports`
 (bug reports players sent, with screenshots), `matches` (a multiplayer game's matches, each opening a page with every
 player's ping slot by slot and the server's ticks under it) and `servers` (a game whose dedicated servers run the SDK
@@ -104,14 +110,16 @@ one line on why it matters. People see the note behind the info icon next to the
 in the title. Panels keep their order and pack under each other, so a short panel can sit next to a tall one.
 Give the game its own colour with `accent` ("#rrggbb", such as the main colour of its logo or key art) in
 `glitchless_set_dashboard`, alone or with the pages: it colours the links, the selected page, stats, the main chart
-series and the map on its boards and share links. The logo and a banner (key art) are uploaded by people in the
-dashboard (Edit pages → Look); `glitchless_dashboard` says whether the game has them.
+series and the map on its boards and share links. `logo` and `banner` (its key art, the header behind each board's
+title, cropped to a strip around its `focus`) take the game's own pictures, a file or base64, also alone; use what the
+game already has (its icon, its store or itch.io art) and ask before making one. `glitchless_dashboard` says whether
+the game has them.
 
 | type | fields |
 | --- | --- |
-| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played, players_now: playing now, whatever the range; runs; for a multiplayer game ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct; with servers in server mode servers_now, server_tick_p95, server_crash_free_pct, players_per_server), or `event` with an optional `per`: another event (a percentage), `$players` / `$sessions` (the share of them that sent it: conversion) or `$hours` (per hour played: matches per hour; `deaths` and `errors` take it too). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player, `"$hours"` per hour played (gold per hour). `rate`: the share of the events where a flag holds (`"won"`) or a word is sent (`"result=win"`), with `expect` for a rate the game intends; `avg`: a numeric attribute's average; `of` with `quantile` (1 to 99) and `unit`: one percentile (the median match) |
+| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played, players_now: playing now, whatever the range; runs; for a multiplayer game ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct; with servers in server mode servers_now, server_tick_p95, server_crash_free_pct, players_per_server; with `zone` (a zone's name from `setZone`) zone_time_pct, its share of play time, and zone_median_s, the median time in it of the sessions that went there), or `event` with an optional `per`: another event (a percentage), `$players` / `$sessions` (the share of them that sent it: conversion) or `$hours` (per hour played: matches per hour; `deaths` and `errors` take it too). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player, `"$hours"` per hour played (gold per hour). `rate`: the share of the events where a flag holds (`"won"`) or a word is sent (`"result=win"`), with `expect` for a rate the game intends; `avg`: a numeric attribute's average; `of` with `quantile` (1 to 99) and `unit`: one percentile (the median match). Instead of `event`, `first` (an event: the median seconds from a session's start to its first one, or `quantile`) or `never` (an event: the share of ended sessions that never sent it), 31 days or less. A money stat in Robux takes `devex: true`: an estimate in dollars at Roblox's DevEx rate under it, always labelled one |
 | `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level` / `$zone`, or the sessions' `$platform` / `$browser` / `$device_tier` / `$link` or a property, `$rank`), `limit`, `sum`, `rate` or `avg`, `per: "$hours"` |
-| `breakdown` | `event`, `by`, `limit`, `sum` (each value's sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web…), `$browser` (Chrome, Safari, Firefox, Edge…; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low), `$link` (Wi-Fi, Mobile data, Wired), or a property the game sets (`$rank`, `$class`; sessions without it are "(none)"). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Ranges of 31 days or less. With `rate` (`"won"`, `"result=win"`) or `avg`, each row's rate with its likely range (or its average) next to the overall one: `min` leaves out rows of fewer events (default 30 for a rate), `expect` draws the rate the game intends (a gacha's published odds, as a percentage: 0.6), `order` is `rate` (default), `count` or `value` (heat 0, 1, 2). `per: "$hours"` makes each row per hour played. By a list attribute (a deck), each element is a row |
+| `breakdown` | `event`, `by`, `limit`, `sum` (each value's sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web…), `$browser` (Chrome, Safari, Firefox, Edge…; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low), `$link` (Wi-Fi, Mobile data, Wired), or a property the game sets (`$rank`, `$class`; sessions without it are "(none)"). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Ranges of 31 days or less. With `rate` (`"won"`, `"result=win"`) or `avg`, each row's rate with its likely range (or its average) next to the overall one: `min` leaves out rows of fewer events (default 30 for a rate), `expect` draws the rate the game intends (a gacha's published odds, as a percentage: 0.6), `order` is `rate` (default), `count` or `value` (heat 0, 1, 2). Any breakdown takes `order: "value"` (the values' own order: streak day 1, 2 … 10) or `"count"`. `per: "$hours"` makes each row per hour played. By a list attribute (a deck), each element is a row. With `sum` in Robux, `devex: true` gives each row and the total an estimate in dollars. `by: "$zone"` without `event`: the time played in each zone, most first (share of play time, sessions that went there, their median time; time outside every zone is "(none)"), any range |
 | `distribution` | `event`, `of` (a numeric attribute), optional `by` (an attribute, `$version`, `$level`, a session split), `limit` (rows, up to 8), `bins` (bars, up to 40), `unit` (`"s"` shows minutes and hours; or the game's word, `"floors"`). How it spreads: half under, 1 in 10 over, and a histogram |
 | `funnel` | `steps`: events in order, comma-separated |
 | `levels` | `label`: what the game calls a level ("Stop", "Puzzle", "Wave"); shows each one's median clear time and the slowest 1 in 10, and the attempts a disconnect ended. `by` splits each level's attempts: an attribute of its `levelStart` (`"tier"`, `"party_size"`, a list such as `"build"`), a property (`"$class"`) or a split; `level` keeps one level; `count: "runs"` counts each run once at each level it reached |
@@ -120,17 +128,19 @@ dashboard (Edit pages → Look); `glitchless_dashboard` says whether the game ha
 | `sessions` | `sent`: only sessions that sent this event ("buy=done"), `limit` |
 | `versions` | none: this board's stats, version by version; `by` a property (`$class`) compares its values instead |
 | `live` | `events`: only these names or types, as they arrive |
-| `findings`, `frame_time`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports; `by` and `level` for deaths, as on `levels`) |
+| `frame_time` | none: p50 and p95 over time against players' screens; `by: "$zone"` or `"$level"`: a row per zone or level with its p50, p95, frames over budget, hitches per minute and share of play time, most played first (`limit`, up to 20) |
+| `findings`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports; `by` and `level` for deaths, as on `levels`) |
 | `retention` | `limit`: how many of the latest first-seen days (default 14); `by` a property (`$spender`): each value's D1, D7 and D30. Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on, except a Roblox game connected to Roblox, whose panel shows Roblox's own retention |
 | `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat's `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe's `refunds`, `customers` (new paying customers) and `by_product`; Roblox's (in Robux) `installs` (new users), `active_users` (daily active users), `players_by_day` and `retention` (D1, D7, D30 by cohort day, size `m`), no `by_version`. `store`: `revenuecat`, `stripe` or `roblox` (default: the first connected). Real revenue from RevenueCat or the game's own Stripe account, or Roblox's Robux, for a game connected to it in Glitchless Cloud |
 | `store_score` | `store` (`app_store`, `google_play`, `steam` or `roblox`): a store's rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple's own rating on the App Store. Google Play has no API for its overall rating, so its panel is the reviews' average and says so. Roblox has no reviews: its thumbs up and down, favorites and visits |
-| `positions` | `level` (required), `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the level). Where players died on that level, counted per bin, and where they went on a coarser grid: one panel per level |
+| `positions` | `level`, or `zone` (what the game passes to `setZone`), or neither: every position and death in the game, for a hub with no levels; `show`: `deaths` (default), `path` or `both`, `bin`: a bin's width in world units (default about a hundredth of the place). Where players died there, counted per bin, and where they went on a coarser grid, over the place's background: one panel per place |
 | `table` | `event` (required), `columns` (up to 12: attributes, `$time`, `$version`, `$platform`, `$level`, `$session`; `{ "key": "duration_s", "unit": "s" }` for a unit; default the event's own attributes, up to 8), `group_by` (an attribute, `$version`, `$level` or `$platform`), `sort` (`"-score"`: highest first; default newest first), `of` (a number whose lowest, average and highest each group shows), `limit` (rows a group, up to 100; default 20). The event's events one by one, size `l` |
 
 An event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. A list matches when it
 has the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_spirit` when it has all of them:
-ask about any pair or trio this way. With `sum` and `by` an attribute, the event is a name only (`purchase`, not
-`purchase=done`).
+ask about any pair or trio this way. A filtered event can be added up by an attribute too: completed purchases by
+item is `event: "purchase:result=done"`, `by: "item"`, `sum: "amount"`. A dashboard's `currency` is an ISO code or
+`"ROBUX"`.
 
 For a game with heroes, decks or builds to balance, money, player properties, online play, or several platforms
 and devices, read [references/genres.md](references/genres.md): the panels each of those asks for.
@@ -142,10 +152,21 @@ Whole dashboards to start from, a mobile game, a competitive game, a battle roya
 are in [references/examples.md](references/examples.md). Take the shape, not the words: every page and panel uses
 this game's own names.
 
+**A background for a heatmap.** A positions panel and the Heatmaps view draw a place over its picture: one an SDK
+captured (`captureMap`), or one you upload with `glitchless_set_dashboard`'s `background` (it can be sent alone),
+which needs no game code. Give it
+a top-down picture of the level, zone or whole hub (a screenshot from the editor's top view, or the level's own map
+art) as a PNG or JPEG of at most 256 KB, and the world coordinates its edges stand for: with `axis` `xz` (seen from
+above) the left edge is `bounds.min[0]` (x), the right `bounds.max[0]`, the top `bounds.min[1]` (z) and the bottom
+`bounds.max[1]`. Read those from the level's own data (the floor's corners), never guess them; the tool says when
+the picture's shape doesn't match the bounds. One picture of the whole hub (no level, no zone) serves its zones too:
+a zone without a picture of its own is drawn over it, and one of its own gives a closer look. Through the hosted
+server, which can't read your files, it gives the `curl` to run instead (`PUT /v1/maps` with a secret key).
+
 **A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], …]` on the
 level's plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,
 and the game itself can poll that link to draw everyone's deaths without a backend of its own: one board, one
-positions panel per level, a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_…&days=30`
+positions panel per level (or zone), a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_…&days=30`
 about once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so
 every player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.
 

@@ -8,6 +8,10 @@
 -- server and client do. A RemoteEvent the server makes is copied to every client, and firing it carries a deep copy
 -- across (metatables dropped), as Roblox's remotes do.
 --
+-- Parts in the server's Workspace (`world:part`) answer straight-down raycasts (workspace:Raycast) as axis-aligned
+-- boxes, for the map the server draws; players have FollowUserId and IsFriendsWith (`world.friends`); characters'
+-- Humanoids have Died and Seated; ProximityPromptService has PromptTriggered (`world:triggerPrompt`).
+--
 -- Time is virtual: `world:step(dt)` moves the clock, fires each client's PreRender and every Heartbeat, and runs
 -- task.delay/task.wait threads that are due. HTTP is either a function the test gives (`world.http`, answered at
 -- once) or real (`world.realHttp`, through @lune/net, made from the test's own thread while the SDK's thread waits).
@@ -83,7 +87,11 @@ local CLASSES = {
 	Folder = { "Instance" },
 	Model = { "PVInstance", "Instance" },
 	Part = { "BasePart", "PVInstance", "Instance" },
+	Seat = { "BasePart", "PVInstance", "Instance" },
+	VehicleSeat = { "BasePart", "PVInstance", "Instance" },
+	Terrain = { "BasePart", "PVInstance", "Instance" },
 	Humanoid = { "Instance" },
+	ProximityPrompt = { "Instance" },
 }
 
 local function isA(inst, class)
@@ -158,6 +166,29 @@ end
 
 function Methods.GetChildren(self)
 	return table.clone(rawget(self, "_children"))
+end
+
+function Methods.GetDescendants(self)
+	local out = {}
+	local function walk(i)
+		for _, c in rawget(i, "_children") do
+			table.insert(out, c)
+			walk(c)
+		end
+	end
+	walk(self)
+	return out
+end
+
+function Methods.IsDescendantOf(self, ancestor)
+	local p = rawget(self, "_props").Parent
+	while p do
+		if p == ancestor then
+			return true
+		end
+		p = rawget(p, "_props").Parent
+	end
+	return false
 end
 
 function Methods.IsA(self, class)
@@ -274,6 +305,12 @@ local function enumItem(enum, name, value)
 end
 
 local Enum = {
+	RaycastFilterType = { Exclude = enumItem("RaycastFilterType", "Exclude", 0), Include = enumItem("RaycastFilterType", "Include", 1) },
+	Material = {
+		Plastic = enumItem("Material", "Plastic", 256),
+		Grass = enumItem("Material", "Grass", 1280),
+		Water = enumItem("Material", "Water", 2048),
+	},
 	HttpCompression = { None = enumItem("HttpCompression", "None", 0), Gzip = enumItem("HttpCompression", "Gzip", 1) },
 	PlayerExitReason = {
 		Unknown = enumItem("PlayerExitReason", "Unknown", 0),
@@ -286,6 +323,41 @@ for i = 1, 10 do
 	Enum.SavedQualitySetting["QualityLevel" .. i] = enumItem("SavedQualitySetting", "QualityLevel" .. i, i)
 end
 Roblox.Enum = Enum
+
+-- Vector3 and Color3, as far as the SDK uses them.
+local Vector3 = {}
+local Vector3Meta = { __type = "Vector3" }
+function Vector3.new(x, y, z)
+	return setmetatable({ X = x or 0, Y = y or 0, Z = z or 0 }, Vector3Meta)
+end
+local Color3 = {}
+local Color3Meta = { __type = "Color3" }
+function Color3.new(r, g, b)
+	return setmetatable({ R = r or 0, G = g or 0, B = b or 0 }, Color3Meta)
+end
+Roblox.Vector3 = Vector3
+Roblox.Color3 = Color3
+
+-- An axis-aligned CFrame at `p`.
+local function cframeAt(p)
+	return {
+		Position = p,
+		RightVector = Vector3.new(1, 0, 0),
+		UpVector = Vector3.new(0, 1, 0),
+		LookVector = Vector3.new(0, 0, -1),
+	}
+end
+
+local RaycastParams = {}
+function RaycastParams.new()
+	local params = { FilterType = Enum.RaycastFilterType.Exclude, FilterDescendantsInstances = {}, IgnoreWater = false }
+	function params.AddToFilter(self, inst)
+		local list = self.FilterDescendantsInstances
+		table.insert(list, inst)
+		self.FilterDescendantsInstances = list
+	end
+	return params
+end
 
 local function typeof(v)
 	local mt = getmetatable(v)
@@ -316,7 +388,10 @@ function Roblox.world(opts)
 		httpQueue = {},
 		datastore = {},
 		warnings = {},
+		printed = {},
 		errors = {},
+		friends = {}, -- "<user ID>:<user ID>" (smaller first) → true, for IsFriendsWith
+		friendCalls = 0,
 		clients = {},
 		nextUserId = 1000001,
 	}, World)
@@ -474,6 +549,9 @@ function World:dataModel(isServer, localPlayer)
 		IsStudio = function()
 			return world.studio
 		end,
+		IsRunning = function()
+			return not world.editMode
+		end,
 	})
 	rs.Heartbeat = Signal.new(self)
 	rs.PreRender = Signal.new(self)
@@ -599,12 +677,66 @@ function World:dataModel(isServer, localPlayer)
 		end,
 	})
 
+	local pps = self:service(dm, "ProximityPromptService")
+	pps.PromptTriggered = Signal.new(self)
+
 	local ws = self:service(dm, "Workspace", {
 		GetServerTimeNow = function()
 			return world:nowMs() / 1000
 		end,
+		-- Straight down only: the highest top of a part under the ray's x and z, within its length, that the ray doesn't
+		-- start inside, the filter doesn't exclude and CanQuery allows. Water (`world.water = y`) is terrain.
+		Raycast = function(w, origin, dir, params)
+			assert(dir.X == 0 and dir.Z == 0 and dir.Y < 0, "the fake raycasts straight down only")
+			local skip = {}
+			for _, inst in (params and params.FilterDescendantsInstances) or {} do
+				if type(inst) == "table" then
+					skip[inst] = true
+				end
+			end
+			local function excluded(inst)
+				local p = inst
+				while p do
+					if skip[p] then
+						return true
+					end
+					p = rawget(p, "_props").Parent
+				end
+				return false
+			end
+			local best, bestY
+			for _, part in w:GetDescendants() do
+				if isA(part, "BasePart") and part.ClassName ~= "Terrain" and rawget(part, "_props").CanQuery ~= false and not excluded(part) then
+					local pos, size = part.Position, part.Size
+					local x0, x1 = pos.X - size.X / 2, pos.X + size.X / 2
+					local z0, z1 = pos.Z - size.Z / 2, pos.Z + size.Z / 2
+					local y0, y1 = pos.Y - size.Y / 2, pos.Y + size.Y / 2
+					if origin.X >= x0 and origin.X <= x1 and origin.Z >= z0 and origin.Z <= z1 then
+						local inside = origin.Y > y0 and origin.Y < y1
+						if not inside and y1 <= origin.Y and y1 >= origin.Y + dir.Y and (not bestY or y1 > bestY) then
+							best, bestY = part, y1
+						end
+					end
+				end
+			end
+			if world.water and (not bestY or world.water > bestY) and world.water <= origin.Y and world.water >= origin.Y + dir.Y and not (params and params.IgnoreWater) then
+				return { Instance = w.Terrain, Position = Vector3.new(origin.X, world.water, origin.Z), Normal = Vector3.new(0, 1, 0), Material = Enum.Material.Water }
+			end
+			if best then
+				return { Instance = best, Position = Vector3.new(origin.X, bestY, origin.Z), Normal = Vector3.new(0, 1, 0), Material = rawget(best, "_props").Material or Enum.Material.Plastic }
+			end
+			return nil
+		end,
 	})
 	ws.CurrentCamera = { ViewportSize = { X = 1920, Y = 1080 } }
+	local terrain = Instance.new(self, "Terrain", {
+		GetMaterialColor = function(_, material)
+			return if material == Enum.Material.Grass then Color3.new(0.3, 0.6, 0.2) else Color3.new(0.5, 0.5, 0.5)
+		end,
+	})
+	terrain.Name = "Terrain"
+	terrain.WaterColor = Color3.new(0.05, 0.33, 0.36)
+	terrain.Parent = ws
 
 	-- Glitchless, as Rojo builds it from roblox/src
 	local module = self:loadTree(SRC, "Glitchless")
@@ -649,6 +781,16 @@ function World:require(dm, module)
 		workspace = dm.Workspace,
 		Enum = Enum,
 		typeof = typeof,
+		Vector3 = Vector3,
+		Color3 = Color3,
+		RaycastParams = RaycastParams,
+		print = function(...)
+			local parts = {}
+			for _, v in { ... } do
+				table.insert(parts, tostring(v))
+			end
+			table.insert(world.printed, table.concat(parts, " "))
+		end,
 		Instance = {
 			new = function(class)
 				return Instance.new(world, class)
@@ -803,11 +945,29 @@ local function newPlayer(world, name, displayName, userId)
 			return rawget(self, "_props").Ping
 		end,
 		Kick = function() end,
+		-- a web request on Roblox: it waits a moment here too
+		IsFriendsWith = function(self, other)
+			world.friendCalls += 1
+			local co = coroutine.running()
+			world:delay(0.05, function()
+				world:resume(co)
+			end)
+			coroutine.yield()
+			if world.friendsBroken then
+				error("HTTP 500 (Internal Server Error)", 0)
+			end
+			local a, b = rawget(self, "_props").UserId, other
+			if a > b then
+				a, b = b, a
+			end
+			return world.friends[a .. ":" .. b] == true
+		end,
 	})
 	p.Name = name
 	p.DisplayName = displayName
 	p.UserId = userId
 	p.Ping = 0.045
+	p.FollowUserId = 0
 	p.CharacterAdded = Signal.new(world)
 	return p
 end
@@ -818,6 +978,7 @@ function World:join(name, opts)
 	local userId = opts.userId or self.nextUserId
 	self.nextUserId += 1
 	local sp = newPlayer(self, name, opts.displayName or name, userId)
+	sp.FollowUserId = opts.followUserId or 0
 	sp.Parent = self.server.Players
 	local clientPlayer = newPlayer(self, name, opts.displayName or name, userId)
 	local dm = self:dataModel(false, clientPlayer)
@@ -854,10 +1015,15 @@ function World:spawnCharacter(c, pos)
 	model.Name = c.name
 	local root = Instance.new(self, "Part")
 	root.Name = "HumanoidRootPart"
-	root.Position = { X = pos[1], Y = pos[2], Z = pos[3] }
+	root.Position = Vector3.new(pos[1], pos[2], pos[3])
+	root.Size = Vector3.new(2, 2, 1)
+	root.CFrame = cframeAt(root.Position)
+	root.Transparency = 0
+	root.Color = Color3.new(1, 0, 1)
 	root.Parent = model
 	local humanoid = Instance.new(self, "Humanoid")
 	humanoid.Died = Signal.new(self)
+	humanoid.Seated = Signal.new(self)
 	humanoid.Parent = model
 	model.PrimaryPart = root
 	model.Parent = self.server.Workspace
@@ -891,6 +1057,49 @@ function World:shutdown(maxSeconds)
 		self:runTimers()
 	end
 	return done == #closers
+end
+
+-- A part in the server's Workspace (or under `opts.parent`): `pos` its centre and `size` its size in studs, axis-aligned.
+function World:part(opts)
+	local part = Instance.new(self, opts.class or "Part")
+	part.Name = opts.name or part.ClassName
+	part.Position = Vector3.new(opts.pos[1], opts.pos[2], opts.pos[3])
+	part.Size = Vector3.new(opts.size[1], opts.size[2], opts.size[3])
+	part.CFrame = cframeAt(part.Position)
+	part.Color = Color3.new(table.unpack(opts.color or { 0.5, 0.5, 0.5 }))
+	part.Transparency = opts.transparency or 0
+	if opts.canQuery == false then
+		part.CanQuery = false
+	end
+	part.Parent = opts.parent or self.server.Workspace
+	return part
+end
+
+-- A folder (or model) in the server's Workspace, for parts to go in.
+function World:folder(name, class)
+	local f = Instance.new(self, class or "Folder")
+	f.Name = name
+	f.Parent = self.server.Workspace
+	return f
+end
+
+-- The player triggers a ProximityPrompt: ProximityPromptService.PromptTriggered on the server.
+function World:triggerPrompt(c, actionText, objectText)
+	local prompt = Instance.new(self, "ProximityPrompt")
+	prompt.ActionText = actionText or "Interact"
+	prompt.ObjectText = objectText or ""
+	self.currentDm = self.server
+	self.server.ProximityPromptService.PromptTriggered:Fire(prompt, c.serverPlayer)
+	return prompt
+end
+
+-- Two players are friends on Roblox.
+function World:befriend(a, b)
+	local x, y = a.serverPlayer.UserId, b.serverPlayer.UserId
+	if x > y then
+		x, y = y, x
+	end
+	self.friends[x .. ":" .. y] = true
 end
 
 -- Starts Glitchless on a client as the shipped GlitchlessClient script would.

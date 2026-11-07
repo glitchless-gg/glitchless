@@ -28,6 +28,7 @@ import { reportsOf } from './reports.js';
 import { DEFAULT_PROJECT } from './auth.js';
 import { isCompanion } from './ingest.js';
 import { cameBackLine } from './resolved.js';
+import { testerIndex } from './testers.js';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -106,8 +107,9 @@ export function alertRules(saved = {}) {
 // (the store's first sighting of each, analytics.js releaseOrder), so "the newest" is the newest whatever the day.
 // Every session type unless q.type says one: on Glitchless Cloud a session-type filter reads raw events, which only its
 // web function can (when an error is resolved), never its alerts check, which reads players with playersView instead.
+// q.testers: the game's testers (testers.js testerIndex), whose sessions aren't players'.
 export async function contextFor(store, projectId, q) {
-  const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: q.type || 'all', sessions: null, plan: q.plan ?? null };
+  const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: q.type || 'all', sessions: null, plan: q.plan ?? null, ...(q.testers ? { testers: q.testers } : {}) };
   let ctx;
   if (store.context) ctx = await store.context(projectId, query, 'alerts');
   else ctx = buildContext(await store.query(projectId, query), query, await store.rollups(projectId, query));
@@ -204,8 +206,8 @@ export function releaseStats(ctx, real = realSessions(ctx), vers = versions(ctx)
 
 // What the rules read about one service: its last day, and (seed) its last LIMITS.profileDays for the profile of
 // what's usual, (history) with the errors of its last LIMITS.seedDays.
-export async function measure(store, projectId, { service, env = null, plan = null, now, seed = false, history = false, resolved = [] }) {
-  const q = { service, env, plan };
+export async function measure(store, projectId, { service, env = null, plan = null, now, seed = false, history = false, resolved = [], testers = null }) {
+  const q = { service, env, plan, testers };
   const ctx = await contextFor(store, projectId, { ...q, from: now - DAY, to: now });
   // The new_error rule reads players' errors: an error only test phones, bots or testers hit isn't one players have.
   // Errors the game's owner resolved (resolved.js) are marked: the rule skips them, unless they came back, among
@@ -430,7 +432,7 @@ export async function checkService({ store, state, projectId, service, settings 
   const stored = await state.seen(service);
   const baseline = !stored || !(stored.baselineAt >= enabledAt) || stored.v !== STATE_VERSION;
   const seed = !stored?.hours || !(now - stored.hoursAt <= LIMITS.profileStaleMs);
-  const measured = await read(store, projectId, { service, env: settings.env || null, plan, now, seed, history: !stored, resolved: settings.resolved ?? [] });
+  const measured = await read(store, projectId, { service, env: settings.env || null, plan, now, seed, history: !stored, resolved: settings.resolved ?? [], testers: testerIndex(settings.testers) });
   const oldest = Math.floor((now - LIMITS.profileDays * DAY) / HOUR);
   const hours = Object.fromEntries(Object.entries({ ...(seed ? {} : stored.hours), ...measured.hours }).filter(([h]) => +h >= oldest));
   const versionsSeen = { ...stored?.versions };
@@ -664,10 +666,11 @@ const WORTH_FIXING = ['critical', 'high', 'medium'];
 // Last week (Monday to Sunday, UTC) of one service against the week before, and the standing findings most worth
 // fixing (paste lines name the game `name`, else its service). revenue: the host's revenue source for the two weeks ({ source, currency, last, before }), else the game's
 // own purchase events are summed. known: the game's known findings (known.js), left out of the three and counted.
-// resolved: the game's resolved errors (resolved.js), whose findings are left out unless they came back.
-export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null, known = [], resolved = [] }) {
+// resolved: the game's resolved errors (resolved.js), whose findings are left out unless they came back. testers: the
+// players and sessions the team marked as its own play (testers.js), which aren't players.
+export async function weeklySummary(store, projectId, { service, name = null, env = null, plan = null, now, revenue = null, known = [], resolved = [], testers = [] }) {
   const end = weekStart(now);
-  const q = { service, env, plan };
+  const q = { service, env, plan, testers: testerIndex(testers) };
   const [last, before] = await Promise.all([contextFor(store, projectId, { ...q, from: end - 7 * DAY, to: end }), contextFor(store, projectId, { ...q, from: end - 14 * DAY, to: end - 7 * DAY })]);
   const w = weekOf(last, end - 7 * DAY, end);
   const b = weekOf(before, end - 14 * DAY, end - 7 * DAY);
@@ -686,8 +689,8 @@ export async function weeklySummary(store, projectId, { service, name = null, en
 
 // The standing findings of one service over the `days` before `now`, read as the weekly summary reads them: what a
 // finding marked known "until it gets worse" is compared with later.
-export async function recentFindings(store, projectId, { service, env = null, plan = null, now, days = 7 }) {
-  const ctx = await contextFor(store, projectId, { service, env, plan, from: now - days * DAY, to: now });
+export async function recentFindings(store, projectId, { service, env = null, plan = null, now, days = 7, testers = [] }) {
+  const ctx = await contextFor(store, projectId, { service, env, plan, testers: testerIndex(testers), from: now - days * DAY, to: now });
   return findings(ctx, store.getMaps ? await store.getMaps(projectId, service) : []);
 }
 

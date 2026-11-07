@@ -1,6 +1,6 @@
 // A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
-// OAuth over HTTP): sign in, create a game, make, list and revoke share links, mark findings known, resolve errors,
-// and read and change a game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
+// OAuth over HTTP): sign in, create or rename a game, make, list and revoke share links, mark findings known and the
+// team's own play as testers, resolve errors, and read and change a game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
 import { define, base, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
 import { startSignIn, CLOUD_URL } from '../login.js';
@@ -48,12 +48,21 @@ act(
 
 act(
   'glitchless_create_game',
-  "Create a game in the signed-in workspace. Returns its client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games.",
+  "Create a game in the signed-in workspace. Returns its client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
   {
     name: z.string().optional().describe("The game's name, as players know it (not needed with demo)"),
     demo: z.boolean().optional().describe('Make the demo game, with a week of sample play'),
+    rename: z.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names"),
   },
-  async ({ name, demo }) => {
+  async ({ name, demo, rename, game }) => {
+    if (rename != null) {
+      if (name || demo) throw new Error('rename renames the game that game names; leave out name and demo');
+      const pid = await projectFor(game);
+      const before = (await workspaceGames()).find((g) => g.id === pid)?.name ?? pid;
+      const { game: renamed } = await agent('PATCH', `/games/${pid}`, { name: rename });
+      await workspaceGames(true);
+      return reply(`Renamed ${before} to ${renamed.name}. Later calls name it game: "${renamed.name}"; its client token and service are unchanged.`, renamed);
+    }
     if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
     const made = await agent('POST', '/games', demo ? { demo: true } : { name });
     await workspaceGames(true);
@@ -61,6 +70,7 @@ act(
     if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
     return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
   },
+  { title: 'Create or rename game', annotations: { destructiveHint: false, idempotentHint: false } },
 );
 
 act(
@@ -92,27 +102,44 @@ act(
 
 act(
   'glitchless_mark_known',
-  "Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with `known` and the note. finding is a finding's id from glitchless_triage, or the start of one (\"perf-level-tutorial_1_\" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do.",
+  "Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with `known` and the note. finding is a finding's id from glitchless_triage, or the start of one (\"perf-level-tutorial_1_\" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do. With player or session instead of finding, marks the game's team's own play (the developer's playtest, a friend trying a build), so every read tool counts it as session type tester instead of user, its past sessions too: players' numbers, findings, the weekly summary, alerts and share links leave it out, and session_type \"tester\" finds it. player is the player_id glitchless_session gives (every session that player sent, before and after); session a session_id, for a game in anonymous mode (no player IDs). Ask the person first. With none of them, lists the known findings and the testers.",
   {
     finding: z.string().optional().describe('A finding id from glitchless_triage, e.g. "load-ttff", or the start of one, e.g. "perf-level-tutorial_1_"'),
-    note: z.string().optional().describe('Why it is accepted, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted"'),
+    player: z.string().optional().describe("Or a player_id, from glitchless_session: that player's play is the team's own (a tester)"),
+    session: z.string().optional().describe('Or a session_id (s_…): that one session is the team\'s own'),
+    note: z.string().optional().describe('Why it is accepted, or who the tester is, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted" or "Me, playtesting on my laptop"'),
     until: z.string().optional().describe('YYYY-MM-DD: known through that day, listed again from the day after'),
     until_worse: z.boolean().optional().describe('Known only while it is no worse than it is now'),
-    clear: z.boolean().optional().describe('Remove the mark, so the weekly summary lists it again'),
+    clear: z.boolean().optional().describe('Remove the mark: the weekly summary lists the finding again, or the tester\'s sessions count as they were sent'),
   },
-  async ({ finding, note, until, until_worse, clear, game }) => {
+  async ({ finding, player, session, note, until, until_worse, clear, game }) => {
     const pid = await projectFor(game);
+    if ([finding, player, session].filter(Boolean).length > 1) throw new Error('mark a finding, a player or a session, one at a time');
+    if (player || session) return markTester(pid, { player, session, note, clear });
     if (!finding) {
-      const { known } = await agent('GET', `/games/${pid}/known`);
-      return reply(known.length ? `${known.length} known finding(s), left out of the weekly summary:` : 'No known findings: the weekly summary lists every finding worth fixing.', known);
+      const [{ known }, { testers }] = await Promise.all([agent('GET', `/games/${pid}/known`), agent('GET', `/games/${pid}/testers`)]);
+      const lines = [
+        known.length ? `${known.length} known finding(s), left out of the weekly summary.` : 'No known findings: the weekly summary lists every finding worth fixing.',
+        testers.length ? `${testers.length} tester(s): their sessions read as session type tester in every tool, and players' numbers leave them out.` : "No testers marked: every session counts as its SDK sent it (a player's as user).",
+      ];
+      return reply(lines.join('\n'), { known, testers });
     }
     if (!clear && !note) throw new Error('say why it is known in note (a few words), or pass clear: true to remove the mark');
     const { known } = await agent('POST', `/games/${pid}/known`, clear ? { finding, clear: true } : { finding, note, until, until_worse });
     return reply(clear ? `${finding} is no longer known: the weekly summary lists it again when it is worth fixing.` : `Marked ${finding} as known. The weekly summary leaves it out; glitchless_triage shows it after the rest, with the note. Known findings:`, known);
   },
-  // It replaces an entry's note, and clear removes one.
-  { title: 'Mark finding known', annotations: { destructiveHint: true, idempotentHint: true } },
+  // It replaces an entry's note, clear removes one, and a tester changes what every read tool counts as players.
+  { title: 'Mark known', annotations: { destructiveHint: true, idempotentHint: true } },
 );
+
+// A player or session marked as (or cleared from) the team's own play, for glitchless_mark_known.
+async function markTester(pid, { player, session, note, clear }) {
+  const who = player ? `player ${player}` : `session ${session}`;
+  const { testers } = await agent('POST', `/games/${pid}/testers`, { ...(player ? { player } : { session }), ...(clear ? { clear: true } : { note }) });
+  if (clear) return reply(`Unmarked ${who}: its sessions count as they were sent again. Testers:`, testers);
+  const e = testers.find((x) => (player ? x.player === player : x.session === session));
+  return reply(`Marked ${who} as the team's own play: ${e?.sessions ?? 'its'} session(s) over the last 30 days, and any later ones, read as tester; players' numbers leave them out. Testers:`, testers);
+}
 
 act(
   'glitchless_resolve_error',

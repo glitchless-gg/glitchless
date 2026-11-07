@@ -182,7 +182,7 @@ t.test("a player's session: start with device and properties, frame windows, a l
 	t.eq(fin.reason, "quit", "they left")
 
 	for _, b in batches do
-		t.eq(b.sdk, "glitchless-roblox/0.1.0", "sdk")
+		t.eq(b.sdk, "glitchless-roblox/0.2.0", "sdk")
 		t.eq(b.service, "nardo-racing", "service")
 		t.eq(b.version, "1.4.0", "version")
 		t.eq(b.env, "prod", "env")

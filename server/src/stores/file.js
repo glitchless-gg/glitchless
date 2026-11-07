@@ -9,7 +9,10 @@
 //   rollups(projectId, { service, from, to })   → { lo, hi, minutes }: rollup cells (see rollups.js) for
 //                                               every minute in [lo, hi), the whole minutes of the range
 //                                               the store has complete rollups for (lo >= hi: none)
-//   getMaps(projectId, service)
+//   getMaps(projectId, service)                 the game's maps: heatmap backgrounds, captured (`map` events) or uploaded
+//   putMap(projectId, map), deleteMap(projectId, service, key)   an uploaded background (maps.js), kept until the game's
+//                                               data is cleared, and one removed by its sort key (places.js mapSortKey).
+//                                               Optional: a store without them answers PUT /v1/maps with 501
 //   reports(projectId, service, { from, to })   bug reports, newest first, without screenshots (reports.js)
 //   getReport(projectId, service, id)           one with its screenshot
 //   deleteReport(projectId, service, id)        deletes one and its screenshot
@@ -50,6 +53,7 @@ import { rollup, minuteOf, MINUTE } from '../rollups.js';
 import { splitReport, decodeScreenshot, encodeScreenshot, MAX_REPORTS } from '../reports.js';
 import { keySeg, fromKeySeg } from '../sourcemaps.js';
 import { BATCH_KEEP_MS } from '../ingest.js';
+import { mapSortKey } from '../places.js';
 
 const RETENTION_DAYS = 14;
 
@@ -238,6 +242,17 @@ export class FileStore {
 
   async getMaps(projectId, service) {
     return [...this.project(projectId).maps.values()].filter((m) => m.service === service);
+  }
+
+  async putMap(projectId, map) {
+    const e = { ...map, project_id: projectId };
+    this.project(projectId).maps.set(mapKey(e), e);
+    await this.saveMaps();
+  }
+
+  async deleteMap(projectId, service, key) {
+    this.project(projectId).maps.delete(`${service}|${key}`);
+    await this.saveMaps();
   }
 
   async cohorts(projectId, service, from, to) {
@@ -479,8 +494,9 @@ function batchKey(projectId, service, id) {
   return JSON.stringify([projectId, service, id]);
 }
 
+// One map per place (places.js): a capture per version, and one upload.
 function mapKey(m) {
-  return `${m.service}|${m.level}|${m.version}`;
+  return `${m.service}|${mapSortKey(m)}`;
 }
 
 function lowerBound(arr, ts) {

@@ -10,17 +10,20 @@
 
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { rollup, cellList, newCell, mergeCell, mergeSketch, budgetMedian, meanOf, seconds, splitAttrKey, attrKey, FIXED, windowSeconds } from './rollups.js';
-import { foldSessions, finalizeSession, sessionMs, MARK, FATAL_KINDS } from './session-state.js';
+import { foldSessions, finalizeSession, sessionMs, rageInputsOf, MARK, FATAL_KINDS } from './session-state.js';
+import { markTester } from './testers.js';
 import { foldFacts, mergeFacts, mergeErrors, newFacts, inFirstSeenOrder as keysBySeen, valueQuantile, valueCount } from './facts.js';
 import { idCount } from './facts.js';
 import { dailyOverview, dailyPerformance, dailyFunnel, dailyPlayers, dailyEventIndex, dailyEventSessions, dailyEventFunnel, dailySessionsList, dailyDeaths, dailyVersionStats, dailyGaugeClimbs, dailyRetention, sessionTotal, approximate } from './daily.js';
-import { versionStat } from './sums.js';
+import { versionStat, versionContext } from './sums.js';
+import { withZoneTime, zoneStat } from './zones.js';
 import { occurrenceCount, sessionOccurrenceCount } from './occurrences.js';
 import { propertyKey, propertySplit, propOf, sessionPasses, NONE } from './properties.js';
 import { measureOf, measureBy, rateOf, avgOf } from './rates.js';
 import { percentileFromOccurrences } from './distributions.js';
 import { linkOf, networkView, NET_METRICS } from './network.js';
 import { resolvedMark, resolvedIndex, resolvedOrder } from './resolved.js';
+import { placeOf, placeFromParams, inPlace, placeKey, placeWords, placeFields, pickMap, mapRef } from './places.js';
 
 const DIST_EDGES = [0, 4, 8, 12, 16.7, 20, 25, 33.3, 40, 50, 66.7, 100, 150, 250, 500, 1000, 5000];
 // A first frame later than this is a slow start (the slow-start finding, and the share of sessions it hits).
@@ -42,8 +45,10 @@ export function buildContext(rawEvents, q, rollups = null) {
 }
 
 // The context every query takes, from finalized sessions (filtered here). Without raw events, the store
-// sets ctx.cells, ctx.facts and the drill-downs (ctx.drill) itself.
+// sets ctx.cells, ctx.facts and the drill-downs (ctx.drill) itself. q.testers (testers.js testerIndex): the players and
+// sessions the game's team marked as its own play, which read as testers' before the type filter.
 export function sessionContext(q, sessions) {
+  if (q.testers) for (const s of sessions.values()) markTester(s, q.testers);
   const keep = (s) => {
     if (q.env && s.env !== q.env) return false;
     if (q.version && s.version !== q.version) return false;
@@ -188,6 +193,8 @@ export function sessionSummary(s) {
     version: s.version,
     env: s.env,
     session_type: s.session_type,
+    // A player's session the game's team marked as its own play (testers.js): sent as user, read as tester.
+    ...(s.marked_tester ? { marked_tester: true } : {}),
     start: s.start ?? s.first_ts,
     duration_s: round(s.duration_s, 1),
     browser: s.device?.browser ? `${s.device.browser} ${s.device.browser_version || ''}`.trim() : null,
@@ -458,8 +465,8 @@ export function performance(ctx, { byProp = null } = {}) {
     by_steam_branch: [...byBranch.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_build: [...byBuild.values()].map(summarize).sort((a, b) => Number(a.key) - Number(b.key)),
     by_display: displayRows([...byDisplay.values()].map((g) => [summarize(g), g.fw])),
-    // Sessions per zone aren't known from the cells (they carry no session IDs): null, not zero.
-    ...(byZone.size ? { by_zone: naturalSortBy([...byZone.values()].map((g) => ({ ...summarize(g), sessions: null })), 'key') } : {}),
+    // Each zone with its time (zones.js): share of play time, the sessions that went there and their median time in it.
+    ...(byZone.size ? { by_zone: withZoneTime(ctx, naturalSortBy([...byZone.values()].map(summarize), 'key')) } : {}),
     hitch_causes: { ...mergedFacts(ctx).hc },
     hitch_context: hitchContext(ctx),
     hitches: recentHitches(ctx).map((h) => ({
@@ -467,6 +474,7 @@ export function performance(ctx, { byProp = null } = {}) {
       session_id: h.session_id,
       version: h.version,
       level: h.level,
+      ...(h.zone ? { zone: h.zone } : {}),
       duration_ms: h.duration_ms,
       causes: h.causes,
       loaf: h.loaf,
@@ -921,6 +929,11 @@ export function players(ctx, { byProp = null } = {}) {
     .sort((a, b) => b.last_ts - a.last_ts)
     .slice(0, 50)
     .map((s) => ({ session_id: s.session_id, version: s.version, ts: s.end ?? s.last_ts, ...s.rage }));
+  // Rage inputs (one key mashed), the latest first, each with its level, time and, when the game sends positions, place.
+  const rageInputs = sessions
+    .flatMap((s) => rageInputsOf(s).map((r) => rageInputRow(s, r)))
+    .sort((a, b) => b.ts - a.ts)
+    .slice(0, RAGE_INPUT_ROWS);
   const n = sessions.length || 1;
   return {
     kpis: {
@@ -939,8 +952,17 @@ export function players(ctx, { byProp = null } = {}) {
     session_length: { labels: lengthLabels, counts: lengths },
     death_causes: causes,
     rage_quits: rageQuits,
+    rage_inputs: rageInputs,
     retention: retention(ctx, { by: byProp }),
   };
+}
+
+// The players page and query list the latest 50 rage inputs (daily.js keeps as many per day).
+export const RAGE_INPUT_ROWS = 50;
+
+// One rage input as the players query lists it: { session_id, version, ts, level, key, presses, x?, y?, z? }.
+export function rageInputRow(s, r) {
+  return { session_id: s.session_id, version: s.version, ts: r.ts, level: r.level ?? null, key: r.key ?? null, presses: r.n ?? null, ...(r.pt != null ? { x: r.x, y: r.y, z: r.z } : {}) };
 }
 
 // ───────────────────────────── retention ─────────────────────────────
@@ -1378,18 +1400,21 @@ export function eventFunnel(ctx, steps) {
   }));
 }
 
-export function heatmap(ctx, level, maps) {
-  const map = pickMap(maps, level, ctx.q.version);
-  const pos = positionsOf(ctx, level);
-  const levelDeaths = deathsOf(ctx, level);
-  const axis = levelAxis(map, pos, levelDeaths);
+// Where players went and died in one place (places.js: a level, a zone, or the whole game), over its map.
+// `place` may be a level's id, as it was before places.
+export function heatmap(ctx, place, maps) {
+  place = typeof place === 'string' ? { level: place } : placeOf(place);
+  const map = pickMap(maps, place, ctx.q.version);
+  const pos = positionsOf(ctx, place);
+  const placeDeaths = deathsIn(ctx, place);
+  const axis = levelAxis(map, pos, placeDeaths);
   const pick = (x, y, z) => (axis === 'xy' ? [x, y] : [x, z]);
   const deaths = [];
   const rageSessions = new Map();
-  for (const s of ctx.sessions.values()) if (s.rage_quit && s.rage?.level === level) rageSessions.set(s.session_id, rageDeathTs(s.rage));
+  for (const s of ctx.sessions.values()) if (s.rage_quit && (place.level == null || s.rage?.level === place.level)) rageSessions.set(s.session_id, rageDeathTs(s.rage));
   // Deaths without coordinates (the Godot SDK's anonymous mode leaves them out) can't be placed.
-  for (const d of levelDeaths) {
-    if (isNum(d.x)) deaths.push({ x: d.x, y: d.y, z: d.z, cause: d.cause, version: d.version, session_id: d.session_id, ts: d.ts, rage_quit: rageSessions.get(d.session_id) === d.ts });
+  for (const d of placeDeaths) {
+    if (isNum(d.x)) deaths.push({ x: d.x, y: d.y, z: d.z, cause: d.cause, version: d.version, session_id: d.session_id, ts: d.ts, rage_quit: d.rage_quit ?? rageSessions.get(d.session_id) === d.ts });
   }
   const pts = [];
   for (const e of pos) for (const p of e.pts || []) pts.push(pick(p[1], p[2], p[3]));
@@ -1419,14 +1444,15 @@ export function heatmap(ctx, level, maps) {
     density = { cols, rows, cells, samples: pts.length };
   }
   return {
-    level,
+    level: place.level ?? null,
+    zone: place.zone ?? null,
     axis,
     bounds: bounds || null,
-    map: map ? { image: map.image, size: map.size, version: map.version } : null,
+    map: map ? { image: map.image, size: map.size, version: map.version, uploaded: !!map.uploaded } : null,
     deaths: deaths.slice(-3000),
     hotspots: deathHotspots(deaths, axis),
     density,
-    stats: levelStats(ctx, level),
+    stats: place.level != null ? levelStats(ctx, place.level) : placeStats(ctx, place, pos, placeDeaths),
   };
 }
 
@@ -1438,28 +1464,31 @@ function levelAxis(map, pos, deaths) {
   return pos.some((e) => e.pts?.some((p) => off(p[3]))) || deaths.some((d) => off(d.z)) ? 'xz' : 'xy';
 }
 
-// Where players died on one level, and with `show` 'path' or 'both' where they went, as counts per bin and
-// nothing else (no sessions, versions, players or times), so a share link can show it and a game can draw
-// it (board.js positions panel). Bins are squares `bin` world units wide (default: about a hundredth of the
-// level) on a fixed grid, so a bin stays put as players come and go; a and b are its centre on the level's
-// plane (`axis`). Rows are the busiest bins first, at most MAX_BINS of them (`truncated` says if more were
-// left out). Paths use a coarser grid (about 64 bins across). Bounds are the captured map's, else the data's
-// rounded out to whole bins.
+// Where players died in one place (places.js: a level, a zone, or the whole game for a hub with no levels), and with
+// `show` 'path' or 'both' where they went, as counts per bin and nothing else (no sessions, versions, players or
+// times), so a share link can show it and a game can draw it (board.js positions panel). Bins are squares `bin` world
+// units wide (default: about a hundredth of the place) on a fixed grid, so a bin stays put as players come and go; a
+// and b are its centre on the place's plane (`axis`). Rows are the busiest bins first, at most MAX_BINS of them
+// (`truncated` says if more were left out). Paths use a coarser grid (about 64 bins across). Bounds are the place's
+// map's, else the data's rounded out to whole bins; `background` says where its picture is (places.js mapRef), never
+// the picture itself. `place` may be a level's id, as it was before places.
 const MAX_BINS = 2000;
-export function levelPositions(ctx, level, maps, { show = 'deaths', bin = null } = {}) {
-  const map = pickMap(maps, level, ctx.q.version);
-  const deaths = show === 'path' ? [] : deathsOf(ctx, level);
+export function levelPositions(ctx, place, maps, { show = 'deaths', bin = null } = {}) {
+  place = typeof place === 'string' ? { level: place } : placeOf(place);
+  const map = pickMap(maps, place, ctx.q.version);
+  const deaths = show === 'path' ? [] : deathsIn(ctx, place);
   // Deaths without coordinates (the Godot SDK's anonymous mode leaves them out) can't be placed.
   const placed = deaths.filter((d) => isNum(d.x));
-  const pos = show === 'deaths' ? [] : positionsOf(ctx, level);
+  const pos = show === 'deaths' ? [] : positionsOf(ctx, place);
   const axis = levelAxis(map, pos, placed);
   const pick = (x, y, z) => (axis === 'xy' ? [x, y] : [x, z]);
   const points = placed.map((d) => pick(d.x, d.y, d.z));
   const pts = [];
   for (const e of pos) for (const p of e.pts || []) if (isNum(p[1])) pts.push(pick(p[1], p[2], p[3]));
-  if (show === 'deaths' && !points.length) return { empty: true, why: deaths.length ? `Deaths on ${level} have no positions: the game sends them without x and y.` : `No deaths on ${level} in this window.` };
-  if (show === 'path' && !pts.length) return { empty: true, why: `No positions from ${level} in this window: the game sends them with setPosition.` };
-  if (!points.length && !pts.length) return { empty: true, why: `No deaths or positions on ${level} in this window.` };
+  const on = placeWords(place);
+  if (show === 'deaths' && !points.length) return { empty: true, why: deaths.length ? `Deaths${on} have no positions: the game sends them without x and y.` : `No deaths${on} in this window.` };
+  if (show === 'path' && !pts.length) return { empty: true, why: `No positions${placeWords(place, { level: 'from' })} in this window: the game sends them with setPosition.` };
+  if (!points.length && !pts.length) return { empty: true, why: `No deaths or positions${on} in this window.` };
 
   const all = points.concat(pts);
   const extent = map?.bounds || { min: [minOf(all, 0), minOf(all, 1)], max: [maxOf(all, 0), maxOf(all, 1)] };
@@ -1473,7 +1502,8 @@ export function levelPositions(ctx, level, maps, { show = 'deaths', bin = null }
         min: [0, 1].map((k) => exact(Math.min(...grids.map((g) => Math.floor(extent.min[k] / g) * g)))),
         max: [0, 1].map((k) => exact(Math.max(...grids.map((g) => Math.max(Math.ceil(extent.max[k] / g), Math.floor(extent.min[k] / g) + 1) * g)))),
       };
-  const out = { level, axis, bounds };
+  const background = mapRef(ctx.q.service, map);
+  const out = { ...placeFields(place), axis, bounds, ...(background ? { background } : {}) };
   if (show !== 'path') {
     const d = binCounts(points, size);
     Object.assign(out, { bin: size, deaths: d.rows, total: points.length, truncated: d.truncated });
@@ -1531,13 +1561,51 @@ function levelStats(ctx, level) {
   return { ...row, no_win: noWin({ sessions: sessionCount(ctx), starts: sum((l) => l.attempts), completes: sum((l) => l.completed), fails: sum((l) => l.fails + l.deaths) }) };
 }
 
-// The levels a heatmap can show (captured maps, levels with deaths), and the one it shows.
-export function heatmapLevels(ctx, maps) {
-  return [...new Set([...maps.map((m) => m.level), ...deathsOf(ctx).map((d) => d.level)])].filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+// A zone's or the whole game's numbers for the Heatmaps view, which has no level funnel to read: the sessions that
+// went there (sent a position or died there), its deaths and the rage quits that followed one of them.
+function placeStats(ctx, place, pos, deaths) {
+  const sessions = new Set([...pos.map((e) => e.session_id), ...deaths.map((d) => d.session_id)].filter(Boolean));
+  const here = new Set(deaths.map((d) => `${d.session_id} ${d.ts}`));
+  let rage = 0;
+  for (const s of ctx.sessions.values()) if (s.rage_quit && here.has(`${s.session_id} ${rageDeathTs(s.rage)}`)) rage++;
+  if (ctx.daily) rage = deaths.filter((d) => d.rage_quit).length;
+  const n = sessions.size;
+  return { ...placeFields(place), sessions: n, deaths: deaths.length, deaths_per_session: n ? round(deaths.length / n, 2) : null, rage_quits: rage, rage_quit_pct: n ? round((rage / n) * 100, 1) : null };
 }
 
-export function heatmapLevel(ctx, maps, requested) {
-  return requested || heatmapLevels(ctx, maps)[0];
+// The places a heatmap can show: levels and zones with a map, deaths or positions (the cells count pos batches per
+// level and zone, places.js), and whether players moved or died with no level set (a hub: `no_level`); and the one
+// it shows: the one asked for, else the first level, else the whole game.
+export function heatmapPlaces(ctx, maps) {
+  const levels = new Set();
+  const zones = new Set();
+  let noLevel = false;
+  for (const m of maps) {
+    const p = placeOf(m);
+    if (p.level != null) levels.add(p.level);
+    else if (p.zone != null) zones.add(p.zone);
+    else noLevel = true;
+  }
+  for (const d of deathsOf(ctx)) {
+    if (d.level) levels.add(d.level);
+    else if (isNum(d.x)) noLevel = true;
+    if (d.zone) zones.add(d.zone);
+  }
+  for (const { c } of cellsOf(ctx)) {
+    if (!c.n?.pos) continue;
+    if (c.level) levels.add(c.level);
+    else noLevel = true;
+    if (c.zone) zones.add(c.zone);
+  }
+  const sorted = (set) => [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return { levels: sorted(levels), zones: sorted(zones), no_level: noLevel };
+}
+
+export function heatmapPlace(ctx, maps, params) {
+  const asked = placeFromParams(params);
+  if (asked) return asked;
+  const { levels } = heatmapPlaces(ctx, maps);
+  return levels.length ? { level: levels[0] } : {};
 }
 
 // Deaths in time order, from the sessions' level and death marks; one level's, or all.
@@ -1545,23 +1613,22 @@ export function deathsOf(ctx, level = undefined) {
   if (ctx.daily) return dailyDeaths(ctx, level);
   const out = [];
   for (const s of ctx.sessions.values()) {
-    for (const { ts, k: kind, level: lvl, cause, x, y, z } of s.marks) {
-      if (kind === MARK.death && (level === undefined || lvl === level)) out.push({ ts, level: lvl, cause, x, y, z, session_id: s.session_id, version: s.version });
+    for (const { ts, k: kind, level: lvl, zone, cause, x, y, z } of s.marks) {
+      if (kind === MARK.death && (level === undefined || lvl === level)) out.push({ ts, level: lvl, zone: zone ?? null, cause, x, y, z, session_id: s.session_id, version: s.version });
     }
   }
   return out.sort((a, b) => a.ts - b.ts);
 }
 
-// One level's position samples (pos events). Without raw events the store fetches them (ctx.drill).
-function positionsOf(ctx, level) {
-  if (ctx.drill?.pos) return ctx.drill.pos.get(level) ?? [];
-  return ctx.events.filter((e) => e.type === 'pos' && e.level === level);
+// The deaths in one place (places.js), in time order.
+function deathsIn(ctx, place) {
+  return place.level != null ? deathsOf(ctx, place.level) : deathsOf(ctx).filter((d) => inPlace(place, d));
 }
 
-function pickMap(maps, level, version) {
-  const forLevel = (maps || []).filter((m) => m.level === level);
-  if (!forLevel.length) return null;
-  return forLevel.find((m) => m.version === version) || forLevel.sort((a, b) => b.ts - a.ts)[0];
+// One place's position samples (pos events). Without raw events the store fetches them (ctx.drill, keyed by placeKey).
+function positionsOf(ctx, place) {
+  if (ctx.drill?.pos) return ctx.drill.pos.get(placeKey(place)) ?? [];
+  return ctx.events.filter((e) => e.type === 'pos' && inPlace(place, e));
 }
 
 // The death a rage quit happened at (session-state.js keeps it as `dts` when a level_fail came after it).
@@ -1639,20 +1706,33 @@ export function sessionDetail(ctx, id, maps) {
     if (e.type === 'frame_window') {
       frames.push({ ts: e.ts, level: e.level, fps: e.fps, p50: e.ft_p50, p95: e.ft_p95, max: e.ft_max, draw_calls: e.draw_calls, geometries: e.geometries, heap_mb: e.heap_mb, hitches: e.hitches, ctx: e.ctx });
     } else if (e.type === 'pos') {
-      for (const p of e.pts || []) positions.push([p[0], e.level, p[1], p[2], p[3]]);
+      for (const p of e.pts || []) positions.push([p[0], e.level, p[1], p[2], p[3], e.zone ?? null]);
     } else if (e.type !== 'map') {
       const { service, env, version, session_id, player_id, received, ft, ...rest } = e;
       timeline.push(rest);
     }
   }
+  // A rage input's place: the latest position on its level just before it (session-state.js), when the game sends them.
+  const placed = new Map(rageInputsOf(s).filter((r) => r.pt != null).map((r) => [r.ts, r]));
+  for (const e of timeline) {
+    const r = e.type === 'custom' && e.name === 'rage_input' ? placed.get(e.ts) : null;
+    if (r) Object.assign(e, { x: r.x, y: r.y, z: r.z });
+  }
   const levels = [...s.levels];
+  // Samples with no level (a hub, a lobby) are drawn over the whole game's map, else their zone's (places.js).
+  const slim = (m) => ({ image: m.image, bounds: m.bounds, axis: m.axis, size: m.size });
+  const loose = positions.filter((p) => p[1] == null);
+  const all = loose.length ? pickMap(maps, {}, s.version) : null;
+  const zones = [...new Set(loose.map((p) => p[5]).filter(Boolean))];
   return {
     // groups: the matches, parties and runs the session was in (A7), each from its first event to its last.
     session: { ...sessionSummary(s), device: s.device, annotations: s.annotations, groups: (s.groups || []).map(({ at, ...g }) => g) },
     timeline,
     frames,
     positions,
-    maps: Object.fromEntries(levels.map((l) => [l, pickMap(maps, l, s.version)]).filter(([, m]) => m).map(([l, m]) => [l, { image: m.image, bounds: m.bounds, axis: m.axis, size: m.size }])),
+    maps: Object.fromEntries(levels.map((l) => [l, pickMap(maps, { level: l }, s.version)]).filter(([, m]) => m).map(([l, m]) => [l, slim(m)])),
+    place_map: all ? slim(all) : null,
+    zone_maps: Object.fromEntries(zones.map((z) => [z, pickMap(maps, { zone: z }, s.version)]).filter(([, m]) => m).map(([z, m]) => [z, slim(m)])),
   };
 }
 
@@ -1689,9 +1769,12 @@ export function versions(ctx, { stats = [], events = 8, by = null } = {}) {
     };
     v.events = Object.fromEntries(top.map((name) => [name, round(count(name) / n, 2)]));
     v.board = stats.map((p) => {
-      // Sums (revenue per session or player), conversion (per $players or $sessions), per hour played, rates, averages
-      // and percentiles: sums.js, each from this version's own cells and sessions.
-      if (p.sum || p.per?.startsWith('$') || p.rate || p.avg || p.of || p.metric === 'hours_played' || NET_METRICS[p.metric] || (p.event && parseFunnel(p.event)[0].all)) return versionStat(ctx, p, v, cells, p.currency);
+      // Time in one zone (zones.js): this version's own cells and sessions.
+      if (p.zone) return zoneStat({ ...versionContext(ctx, v.version, cells), zoneTime: undefined }, p).value ?? null;
+      // Sums (revenue per session or player), conversion (per $players or $sessions), per hour played, rates, averages,
+      // percentiles, time to a first event and sessions that never sent it: sums.js, each from this version's own
+      // cells and sessions.
+      if (p.sum || p.per?.startsWith('$') || p.rate || p.avg || p.of || p.first || p.never || p.metric === 'hours_played' || NET_METRICS[p.metric] || (p.event && parseFunnel(p.event)[0].all)) return versionStat(ctx, p, v, cells, p.currency);
       if (p.metric) return v[VERSION_METRIC[p.metric] || p.metric] ?? null;
       if (!p.per) return round(count(p.event) / n, 2);
       const base = count(p.per);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useFilters } from '../filters.js';
 import { useQuery } from '../api.js';
 import { Widget, QueryValue, TimeSeries, BarList, Histogram, Status, GroupTitle, Segmented } from '../components.jsx';
-import { fmtNum, fmtMs, fmtPct, frameStatus, commonScreens, budgetLines, pctStatus, timeAgo, PALETTE } from '../format.js';
+import { fmtNum, fmtMs, fmtPct, fmtDuration, frameStatus, commonScreens, budgetLines, pctStatus, timeAgo, PALETTE } from '../format.js';
 import { NoGame } from './Overview.jsx';
 import { fmtPing, fmtPerHour, pingKind, reasonWords } from '../genre.jsx';
 
@@ -13,7 +13,6 @@ export function Performance({ route }) {
   const f = useFilters();
   const focus = route.query.get('level');
   const [dim, setDim] = useState('gpu_tier');
-  const [where, setWhere] = useState('level');
   // A split by a session property (A6), from a finding's link (?by_prop=class) or picked below.
   const [prop, setProp] = useState(() => route.query.get('by_prop') || '');
   const { data } = useQuery('performance', prop ? { ...f.params, by_prop: prop } : f.params, { refreshMs: f.live ? 10000 : 0, enabled: !!f.service });
@@ -57,56 +56,15 @@ export function Performance({ route }) {
         <Histogram edges={data.distribution.edges} counts={data.distribution.counts} budget={screens.length ? Math.max(...screens.map((r) => r.budget_ms)) : budget} />
       </Widget>
 
-      <Widget span={12} title={where === 'zone' ? 'By zone' : 'By level'} sub="where the frame budget goes" actions={data.by_zone?.length ? <Segmented value={where} onChange={setWhere} options={[{ value: 'level', label: 'Level' }, { value: 'zone', label: 'Zone' }]} /> : null} info={where === 'zone' ? 'A zone is a region inside a level the game names with setZone (a district, a dungeon floor). Frames count under the zone they were drawn in; sessions are left out, since one session crosses many zones.' : null} flush>
-        <div className="tablewrap">
-          <table className="dt">
-            <thead>
-              <tr>
-                <th>{where === 'zone' ? 'Zone' : 'Level'}</th>
-                <th className="num">Sessions</th>
-                <th className="num">p50</th>
-                <th className="num">p95</th>
-                <th className="num">p99</th>
-                <th className="num">Over budget</th>
-                <th className="num">Hitches/min</th>
-                <th className="num">Draw calls (avg / max)</th>
-                <th className="num">Triangles</th>
-                <th className="num">Geometries (max)</th>
-                <th>Game context (max)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(where === 'zone' && data.by_zone ? data.by_zone : data.by_level).map((l) => (
-                <tr key={l.key} className={where === 'level' && focus === l.key ? 'sel' : ''}>
-                  <td>
-                    <b>{l.key}</b>
-                  </td>
-                  <td className="num">{fmtNum(l.sessions)}</td>
-                  <td className="num">{fmtMs(l.p50)}</td>
-                  <td className="num">
-                    <Status kind={frameStatus(l.pct_over_budget, l.p95)}>{fmtMs(l.p95)}</Status>
-                  </td>
-                  <td className="num">{fmtMs(l.p99)}</td>
-                  <td className="num">{fmtPct(l.pct_over_budget)}</td>
-                  <td className="num">{fmtNum(l.hitches_per_min, 2)}</td>
-                  <td className="num">
-                    {fmtNum(l.draw_calls)} / <span className={l.draw_calls_max > 800 ? 'alert-t' : ''}>{fmtNum(l.draw_calls_max)}</span>
-                  </td>
-                  <td className="num">{fmtNum(l.triangles)}</td>
-                  <td className="num">{fmtNum(l.geometries_max)}</td>
-                  <td>
-                    {Object.entries(l.ctx_max || {}).map(([key, v]) => (
-                      <span className="tag" key={key}>
-                        {key}: {fmtNum(v)}
-                      </span>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <Widget span={12} title="By level" sub="where the frame budget goes" flush>
+        <FrameTable rows={data.by_level} label="Level" focus={focus} />
       </Widget>
+
+      {data.by_zone?.length > 0 && (
+        <Widget span={12} title="By zone" sub="where play time goes, and how each zone runs" info="A zone is where the player is that the game names with setZone (a hall, a district, a dungeon floor). Play is the zone's share of all play time (frames drawn there; time in the background is left out), Median stay the median time in it of the sessions that went there. Frames and hitches count under the zone they were drawn in." flush>
+          <FrameTable rows={[...data.by_zone].sort((a, b) => (b.share_pct ?? 0) - (a.share_pct ?? 0))} label="Zone" zones />
+        </Widget>
+      )}
 
       {data.network && <Network n={data.network} anchor={net} />}
 
@@ -149,7 +107,7 @@ export function Performance({ route }) {
             <thead>
               <tr>
                 <th>When</th>
-                <th>Level</th>
+                <th>{data.by_zone?.length ? 'Level · zone' : 'Level'}</th>
                 <th className="num">Duration</th>
                 <th>Causes</th>
                 <th>Top script</th>
@@ -163,7 +121,7 @@ export function Performance({ route }) {
               {data.hitches.slice(0, 60).map((h, i) => (
                 <tr key={i} className="click" onClick={() => f.go(`sessions/${h.session_id}`)}>
                   <td className="muted">{timeAgo(h.ts)}</td>
-                  <td>{h.level}</td>
+                  <td>{[h.level, h.zone].filter(Boolean).join(' · ')}</td>
                   <td className="num">
                     <Status kind={h.duration_ms > 100 ? 'alert' : 'warn'}>{fmtMs(h.duration_ms, 0)}</Status>
                   </td>
@@ -367,5 +325,64 @@ function ByProperty({ data, prop, setProp, keys }) {
         <div className="why">No session in this window has {prop}.</div>
       )}
     </Widget>
+  );
+}
+
+// Frame time per level or zone: where the frame budget goes. Zones also say how much of the play is there and how long
+// a session that went there stayed (SPEC §3b Zones).
+function FrameTable({ rows, label, focus = null, zones = false }) {
+  return (
+    <div className="tablewrap">
+      <table className="dt">
+        <thead>
+          <tr>
+            <th>{label}</th>
+            {zones && <th className="num">Play</th>}
+            <th className="num">Sessions</th>
+            {zones && <th className="num">Median stay</th>}
+            <th className="num">p50</th>
+            <th className="num">p95</th>
+            <th className="num">p99</th>
+            <th className="num">Over budget</th>
+            <th className="num">Hitches/min</th>
+            <th className="num">Draw calls (avg / max)</th>
+            <th className="num">Triangles</th>
+            <th className="num">Geometries (max)</th>
+            <th>Game context (max)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((l) => (
+            <tr key={l.key} className={focus === l.key ? 'sel' : ''}>
+              <td>
+                <b>{l.key}</b>
+              </td>
+              {zones && <td className="num">{fmtPct(l.share_pct, 0)}</td>}
+              <td className="num">{fmtNum(l.sessions)}</td>
+              {zones && <td className="num">{fmtDuration(l.median_s)}</td>}
+              <td className="num">{fmtMs(l.p50)}</td>
+              <td className="num">
+                <Status kind={frameStatus(l.pct_over_budget, l.p95)}>{fmtMs(l.p95)}</Status>
+              </td>
+              <td className="num">{fmtMs(l.p99)}</td>
+              <td className="num">{fmtPct(l.pct_over_budget)}</td>
+              <td className="num">{fmtNum(l.hitches_per_min, 2)}</td>
+              <td className="num">
+                {fmtNum(l.draw_calls)} / <span className={l.draw_calls_max > 800 ? 'alert-t' : ''}>{fmtNum(l.draw_calls_max)}</span>
+              </td>
+              <td className="num">{fmtNum(l.triangles)}</td>
+              <td className="num">{fmtNum(l.geometries_max)}</td>
+              <td>
+                {Object.entries(l.ctx_max || {}).map(([key, v]) => (
+                  <span className="tag" key={key}>
+                    {key}: {fmtNum(v)}
+                  </span>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -30,6 +30,16 @@ gets a Roblox page (thumbs up, daily active and new users, Roblox's retention, p
 frame rate by place version) and a Revenue page in Robux: keep both, since its SDK is anonymous and Roblox's retention
 is the only one it has.
 
+**A Roblox game's own money and lobby.** Its purchase events carry `currency: "ROBUX"` and the price in Robux, and its
+dashboard takes `currency: "ROBUX"`: the board shows Robux with ⬡ and never adds them to dollars. `devex: true` on a
+Robux stat, breakdown or series adds what they'd be worth through Roblox's Developer Exchange, always as an estimate
+(the price players paid at DevEx's standard rate; the experience earns less). Revenue of completed purchases by item,
+when cancelled ones carry their amount too: a breakdown with `event: "purchase:result=done"`, `by: "item"`, `sum:
+"amount"`. A hub with a lobby asks how long players stay in it and how many never leave: the game sends one event when
+a player first leaves (`hall_left`, from the server for that player), and the board has a stat with `first:
+"hall_left"` (the median seconds from joining) and one with `never: "hall_left"` (the share of ended sessions that
+never left). A streak or a step number reads best in its own order: a breakdown by `day` with `order: "value"`.
+
 **Who is playing.** A game that sets properties splits anything by them (`by: "$rank"`): win rate by hero at each
 rank is a page with `"where": { "$rank": ["diamond", "master"] }` and the same breakdown on it; retention by
 `$spender`, frame time by `$preset` (the Performance view's by-property table), versions by `$class`. A property with
@@ -41,7 +51,13 @@ ranges of 31 days or less.
 whole lobby lagging at once (the server) and one player lagging (their connection) are findings of their own. With
 match groups, keep the `matches` view. With dedicated servers in server mode, a Servers page (`servers_now`,
 `server_tick_p95`, `server_crash_free_pct`, a `servers` panel `by: "players"`) or the built-in `servers` view; the
-servers' sessions are kept under `<game>.server`, never counted as players. An open world splits by `$zone`.
+servers' sessions are kept under `<game>.server`, never counted as players.
+
+**Open worlds and hubs.** A game with zones (an MMO's regions, a metroidvania's rooms, an avatar hub's hall and the
+zones around it) gets a Zones page: a `breakdown` by `$zone` without `event` (where play time goes, and how long the
+sessions that go to each zone stay), `stat` `zone_median_s` with `zone` for the zone that matters most (the hall),
+`frame_time` by `$zone` (which zone hitches), and its own events by `$zone` (purchases by zone). Levels inside zones
+(a puzzle in the garden) keep their `levels` panel; `frame_time` by `$level` reads them apart.
 
 **Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by
 `$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or

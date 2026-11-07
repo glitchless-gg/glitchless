@@ -5,7 +5,7 @@ import { query, resolveService, range, reply, common, tool, filters } from '../c
 
 tool(
   'glitchless_events',
-  "The game's own metrics, from the custom events it sends with track() and the streams it counts with count() (marked counted: summed on the device per window, so their numbers have sums and averages but no spread): each event's count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done; a list attribute such as a deck by element, each event counted once under each), the sums of its numeric attributes per currency (revenue: the amount of purchase events) and their p50, p90 and p99, and `hours`, the hours played in the window, to turn any count into a rate per hour. Give `funnel` to count the sessions that went from one event to the next, in that order. With name and `rate` (a flag such as \"won\", or a word outcome \"result=win\") or `avg` (a numeric attribute), it measures that event: overall, or with `by` per value (win rate by hero, with a 95% interval for each, next to the overall rate). With name and `of` (a numeric attribute), it gives that attribute's distribution: percentiles and a histogram, optionally `by` a split. `properties` lists what the game set for its sessions with setProperties (rank, class, region, a preset), each with its values and their sessions and players; identifier_like marks one with more than 200 values a day, which is an ID rather than a property. Every read tool filters by them (props) and splits by them (by \"$rank\").",
+  "The game's own metrics, from the custom events it sends with track() and the streams it counts with count() (marked counted: summed on the device per window, so their numbers have sums and averages but no spread): each event's count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done; a list attribute such as a deck by element, each event counted once under each), the sums of its numeric attributes per currency (revenue: the amount of purchase events) and their p50, p90 and p99, and `hours`, the hours played in the window, to turn any count into a rate per hour. Give `funnel` to count the sessions that went from one event to the next, in that order. With name and `rate` (a flag such as \"won\", or a word outcome \"result=win\") or `avg` (a numeric attribute), it measures that event: overall, or with `by` per value (win rate by hero, with a 95% interval for each, next to the overall rate). With name and `of` (a numeric attribute), it gives that attribute's distribution: percentiles and a histogram, optionally `by` a split. With name and `first`, when sessions first sent it: the median and p90 seconds from a session's start to its first one (time in the lobby before first leaving it), and the share of ended sessions that never sent it (31 days or less). `properties` lists what the game set for its sessions with setProperties (rank, class, region, a preset), each with its values and their sessions and players; identifier_like marks one with more than 200 values a day, which is an ID rather than a property. Every read tool filters by them (props) and splits by them (by \"$rank\"). By default each attribute shows its top 5 values (a numeric one its average and percentiles) and each property its top 5: `detail: true` gives every value with its sessions.",
   {
     ...common,
     name: z.string().optional().describe('Only this event, e.g. "paywall". With rate, avg or of, the event to measure; it can carry a filter like a panel\'s event: "match_end:mode=ranked", or "battle_end:deck=hog_rider+ice_spirit" for decks with both'),
@@ -15,10 +15,12 @@ tool(
     of: z.string().optional().describe('A numeric attribute whose distribution to give, e.g. "duration_s" (match length) or "placement"'),
     by: z.string().optional().describe('With rate, avg or of: split by an attribute (a list splits by element), $version, $level, $zone, $platform, $browser, $device_tier, $link (the kind of connection), or a session property ("$rank")'),
     min: z.number().int().optional().describe('With rate or avg and by: the fewest events a row needs (default 30 for a rate, 10 for an average); smaller rows are counted in small'),
+    first: z.boolean().optional().describe('With name: the seconds from each session\'s start to its first such event (median_s, p90_s, over the sessions that sent it) and the ended sessions that never sent it (never, ended, never_pct). For a lobby: how long players stay before first leaving, and how many never leave. Works for events a Roblox server sends for a player'),
+    detail: z.boolean().optional().describe("Every value of every attribute and property, with its sessions (default: the top 5 of each)"),
   },
-  async ({ service, hours, name, funnel, rate, avg, of, by, min, ...f }) => {
+  async ({ service, hours, name, funnel, rate, avg, of, by, min, first, detail, ...f }) => {
     const svc = await resolveService(service);
-    const d = await query('events', { service: svc, ...filters(f), name: name?.split(/[:=]/)[0].trim(), event: name, funnel, rate, avg, of, by, min, ...range(hours) });
+    const d = await query('events', { service: svc, ...filters(f), name: name?.split(/[:=]/)[0].trim(), event: name, funnel, rate, avg, of, by, min, ...(first ? { first: 1 } : {}), ...range(hours) });
     const brief = d.events
       .slice(0, 15)
       .map((e) => `${e.name}${e.counted ? ' (counted)' : ''}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ''}`).join(', ')}` : ''}`)
@@ -28,16 +30,35 @@ tool(
     const m = d.measure;
     const measured = m ? `\n${m.event} ${m.rate ? `rate of ${m.rate}` : `average ${m.avg}`}${m.by ? ` by ${m.by}` : ''}: ${m.empty ? m.why : m.rows ? `${m.rows.length} rows, overall ${m.overall}${m.rate ? '%' : ''}` : `${m.value}${m.unit === '%' ? '%' : ''} of ${m.events} events`}` : '';
     const dist = d.distribution ? `\n${d.distribution.event} ${d.distribution.of}: ${d.distribution.empty ? d.distribution.why : `p50 ${d.distribution.p50}, p90 ${d.distribution.p90} of ${d.distribution.count}`}` : '';
-    return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):\n${brief || 'None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs).'}${propLine}${measured}${dist}`, {
-      events: d.events.map(({ series, ...e }) => e),
+    const fs = d.first;
+    const firstLine = fs ? `\n${fs.event}, first in a session: ${fs.empty ? fs.why : `${fs.median_s == null ? 'no session sent it' : `median ${fs.median_s} s after the session started, p90 ${fs.p90_s} s (${fs.sessions} sessions)`}; ${fs.never_pct == null ? 'no session has ended yet' : `${fs.never_pct}% of ${fs.ended} ended sessions never sent it`}`}` : '';
+    return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):\n${brief || 'None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs).'}${propLine}${measured}${dist}${firstLine}${detail ? '' : '\n(Top 5 values of each attribute and property: detail: true gives them all.)'}`, {
+      events: d.events.map(({ series, ...e }) => (detail ? e : compactEvent(e))),
       hours_played: d.hours ?? null,
-      properties: props,
+      properties: detail ? props : props.map(compactProperty),
       ...(d.funnel ? { funnel: d.funnel } : {}),
       ...(m ? { measure: (({ ts, series, ...x }) => x)(m) } : {}),
       ...(d.distribution ? { distribution: d.distribution } : {}),
-    });
+      ...(fs ? { first: fs } : {}),
+    }, { rows: !detail });
   },
 );
+
+// An event as glitchless_events lists it by default: each attribute's top values ({ value: events }) and how many it
+// has, or a numeric one's average and percentiles, instead of every value with its sessions.
+const TOP = 5;
+function compactEvent({ attrs = [], ...e }) {
+  return { ...e, attrs: Object.fromEntries(attrs.map((a) => [a.key, compactAttr(a)])) };
+}
+function compactAttr(a) {
+  const values = a.values || [];
+  if (a.avg != null || a.p50 != null) return { avg: a.avg ?? null, ...(a.p50 != null ? { p50: a.p50, p90: a.p90, p99: a.p99 } : {}), values: values.length };
+  return { ...(a.list ? { list: true } : {}), top: Object.fromEntries(values.slice(0, TOP).map((v) => [v.value, v.count])), ...(values.length > TOP ? { more_values: values.length - TOP } : {}) };
+}
+// A session property's top values ({ value: sessions }).
+function compactProperty({ values = [], ...p }) {
+  return { ...p, top: Object.fromEntries(values.slice(0, TOP).map((v) => [v.value, v.sessions])), ...(values.length > TOP ? { more_values: values.length - TOP } : {}) };
+}
 
 tool(
   'glitchless_compare_versions',

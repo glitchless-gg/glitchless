@@ -159,7 +159,10 @@ hit and check that the fix worked.
    ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md.
 
 5. Check that it works. Run the game, play it or let it run for a minute, then confirm sessions
-   arrive: call the glitchless_list_games tool, or ask me to look at http://localhost:7777.
+   arrive: call the glitchless_list_games tool, or ask me to look at http://localhost:7777. On
+   Glitchless Cloud, my own play counts as a player's: ask me whether to mark it as the team's with
+   the glitchless_mark_known tool and my player (glitchless_session lists the latest sessions with
+   their player_id), so the game's player numbers start with real players.
 
 6. Give the game its own dashboard: follow
    ~/.glitchless/plugin/glitchless/skills/dashboard/SKILL.md. Ask me what I want to know about my

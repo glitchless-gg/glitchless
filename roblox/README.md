@@ -14,7 +14,8 @@ It's one ModuleScript, written in Luau, with a server half and a client half:
   everything clients send, and posts it all to Glitchless with `HttpService`, within a budget of requests a minute.
 
 Players are anonymous. Their sessions carry random IDs, never a user ID, name or display name, and the server scrubs
-players' names and user IDs out of everything it sends (see [PRIVACY.md](PRIVACY.md)).
+players' names and user IDs out of everything it sends (see [PRIVACY.md](PRIVACY.md)). The server can also draw a
+top-down map of the place for heatmaps ([below](#a-map-for-heatmaps)).
 
 ## Install
 
@@ -22,7 +23,7 @@ Put the `Glitchless` module in **ReplicatedStorage**, whichever way you manage y
 
 | | |
 | --- | --- |
-| **Wally** | `Glitchless = "glitchless-gg/glitchless@0.1.0"` under `[dependencies]` in `wally.toml`, then `wally install` (it lands in `ReplicatedStorage.Packages`) |
+| **Wally** | `Glitchless = "glitchless-gg/glitchless@0.2.0"` under `[dependencies]` in `wally.toml`, then `wally install` (it lands in `ReplicatedStorage.Packages`) |
 | **Rojo** | copy `roblox/src` into your project as a folder named `Glitchless`, mapped under `ReplicatedStorage` (see `place.project.json` here) |
 | **Studio** | download `Glitchless.rbxm` from the [release](https://github.com/glitchless-gg/glitchless/releases), right-click ReplicatedStorage → **Insert from File**. Or take it from the Creator Store |
 
@@ -103,12 +104,21 @@ Glitchless.setContext({ particles = #workspace.Effects:GetChildren() })
 | `error(player, err, attrs?)` | an error your game caught |
 | `setContext(gauges)` | numbers to watch on the device (LocalScript), attached to frame windows and stutters; a number that only climbs reads as a leak |
 | `setEnabled(player, on)` / `setEnabled(on)` | the player's "share performance data" setting (below) |
-| `isEnabled(player?)` | whether Glitchless is on for that player |
+| `isEnabled(player?)` | whether Glitchless is on for that player. Before it has started: whether a call made now will be kept, so `true` unless `setEnabled(false)` was called |
+| `captureMap(options?)` | a top-down map of the place for heatmaps, drawn by the server ([below](#a-map-for-heatmaps)) |
+| `mapBounds(area?)` | the place's (or an area's) extent on x and z, printed for an agent |
 | `flush()` | send what's waiting now (it sends every 15 s by itself, and everything when the server closes) |
 
 The server's own session has the same calls under `Glitchless.server`, without the player:
 `Glitchless.server.levelStart(map)`, `.track`, `.count`, `.setProperties`, `.setZone`, `.setGroup`, `.endGroup`,
 `.levelComplete`, `.levelFail`, `.error`.
+
+**Calls made before Glitchless starts wait for it.** A LocalScript that runs before the shipped `GlitchlessClient`,
+a server Script that runs before the one that calls `init`, a `PlayerAdded` handler that runs before Glitchless's:
+their calls are kept and made when Glitchless starts (or, for a player, as soon as it sees them join), a client's at
+the time they were made. No need to wait for `isEnabled()` first. At most 128 calls wait, and only the latest zone,
+properties (merged by key), gauges and on/off choice; in Studio, Glitchless says so if calls are still waiting after
+30 s (`init` never ran on the server).
 
 Names and words are the game's: a string up to 64 characters. Properties follow stricter rules (lower-case keys, no
 `name` or `user_id`, no values that look like an ID or an email address) and anything that breaks them is dropped with
@@ -137,6 +147,69 @@ one warning in Studio.
 | `sessionType` | `tester` in Studio, else `user` | |
 | `client` | `true` | put `GlitchlessClient` in StarterPlayerScripts. With `false`, call `Glitchless.init()` from a LocalScript yourself |
 | `debug` | on in Studio | warnings in the Output window |
+| `prompts` | `false` | count each ProximityPrompt a player triggers ([extras](#extras-you-turn-on)) |
+| `seats` | `false` | count each Seat and VehicleSeat a player's character sits in |
+| `joinedWithFriend` | `false` | the session property `joined_with_friend`: whether the player followed a friend into the server |
+| `friendsInServer` | `false` | the gauge `friends_in_server`: how many of the player's friends are in the same server |
+
+## Extras you turn on
+
+Four more things Glitchless can read by itself, each off until `init` turns it on. All are counts or true/false:
+
+```lua
+Glitchless.init({ service = "starlift", clientToken = "gl_pub_…", prompts = true, seats = true, joinedWithFriend = true, friendsInServer = true })
+```
+
+| Option | What arrives |
+| --- | --- |
+| `prompts` | each `ProximityPrompt` a player triggers (`ProximityPromptService.PromptTriggered`), counted as `prompt` in their counters, by the prompt's `ActionText` and `ObjectText` (`action`, `object`). Players' names are scrubbed out of both first, so a prompt on a player's plot counts as `<player>'s House` |
+| `seats` | each `Seat` or `VehicleSeat` a player's character sits in (`Humanoid.Seated`), counted as `sit`, by the seat's name (its model's when the seat is still called `Seat`, so a sofa's seat counts as `Sofa`) and `vehicle` (true for a VehicleSeat) |
+| `joinedWithFriend` | the session property `joined_with_friend`: `true` when the player followed someone into this server (joined from a friend's profile, `Player.FollowUserId` isn't 0). Only the yes or no is sent, never whose ID |
+| `friendsInServer` | the gauge `friends_in_server` on each of the player's frame windows: how many of their friends are in the same server as the window ends. The server asks Roblox about each pair of players once (`Player:IsFriendsWith`, a web request, in a thread of its own, never in a frame; tried twice more if it fails), keeps the answers while both are in the server, and counts again as players come and go. A player who turned Glitchless off isn't counted in anyone's |
+
+Read them with `glitchless_events` (`prompt` and `sit` by their words, `joined_with_friend` as a property to split
+anything by) and in frame windows' gauges (`friends_in_server`).
+
+## A map for heatmaps
+
+With `positions = true`, boards draw where players go and die as a heatmap; under it they draw the place's map. A
+Roblox script can't take a picture of the place (CaptureService only captures a player's own screen, when the player
+chooses, and reading its pixels needs EditableImage, which a published experience can only use with an ID-verified
+owner), so the server draws one: a ray straight down for every pixel, coloured by the part or terrain it hits, lit by
+its slope and height, with a dark rim on whatever stands above its surroundings (walls, ledges). Players' characters
+and fully transparent parts (zone volumes, invisible walls) are left out. From a server Script, once the place is
+built:
+
+```lua
+task.spawn(Glitchless.captureMap)                                        -- the whole place
+task.spawn(Glitchless.captureMap, { level = "desert_loop" })              -- a level's map
+task.spawn(Glitchless.captureMap, { zone = "hall", area = workspace.Zones.Hall })  -- a zone's, by its volume
+```
+
+| Option | |
+| --- | --- |
+| `level`, `zone` | the map is that level's or that zone's; neither: the whole place |
+| `area` | a part, model or folder whose parts bound the map (every part in it, seen or not: a zone's volume). Without one, the place's visible parts |
+| `bounds` | `{ min = { x, z }, max = { x, z } }` in studs, instead of an area |
+| `top` | rays start here (studs): set it below a roof to see inside |
+| `size` | pixels on the longer side, `256` (512 at most) |
+| `exclude` | instances to leave out (players' characters always are) |
+
+It takes a few seconds and at most 3 ms of any frame, then sends one `map` event (a JPEG of 60 KB at most, its
+bounds on the x and z axes) in a batch of its own, which starts no session. Once per version is enough: boards use
+the latest map. It returns `{ axis, bounds, size, image, top, bottom }`. Parts are drawn in their `Color`: textures,
+decals and a MeshPart's look aren't, so a place built of meshes reads as their shapes.
+
+**A map from Studio.** For a picture that looks like the game, take it in Studio and give it to your agent with its
+bounds. `Glitchless.mapBounds(area?)` prints the place's (or an area's) extent as JSON in the Output, for example
+`[glitchless] map bounds: {"axis":"xz","bounds":{"min":[-60,-42],"max":[60,42]},"top":6,"bottom":-2}`; it works in
+the command bar, started or not. Then look straight down on that rectangle: an agent with Studio's MCP server can run
+`mapBounds` with `execute_luau` (`datamodel_type: "Edit"`) and take the picture with `screen_capture`
+(`camera_position` above the rectangle's centre, `look_at_position` straight below it); by hand, set the camera's
+`FieldOfView` low (5°) and move it high above the centre, looking down, so the view is close to flat, and screenshot
+the viewport cropped to the rectangle. The picture's top edge is the bounds' smallest z and its left edge their
+smallest x, as boards draw an xz map. `captureMap` in the command bar (Edit mode) draws the map and prints its bounds
+without sending it.
 
 ## The player's off switch
 

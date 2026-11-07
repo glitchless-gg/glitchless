@@ -163,12 +163,13 @@ test('a rage quit after a level_fail counts at the death behind it', () => {
 });
 
 // Sessions whose gauges come from setContext: `pipes` is never cleaned up, `enemies` comes in waves (each
-// bigger, the last one still on screen when the session ends), and `score` climbs by design.
+// bigger, the last one still on screen when the session ends), and `score` and `friends_in_server` (friends who
+// joined one by one, the Roblox SDK's friendsInServer) climb by design.
 function gauged(n) {
   const evs = [];
   for (let i = 0; i < n; i++) {
     const events = [{ type: 'level_start', ts: T0 + 100, level: 'sky' }];
-    for (let w = 0; w < 6; w++) events.push(frames('sky', T0 + 5000 * (w + 1), { ctx: { pipes: 10 + w * 30, enemies: [0, 20, 0, 45, 0, 70][w], score: w * 500 } }));
+    for (let w = 0; w < 6; w++) events.push(frames('sky', T0 + 5000 * (w + 1), { ctx: { pipes: 10 + w * 30, enemies: [0, 20, 0, 45, 0, 70][w], score: w * 500, friends_in_server: Math.min(w, 3) } }));
     evs.push(...session({ events: [...events, end(T0 + 60_000)] }));
   }
   return evs;
@@ -183,7 +184,7 @@ test('a gauge that keeps climbing is a leak in the game\'s own words', () => {
   assert.deepEqual(
     found.map((f) => f.id),
     ['leak-gauge-pipes'],
-    'score climbs by design',
+    'score and friends climb by design',
   );
   assert.match(found[0].title, /`pipes` keeps climbing: median 10 → 160/);
   // With a geometry leak, the climbing gauges go into its summary instead.

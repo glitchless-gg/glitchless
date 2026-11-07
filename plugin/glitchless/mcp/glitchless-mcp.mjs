@@ -304,10 +304,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path14) {
-  if (!path14)
+function getElementAtPath(obj, path15) {
+  if (!path15)
     return obj;
-  return path14.reduce((acc, key) => acc?.[key], obj);
+  return path15.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -566,11 +566,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path14, issues) {
+function prefixIssues(path15, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path14);
+    iss.path.unshift(path15);
     return iss;
   });
 }
@@ -1103,16 +1103,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path14 = []) => {
+  const processError = (error63, path15 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path14, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path14, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path14, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else {
-        const fullpath = [...path14, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -1151,17 +1151,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path14 = []) => {
+  const processError = (error63, path15 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path14, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path14, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path14, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
       } else {
-        const fullpath = [...path14, ...issue2.path];
+        const fullpath = [...path15, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -1200,8 +1200,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path14 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path14) {
+  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path15) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -7521,8 +7521,8 @@ var init_he = __esm({
           case "invalid_union":
             return "\u05E7\u05DC\u05D8 \u05DC\u05D0 \u05EA\u05E7\u05D9\u05DF";
           case "invalid_element": {
-            const place = withDefinite(issue2.origin ?? "array");
-            return `\u05E2\u05E8\u05DA \u05DC\u05D0 \u05EA\u05E7\u05D9\u05DF \u05D1${place}`;
+            const place2 = withDefinite(issue2.origin ?? "array");
+            return `\u05E2\u05E8\u05DA \u05DC\u05D0 \u05EA\u05E7\u05D9\u05DF \u05D1${place2}`;
           }
           default:
             return `\u05E7\u05DC\u05D8 \u05DC\u05D0 \u05EA\u05E7\u05D9\u05DF`;
@@ -19233,13 +19233,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path14 = ref.slice(1).split("/").filter(Boolean);
-  if (path14.length === 0) {
+  const path15 = ref.slice(1).split("/").filter(Boolean);
+  if (path15.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path14[0] === defsKey) {
-    const key = path14[1] === void 0 ? void 0 : decodeJSONPointerSegment(path14[1]);
+  if (path15[0] === defsKey) {
+    const key = path15[1] === void 0 ? void 0 : decodeJSONPointerSegment(path15[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -23695,17 +23695,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path14, reachable) => {
+  const visit2 = (node2, path15, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path14.length === 0) return `${pathName(path14)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path15.length === 0) return `${pathName(path15)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path14)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path14)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path15)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path15)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path14)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path15)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -23714,14 +23714,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path14,
+        path: path15,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path14, key], reachable);
+      const fault$1 = visit2(child, [...path15, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -23729,7 +23729,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path14, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path15, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -23748,8 +23748,8 @@ function scanXMcpHeaderDeclarations(inputSchema) {
     declarations
   };
 }
-function pathName(path14) {
-  return path14.length === 0 ? "<root>" : path14.join(".");
+function pathName(path15) {
+  return path15.length === 0 ? "<root>" : path15.join(".");
 }
 function mcpParamPrimitiveToString(value) {
   if (typeof value === "string") return value;
@@ -23776,9 +23776,9 @@ function decodeMcpParamValue(value) {
     return;
   }
 }
-function valueAtPath(root, path14) {
+function valueAtPath(root, path15) {
   let node2 = root;
-  for (const key of path14) {
+  for (const key of path15) {
     if (node2 === null || typeof node2 !== "object") return void 0;
     node2 = node2[key];
   }
@@ -24168,7 +24168,7 @@ function convertStandardElicitationSchema(schema) {
 function isAnnotationOnlyJsonSchemaKeyword(key) {
   return ANNOTATION_ONLY_JSON_SCHEMA_KEYWORDS.has(key) || key.startsWith("x-");
 }
-function walkProperty(node2, path14, vendor, unsupported) {
+function walkProperty(node2, path15, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -24176,8 +24176,8 @@ function walkProperty(node2, path14, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path14}.${key}`);
-  } else unsupported.push(`${path14}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path15}.${key}`);
+  } else unsupported.push(`${path15}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -24194,11 +24194,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path14 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path14}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path15 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path15}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path14 ? `${path14}.${key}` : key;
+    const childPath = path15 ? `${path15}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -24967,9 +24967,9 @@ var init_src_DdvbAHrR = __esm({
         });
         const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta3);
         if (!parsed.success) for (const issue2 of parsed.error.issues) {
-          const path14 = issue2.path.map(String);
-          const key = path14.length > 0 ? path14.join(".") : "_meta";
-          if (path14.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+          const path15 = issue2.path.map(String);
+          const key = path15.length > 0 ? path15.join(".") : "_meta";
+          if (path15.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
           issues.push({
             key,
             problem: issue2.message
@@ -29282,8 +29282,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
         return ind;
       }
-      function removeDotSegments(path14) {
-        let input2 = path14;
+      function removeDotSegments(path15) {
+        let input2 = path15;
         const output2 = [];
         let nextSlash = -1;
         let len = 0;
@@ -29621,8 +29621,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         if (wsComponent.resourceName) {
           const queryIndex = wsComponent.resourceName.indexOf("?");
-          const path14 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-          wsComponent.path = path14 && path14 !== "/" ? path14 : void 0;
+          const path15 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+          wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
           wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
           wsComponent.resourceName = void 0;
         }
@@ -33725,11 +33725,11 @@ var init_ajvProvider_DyjnscPj = __esm({
         if (!f) throw new Error(`Unknown format "${name}"`);
         return f;
       };
-      function addFormats2(ajv, list, fs12, exportName) {
+      function addFormats2(ajv, list, fs13, exportName) {
         var _a3;
         var _b;
         (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 || (_b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`);
-        for (const f of list) ajv.addFormat(f, fs12[f]);
+        for (const f of list) ajv.addFormat(f, fs13[f]);
       }
       module.exports = exports = formatsPlugin;
       Object.defineProperty(exports, "__esModule", { value: true });
@@ -33870,8 +33870,8 @@ function protectedResourceMetadataPath(resourceServerUrl) {
   const rsPath = stripTrailingSlash(resourceServerUrl.pathname);
   return `/.well-known/oauth-protected-resource${rsPath === "/" ? "" : rsPath}`;
 }
-function stripTrailingSlash(path14) {
-  return path14.length > 1 && path14.endsWith("/") ? path14.slice(0, -1) : path14;
+function stripTrailingSlash(path15) {
+  return path15.length > 1 && path15.endsWith("/") ? path15.slice(0, -1) : path15;
 }
 function supportsScopeChallengeResolver(transport) {
   return typeof transport === "object" && transport !== null && "setScopeChallengeResolver" in transport && typeof transport.setScopeChallengeResolver === "function";
@@ -34271,10 +34271,10 @@ data: ${JSON.stringify(message)}
         const { maxRounds, roundTimeoutMs } = this._host;
         const outerSignal = ctx.mcpReq.signal;
         let current = firstResult;
-        let round2 = 0;
+        let round3 = 0;
         while (true) {
-          round2 += 1;
-          if (round2 > maxRounds) return legacyShimFailure(method, inputRequiredRoundsExceededMessage(method, maxRounds));
+          round3 += 1;
+          if (round3 > maxRounds) return legacyShimFailure(method, inputRequiredRoundsExceededMessage(method, maxRounds));
           const inputRequests = current.inputRequests;
           const hasInputRequests = inputRequests != null && Object.keys(inputRequests).length > 0;
           const requestState = typeof current.requestState === "string" ? current.requestState : void 0;
@@ -37034,6 +37034,7 @@ __export(context_exports, {
   define: () => define,
   fail: () => fail,
   filters: () => filters,
+  isRemote: () => isRemote,
   isWorkspace: () => isWorkspace,
   noPlayersLine: () => noPlayersLine,
   projectFor: () => projectFor,
@@ -37047,6 +37048,7 @@ __export(context_exports, {
   stdioConnection: () => stdioConnection,
   tool: () => tool,
   toolList: () => toolList,
+  upload: () => upload,
   useCredentials: () => useCredentials,
   workspaceGames: () => workspaceGames,
   workspaceIntake: () => workspaceIntake,
@@ -37156,6 +37158,13 @@ async function write(method, p, body) {
   if (!res.ok) throw new Error(`Glitchless API ${method} ${p} \u2192 HTTP ${res.status}: ${data.error || ""}${signInHint(res.status)}`);
   return data;
 }
+async function upload(method, p, bytes, type) {
+  const res = await conn().fetch(`${base()}${p}`, { method, headers: await headers({ "content-type": type }), body: bytes });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 403) throw new Error(`${data.error || "forbidden"}. Uploading needs a key with the dashboard scope (a workspace key from glitchless_sign_in has it).`);
+  if (!res.ok) throw new Error(`Glitchless API ${method} ${p.split("?")[0]} \u2192 HTTP ${res.status}: ${data.error || ""}${signInHint(res.status)}`);
+  return data;
+}
 async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
@@ -37167,10 +37176,19 @@ function range(hours = 24) {
   const to = Date.now();
   return { from: to - hours * 36e5, to };
 }
-function reply(title, data) {
+function reply(title, data, { rows = false } = {}) {
   return { content: [{ type: "text", text: `${title}${windowNote()}
 
-${JSON.stringify(data, null, 2)}` }] };
+${rows ? rowsJSON(data) : JSON.stringify(data, null, 2)}` }] };
+}
+function rowsJSON(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return JSON.stringify(data);
+  const field = (v) => Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object") ? `[
+${v.map((x) => `    ${JSON.stringify(x)}`).join(",\n")}
+  ]` : JSON.stringify(v);
+  return `{
+${Object.entries(data).filter(([, v]) => v !== void 0).map(([k, v]) => `  ${JSON.stringify(k)}: ${field(v)}`).join(",\n")}
+}`;
 }
 function fail(err) {
   return { content: [{ type: "text", text: `Glitchless error: ${err.message}` }], isError: true };
@@ -37198,7 +37216,7 @@ function createServer({ remote = false, scopes = null, connection: c = null } = 
     if (remote && t.local || scopes && !scopes.includes(t.scope)) continue;
     const { inputSchema = {}, ...config2 } = t.config;
     server.registerTool(t.name, { ...config2, title: titleOf(t), inputSchema: external_exports.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
-      const run2 = () => calls.run({ game: args.game, server }, async () => {
+      const run2 = () => calls.run({ game: args.game, server, remote }, async () => {
         try {
           return await t.handler(args, ctx);
         } catch (err) {
@@ -37238,12 +37256,12 @@ function noPlayersLine(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, common, tools, READS, titleOf, gameField, TEST_KINDS;
+var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
     init_zod();
-    VERSION = "0.14.1";
+    VERSION = "0.15.0";
     CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "glitchless", "credentials.json");
     originOf = (u) => {
       try {
@@ -37262,6 +37280,7 @@ var init_context = __esm({
     workspaceIntake = () => conn().games?.intake ?? null;
     SETUP_URL = "https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md";
     calls = new AsyncLocalStorage();
+    isRemote = () => !!calls.getStore()?.remote;
     common = {
       service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
       hours: external_exports.number().min(0.25).max(9600).optional().describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day."),
@@ -37379,7 +37398,216 @@ var init_login = __esm({
   }
 });
 
+// src/session-view.js
+function sessionSummary({ session = {}, timeline = [], frames = [], server_windows: windows = [] }) {
+  const events = [...timeline].sort((a, b) => a.ts - b.ts);
+  const t0 = session.start ?? events[0]?.ts ?? 0;
+  const end = Math.max(t0 + (session.duration_s ?? 0) * 1e3, events.at(-1)?.ts ?? t0);
+  const at = (ts) => secs(ts - t0);
+  const levels = /* @__PURE__ */ new Map();
+  const row = (level) => {
+    let l = levels.get(level);
+    if (!l) levels.set(level, l = { level, first_at_s: null, time_s: 0, tries: 0, completed: 0, failed: 0, abandoned: 0, deaths: 0, causes: {}, fail_causes: {}, events: {}, hitches: 0, worst_hitch_ms: null, hitch_causes: {}, errors: 0, rage_inputs: [], outcome: null });
+    return l;
+  };
+  let open2 = null;
+  const close = (ts, outcome) => {
+    if (!open2) return;
+    const l = row(open2.level);
+    l.time_s += (ts - open2.from) / 1e3;
+    l.outcome = outcome;
+    open2 = null;
+  };
+  const menu = { time_s: 0, events: {}, hitches: 0, errors: 0 };
+  const errors = /* @__PURE__ */ new Map();
+  const hitches = [];
+  const rage = [];
+  const reports = [];
+  let disconnects = 0;
+  for (const e of events) {
+    if (e.type === "level_start") {
+      close(e.ts, "left");
+      const l2 = row(e.level);
+      l2.tries++;
+      if (l2.first_at_s == null) l2.first_at_s = at(e.ts);
+      if (e.attrs && Object.keys(e.attrs).length) l2.attrs = e.attrs;
+      open2 = { level: e.level, from: e.ts };
+      continue;
+    }
+    if (ENDS[e.type] && e.level != null) {
+      const l2 = row(e.level);
+      l2[ENDS[e.type]]++;
+      if (e.type === "level_fail" && e.cause) add(l2.fail_causes, e.cause);
+      if (open2?.level === e.level) close(e.ts, ENDS[e.type]);
+      else l2.outcome = ENDS[e.type];
+      continue;
+    }
+    const where2 = e.level ?? open2?.level ?? null;
+    const l = where2 != null ? row(where2) : null;
+    if (l && l.first_at_s == null) l.first_at_s = at(e.ts);
+    switch (e.type) {
+      case "death":
+        if (l) {
+          l.deaths++;
+          add(l.causes, e.cause ?? "unknown");
+        }
+        break;
+      case "custom":
+        if (e.name === "rage_input") {
+          const r = { at_s: at(e.ts), level: where2, key: e.attrs?.key ?? null, presses: e.attrs?.count ?? null, ...place(e) };
+          rage.push(r);
+          if (l) l.rage_inputs.push(r);
+        } else if (!SDK_EVENTS.has(e.name)) add(l ? l.events : menu.events, e.name);
+        break;
+      case "counts":
+        for (const c of e.counts || []) if (c?.name) add(l ? l.events : menu.events, c.name, c.n || 1);
+        break;
+      case "hitch": {
+        const ms = e.duration_ms ?? e.ms ?? null;
+        hitches.push({ at_s: at(e.ts), level: where2, ms, causes: e.causes ?? [] });
+        const into = l ?? menu;
+        into.hitches++;
+        if (l && ms != null && !(l.worst_hitch_ms >= ms)) l.worst_hitch_ms = Math.round(ms);
+        if (l) for (const c of e.causes || []) add(l.hitch_causes, c);
+        break;
+      }
+      case "error": {
+        (l ?? menu).errors++;
+        const key = e.fingerprint ?? e.message;
+        const x = errors.get(key);
+        if (x) x.count++;
+        else errors.set(key, { fingerprint: e.fingerprint ?? null, kind: e.kind ?? null, message: String(e.message ?? "").slice(0, 160), first_at_s: at(e.ts), level: where2, count: 1 });
+        break;
+      }
+      case "bug_report":
+        reports.push({ at_s: at(e.ts), level: where2, note: String(e.note ?? "").slice(0, 160), ...place(e) });
+        break;
+      case "disconnect":
+        disconnects++;
+        break;
+    }
+  }
+  close(end, session.ended === false ? "still playing" : "session ended");
+  const played = [...levels.values()].reduce((a, l) => a + l.time_s, 0);
+  menu.time_s = Math.max(0, Math.round(((end - t0) / 1e3 - played) * 10) / 10);
+  const byLevel = /* @__PURE__ */ new Map();
+  for (const f of frames) (byLevel.get(f.level ?? null) || byLevel.set(f.level ?? null, []).get(f.level ?? null)).push(f);
+  const frameStats = (list = []) => list.length ? { windows: list.length, fps: median(list.map((f) => f.fps)), p95_ms: median(list.map((f) => f.p95)), worst_ms: Math.max(...list.map((f) => f.max ?? 0)) || null } : null;
+  const rows = [...levels.values()].map((l) => {
+    const f = frameStats(byLevel.get(l.level));
+    return {
+      level: l.level,
+      first_at_s: l.first_at_s,
+      time_s: Math.round(l.time_s * 10) / 10,
+      tries: l.tries,
+      ...l.attrs ? { attrs: l.attrs } : {},
+      completed: l.completed,
+      ...l.failed ? { failed: l.failed, ...Object.keys(l.fail_causes).length ? { fail_causes: l.fail_causes } : {} } : {},
+      ...l.abandoned ? { abandoned: l.abandoned } : {},
+      deaths: l.deaths,
+      ...Object.keys(l.causes).length ? { causes: l.causes } : {},
+      ...Object.keys(l.events).length ? { events: l.events } : {},
+      hitches: l.hitches,
+      ...l.hitches ? { worst_hitch_ms: l.worst_hitch_ms, ...Object.keys(l.hitch_causes).length ? { hitch_causes: l.hitch_causes } : {} } : {},
+      ...f ? { frames: f } : {},
+      ...l.errors ? { errors: l.errors } : {},
+      ...l.rage_inputs.length ? { rage_inputs: l.rage_inputs.map(({ level, ...r }) => r) } : {},
+      outcome: l.outcome
+    };
+  });
+  const s = session;
+  const menuFrames = frameStats(byLevel.get(null));
+  return {
+    session: {
+      session_id: s.session_id,
+      player_id: s.player_id ?? null,
+      session_type: s.session_type,
+      ...s.marked_tester ? { marked_tester: true } : {},
+      version: s.version,
+      env: s.env,
+      start: s.start != null ? new Date(s.start).toISOString() : null,
+      duration_s: s.duration_s,
+      device: [s.browser, s.os, s.gpu, s.gpu_tier && `${s.gpu_tier} tier`, s.steam_deck && "Steam Deck"].filter(Boolean).join(", ") || null,
+      ...s.props ? { props: s.props } : {},
+      ...s.groups?.length ? { groups: s.groups.map(({ kind, id, attrs }) => ({ kind, id, ...attrs ? { attrs } : {} })) } : {},
+      frame_p50_ms: s.p50 ?? null,
+      frame_p95_ms: s.p95 ?? null,
+      pct_over_budget: s.pct_over_budget ?? null
+    },
+    levels: rows,
+    ...menu.time_s || Object.keys(menu.events).length || menu.hitches || menu.errors ? { outside_levels: { time_s: menu.time_s, ...Object.keys(menu.events).length ? { events: menu.events } : {}, hitches: menu.hitches, ...menuFrames ? { frames: menuFrames } : {}, ...menu.errors ? { errors: menu.errors } : {} } } : {},
+    hitches: { count: hitches.length, worst: [...hitches].sort((a, b) => (b.ms ?? 0) - (a.ms ?? 0)).slice(0, 5) },
+    ...errors.size ? { errors: [...errors.values()] } : {},
+    ...rage.length ? { rage_inputs: rage } : {},
+    ...reports.length ? { bug_reports: reports } : {},
+    ...disconnects ? { disconnects } : {},
+    ...windows.length ? { server: { windows: windows.length, tick_p95_max: Math.max(...windows.map((w) => w.tick_p95 ?? 0)) || null, players_max: Math.max(...windows.map((w) => w.players ?? 0)) } } : {},
+    outcome: {
+      ended: s.ended ?? null,
+      crashed: Boolean(s.crashed),
+      rage_quit: Boolean(s.rage_quit),
+      ...s.rage_quit && s.rage ? { rage: s.rage } : {},
+      last_level: rows.at(-1)?.level ?? null,
+      levels_completed: s.completed ?? rows.filter((l) => l.completed).map((l) => l.level)
+    },
+    timeline_events: events.filter((e) => !WINDOWS.has(e.type)).length
+  };
+}
+function timelineView({ session = {}, timeline = [], frames = [] }, { level = null, types = null, limit = 150 } = {}) {
+  const want = types ? new Set(String(types).split(",").map((x) => x.trim()).filter(Boolean)) : null;
+  const events = [...timeline].sort((a, b) => a.ts - b.ts);
+  const t0 = session.start ?? events[0]?.ts ?? 0;
+  let current = null;
+  const out = [];
+  for (const e of events) {
+    if (e.type === "level_start") current = e.level;
+    const where2 = e.level ?? current;
+    if (ENDS[e.type] && e.level === current) current = null;
+    if (WINDOWS.has(e.type)) continue;
+    if (level != null && where2 !== level) continue;
+    if (want && !want.has(e.type) && !(e.name && want.has(e.name)) && !(e.type === "counts" && (e.counts || []).some((c) => want.has(c.name)))) continue;
+    out.push({ at_s: secs(e.ts - t0), ...e });
+  }
+  const windows = want?.has("frames") || want?.has("frame_window") ? frames.filter((f) => level == null || f.level === level).map(({ ctx, ...f }) => ({ at_s: secs(f.ts - t0), ...f, ...ctx })) : null;
+  return { total: out.length, events: out.slice(0, limit), ...windows ? { frames: windows.slice(0, limit) } : {} };
+}
+var SDK_EVENTS, WINDOWS, ENDS, secs, median, add, place;
+var init_session_view = __esm({
+  "src/session-view.js"() {
+    SDK_EVENTS = /* @__PURE__ */ new Set(["rage_input", "screen_change", "app_resume", "webgl_context_restored", "annotation", "assets_loaded"]);
+    WINDOWS = /* @__PURE__ */ new Set(["frame_window", "server_window", "pos", "map"]);
+    ENDS = { level_complete: "completed", level_fail: "failed", level_abandon: "abandoned" };
+    secs = (ms) => Math.round(ms / 100) / 10;
+    median = (xs) => {
+      const v = xs.filter((x) => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
+      return v.length ? v[Math.floor((v.length - 1) / 2)] : null;
+    };
+    add = (o, k, n = 1) => o[k] = (o[k] || 0) + n;
+    place = (e) => e.x != null || e.y != null ? { x: e.x ?? null, y: e.y ?? null, z: e.z ?? null } : {};
+  }
+});
+
 // src/tools/core.js
+function sessionRow(s) {
+  return {
+    session_id: s.session_id,
+    player_id: s.player_id ?? null,
+    session_type: s.session_type,
+    ...s.marked_tester ? { marked_tester: true } : {},
+    version: s.version,
+    env: s.env,
+    start: s.start != null ? new Date(s.start).toISOString() : null,
+    duration_s: s.duration_s,
+    device: [s.browser, s.os].filter(Boolean).join(", ") || null,
+    levels: s.levels?.length ?? 0,
+    completed: s.completed?.length ?? 0,
+    deaths: s.deaths,
+    errors: s.errors,
+    hitches: s.hitches,
+    ...s.crashed ? { crashed: true } : {},
+    ...s.rage_quit ? { rage_quit: true } : {}
+  };
+}
 function nextStep(game, intake) {
   if (game.demo) return "This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.";
   return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, follow the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll("<the game>", game.name)}`;
@@ -37389,6 +37617,7 @@ var init_core3 = __esm({
   "src/tools/core.js"() {
     init_zod();
     init_context();
+    init_session_view();
     tool("glitchless_list_games", "List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.", {}, async () => {
       if (isWorkspace()) {
         const list = await workspaceGames(true);
@@ -37401,8 +37630,8 @@ var init_core3 = __esm({
         const rows = list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) });
         if (list.every((g) => g.demo)) {
           const who = await agent("GET", "/whoami").catch(() => null);
-          const add = who?.scopes?.includes("manage") ? "To add the person's own game, glitchless_create_game with its name." : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games.`;
-          return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add} Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, rows);
+          const add2 = who?.scopes?.includes("manage") ? "To add the person's own game, glitchless_create_game with its name." : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games.`;
+          return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add2} Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, rows);
         }
         return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, rows);
       }
@@ -37427,17 +37656,19 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
     );
     tool(
       "glitchless_performance",
-      "Frame-time breakdown for a game: global percentiles, per-level p50/p95/p99 with draw calls / triangles / geometry counts / game-context gauges, hitch causes (script, shader compile, PSO compile in Unreal, GC, asset or map load), what is on screen during hitches, which events precede hitches, per GPU tier / browser / platform / version, per screen (by_display: each refresh rate's sessions, its budget_ms and share of play, so 120 Hz and 60 Hz phones read apart), per zone for an open-world game that sets them, memory growth per level load and the slowest recent hitches with script attribution. Every frame is judged against its own screen's budget: pct_over_budget is the share of frames slower than 1.15x their own window's budget_ms (under 5% means the p95 is on time on players' own screens; a 60 Hz phone's 16.7 ms frames are on time next to 120 Hz ones), so read it, not p95 against frame_budget_ms (the median screen's). With by_prop, frame time, hitches and crash-free sessions per value of a session property (a graphics preset, a class). A multiplayer game also gets `network` (ping, loss and disconnects; glitchless_network has more).",
+      "Frame-time breakdown for a game: global percentiles, per-level p50/p95/p99 with draw calls / triangles / geometry counts / game-context gauges, hitch causes (script, shader compile, PSO compile in Unreal, GC, asset or map load), what is on screen during hitches, which events precede hitches, per GPU tier / browser / platform / version, per screen (by_display: each refresh rate's sessions, its budget_ms and share of play, so 120 Hz and 60 Hz phones read apart), per zone for an open-world game or hub that sets them (by_zone: each zone's frame time and hitches_per_min, and its time: seconds and share_pct of play time, sessions that went there and median_s, their median time in it; zone keeps one), memory growth per level load and the slowest recent hitches with script attribution. Every frame is judged against its own screen's budget: pct_over_budget is the share of frames slower than 1.15x their own window's budget_ms (under 5% means the p95 is on time on players' own screens; a 60 Hz phone's 16.7 ms frames are on time next to 120 Hz ones), so read it, not p95 against frame_budget_ms (the median screen's). With by_prop, frame time, hitches and crash-free sessions per value of a session property (a graphics preset, a class). A multiplayer game also gets `network` (ping, loss and disconnects; glitchless_network has more).",
       {
         ...common,
         level: external_exports.string().optional().describe('Focus on one level id, e.g. "level-2"'),
+        zone: external_exports.string().optional().describe('Focus on one zone, as the game names it with setZone ("hall"): its by_zone row and its recent hitches'),
         by_prop: external_exports.string().optional().describe('A session property (glitchless_events lists them), e.g. "preset": frame time, hitches and crash-free sessions per value, over 31 days or less')
       },
-      async ({ service, hours, level, by_prop, ...f }) => {
+      async ({ service, hours, level, zone, by_prop, ...f }) => {
         const svc = await resolveService(service);
         const d = await query("performance", { service: svc, ...filters(f), by_prop, ...range(hours) });
-        const hitches = (level ? d.hitches.filter((h) => h.level === level) : d.hitches).slice(0, 12);
-        return reply(`Frame performance for ${svc}${level ? ` (${level})` : ""}`, {
+        const hitches = d.hitches.filter((h) => (!level || h.level === level) && (!zone || h.zone === zone)).slice(0, 12);
+        const zones = d.by_zone && (zone ? d.by_zone.filter((z2) => z2.key === zone) : d.by_zone);
+        return reply(`Frame performance for ${svc}${level ? ` (${level})` : ""}${zone ? ` (zone ${zone})` : ""}`, {
           kpis: d.kpis,
           by_level: level ? d.by_level.filter((l) => l.key === level) : d.by_level,
           hitch_causes: d.hitch_causes,
@@ -37447,7 +37678,8 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
           by_version: d.by_version.map(slimGroup),
           by_platform: (d.by_platform || []).map(slimGroup),
           by_display: (d.by_display || []).map((g) => ({ ...slimGroup(g), hz: g.hz, budget_ms: g.budget_ms, windows_pct: g.windows_pct })),
-          ...d.by_zone ? { by_zone: d.by_zone.map(slimGroup) } : {},
+          // Each zone's frame time and hitches, and its time: share of play time, the sessions that went there, their median.
+          ...zones ? { by_zone: zones.map((z2) => ({ ...slimGroup(z2), hitches: z2.hitches, seconds: z2.seconds, share_pct: z2.share_pct, median_s: z2.median_s })) } : {},
           ...d.by_prop ? { by_prop: { key: d.by_prop.key, ...d.by_prop.why ? { why: d.by_prop.why } : {}, rows: d.by_prop.rows.map((r) => ({ ...slimGroup(r), all_sessions: r.all_sessions, crash_free_pct: r.crash_free_pct })) } } : {},
           ...d.network ? { network: d.network.kpis } : {},
           memory: d.memory,
@@ -37480,37 +37712,65 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
     );
     tool(
       "glitchless_player_funnel",
-      `Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, fails, abandons and the attempts a disconnect ended (never counted as fails), median and slowest clear times, rage quits (quit \u226420s after dying), session length distribution and recent rage quits with positions. With by, each level per value of what describes the attempt: an attribute the game passed to levelStart ("tier", "difficulty", "party_size"; a list such as "build" counts under each element), a session property ("$class") or a split ("$platform"): clears and wipes by difficulty, by group size, by class; level keeps one level; count "runs" counts each run once at each level it reached (a roguelite's biomes). Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1), and with by_prop per value of a session property (spenders against the rest). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on. With level and hotspots, for a game that sends positions: where players die on that level instead, clustered death positions in world coordinates (x range, share of the level's deaths, top cause, rage quits at that spot), the level bounds and its completion stats, to find a difficulty spike and then the level data around it.`,
+      `Player experience per level: sessions that started vs completed each level, attempts, deaths per session and their causes, fails, abandons and the attempts a disconnect ended (never counted as fails), median and slowest clear times, rage quits (quit \u226420s after dying), session length distribution, recent rage quits with positions, and recent rage inputs (one key mashed: the SDKs count them in kpis.rage_inputs) with their level, time, key and, for a game that sends positions, where the player stood. With by, each level per value of what describes the attempt: an attribute the game passed to levelStart ("tier", "difficulty", "party_size"; a list such as "build" counts under each element), a session property ("$class") or a split ("$platform"): clears and wipes by difficulty, by group size, by class; level keeps one level; count "runs" counts each run once at each level it reached (a roguelite's biomes). Also retention: of the players first seen each day, the share back 1, 7 and 30 days later (D1, D7, D30; hours of 48 or more for D1), and with by_prop per value of a session property (spenders against the rest). Retention needs player IDs: status "anonymous" means the game sends none, and privacy "install" in the SDK turns them on. With hotspots, for a game that sends positions: where players die instead, on one level (level), in one zone (zone, as the game passes it to setZone) or, with neither, anywhere in the game (a hub or lobby with no level set): clustered death positions in world coordinates (x range, share of the place's deaths, top cause, rage quits at that spot), the bounds and the place's stats (a level's completion; a zone's sessions, deaths and rage quits), to find a difficulty spike and then the level data around it.`,
       {
         ...common,
         by: external_exports.string().optional().describe(`Split each level's attempts: an attribute of its levelStart ("tier"), a session property ("$class") or $platform, $browser, $device_tier, $link`),
         level: external_exports.string().optional().describe('With by or count: only this level; with hotspots: the level, e.g. "level-3"'),
+        zone: external_exports.string().optional().describe('With hotspots: the zone instead of a level, e.g. "hall" (neither: the whole game)'),
         count: external_exports.enum(["runs"]).optional().describe('"runs": each run (setGroup("run")) counted once at each level it reached'),
         by_prop: external_exports.string().optional().describe('Retention per value of this session property, e.g. "spender"'),
-        hotspots: external_exports.boolean().optional().describe("With level: where players die on it, instead of the funnel")
+        hotspots: external_exports.boolean().optional().describe("Where players die, instead of the funnel: on level, in zone, or with neither anywhere in the game")
       },
-      async ({ service, hours, by, level, count, by_prop, hotspots, ...f }) => {
+      async ({ service, hours, by, level, zone, count, by_prop, hotspots, ...f }) => {
         const svc = await resolveService(service);
         if (hotspots) {
-          if (!level) throw new Error("hotspots needs level: the level whose deaths to place");
-          const d2 = await query("heatmap", { service: svc, ...filters(f), level, ...range(hours) });
-          return reply(`Death hotspots on ${level} in ${svc}`, { level: d2.level, axis: d2.axis, bounds: d2.bounds, hotspots: d2.hotspots, level_stats: d2.stats, total_deaths: d2.deaths?.length ?? 0, position_samples: d2.density?.samples ?? 0 });
+          if (level && zone) throw new Error("hotspots takes level or zone, not both (neither: the whole game)");
+          const place2 = level ? { level } : zone ? { zone } : { all: 1 };
+          const d2 = await query("heatmap", { service: svc, ...filters(f), ...place2, ...range(hours) });
+          const where2 = level ? `on ${level}` : zone ? `in ${zone}` : "anywhere in the game";
+          return reply(`Death hotspots ${where2} in ${svc}`, { ...level ? { level } : zone ? { zone } : {}, axis: d2.axis, bounds: d2.bounds, background: d2.map ? d2.map.uploaded ? "uploaded" : "captured" : null, hotspots: d2.hotspots, [level ? "level_stats" : "stats"]: d2.stats, total_deaths: d2.deaths?.length ?? 0, position_samples: d2.density?.samples ?? 0, levels: d2.levels, zones: d2.zones });
         }
         const d = await query("players", { service: svc, ...filters(f), by, level, count, by_prop, ...range(hours) });
-        return reply(`Player funnel for ${svc}${by ? ` by ${by}` : ""}${count ? ", counting runs" : ""}`, { kpis: d.kpis, funnel: d.funnel, ...d.funnel_by ? { funnel_by: d.funnel_by } : {}, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15), retention: d.retention });
+        const rage = (d.rage_inputs || []).slice(0, 15).map(({ ts, ...r }) => ({ ...r, at: new Date(ts).toISOString() }));
+        return reply(`Player funnel for ${svc}${by ? ` by ${by}` : ""}${count ? ", counting runs" : ""}`, { kpis: d.kpis, funnel: d.funnel, ...d.funnel_by ? { funnel_by: d.funnel_by } : {}, session_length: d.session_length, recent_rage_quits: d.rage_quits.slice(0, 15), ...rage.length ? { recent_rage_inputs: rage } : {}, retention: d.retention });
       }
     );
     tool(
       "glitchless_session",
-      `One play session in detail: device/GPU, outcome (crashed, rage quit), its properties and its groups (the matches, parties and runs it was in), and the full event timeline (levels with their attributes, deaths with positions, errors, hitches with causes, counters once a window, disconnects, agent annotations) plus per-5s frame stats. Use with session ids from errors, hitches, rage quits or a match. A game server's session (service "<game>.server") gives its tick windows instead of frames.`,
-      { service: common.service, session_id: external_exports.string().describe("Session id (s_\u2026)") },
-      async ({ service, session_id }) => {
+      `One play session, or without session_id the latest sessions (who played, when, for how long, how far they got, the session type), to find one: the developer's own playtest to mark with glitchless_mark_known (player), a crash to open. With session_id, by default a summary an agent can hold: the device, then each level in the order it was played (when it was first reached, the time spent on it, tries, completions, deaths and their causes, the game's own events counted, hitches with the worst and their causes, frame rate, errors, rage inputs with where the player stood, and how it ended there), time outside levels (menus, a title screen), the worst hitches, errors, bug reports, and the outcome (crashed, rage quit, the last level). With level or types, the events themselves (levels with their attributes, deaths with positions, errors, hitches with causes, custom events, counters once a window, disconnects, agent annotations), each with at_s, seconds from the start: types "death,hitch" or a custom event name "room_done"; "frames" adds the per-5s frame windows. view "timeline" gives every event (long: a 10-minute session has hundreds). Use with session ids from errors, hitches, rage quits, rage inputs or a match. A game server's session (service "<game>.server") gives its tick windows.`,
+      {
+        service: common.service,
+        hours: common.hours,
+        version: common.version,
+        env: common.env,
+        session_type: common.session_type,
+        session_id: external_exports.string().optional().describe("Session id (s_\u2026); without it, the latest sessions"),
+        view: external_exports.enum(["summary", "timeline"]).optional().describe('"summary" (default, unless level or types is given): level by level; "timeline": the events themselves'),
+        level: external_exports.string().optional().describe("Only this level's events: its own and what happened while it was played"),
+        types: external_exports.string().optional().describe('Only these, comma-separated: event types (death, hitch, error, custom, level_start, bug_report\u2026), custom event names (room_done), or "frames" for the frame windows'),
+        limit: external_exports.number().int().min(1).max(1e3).optional().describe("With the timeline: at most this many events (default 150), from the first")
+      },
+      async ({ service, hours, version: version2, env, session_type, session_id, view, level, types, limit }) => {
         const svc = await resolveService(service);
+        if (!session_id) {
+          const { sessions = [] } = await query("sessions", { service: svc, ...filters({ version: version2, env, session_type }), ...range(hours) });
+          const rows = sessions.slice(0, limit ?? 25).map(sessionRow);
+          return reply(`${sessions.length} session(s) of ${svc} in the last ${hours || 24}h${sessions.length > rows.length ? `, the latest ${rows.length} (limit gives more)` : ""}. Open one with session_id.`, rows, { rows: true });
+        }
         const d = await query("session", { service: svc, id: session_id });
         if (d.error) return reply(`Session ${session_id} not found in ${svc}`, {});
-        const ticks = d.timeline.filter((e) => e.type === "server_window").map(({ ts, level, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, match }) => ({ ts, level, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, ...match ? { match } : {} }));
-        const timeline = d.timeline.filter((e) => e.type !== "server_window").map(({ tick, ...e }) => e);
-        return reply(`Session ${session_id}`, { session: d.session, timeline: timeline.slice(0, 150), frames: d.frames.map(({ ctx, ...f }) => ({ ...f, ...ctx })).slice(0, 120), ...ticks.length ? { server_windows: ticks.slice(0, 120) } : {} });
+        const ticks = d.timeline.filter((e) => e.type === "server_window").map(({ ts, level: level2, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, match }) => ({ ts, level: level2, ticks: ticks2, tick_hz, tick_p50, tick_p95, late, players, net_objects, cpu_pct, mem_mb, ...match ? { match } : {} }));
+        const answer = { session: d.session, timeline: d.timeline.filter((e) => e.type !== "server_window").map(({ tick, ...e }) => e), frames: d.frames || [], server_windows: ticks };
+        if (view === "timeline" || (level || types) && view !== "summary") {
+          const t = timelineView(answer, { level, types, limit: limit ?? 150 });
+          const what = [level && `on ${level}`, types && `of ${types}`].filter(Boolean).join(" ");
+          return reply(`Session ${session_id}: ${t.total} event(s)${what ? ` ${what}` : ""}${t.total > t.events.length ? `, the first ${t.events.length} (limit gives more)` : ""}`, { session: d.session, ...t, ...ticks.length && !level && !types ? { server_windows: ticks.slice(0, limit ?? 120) } : {} }, { rows: true });
+        }
+        const sum = sessionSummary(answer);
+        const o = sum.outcome;
+        const how = [o.crashed && "crashed", o.rage_quit && "rage quit", o.ended === false && "still playing"].filter(Boolean).join(", ");
+        return reply(`Session ${session_id}: ${sum.levels.length} level(s), ${Math.round(sum.session.duration_s ?? 0)} s${how ? `, ${how}` : ""}${o.last_level ? `, last on ${o.last_level}` : ""}. ${sum.timeline_events} events in all: pass level or types (or view "timeline") for them.`, sum, { rows: true });
       }
     );
     CANT_EDIT = `If you can't edit the game's code (in claude.ai or ChatGPT, say), tell the person to open Claude Code in the game's folder and say "Set up Glitchless for <the game> in this folder", or to paste the prompt on the Get started page in Glitchless into another coding agent.`;
@@ -37518,13 +37778,25 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
 });
 
 // src/tools/analytics.js
+function compactEvent({ attrs = [], ...e }) {
+  return { ...e, attrs: Object.fromEntries(attrs.map((a) => [a.key, compactAttr(a)])) };
+}
+function compactAttr(a) {
+  const values = a.values || [];
+  if (a.avg != null || a.p50 != null) return { avg: a.avg ?? null, ...a.p50 != null ? { p50: a.p50, p90: a.p90, p99: a.p99 } : {}, values: values.length };
+  return { ...a.list ? { list: true } : {}, top: Object.fromEntries(values.slice(0, TOP).map((v) => [v.value, v.count])), ...values.length > TOP ? { more_values: values.length - TOP } : {} };
+}
+function compactProperty({ values = [], ...p }) {
+  return { ...p, top: Object.fromEntries(values.slice(0, TOP).map((v) => [v.value, v.sessions])), ...values.length > TOP ? { more_values: values.length - TOP } : {} };
+}
+var TOP;
 var init_analytics = __esm({
   "src/tools/analytics.js"() {
     init_zod();
     init_context();
     tool(
       "glitchless_events",
-      'The game\'s own metrics, from the custom events it sends with track() and the streams it counts with count() (marked counted: summed on the device per window, so their numbers have sums and averages but no spread): each event\'s count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done; a list attribute such as a deck by element, each event counted once under each), the sums of its numeric attributes per currency (revenue: the amount of purchase events) and their p50, p90 and p99, and `hours`, the hours played in the window, to turn any count into a rate per hour. Give `funnel` to count the sessions that went from one event to the next, in that order. With name and `rate` (a flag such as "won", or a word outcome "result=win") or `avg` (a numeric attribute), it measures that event: overall, or with `by` per value (win rate by hero, with a 95% interval for each, next to the overall rate). With name and `of` (a numeric attribute), it gives that attribute\'s distribution: percentiles and a histogram, optionally `by` a split. `properties` lists what the game set for its sessions with setProperties (rank, class, region, a preset), each with its values and their sessions and players; identifier_like marks one with more than 200 values a day, which is an ID rather than a property. Every read tool filters by them (props) and splits by them (by "$rank").',
+      'The game\'s own metrics, from the custom events it sends with track() and the streams it counts with count() (marked counted: summed on the device per window, so their numbers have sums and averages but no spread): each event\'s count in the window, the sessions and players that sent it, how its attribute values break down (for example plays by mode, paywall views by placement, purchases started vs done; a list attribute such as a deck by element, each event counted once under each), the sums of its numeric attributes per currency (revenue: the amount of purchase events) and their p50, p90 and p99, and `hours`, the hours played in the window, to turn any count into a rate per hour. Give `funnel` to count the sessions that went from one event to the next, in that order. With name and `rate` (a flag such as "won", or a word outcome "result=win") or `avg` (a numeric attribute), it measures that event: overall, or with `by` per value (win rate by hero, with a 95% interval for each, next to the overall rate). With name and `of` (a numeric attribute), it gives that attribute\'s distribution: percentiles and a histogram, optionally `by` a split. With name and `first`, when sessions first sent it: the median and p90 seconds from a session\'s start to its first one (time in the lobby before first leaving it), and the share of ended sessions that never sent it (31 days or less). `properties` lists what the game set for its sessions with setProperties (rank, class, region, a preset), each with its values and their sessions and players; identifier_like marks one with more than 200 values a day, which is an ID rather than a property. Every read tool filters by them (props) and splits by them (by "$rank"). By default each attribute shows its top 5 values (a numeric one its average and percentiles) and each property its top 5: `detail: true` gives every value with its sessions.',
       {
         ...common,
         name: external_exports.string().optional().describe(`Only this event, e.g. "paywall". With rate, avg or of, the event to measure; it can carry a filter like a panel's event: "match_end:mode=ranked", or "battle_end:deck=hog_rider+ice_spirit" for decks with both`),
@@ -37533,11 +37805,13 @@ var init_analytics = __esm({
         avg: external_exports.string().optional().describe(`A numeric attribute's mean per event, e.g. "duration_s"`),
         of: external_exports.string().optional().describe('A numeric attribute whose distribution to give, e.g. "duration_s" (match length) or "placement"'),
         by: external_exports.string().optional().describe('With rate, avg or of: split by an attribute (a list splits by element), $version, $level, $zone, $platform, $browser, $device_tier, $link (the kind of connection), or a session property ("$rank")'),
-        min: external_exports.number().int().optional().describe("With rate or avg and by: the fewest events a row needs (default 30 for a rate, 10 for an average); smaller rows are counted in small")
+        min: external_exports.number().int().optional().describe("With rate or avg and by: the fewest events a row needs (default 30 for a rate, 10 for an average); smaller rows are counted in small"),
+        first: external_exports.boolean().optional().describe("With name: the seconds from each session's start to its first such event (median_s, p90_s, over the sessions that sent it) and the ended sessions that never sent it (never, ended, never_pct). For a lobby: how long players stay before first leaving, and how many never leave. Works for events a Roblox server sends for a player"),
+        detail: external_exports.boolean().optional().describe("Every value of every attribute and property, with its sessions (default: the top 5 of each)")
       },
-      async ({ service, hours, name, funnel, rate, avg, of, by, min, ...f }) => {
+      async ({ service, hours, name, funnel, rate, avg, of, by, min, first, detail, ...f }) => {
         const svc = await resolveService(service);
-        const d = await query("events", { service: svc, ...filters(f), name: name?.split(/[:=]/)[0].trim(), event: name, funnel, rate, avg, of, by, min, ...range(hours) });
+        const d = await query("events", { service: svc, ...filters(f), name: name?.split(/[:=]/)[0].trim(), event: name, funnel, rate, avg, of, by, min, ...first ? { first: 1 } : {}, ...range(hours) });
         const brief = d.events.slice(0, 15).map((e) => `${e.name}${e.counted ? " (counted)" : ""}: ${e.count} in ${e.sessions} session(s)${(e.sums || []).length ? `; ${e.sums.map((x) => `${x.attr} sum ${x.sum}${x.currency ? ` ${x.currency}` : ""}`).join(", ")}` : ""}`).join("\n");
         const props = d.properties || [];
         const propLine = props.length ? `
@@ -37547,17 +37821,22 @@ Session properties: ${props.map((p) => p.identifier_like ? `${p.key} (an ID: too
 ${m.event} ${m.rate ? `rate of ${m.rate}` : `average ${m.avg}`}${m.by ? ` by ${m.by}` : ""}: ${m.empty ? m.why : m.rows ? `${m.rows.length} rows, overall ${m.overall}${m.rate ? "%" : ""}` : `${m.value}${m.unit === "%" ? "%" : ""} of ${m.events} events`}` : "";
         const dist = d.distribution ? `
 ${d.distribution.event} ${d.distribution.of}: ${d.distribution.empty ? d.distribution.why : `p50 ${d.distribution.p50}, p90 ${d.distribution.p90} of ${d.distribution.count}`}` : "";
+        const fs13 = d.first;
+        const firstLine = fs13 ? `
+${fs13.event}, first in a session: ${fs13.empty ? fs13.why : `${fs13.median_s == null ? "no session sent it" : `median ${fs13.median_s} s after the session started, p90 ${fs13.p90_s} s (${fs13.sessions} sessions)`}; ${fs13.never_pct == null ? "no session has ended yet" : `${fs13.never_pct}% of ${fs13.ended} ended sessions never sent it`}`}` : "";
         return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):
-${brief || "None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs)."}${propLine}${measured}${dist}`, {
-          events: d.events.map(({ series, ...e }) => e),
+${brief || "None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs)."}${propLine}${measured}${dist}${firstLine}${detail ? "" : "\n(Top 5 values of each attribute and property: detail: true gives them all.)"}`, {
+          events: d.events.map(({ series, ...e }) => detail ? e : compactEvent(e)),
           hours_played: d.hours ?? null,
-          properties: props,
+          properties: detail ? props : props.map(compactProperty),
           ...d.funnel ? { funnel: d.funnel } : {},
           ...m ? { measure: (({ ts, series, ...x }) => x)(m) } : {},
-          ...d.distribution ? { distribution: d.distribution } : {}
-        });
+          ...d.distribution ? { distribution: d.distribution } : {},
+          ...fs13 ? { first: fs13 } : {}
+        }, { rows: !detail });
       }
     );
+    TOP = 5;
     tool(
       "glitchless_compare_versions",
       `Compare game versions side by side, in the game's own terms first: the stats on its boards (glitchless_dashboard) and its own events per session, then the built-in measures it reports (frame time overall and per level, the share of frames over their own screen's budget, hitches/min, crash-free and error-free sessions, errors per session, level completion, rage-quit rate, deaths per session, geometry growth). Use it to confirm a fix or a design change after shipping a new version. Versions come in release order (when each first showed up at all, not in this window), so by default it compares the newest with the one before it, also while players of older versions still play. For a game on Steam, by "steam_branch" compares Steam branches instead (a beta against "public"), and by "steam_build" Steam builds: a and b are then branch names or build ids. By a session property ("class", "spender"; glitchless_events lists them) it compares that property's values the same way, the most sessions first (over 31 days or less): a and b are then values.`,
@@ -37598,15 +37877,97 @@ ${brief || "None in this window. A game sends them with track(name, attrs), and 
   }
 });
 
+// src/pictures.js
+import fs3 from "node:fs/promises";
+import path3 from "node:path";
+async function readPicture({ file: file2, image }, url2) {
+  if (file2) {
+    if (isRemote()) throw new Error(`this server can't read files on your computer: pass the picture as image (base64), or upload it yourself with a secret key that has the dashboard scope: curl -X PUT '${url2}' -H 'x-glitchless-api-key: <key>' --data-binary @${file2}`);
+    return { bytes: await fs3.readFile(path3.resolve(file2)), type: TYPES[path3.extname(file2).toLowerCase()] || "application/octet-stream" };
+  }
+  return { bytes: Buffer.from(image.replace(/^data:[^,]*,/, ""), "base64"), type: "application/octet-stream" };
+}
+async function saveBackground(svc, { level, zone, file: file2, image, axis, bounds, remove: remove2 }) {
+  if (level && zone) throw new Error("give level or zone, not both (neither: the whole game)");
+  const place2 = level ? { level } : zone ? { zone } : {};
+  const name = level ? `level ${level}` : zone ? `zone ${zone}` : "the whole game";
+  const where2 = new URLSearchParams({ service: svc, ...place2 });
+  if (remove2) {
+    await write("DELETE", `/v1/maps?${where2}`);
+    return { text: `Removed the uploaded background of ${name}.` };
+  }
+  if (!file2 && !image) throw new Error("give background.file or background.image (the picture), or background.remove: true");
+  if (!bounds) throw new Error('give bounds: the world coordinates the picture covers, { "min": [a, b], "max": [a, b] }');
+  where2.set("axis", axis || "xz");
+  where2.set("min", bounds.min.join(","));
+  where2.set("max", bounds.max.join(","));
+  const { bytes, type } = await readPicture({ file: file2, image }, `${base()}/v1/maps?${where2}`);
+  const { map: map2 } = await upload("PUT", `/v1/maps?${where2}`, bytes, type);
+  const [w, h] = map2.size;
+  const shape = w / h / ((bounds.max[0] - bounds.min[0]) / (bounds.max[1] - bounds.min[1]));
+  const note = shape > 1.15 || shape < 0.87 ? `The picture is ${w} \xD7 ${h} pixels but the bounds are ${round(bounds.max[0] - bounds.min[0])} \xD7 ${round(bounds.max[1] - bounds.min[1])} world units: it is stretched to fit them. Check that its edges are the bounds.` : null;
+  return { text: `Saved the background of ${name}: ${w} \xD7 ${h} pixels, ${map2.axis === "xy" ? "a side view" : "seen from above"}. The Heatmaps view and positions panels of ${name} draw on it now.${note ? ` ${note}` : ""}`, map: map2 };
+}
+async function listBackgrounds(svc) {
+  return (await write("GET", `/v1/maps?service=${encodeURIComponent(svc)}`).catch(() => null))?.maps ?? null;
+}
+function round(v) {
+  return Math.round(v * 100) / 100;
+}
+async function saveBrandImage(svc, kind, { file: file2, image, remove: remove2, focus }) {
+  const q = `service=${encodeURIComponent(svc)}`;
+  const said = [];
+  if (remove2) {
+    await write("DELETE", `/v1/brand/${kind}?${q}`);
+    said.push(`Removed the ${kind}.`);
+  } else if (file2 || image) {
+    const { bytes, type } = await readPicture({ file: file2, image }, `${base()}/v1/brand/${kind}?${q}`);
+    const { brand } = await upload("PUT", `/v1/brand/${kind}?${q}`, bytes, type);
+    const b = brand?.[kind];
+    said.push(`Saved the ${kind}${b ? `: ${b.width} \xD7 ${b.height} pixels` : ""}.`);
+  }
+  if (focus) {
+    await write("PUT", `/v1/brand?${q}`, { banner_focus: focus });
+    said.push(`The banner keeps its ${focus} in view.`);
+  }
+  if (!said.length) throw new Error(`give ${kind}.file or ${kind}.image (the picture), ${kind}.remove: true${kind === "banner" ? ", or banner.focus" : ""}`);
+  return said.join(" ");
+}
+var TYPES, backgroundSchema, picture, logoSchema, bannerSchema;
+var init_pictures = __esm({
+  "src/pictures.js"() {
+    init_zod();
+    init_context();
+    TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+    backgroundSchema = external_exports.object({
+      level: external_exports.string().optional().describe("The level, as the game passes it to levelStart"),
+      zone: external_exports.string().optional().describe("Or the zone, as the game passes it to setZone (leave out level and zone for the whole game)"),
+      file: external_exports.string().optional().describe("The picture: a PNG, JPEG or WebP file on this computer. Only the local server (npx glitchless-mcp) reads files; the hosted one takes image"),
+      image: external_exports.string().optional().describe("The picture as base64 (or a data: URL), where the server can't read your files"),
+      axis: external_exports.enum(["xz", "xy"]).optional().describe("xz: seen from above, x across and z down the picture (default); xy: a side view, x across and y up"),
+      bounds: external_exports.object({ min: external_exports.tuple([external_exports.number(), external_exports.number()]), max: external_exports.tuple([external_exports.number(), external_exports.number()]) }).optional().describe(`The world coordinates the picture covers on the axis's two coordinates: { "min": [x, z], "max": [x, z] } for xz, e.g. { "min": [-120, -80], "max": [120, 80] }`),
+      remove: external_exports.boolean().optional().describe("Remove this place's uploaded background (an SDK's capture, if any, shows again)")
+    }).describe("A place's heatmap background, so the Heatmaps view and positions panels (where players went and died) read as the room they happened in: a top-down picture of a hub, a lobby or a level and the world bounds its edges stand for, with no SDK code. The place is a level, a zone the game sets with setZone, or neither: the whole game, for a game whose players move about with no level set (a hub); a zone with no picture of its own uses the whole game's. With axis xz (seen from above, the default) the picture's left edge is bounds.min[0] (x) and its right edge bounds.max[0], its top edge bounds.min[1] (z) and its bottom edge bounds.max[1]; with xy (a side view) its top is bounds.max[1] (y). Get the bounds from the game's own level data (the floor's corners), not by guessing. An upload is drawn over whatever an SDK captured for that place; remove: true goes back to the capture. PNG, JPEG or WebP, at most 256 KB and 4096 pixels a side: a JPEG about 1024 pixels across fits. Send it alone to change only the background, one place a call; glitchless_dashboard lists the game's backgrounds");
+    picture = {
+      file: external_exports.string().optional().describe("A PNG, JPEG or WebP file on this computer. Only the local server (npx glitchless-mcp) reads files; the hosted one takes image"),
+      image: external_exports.string().optional().describe("The picture as base64 (or a data: URL), where the server can't read your files"),
+      remove: external_exports.boolean().optional().describe("Remove it")
+    };
+    logoSchema = external_exports.object(picture).describe("The game's logo, shown by its name on its boards and share links: PNG, JPEG or WebP (never SVG), at most 100 KB and 1024 \xD7 1024 pixels; the dashboard fits it inside 256 px. Use the game's own logo or icon from its files; ask before making one up");
+    bannerSchema = external_exports.object({ ...picture, focus: external_exports.enum(["top", "center", "bottom"]).optional().describe("What stays in view when the banner is cropped to a strip (default center); can be sent alone") }).describe("The game's banner (its key art), the header behind each board's title, with a dark scrim so the title reads on any picture: PNG, JPEG or WebP, at most 300 KB and 4096 \xD7 2048 pixels; the dashboard crops it to 1600 \xD7 400 around its focus (a short strip on a phone), so a wide picture works best. Use the game's own key art or a capture of it from its files; ask before making one up");
+  }
+});
+
 // src/tools/dashboard.js
 var panelSchema, STORE_PANELS, withStores, pageSchema;
 var init_dashboard = __esm({
   "src/tools/dashboard.js"() {
     init_zod();
     init_context();
+    init_pictures();
     tool(
       "glitchless_dashboard",
-      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency`, and `mismatch` lists amounts sent in another currency, which are left out. `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (people upload those in the dashboard: Edit pages \u2192 Look).",
+      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (people upload those in the dashboard: Edit pages \u2192 Look).",
       { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
       async ({ service, hours, page, ...f }) => {
         const svc = await resolveService(service);
@@ -37614,6 +37975,7 @@ var init_dashboard = __esm({
         if (!dashboard) return reply(`${svc} has sent no data yet`, {});
         const b = await query("board", { service: svc, ...filters(f), page, ...range(hours) });
         const brand = (await write("GET", `/v1/brand?service=${encodeURIComponent(svc)}`).catch(() => null))?.brand;
+        const backgrounds = await listBackgrounds(svc);
         const pages = dashboard.pages.map((p) => ({ id: p.id, title: p.title, ...p.view ? { view: p.view, ...p.options ? { options: p.options } : {} } : { panels: p.panels, ...p.where ? { where: p.where } : {} } }));
         const brief = (p) => {
           if (p.empty) return p;
@@ -37626,34 +37988,39 @@ var init_dashboard = __esm({
         };
         const overTime = ({ ts, series, ...p }) => Array.isArray(ts) ? Object.fromEntries(Object.entries(p).filter(([, v]) => !(Array.isArray(v) && v.length === ts.length))) : p;
         const board = b.board ? { page: b.board.page, title: b.board.title, panels: b.board.panels.map((p) => brief(overTime(p))) } : { error: b.error };
-        return reply(`Dashboard for ${svc} (${dashboard.source}${dashboard.updated_by ? `, saved by ${dashboard.updated_by}` : ""}):`, { pages, board, spec: dashboard.spec, brand: brand ? { accent: brand.accent, logo: !!brand.logo, banner: !!brand.banner } : null });
+        return reply(`Dashboard for ${svc} (${dashboard.source}${dashboard.updated_by ? `, saved by ${dashboard.updated_by}` : ""}):`, { pages, board, spec: dashboard.spec, brand: brand ? { accent: brand.accent, logo: !!brand.logo, banner: !!brand.banner } : null, ...backgrounds ? { backgrounds } : {} });
       }
     );
     panelSchema = external_exports.object({
-      type: external_exports.enum(["stat", "series", "breakdown", "distribution", "funnel", "levels", "frame_time", "errors", "deaths", "events", "findings", "sessions", "versions", "live", "reports", "retention", "positions", "net", "servers", "table"]).describe(`distribution: how a numeric attribute (of) spreads, as percentiles (p50, p90, p99) and a histogram, optionally by a split: match length, time in queue, placement, floors reached. levels: starts, completions, fails, deaths and disconnects per level, with the median and p90 clear time; by splits each level's attempts (clears by tier, by class), count "runs" counts runs per biome. retention: D1, D7 and D30 by the day players were first seen; needs player IDs (privacy install or full); by a property, per value. positions: where players died on one level (and where they went), as counts per bin: safe on a shared board, and a game can poll it through a share link to draw its own dead. net (a multiplayer game): show ping (p50 and p95 over time, and the share of play over 150 ms), loss, or disconnects (per hour played, by reason), optionally by a split ($region, $link, $level, $version). servers (a game whose dedicated servers run the SDK in server mode): show ticks (tick time against its budget, by "players" connected, $level or $version), players, or crashes (with the matches and players each ended). table: one event's events listed one by one (each a row of its attributes, time, version, platform, level or session), grouped by an attribute with each group's events, sessions and the lowest, average and highest of a number: daily runs by day with their scores, runs by seed, matches by mode. Only track() events have rows (count() sends totals); a session keeps its first 16 of each event`),
+      type: external_exports.enum(["stat", "series", "breakdown", "distribution", "funnel", "levels", "frame_time", "errors", "deaths", "events", "findings", "sessions", "versions", "live", "reports", "retention", "positions", "net", "servers", "table"]).describe(`distribution: how a numeric attribute (of) spreads, as percentiles (p50, p90, p99) and a histogram, optionally by a split: match length, time in queue, placement, floors reached. levels: starts, completions, fails, deaths and disconnects per level, with the median and p90 clear time; by splits each level's attempts (clears by tier, by class), count "runs" counts runs per biome. retention: D1, D7 and D30 by the day players were first seen; needs player IDs (privacy install or full); by a property, per value. positions: where players died on one level, in one zone, or anywhere in the game (a hub or lobby with no level set), and where they went, as counts per bin over the place's background (glitchless_set_dashboard's background uploads one): safe on a shared board, and a game can poll it through a share link to draw its own dead. net (a multiplayer game): show ping (p50 and p95 over time, and the share of play over 150 ms), loss, or disconnects (per hour played, by reason), optionally by a split ($region, $link, $level, $version). servers (a game whose dedicated servers run the SDK in server mode): show ticks (tick time against its budget, by "players" connected, $level or $version), players, or crashes (with the matches and players each ended). table: one event's events listed one by one (each a row of its attributes, time, version, platform, level or session), grouped by an attribute with each group's events, sessions and the lowest, average and highest of a number: daily runs by day with their scores, runs by seed, matches by mode. Only track() events have rows (count() sends totals); a session keeps its first 16 of each event`),
       title: external_exports.string().optional().describe(`In the game's own words, e.g. "Stops won vs lost"`),
       note: external_exports.string().optional().describe("One line on why this panel matters: people read it behind the info icon next to the panel's title"),
       size: external_exports.enum(["s", "m", "l"]).optional().describe("s = a quarter row (stats), m = half, l = full width"),
-      metric: external_exports.string().optional().describe(`stat: sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played (the time the game was on screen), players_now (sessions playing in the last two minutes, whatever the range), runs (each run once). Network (multiplayer): ping_p50, ping_p95 (ms), loss_pct, disconnects_per_hour, disconnect_pct (level attempts a disconnect ended). Servers (from the game's servers in server mode): servers_now (running now, with the players connected to them), server_tick_p95, server_crash_free_pct, players_per_server. deaths and errors take per "$hours": deaths per hour played`),
-      event: external_exports.string().optional().describe('stat, series, breakdown, distribution, table: one event, "name", "name=value" or "name:key=value". A list attribute (a deck, a build) matches when it has the value, and "battle_end:deck=hog_rider+ice_spirit" when it has all of them (any pair or trio). A series or breakdown by $platform, $browser or $device_tier can leave it out: then it counts sessions (and players, with player IDs) in each'),
-      sum: external_exports.string().optional().describe(`stat, series, breakdown: add up this numeric attribute instead of counting events, e.g. "amount" of "purchase" for revenue. Money (events with a currency) shows in the game's currency; amounts in another currency are named, not added`),
+      metric: external_exports.string().optional().describe(`stat: sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played (the time the game was on screen), players_now (sessions playing in the last two minutes, whatever the range), runs (each run once). Network (multiplayer): ping_p50, ping_p95 (ms), loss_pct, disconnects_per_hour, disconnect_pct (level attempts a disconnect ended). Servers (from the game's servers in server mode): servers_now (running now, with the players connected to them), server_tick_p95, server_crash_free_pct, players_per_server. Zones (a game that sets them with setZone; give zone): zone_time_pct (the zone's share of play time), zone_median_s (the median time in it of the sessions that went there). deaths and errors take per "$hours": deaths per hour played`),
+      zone: external_exports.string().optional().describe('stat with metric zone_time_pct or zone_median_s: the zone, as the game names it with setZone ("hall")'),
+      event: external_exports.string().optional().describe(`stat, series, breakdown, distribution, table: one event, "name", "name=value" or "name:key=value". A list attribute (a deck, a build) matches when it has the value, and "battle_end:deck=hog_rider+ice_spirit" when it has all of them (any pair or trio). A series or breakdown by $platform, $browser or $device_tier can leave it out: then it counts sessions (and players, with player IDs) in each. A breakdown by $zone without it is the time played in each zone (frame time drawn there, paused in the background): each row's seconds, share_pct of all play, the sessions that went there (sessions_pct of all), players and median_s, their median time in it; time outside every zone is "(none)"`),
+      sum: external_exports.string().optional().describe(`stat, series, breakdown: add up this numeric attribute instead of counting events, e.g. "amount" of "purchase" for revenue. Money (events with a currency, an ISO code or "ROBUX") shows in the game's currency; amounts in another currency are named, never added (Robux are never added to dollars). The event can be filtered, also split by an attribute: revenue of completed purchases by item is event "purchase:result=done", by "item", sum "amount" (read from each session's first 16 of the event), so cancelled purchases can carry their amount too`),
+      devex: external_exports.boolean().optional().describe("stat, series, breakdown with sum, in Robux: also give what the Robux would be worth in US dollars at Roblox's DevEx rate (devex: {estimate: true, robux, usd, rate, since, source}; a breakdown's rows each get usd). Always an estimate: it is the price players paid at DevEx's standard rate, and what the experience can cash out is less. Other currencies get devex null"),
       per: external_exports.string().optional().describe(`stat: divide by this event to get a percentage (event "buy=done" per "paywall"); or "$players" / "$sessions": the share of them that sent the event (conversion), or with sum, the sum per player or session (revenue per player); or "$hours": per hour played (matches per hour, with sum XP or gold per hour). series, breakdown: "$hours", each bucket or row per hour played (by $version or $level each over its own hours, by an attribute every row over the window's)`),
       rate: external_exports.string().optional().describe(`stat, series, breakdown: the share of the event's events where a flag holds, "won" (a boolean, or a number that is only 1 or 0), or a word outcome holds, "result=win". A breakdown gives each row its rate with a 95% interval (low, high) next to the overall rate: win rate by hero, by heat, of decks with each card (by a list), boons taken when offered. Send outcomes as booleans where you can: a word outcome split by another attribute reads the first 16 of each session's events`),
       avg: external_exports.string().optional().describe(`stat, series, breakdown: a numeric attribute's mean per event instead of a count, e.g. "duration_s" by mode`),
       min: external_exports.number().int().optional().describe("breakdown with rate or avg: rows with fewer events are left out and counted in small (default 30 for a rate, 10 for an average)"),
       expect: external_exports.number().optional().describe("breakdown or stat with rate: the percentage the game intends, such as a gacha's published odds (0.6 for 0.6%). Rows whose interval misses it are marked, and a finding names them"),
-      order: external_exports.enum(["rate", "avg", "count", "value"]).optional().describe("breakdown with rate or avg: rate or avg (default, the highest first), count (most events first) or value (in the values' own order: heat 0, 1, 2)"),
+      order: external_exports.enum(["rate", "avg", "count", "value"]).optional().describe("breakdown: the rows' order, before the top limit rows are taken. count (the most events first) or value (in the values' own natural order: streak days 1, 2 \u2026 10, heat 0, 1, 2) on any breakdown; with rate or avg also rate or avg (their default, the highest first). Without one, a count breakdown is the most first and a sum the largest first"),
       of: external_exports.string().optional().describe('distribution (required), stat: the numeric attribute whose spread to show, e.g. "duration_s". A stat with of and quantile shows one percentile: the median match. table: the numeric attribute whose lowest, average and highest each group header shows, e.g. "score"'),
-      quantile: external_exports.number().int().optional().describe("stat with of: the percentile, 1 to 99 (50: the median, 90: 1 in 10 is over it)"),
+      quantile: external_exports.number().int().optional().describe("stat with of or first: the percentile, 1 to 99 (50: the median, 90: 1 in 10 is over it; first defaults to 50)"),
+      first: external_exports.string().optional().describe(`stat, instead of event: the seconds from a session's start to its first event like this one, the median over the sessions that sent it (or quantile): how long players stay in the lobby before they first leave it (first "hall_left"), the time to the first purchase ("purchase:result=done"). Works for events a Roblox server sends for a player (they go in that player's session, so it counts from joining). Replaces sending the seconds by hand. Over 31 days or less`),
+      never: external_exports.string().optional().describe(`stat, instead of event: the share of the window's ended sessions that never sent this event (ended: sent session_end, or nothing for 30 minutes), with count and base: players who never left the lobby (never "hall_left"), never bought. Sessions still playing aren't counted. Over 31 days or less`),
       bins: external_exports.number().int().optional().describe("distribution: how many histogram bars, 2 to 40 (default 20). Bars are equal round steps from the 1st to the 99th percentile; under and over count what falls outside"),
       unit: external_exports.string().optional().describe(`distribution, stat with of: what the numbers are in, shown after them ("s" reads as minutes or hours when large, or the game's own word: "floors")`),
-      by: external_exports.string().optional().describe(`series, breakdown, distribution: the attribute to split by, e.g. "mode" or "what" (a list attribute splits by element: each card of a deck gets a row, and an event counts once under each), or $version / $level / $zone (where the player was in an open world, setZone), or a split of the sessions that sent the event: $platform (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026), $browser (Chrome, Safari, Firefox, Edge\u2026; a native build is "Godot app", "Unity app" and so on, a web build "Unity web build"), $device_tier (High-end, Mid-range, Low-end GPU, Software rendering: the tiers the Performance view uses, high to low), $link (Wi-Fi, Mobile data, Wired), or a session property the game sets with setProperties ($rank, $class, $region: sessions without it are "(none)", 40 values at most); counts only, no sum, over 31 days or less. levels and deaths: an attribute of the level's start ("tier", "party_size", a list such as "build"), a property or a split. net: $version, $level, $zone, a split or a property. servers: "players" (connected, in tenths of capacity), $level or $version. retention: a property ($spender). versions: also a property ($class), its values side by side. With sum and an attribute, event is a name only. A breakdown (by count) can also split by a Steam fact of the sessions that sent the event: $steam_branch, $steam_build, $steam_hardware, $steam_controller, $steam_language, $proton, $big_picture, $family_shared, $timed_trial. versions: $steam_branch or $steam_build compares Steam branches or builds on this page's stats instead of versions (the beta against "public"); needs a game that uses Steamworks`),
+      by: external_exports.string().optional().describe(`series, breakdown, distribution: the attribute to split by, e.g. "mode" or "what" (a list attribute splits by element: each card of a deck gets a row, and an event counts once under each), or $version / $level / $zone (where the player was in an open world, setZone), or a split of the sessions that sent the event: $platform (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026), $browser (Chrome, Safari, Firefox, Edge\u2026; a native build is "Godot app", "Unity app" and so on, a web build "Unity web build"), $device_tier (High-end, Mid-range, Low-end GPU, Software rendering: the tiers the Performance view uses, high to low), $link (Wi-Fi, Mobile data, Wired), or a session property the game sets with setProperties ($rank, $class, $region: sessions without it are "(none)", 40 values at most); counts only, no sum, over 31 days or less. levels and deaths: an attribute of the level's start ("tier", "party_size", a list such as "build"), a property or a split. net: $version, $level, $zone, a split or a property. servers: "players" (connected, in tenths of capacity), $level or $version. retention: a property ($spender). frame_time: $zone or $level, a row per value with frame time p50, p95, p99, frames over budget, hitches per minute played and its share of play time. versions: also a property ($class), its values side by side. A breakdown (by count) can also split by a Steam fact of the sessions that sent the event: $steam_branch, $steam_build, $steam_hardware, $steam_controller, $steam_language, $proton, $big_picture, $family_shared, $timed_trial. versions: $steam_branch or $steam_build compares Steam branches or builds on this page's stats instead of versions (the beta against "public"); needs a game that uses Steamworks`),
       limit: external_exports.number().int().optional().describe("How many: errors, findings, reports and breakdown rows up to 20, sessions up to 50, series lines up to 8, distribution rows up to 8, retention days up to 90 (default 14), table rows per group up to 100 (default 20; at most 30 groups, the rest counted in more_groups)"),
       steps: external_exports.string().optional().describe('funnel: events in order, comma-separated, e.g. "paywall,buy=tapped,buy=done"'),
       label: external_exports.string().optional().describe('levels: what the game calls a level, e.g. "Stop" or "Puzzle"'),
       sent: external_exports.string().optional().describe('sessions: only sessions that sent this event, e.g. "buy=done"'),
       events: external_exports.array(external_exports.string()).optional().describe('live: only these event names or types, e.g. ["buy", "paywall", "error"]'),
-      level: external_exports.string().optional().describe("positions (required): the level id, as the game passes it to levelStart. levels and deaths: only this level's rows"),
+      level: external_exports.string().optional().describe("positions: the level id, as the game passes it to levelStart (or zone, or neither for the whole game: a hub with no levels). levels and deaths: only this level's rows"),
+      zone: external_exports.string().optional().describe('positions: the zone instead of a level, as the game passes it to setZone, e.g. "hall". Leave out level and zone for every position and death in the game'),
       count: external_exports.enum(["runs"]).optional().describe(`levels: "runs" counts each run (setGroup("run")) once at each level it reached, however many sessions it spanned: a roguelite's runs that reach each biome`),
       show: external_exports.enum(["deaths", "path", "both", "installs", "revenue", "ping", "loss", "disconnects", "ticks", "players", "crashes"]).optional().describe("positions: deaths (default), path (where players went, on a coarser grid) or both. store_revenue by_country: installs (default) or revenue, what its map shows first (people can switch). net: ping (default), loss or disconnects. servers: ticks (default), players or crashes"),
       columns: external_exports.array(external_exports.union([external_exports.string(), external_exports.object({ key: external_exports.string(), unit: external_exports.string().optional() })])).optional().describe(`table: the columns in order, up to 12: attributes of the event ("score", "attempt"), or $time, $version, $platform, $level, $session (a link to the session; numbered on a share link, never its ID). { "key": "duration_s", "unit": "s" } gives one a unit. Default: the event's own attributes, up to 8, without group_by`),
@@ -37687,23 +38054,33 @@ var init_dashboard = __esm({
       "glitchless_set_dashboard",
       {
         title: "Save dashboard",
-        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. For balance and outcomes, a breakdown with rate gives each row its rate and interval next to the overall one (win rate by hero: event "match_end", by "hero", rate "won"); per "$hours" turns counts and sums into rates per hour played (gold per hour); a distribution panel or a stat with of and quantile shows how long matches or runs last; a table lists an event's events one by one, grouped and sorted (daily runs by day, best score first: type "table", event "daily_run", group_by "day_label", sort "-score", of "score"); a list attribute (deck, build, boons) splits by element. Split by what the game set for the session with setProperties ($rank, $class, $region), and give a page where to show only some sessions (a page for the high ranks); a levels panel by a levelStart attribute shows clears by tier or difficulty, and count "runs" runs per biome. A multiplayer game gets a Network page (ping_p95 and disconnect_pct stats, net panels by $region or $link), and one whose dedicated servers run the SDK in server mode a Servers page (servers_now, server_tick_p95, a servers panel by players) or the built-in servers view; a game that sets match groups can keep the built-in matches view. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map); it can be sent alone. Needs a secret key with the dashboard scope.`,
+        description: `Save the game's dashboard: its pages, in the order the sidebar shows them. Each page is a board of panels in the game's own words, or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches) the game keeps, renames or drops. Design it for this game, not for a genre it isn't: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and purchases (revenue: a stat with sum "amount" of "purchase"; revenue per player: per "$players"; conversion: event "purchase" per "$players"; revenue by item: a breakdown with sum, of completed ones only with event "purchase:result=done"; a Roblox game's money is in Robux: currency "ROBUX", and devex true on a panel adds an estimate in dollars), a platformer about deaths per level (and a positions panel for where on a level they die). For a game on several platforms, a breakdown by $platform splits players or an event between them (iOS vs Android, PC vs Mac vs Steam Deck); a web game splits by $browser, and any game by $device_tier. For balance and outcomes, a breakdown with rate gives each row its rate and interval next to the overall one (win rate by hero: event "match_end", by "hero", rate "won"); per "$hours" turns counts and sums into rates per hour played (gold per hour); a distribution panel or a stat with of and quantile shows how long matches or runs last; a stat with first gives the median seconds from a session's start to its first event of a kind (time in the lobby: first "hall_left"), and one with never the share of ended sessions that never sent it (never left the lobby), so the game needn't time it by hand; a breakdown of steps or days takes order "value" (day 1 to 7 in order); a table lists an event's events one by one, grouped and sorted (daily runs by day, best score first: type "table", event "daily_run", group_by "day_label", sort "-score", of "score"); a list attribute (deck, build, boons) splits by element. Split by what the game set for the session with setProperties ($rank, $class, $region), and give a page where to show only some sessions (a page for the high ranks); a levels panel by a levelStart attribute shows clears by tier or difficulty, and count "runs" runs per biome. A multiplayer game gets a Network page (ping_p95 and disconnect_pct stats, net panels by $region or $link), and one whose dedicated servers run the SDK in server mode a Servers page (servers_now, server_tick_p95, a servers panel by players) or the built-in servers view; a game that sets match groups can keep the built-in matches view. An open world or an avatar hub that names its zones (setZone) gets where play time goes and how each zone runs: a breakdown by $zone without event (time in each zone), zone_time_pct and zone_median_s stats with zone, and frame_time by $zone (hitches per zone); don't send zone timing as custom events. The first page opens first. Use the events the game sends (glitchless_events lists them, with their attributes); on a board, stats first, then the game's own events and funnels, then levels, frame_time and errors. Leave out what the game has no data for (no Heatmaps page for a game without positions, no reports page for a game that doesn't turn bug reports on). Send every page: read the current ones with glitchless_dashboard (its spec), change them, send them all back. Pass reset: true to go back to the automatic dashboard. accent sets the colour of the game's boards and share links (links, the selected page, stats, the main chart series, the map), logo and banner their logo and header picture (the game's key art, behind each board's title), and background gives a level, a zone or the whole game a heatmap background (a top-down picture and its world bounds); each can be sent alone. Needs a secret key with the dashboard scope.`,
         inputSchema: {
           service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
           pages: external_exports.array(pageSchema).optional(),
-          currency: external_exports.string().optional().describe(`The game's one currency for money panels, an ISO 4217 code such as "USD" (default: the one most of its purchases are sent in). Send it again with every save: glitchless_dashboard's spec has it`),
+          currency: external_exports.string().optional().describe(`The game's one currency for money panels, an ISO 4217 code such as "USD", or "ROBUX" for a Roblox game's Robux (shown with \u2B21; a panel's devex adds an estimate in dollars) (default: the one most of its purchases are sent in). Send it again with every save: glitchless_dashboard's spec has it`),
           reset: external_exports.boolean().optional().describe("Delete the saved dashboard and go back to the automatic one"),
-          accent: external_exports.string().nullable().optional().describe(`The accent colour of the game's boards and share links, "#rrggbb" (the game's own colour, such as its logo's), or null for none. Kept apart from the pages: send it alone to change only the colour. The dashboard darkens or lightens it where it would be hard to read. The logo and a banner (key art) are uploaded in the dashboard: Edit pages \u2192 Look`)
+          accent: external_exports.string().nullable().optional().describe(`The accent colour of the game's boards and share links, "#rrggbb" (the game's own colour, such as its logo's), or null for none. Kept apart from the pages: send it alone to change only the colour. The dashboard darkens or lightens it where it would be hard to read. The logo and the banner (key art) are logo and banner here`),
+          logo: logoSchema.optional(),
+          banner: bannerSchema.optional(),
+          background: backgroundSchema.optional()
         },
-        // It replaces the saved pages (and reset: true deletes them), so it counts as destructive.
+        // It replaces the saved pages (and reset: true deletes them), and a background replaces or removes one, so it
+        // counts as destructive.
         annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
       },
-      async ({ service, pages, currency, reset, accent }) => {
+      async ({ service, pages, currency, reset, accent, logo, banner, background }) => {
         const svc = await resolveService(service);
-        if (!reset && !pages?.length && accent === void 0) throw new Error("give pages, accent, or reset: true");
-        const branded = accent === void 0 ? null : (await write("PUT", `/v1/brand?service=${encodeURIComponent(svc)}`, { accent })).brand;
-        const colour = accent === void 0 ? "" : ` Accent: ${branded?.accent ?? "none"}.`;
-        if (!reset && !pages?.length) return reply(`Saved the look of ${svc}'s boards.${colour}`, {});
+        const look = accent !== void 0 || logo || banner;
+        if (!reset && !pages?.length && !look && !background) throw new Error("give pages, accent, logo, banner, background, or reset: true");
+        const said = [];
+        if (accent !== void 0) said.push(`Accent: ${(await write("PUT", `/v1/brand?service=${encodeURIComponent(svc)}`, { accent })).brand?.accent ?? "none"}.`);
+        if (logo) said.push(await saveBrandImage(svc, "logo", logo));
+        if (banner) said.push(await saveBrandImage(svc, "banner", banner));
+        const bg = background ? await saveBackground(svc, background) : null;
+        if (bg) said.push(bg.text);
+        const colour = said.length ? ` ${said.join(" ")}` : "";
+        if (!reset && !pages?.length) return reply(`${look ? `Saved the look of ${svc}'s boards.` : `${svc}:`}${colour}`, bg?.map ? { map: bg.map } : {});
         const res = await write(reset ? "DELETE" : "PUT", `/v1/dashboard?service=${encodeURIComponent(svc)}`, reset ? null : { ...currency ? { currency } : {}, pages });
         if (reset) return reply(`Dashboard for ${svc} reset to automatic.${colour}`, {});
         const lines = [];
@@ -37981,8 +38358,8 @@ function verdict(m) {
   const lobby = new Set(m.lobby_spikes || []);
   const ticks = (m.server || []).flatMap((s) => s.slots);
   const budget = (m.server || []).find((s) => s.budget_ms != null)?.budget_ms ?? null;
-  const during = median(ticks.filter((x) => lobby.has(x.t)).map((x) => x.tick_p95));
-  const otherwise = median(ticks.filter((x) => !lobby.has(x.t)).map((x) => x.tick_p95));
+  const during = median2(ticks.filter((x) => lobby.has(x.t)).map((x) => x.tick_p95));
+  const otherwise = median2(ticks.filter((x) => !lobby.has(x.t)).map((x) => x.tick_p95));
   const alone = m.sessions.map((s) => ({ s, at: s.slots.filter((x) => x.spike && !lobby.has(x.t)).map((x) => x.t) })).filter((x) => x.at.length);
   const parts = [];
   if (lobby.size) {
@@ -37993,14 +38370,14 @@ function verdict(m) {
   if (m.disconnects) parts.push(`${m.disconnects} disconnected (${Object.entries(m.disconnect_reasons || {}).map(([r, n]) => `${n} ${r.replace("_", " ")}`).join(", ")}).`);
   return parts.join(" ");
 }
-var gameOf, clock, median, netRow;
+var gameOf, clock, median2, netRow;
 var init_multiplayer = __esm({
   "src/tools/multiplayer.js"() {
     init_zod();
     init_context();
     gameOf = (svc) => svc.endsWith(".server") ? svc.slice(0, -".server".length) : svc;
     clock = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-    median = (xs) => {
+    median2 = (xs) => {
       const s = xs.filter((v) => v != null).sort((a, b) => a - b);
       return s.length ? s[Math.floor(s.length / 2)] : null;
     };
@@ -38034,7 +38411,7 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
           ...slots ? { slots: list } : {}
         }));
         const servers = (m.server || []).map((s) => {
-          const usual = median(s.slots.map((x) => x.tick_p95));
+          const usual = median2(s.slots.map((x) => x.tick_p95));
           const over = s.slots.filter((x) => x.tick_p95 != null && (s.budget_ms != null ? x.tick_p95 > s.budget_ms : usual != null && x.tick_p95 > usual * 1.5));
           return { session_id: s.session_id, budget_ms: s.budget_ms ?? null, tick_p95_usual: usual, players_max: Math.max(0, ...s.slots.map((x) => x.players ?? 0)), slow_slots: over.slice(0, 20), ...slots ? { slots: s.slots } : {} };
         });
@@ -38105,6 +38482,13 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
 });
 
 // src/tools/workspace.js
+async function markTester(pid, { player, session, note, clear }) {
+  const who = player ? `player ${player}` : `session ${session}`;
+  const { testers } = await agent("POST", `/games/${pid}/testers`, { ...player ? { player } : { session }, ...clear ? { clear: true } : { note } });
+  if (clear) return reply(`Unmarked ${who}: its sessions count as they were sent again. Testers:`, testers);
+  const e = testers.find((x) => player ? x.player === player : x.session === session);
+  return reply(`Marked ${who} as the team's own play: ${e?.sessions ?? "its"} session(s) over the last 30 days, and any later ones, read as tester; players' numbers leave them out. Testers:`, testers);
+}
 function alertLines({ alerts: a, log = [] }) {
   const channels = [a.webhook && `${a.webhook.format} webhook (${a.webhook.host}, ${a.webhook.hint})`, a.email && `email to ${a.emailRecipients} member(s)`].filter(Boolean);
   const rules = Object.keys(RULES).map((r) => `  ${a.rules[r] ? "on " : "off"} ${r}: ${RULES[r]}`);
@@ -38166,19 +38550,29 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
     );
     act(
       "glitchless_create_game",
-      "Create a game in the signed-in workspace. Returns its client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games.",
+      "Create a game in the signed-in workspace. Returns its client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
       {
         name: external_exports.string().optional().describe("The game's name, as players know it (not needed with demo)"),
-        demo: external_exports.boolean().optional().describe("Make the demo game, with a week of sample play")
+        demo: external_exports.boolean().optional().describe("Make the demo game, with a week of sample play"),
+        rename: external_exports.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names")
       },
-      async ({ name, demo }) => {
+      async ({ name, demo, rename, game }) => {
+        if (rename != null) {
+          if (name || demo) throw new Error("rename renames the game that game names; leave out name and demo");
+          const pid = await projectFor(game);
+          const before = (await workspaceGames()).find((g) => g.id === pid)?.name ?? pid;
+          const { game: renamed } = await agent("PATCH", `/games/${pid}`, { name: rename });
+          await workspaceGames(true);
+          return reply(`Renamed ${before} to ${renamed.name}. Later calls name it game: "${renamed.name}"; its client token and service are unchanged.`, renamed);
+        }
         if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
         const made = await agent("POST", "/games", demo ? { demo: true } : { name });
         await workspaceGames(true);
         await projectFor(made.game.id);
         if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
         return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
-      }
+      },
+      { title: "Create or rename game", annotations: { destructiveHint: false, idempotentHint: false } }
     );
     act(
       "glitchless_share_links",
@@ -38209,26 +38603,34 @@ ${out.url}`, out.share);
     );
     act(
       "glitchless_mark_known",
-      "Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with `known` and the note. finding is a finding's id from glitchless_triage, or the start of one (\"perf-level-tutorial_1_\" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do.",
+      `Mark a standing finding as known, so the weekly summary email stops listing it: the game's owner has looked at it and accepts it (a slow first launch they chose, a freeze they can't avoid). glitchless_triage still shows it, after the rest, with \`known\` and the note. finding is a finding's id from glitchless_triage, or the start of one ("perf-level-tutorial_1_" covers those levels). until (YYYY-MM-DD) brings it back the day after; until_worse brings it back if it gets a quarter worse than over the last 7 days (its severity, the share of sessions it hits or its key number), and needs the finding to show now. clear: true removes the mark. Without finding, lists the game's known findings. Only the person's say-so makes a finding known: ask before marking one. Needs an Owner's or Admin's key, as alert settings do. With player or session instead of finding, marks the game's team's own play (the developer's playtest, a friend trying a build), so every read tool counts it as session type tester instead of user, its past sessions too: players' numbers, findings, the weekly summary, alerts and share links leave it out, and session_type "tester" finds it. player is the player_id glitchless_session gives (every session that player sent, before and after); session a session_id, for a game in anonymous mode (no player IDs). Ask the person first. With none of them, lists the known findings and the testers.`,
       {
         finding: external_exports.string().optional().describe('A finding id from glitchless_triage, e.g. "load-ttff", or the start of one, e.g. "perf-level-tutorial_1_"'),
-        note: external_exports.string().optional().describe('Why it is accepted, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted"'),
+        player: external_exports.string().optional().describe("Or a player_id, from glitchless_session: that player's play is the team's own (a tester)"),
+        session: external_exports.string().optional().describe("Or a session_id (s_\u2026): that one session is the team's own"),
+        note: external_exports.string().optional().describe('Why it is accepted, or who the tester is, in a few words (200 characters at most), e.g. "First launch compiles shaders; accepted" or "Me, playtesting on my laptop"'),
         until: external_exports.string().optional().describe("YYYY-MM-DD: known through that day, listed again from the day after"),
         until_worse: external_exports.boolean().optional().describe("Known only while it is no worse than it is now"),
-        clear: external_exports.boolean().optional().describe("Remove the mark, so the weekly summary lists it again")
+        clear: external_exports.boolean().optional().describe("Remove the mark: the weekly summary lists the finding again, or the tester's sessions count as they were sent")
       },
-      async ({ finding, note, until, until_worse, clear, game }) => {
+      async ({ finding, player, session, note, until, until_worse, clear, game }) => {
         const pid = await projectFor(game);
+        if ([finding, player, session].filter(Boolean).length > 1) throw new Error("mark a finding, a player or a session, one at a time");
+        if (player || session) return markTester(pid, { player, session, note, clear });
         if (!finding) {
-          const { known: known2 } = await agent("GET", `/games/${pid}/known`);
-          return reply(known2.length ? `${known2.length} known finding(s), left out of the weekly summary:` : "No known findings: the weekly summary lists every finding worth fixing.", known2);
+          const [{ known: known2 }, { testers }] = await Promise.all([agent("GET", `/games/${pid}/known`), agent("GET", `/games/${pid}/testers`)]);
+          const lines = [
+            known2.length ? `${known2.length} known finding(s), left out of the weekly summary.` : "No known findings: the weekly summary lists every finding worth fixing.",
+            testers.length ? `${testers.length} tester(s): their sessions read as session type tester in every tool, and players' numbers leave them out.` : "No testers marked: every session counts as its SDK sent it (a player's as user)."
+          ];
+          return reply(lines.join("\n"), { known: known2, testers });
         }
         if (!clear && !note) throw new Error("say why it is known in note (a few words), or pass clear: true to remove the mark");
         const { known } = await agent("POST", `/games/${pid}/known`, clear ? { finding, clear: true } : { finding, note, until, until_worse });
         return reply(clear ? `${finding} is no longer known: the weekly summary lists it again when it is worth fixing.` : `Marked ${finding} as known. The weekly summary leaves it out; glitchless_triage shows it after the rest, with the note. Known findings:`, known);
       },
-      // It replaces an entry's note, and clear removes one.
-      { title: "Mark finding known", annotations: { destructiveHint: true, idempotentHint: true } }
+      // It replaces an entry's note, clear removes one, and a tester changes what every read tool counts as players.
+      { title: "Mark known", annotations: { destructiveHint: true, idempotentHint: true } }
     );
     act(
       "glitchless_resolve_error",
@@ -38930,14 +39332,14 @@ var init_stdio = __esm({
 });
 
 // ../playtest/src/config.js
-import fs3 from "node:fs";
-import path3 from "node:path";
+import fs4 from "node:fs";
+import path4 from "node:path";
 function loadConfig(cwd = process.cwd(), overrides = {}) {
-  const file2 = path3.join(cwd, "glitchless.playtest.json");
+  const file2 = path4.join(cwd, "glitchless.playtest.json");
   let fromFile = {};
-  if (fs3.existsSync(file2)) {
+  if (fs4.existsSync(file2)) {
     try {
-      fromFile = JSON.parse(fs3.readFileSync(file2, "utf8"));
+      fromFile = JSON.parse(fs4.readFileSync(file2, "utf8"));
     } catch (err) {
       throw new Error(`glitchless.playtest.json is not valid JSON: ${err.message}`);
     }
@@ -38945,7 +39347,7 @@ function loadConfig(cwd = process.cwd(), overrides = {}) {
   const clean = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v != null));
   const cfg = { ...DEFAULTS, ...fromFile, ...clean };
   cfg.thresholds = { ...DEFAULT_THRESHOLDS, ...fromFile.thresholds || {} };
-  cfg.runs_dir = path3.resolve(cwd, cfg.runs_dir);
+  cfg.runs_dir = path4.resolve(cwd, cfg.runs_dir);
   return cfg;
 }
 var DEFAULT_SCENARIOS, DEFAULT_THRESHOLDS, DEFAULTS;
@@ -38996,14 +39398,14 @@ var init_config = __esm({
 
 // ../playtest/src/run.js
 import os3 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 async function loadPlaywright(cwd = process.cwd()) {
   const unwrap = (mod) => mod?.chromium ? mod : mod?.default;
   try {
-    const req = createRequire(path4.join(cwd, "noop.js"));
+    const req = createRequire(path5.join(cwd, "noop.js"));
     const pw = unwrap(await import(pathToFileURL(req.resolve("playwright")).href));
     if (pw?.chromium) return pw;
   } catch {
@@ -39274,26 +39676,26 @@ var init_report = __esm({
 });
 
 // ../playtest/src/runs.js
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import path6 from "node:path";
 function runPath(dir, name) {
   if (!NAME.test(name)) throw new Error(`Run name "${name}" must be 1\u201364 letters, digits, dots, dashes or underscores.`);
-  return path5.join(dir, `${name}.json`);
+  return path6.join(dir, `${name}.json`);
 }
 function saveRun(dir, name, run2) {
-  fs4.mkdirSync(dir, { recursive: true });
+  fs5.mkdirSync(dir, { recursive: true });
   const file2 = runPath(dir, name);
-  fs4.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
+  fs5.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun(dir, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path5.resolve(nameOrFile) : runPath(dir, nameOrFile);
-  if (!fs4.existsSync(file2)) return null;
-  return JSON.parse(fs4.readFileSync(file2, "utf8"));
+  const file2 = nameOrFile.endsWith(".json") ? path6.resolve(nameOrFile) : runPath(dir, nameOrFile);
+  if (!fs5.existsSync(file2)) return null;
+  return JSON.parse(fs5.readFileSync(file2, "utf8"));
 }
 function listRuns(dir) {
-  if (!fs4.existsSync(dir)) return [];
-  return fs4.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+  if (!fs5.existsSync(dir)) return [];
+  return fs5.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
 }
 var NAME;
 var init_runs = __esm({
@@ -39421,17 +39823,17 @@ ${files2}` }] };
 });
 
 // ../../node_modules/glitchless-deck/src/util.js
-import fs5 from "node:fs";
-import path6 from "node:path";
+import fs6 from "node:fs";
+import path7 from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 function which(name, { platform = process.platform, env = process.env } = {}) {
   const exts = platform === "win32" ? ["", ...(env.PATHEXT || ".EXE;.CMD;.BAT").split(";").map((e) => e.toLowerCase())] : [""];
-  for (const dir of (env.PATH || env.Path || "").split(path6.delimiter)) {
+  for (const dir of (env.PATH || env.Path || "").split(path7.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
-      const file2 = path6.join(dir, name + ext);
+      const file2 = path7.join(dir, name + ext);
       try {
-        if (fs5.statSync(file2).isFile()) return file2;
+        if (fs6.statSync(file2).isFile()) return file2;
       } catch {
       }
     }
@@ -39495,15 +39897,15 @@ var init_util2 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/checks.js
-import fs6 from "node:fs";
-import path7 from "node:path";
+import fs7 from "node:fs";
+import path8 from "node:path";
 function inspectBinary(file2) {
   let head;
   try {
-    const fd = fs6.openSync(file2, "r");
+    const fd = fs7.openSync(file2, "r");
     head = Buffer.alloc(512);
-    const n = fs6.readSync(fd, head, 0, 512, 0);
-    fs6.closeSync(fd);
+    const n = fs7.readSync(fd, head, 0, 512, 0);
+    fs7.closeSync(fd);
     head = head.subarray(0, n);
   } catch {
     return { kind: "missing" };
@@ -39521,9 +39923,9 @@ function inspectBinary(file2) {
     let arch = "unknown";
     try {
       const buf = Buffer.alloc(6);
-      const fd = fs6.openSync(file2, "r");
-      fs6.readSync(fd, buf, 0, 6, pe);
-      fs6.closeSync(fd);
+      const fd = fs7.openSync(file2, "r");
+      fs7.readSync(fd, buf, 0, 6, pe);
+      fs7.closeSync(fd);
       if (buf.readUInt32BE(0) === 1346699264) arch = { 34404: "x86_64", 332: "x86", 43620: "arm64" }[buf.readUInt16LE(4)] || "unknown";
     } catch {
     }
@@ -39537,25 +39939,25 @@ function inspectBinary(file2) {
 }
 function checkFolder(game) {
   const folder = game._folder;
-  const rel = path7.relative(folder, game._root);
-  if (!rel || !rel.startsWith("..") && !path7.isAbsolute(rel)) {
+  const rel = path8.relative(folder, game._root);
+  if (!rel || !rel.startsWith("..") && !path8.isAbsolute(rel)) {
     throw new Problem(`${game.id}'s folder is the project itself (${folder}). Send only the build: set "folder" to where the build goes, such as build/deck.`);
   }
-  if (!fs6.existsSync(folder) || !fs6.statSync(folder).isDirectory() || !fs6.readdirSync(folder).length) {
+  if (!fs7.existsSync(folder) || !fs7.statSync(folder).isDirectory() || !fs7.readdirSync(folder).length) {
     throw new Problem(`Nothing to send: ${folder} is missing or empty. Build it first.`);
   }
-  const entries = fs6.readdirSync(folder);
+  const entries = fs7.readdirSync(folder);
   const marker = entries.find((f) => PROJECT_MARKERS.includes(f) || f.endsWith(".uproject") || f === "node_modules" && entries.includes("package.json"));
   if (marker) throw new Problem(`${folder} holds ${marker}, so it looks like a project, not a build. Send only the build folder.`);
 }
 function checkStart(game, argv, { kiosk = false } = {}) {
   if (kiosk) {
-    if (!fs6.existsSync(path7.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
+    if (!fs7.existsSync(path8.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
     return { kind: "web" };
   }
-  const start = path7.resolve(game._folder, argv[0]);
-  const rel = path7.relative(game._folder, start);
-  if (rel.startsWith("..") || path7.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
+  const start = path8.resolve(game._folder, argv[0]);
+  const rel = path8.relative(game._folder, start);
+  if (rel.startsWith("..") || path8.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
   const what = inspectBinary(start);
   const where2 = `${argv[0]} (in ${game._folder})`;
   if (what.kind === "missing") throw new Problem(`${argv[0]} is not in ${game._folder}; check the game's "run" in ${game._file}.`);
@@ -39582,21 +39984,21 @@ var init_checks3 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/engines.js
-import fs7 from "node:fs";
+import fs8 from "node:fs";
 import os4 from "node:os";
-import path8 from "node:path";
+import path9 from "node:path";
 function readPackage(root) {
   try {
-    return JSON.parse(fs7.readFileSync(path8.join(root, "package.json"), "utf8"));
+    return JSON.parse(fs8.readFileSync(path9.join(root, "package.json"), "utf8"));
   } catch {
     return null;
   }
 }
 function uprojectIn(game, root) {
-  if (game.unreal?.project) return path8.resolve(root, game.unreal.project);
+  if (game.unreal?.project) return path9.resolve(root, game.unreal.project);
   try {
-    const found = fs7.readdirSync(root).find((f) => f.endsWith(".uproject"));
-    return found ? path8.join(root, found) : null;
+    const found = fs8.readdirSync(root).find((f) => f.endsWith(".uproject"));
+    return found ? path9.join(root, found) : null;
   } catch {
     return null;
   }
@@ -39608,7 +40010,7 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
       return { folder: "build/deck", run: `./${game.id}.x86_64` };
     case "unreal": {
       const uproject = uprojectIn(game, root);
-      const name = uproject ? path8.basename(uproject, ".uproject") : game.id;
+      const name = uproject ? path9.basename(uproject, ".uproject") : game.id;
       return unrealTarget(game, platform) === "win64" ? { folder: "build/deck", run: `./Windows/${name}.exe`, proton: true } : { folder: "build/deck", run: `./Linux/${name}.sh` };
     }
     case "web": {
@@ -39623,14 +40025,14 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
 }
 function resolveArgv(game) {
   const argv = [...game._argv];
-  const there = (rel) => fs7.existsSync(path8.resolve(game._folder, rel));
+  const there = (rel) => fs8.existsSync(path9.resolve(game._folder, rel));
   if (there(argv[0]) || game.run !== engineDefaults(game, { root: game._root }).run) return argv;
   if (game.engine === "unreal") {
     const alt = argv[0].replace(/^\.\/(Windows|Linux)\//, (_, p) => `./${p}NoEditor/`);
     if (there(alt)) argv[0] = alt;
-  } else if (game.engine === "web" && webMode(game) === "electron" && fs7.existsSync(game._folder)) {
+  } else if (game.engine === "web" && webMode(game) === "electron" && fs8.existsSync(game._folder)) {
     const skip = /^(chrome-sandbox|chrome_crashpad_handler)$|\.so(\.|$)/;
-    const bins = fs7.readdirSync(game._folder).filter((f) => !skip.test(f) && fs7.statSync(path8.join(game._folder, f)).isFile() && inspectBinary(path8.join(game._folder, f)).kind === "elf");
+    const bins = fs8.readdirSync(game._folder).filter((f) => !skip.test(f) && fs8.statSync(path9.join(game._folder, f)).isFile() && inspectBinary(path9.join(game._folder, f)).kind === "elf");
     if (bins.length === 1) argv[0] = `./${bins[0]}`;
   }
   return argv;
@@ -39662,7 +40064,7 @@ async function shellBuild(game, command, log) {
 }
 function tail(file2, lines = 15) {
   try {
-    return fs7.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
+    return fs8.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
   } catch {
     return "";
   }
@@ -39670,7 +40072,7 @@ function tail(file2, lines = 15) {
 function godotPresets(root) {
   let text;
   try {
-    text = fs7.readFileSync(path8.join(root, "export_presets.cfg"), "utf8");
+    text = fs8.readFileSync(path9.join(root, "export_presets.cfg"), "utf8");
   } catch {
     return [];
   }
@@ -39697,9 +40099,9 @@ function godotBinary(game, platform) {
   if (given) return given;
   const found = which("godot", { platform }) || which("godot4", { platform });
   if (found) return found;
-  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path8.join(os4.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
+  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path9.join(os4.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
   if (platform === "darwin") {
-    for (const p of mac3) if (fs7.existsSync(p)) return p;
+    for (const p of mac3) if (fs8.existsSync(p)) return p;
   }
   throw new Problem('Godot was not found. Put it on the PATH as godot, or set GODOT=/path/to/godot (or "godot": { "binary": ... } in the game entry).');
 }
@@ -39712,8 +40114,8 @@ async function buildGodot(game, log, platform) {
   }
   if (preset.arch && preset.arch !== "x86_64") throw new Problem(`The "${preset.name}" preset builds for ${preset.arch}; the Deck needs x86_64 (Export > Linux > Binary Format > Architecture).`);
   const bin = godotBinary(game, platform);
-  const out = path8.resolve(game._folder, game._argv[0]);
-  fs7.mkdirSync(path8.dirname(out), { recursive: true });
+  const out = path9.resolve(game._folder, game._argv[0]);
+  fs8.mkdirSync(path9.dirname(out), { recursive: true });
   const logFile = logFileFor(game);
   const started = Date.now();
   log(`Godot: importing, then exporting with the "${preset.name}" preset`);
@@ -39723,15 +40125,15 @@ async function buildGodot(game, log, platform) {
     const r = await run(bin, args, { cwd: game._root });
     text += r.stdout + r.stderr;
   }
-  fs7.writeFileSync(logFile, text);
+  fs8.writeFileSync(logFile, text);
   let made = null;
   try {
-    made = fs7.statSync(out);
+    made = fs8.statSync(out);
   } catch {
   }
   if (!made || !made.size || made.mtimeMs < started - 2e3) {
     const hint = /export template/i.test(text) ? "\nInstall the export templates: Editor > Manage Export Templates > Download and Install." : "";
-    throw new Problem(`The Godot export did not make ${path8.basename(out)} (log: ${logFile}).${hint}
+    throw new Problem(`The Godot export did not make ${path9.basename(out)} (log: ${logFile}).${hint}
 ${tail(logFile)}`);
   }
 }
@@ -39740,35 +40142,35 @@ function unityEditor(game, root, platform) {
   if (given) return { editor: given };
   let version2;
   try {
-    version2 = fs7.readFileSync(path8.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
+    version2 = fs8.readFileSync(path9.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
   } catch {
     throw new Problem(`${root} doesn't look like a Unity project (no ProjectSettings/ProjectVersion.txt).`);
   }
   const hub = {
     darwin: [`/Applications/Unity/Hub/Editor/${version2}/Unity.app/Contents/MacOS/Unity`, `/Applications/Unity/Hub/Editor/${version2}/PlaybackEngines/LinuxStandaloneSupport`],
     win32: [`C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Unity.exe`, `C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Data\\PlaybackEngines\\LinuxStandaloneSupport`],
-    linux: [path8.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path8.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
+    linux: [path9.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path9.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
   }[platform] || [];
-  if (!hub[0] || !fs7.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
-  if (platform !== "linux" && !fs7.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
+  if (!hub[0] || !fs8.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
+  if (platform !== "linux" && !fs8.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
   return { editor: hub[0], version: version2 };
 }
 async function buildUnity(game, log, platform) {
   const { editor } = unityEditor(game, game._root, platform);
-  const out = path8.resolve(game._folder, game._argv[0]);
+  const out = path9.resolve(game._folder, game._argv[0]);
   const logFile = logFileFor(game);
-  fs7.rmSync(game._folder, { recursive: true, force: true });
-  fs7.mkdirSync(game._folder, { recursive: true });
+  fs8.rmSync(game._folder, { recursive: true, force: true });
+  fs8.mkdirSync(game._folder, { recursive: true });
   log("Unity: Linux64 build in batch mode (the Editor must be closed on this project)");
   const r = await run(editor, ["-batchmode", "-quit", "-nographics", "-projectPath", game._root, "-buildTarget", "Linux64", "-buildLinux64Player", out, "-logFile", logFile], { cwd: game._root });
-  if (r.code !== 0 || !fs7.existsSync(out)) {
+  if (r.code !== 0 || !fs8.existsSync(out)) {
     const text = tail(logFile, 400);
     const hint = /another Unity instance is running/i.test(text) ? "\nClose the Unity Editor on this project first: batch mode cannot open a project that is already open." : "";
     throw new Problem(`The Unity build failed (log: ${logFile}).${hint}
 ${tail(logFile)}`);
   }
-  for (const f of fs7.readdirSync(game._folder)) {
-    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs7.rmSync(path8.join(game._folder, f), { recursive: true, force: true });
+  for (const f of fs8.readdirSync(game._folder)) {
+    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs8.rmSync(path9.join(game._folder, f), { recursive: true, force: true });
   }
 }
 function unrealEngine(game) {
@@ -39776,8 +40178,8 @@ function unrealEngine(game) {
   if (given) return given;
   const base2 = "C:\\Program Files\\Epic Games";
   try {
-    const versions = fs7.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
-    if (versions.length) return path8.join(base2, versions.at(-1));
+    const versions = fs8.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
+    if (versions.length) return path9.join(base2, versions.at(-1));
   } catch {
   }
   throw new Problem('Unreal Engine was not found. Set UE_ROOT to the engine folder (the one with Engine/ in it), or "unreal": { "engine": ... } in the game entry.');
@@ -39793,9 +40195,9 @@ async function buildUnreal(game, log, platform) {
   const uproject = uprojectIn(game, game._root);
   if (!uproject) throw new Problem(`No .uproject in ${game._root} (or set "unreal": { "project": ... }).`);
   const engine = unrealEngine(game);
-  const uat = path8.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
-  if (!fs7.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
-  fs7.rmSync(game._folder, { recursive: true, force: true });
+  const uat = path9.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
+  if (!fs8.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
+  fs8.rmSync(game._folder, { recursive: true, force: true });
   const args = ["BuildCookRun", `-project=${uproject}`, "-noP4", `-platform=${target === "win64" ? "Win64" : "Linux"}`, `-clientconfig=${game.unreal?.config || "Development"}`, "-build", "-cook", "-stage", "-pak", "-archive", `-archivedirectory=${game._folder}`, "-utf8output", "-unattended"];
   log(`Unreal: BuildCookRun for ${target === "win64" ? "Win64" : "Linux"} (this takes a while the first time)`);
   const q = (a) => platform === "win32" && /\s/.test(a) ? `"${a}"` : a;
@@ -39817,28 +40219,28 @@ var init_engines = __esm({
     KIOSK_RUN = "./.glitchless-kiosk.sh";
     webMode = (game) => game.web?.mode === "electron" ? "electron" : "kiosk";
     unrealTarget = (game, platform = process.platform) => (game.unreal?.target || (platform === "win32" ? "win64" : "linux")).toLowerCase();
-    logFileFor = (game) => path8.join(path8.dirname(game._folder), `${path8.basename(game._folder)}-build.log`);
+    logFileFor = (game) => path9.join(path9.dirname(game._folder), `${path9.basename(game._folder)}-build.log`);
   }
 });
 
 // ../../node_modules/glitchless-deck/src/config.js
-import fs8 from "node:fs";
+import fs9 from "node:fs";
 import os5 from "node:os";
-import path9 from "node:path";
+import path10 from "node:path";
 function configDir() {
-  return process.env.GLITCHLESS_DECK_HOME || path9.join(os5.homedir(), ".config", "glitchless-deck");
+  return process.env.GLITCHLESS_DECK_HOME || path10.join(os5.homedir(), ".config", "glitchless-deck");
 }
 function readJson(file2, fallback) {
   try {
-    return JSON.parse(fs8.readFileSync(file2, "utf8"));
+    return JSON.parse(fs9.readFileSync(file2, "utf8"));
   } catch (err) {
     if (err.code === "ENOENT") return fallback;
     throw new Problem(`${file2} is not valid JSON: ${err.message}`);
   }
 }
 function writeJson(file2, value) {
-  fs8.mkdirSync(path9.dirname(file2), { recursive: true });
-  fs8.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
+  fs9.mkdirSync(path10.dirname(file2), { recursive: true });
+  fs9.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
 `);
 }
 function loadDecks() {
@@ -39856,7 +40258,7 @@ function saveDeck(deck, { makeCurrent = true } = {}) {
 }
 function pairedDeck(which2) {
   const { current, decks } = loadDecks();
-  if (!decks.length || !fs8.existsSync(files().key)) {
+  if (!decks.length || !fs9.existsSync(files().key)) {
     throw new Problem("Not paired with a Deck yet. On the Deck: Settings > Developer > Pair new host. Then run: glitchless-deck pair");
   }
   if (which2) {
@@ -39869,17 +40271,17 @@ function pairedDeck(which2) {
 }
 function projectFileIn(dir) {
   for (const name of PROJECT_FILES) {
-    const file2 = path9.join(dir, name);
-    if (fs8.existsSync(file2)) return file2;
+    const file2 = path10.join(dir, name);
+    if (fs9.existsSync(file2)) return file2;
   }
   return null;
 }
 function listedProjects() {
-  return readJson(files().projects, []).filter((f) => fs8.existsSync(f));
+  return readJson(files().projects, []).filter((f) => fs9.existsSync(f));
 }
 function projectFiles(cwd = process.cwd()) {
   const here = projectFileIn(cwd);
-  const out = here ? [path9.resolve(here)] : [];
+  const out = here ? [path10.resolve(here)] : [];
   for (const f of listedProjects()) if (!out.includes(f)) out.push(f);
   return out;
 }
@@ -39920,12 +40322,12 @@ function normalizeGame(raw, file2) {
   }
   if (id.endsWith(MEASURE_SUFFIX)) throw new Problem(`${file2}: ids ending in ${MEASURE_SUFFIX} are kept for measuring (${id}).`);
   if (raw.engine && !ENGINES.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES.join(", ")}.`);
-  const root = path9.resolve(path9.dirname(file2), raw.root || ".");
+  const root = path10.resolve(path10.dirname(file2), raw.root || ".");
   const game = { ...engineDefaults({ ...raw, id }, { root }), ...raw, id, _file: file2, _root: root };
   for (const key of ["folder", "run"]) {
     if (!game[key]) throw new Problem(`${file2}: ${id} needs a "${key}"${raw.engine ? "" : ' (or an "engine" that fills it in)'}.`);
   }
-  game._folder = path9.resolve(root, game.folder);
+  game._folder = path10.resolve(root, game.folder);
   game._argv = Array.isArray(game.run) ? game.run.map(String) : shellWords(String(game.run));
   if (!game._argv.length) throw new Problem(`${file2}: ${id} has an empty "run".`);
   return game;
@@ -39934,7 +40336,7 @@ function readProject(file2) {
   const data = readJson(file2, null);
   if (!data) throw new Problem(`${file2} does not exist.`);
   const games = Array.isArray(data.games) ? data.games : [];
-  return games.map((g) => normalizeGame(g, path9.resolve(file2)));
+  return games.map((g) => normalizeGame(g, path10.resolve(file2)));
 }
 function loadGames({ cwd = process.cwd() } = {}) {
   const games = [];
@@ -39973,11 +40375,11 @@ var init_config2 = __esm({
       const dir = configDir();
       return {
         dir,
-        key: path9.join(dir, "devkit_rsa"),
-        decks: path9.join(dir, "decks.json"),
-        projects: path9.join(dir, "projects.json"),
-        knownHosts: path9.join(dir, "known_hosts"),
-        hashes: path9.join(dir, "hashes")
+        key: path10.join(dir, "devkit_rsa"),
+        decks: path10.join(dir, "decks.json"),
+        projects: path10.join(dir, "projects.json"),
+        knownHosts: path10.join(dir, "known_hosts"),
+        hashes: path10.join(dir, "hashes")
       };
     };
   }
@@ -40890,8 +41292,8 @@ var init_glitchless = __esm({
 
 // ../../node_modules/glitchless-deck/src/transfer.js
 import crypto3 from "node:crypto";
-import fs9 from "node:fs";
-import path10 from "node:path";
+import fs10 from "node:fs";
+import path11 from "node:path";
 import { spawn as spawn3 } from "node:child_process";
 function transferMode(given, { platform = process.platform } = {}) {
   if (given === "tar" || given === "rsync") return given;
@@ -40901,15 +41303,15 @@ function transferMode(given, { platform = process.platform } = {}) {
 function walk(root) {
   const out = { files: [], links: [], dirs: [] };
   const visit2 = (dir) => {
-    for (const entry of fs9.readdirSync(dir, { withFileTypes: true })) {
-      const full = path10.join(dir, entry.name);
-      const rel = path10.relative(root, full).split(path10.sep).join("/");
-      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs9.readlinkSync(full) });
+    for (const entry of fs10.readdirSync(dir, { withFileTypes: true })) {
+      const full = path11.join(dir, entry.name);
+      const rel = path11.relative(root, full).split(path11.sep).join("/");
+      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs10.readlinkSync(full) });
       else if (entry.isDirectory()) {
-        out.dirs.push({ rel, full, mtime: fs9.statSync(full).mtimeMs });
+        out.dirs.push({ rel, full, mtime: fs10.statSync(full).mtimeMs });
         visit2(full);
       } else if (entry.isFile()) {
-        const st = fs9.statSync(full);
+        const st = fs10.statSync(full);
         out.files.push({ rel, full, size: st.size, mtime: st.mtimeMs, mode: st.mode & 511 });
       }
     }
@@ -40920,14 +41322,14 @@ function walk(root) {
 function sha1File(file2) {
   return new Promise((resolve, reject) => {
     const h = crypto3.createHash("sha1");
-    fs9.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve(h.digest("hex")));
+    fs10.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve(h.digest("hex")));
   });
 }
 async function hashFiles(id, list) {
-  const cacheFile = path10.join(files().hashes, `${id}.json`);
+  const cacheFile = path11.join(files().hashes, `${id}.json`);
   let cache = {};
   try {
-    cache = JSON.parse(fs9.readFileSync(cacheFile, "utf8"));
+    cache = JSON.parse(fs10.readFileSync(cacheFile, "utf8"));
   } catch {
   }
   const fresh = {};
@@ -41012,7 +41414,7 @@ async function writeTar(out, { send: sendFiles = [], links = [], dirs = [] }, { 
   for (const f of sendFiles) {
     await write2(tarHeader({ name: f.rel, size: f.size, mode: modeFor(f, platform), mtime: f.mtime / 1e3 }));
     let sent = 0;
-    for await (const chunk of fs9.createReadStream(f.full)) {
+    for await (const chunk of fs10.createReadStream(f.full)) {
       const piece = sent + chunk.length > f.size ? chunk.subarray(0, f.size - sent) : chunk;
       await write2(piece);
       sent += piece.length;
@@ -41106,8 +41508,8 @@ var init_transfer = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/send.js
-import fs10 from "node:fs";
-import path11 from "node:path";
+import fs11 from "node:fs";
+import path12 from "node:path";
 async function install(deck, game, { gameid = game.id, argv, extra = [], linkTo } = {}) {
   const kiosk = isKiosk(game);
   const files2 = {};
@@ -41133,12 +41535,12 @@ function readArtwork(game) {
   for (const [key, rel] of Object.entries(game.artwork || {})) {
     const kind = ART_KINDS[key];
     if (!kind) throw new Problem(`${game._file}: unknown artwork "${key}". Use capsule (600x900), wide (920x430), hero (3840x1240), logo or icon.`);
-    const file2 = path11.resolve(game._root, rel);
-    const ext = path11.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
+    const file2 = path12.resolve(game._root, rel);
+    const ext = path12.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
     if (!["png", "jpg"].includes(ext)) throw new Problem(`${rel}: artwork has to be a .png or .jpg.`);
-    if (!fs10.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
-    if (fs10.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
-    images[kind] = { ext, b64: fs10.readFileSync(file2).toString("base64") };
+    if (!fs11.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
+    if (fs11.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
+    images[kind] = { ext, b64: fs11.readFileSync(file2).toString("base64") };
   }
   return images;
 }
@@ -41234,23 +41636,23 @@ var init_play = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/measure.js
-import fs11 from "node:fs";
-import path12 from "node:path";
+import fs12 from "node:fs";
+import path13 from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 function saveRun2(game, name, run2) {
   if (!NAME2.test(name)) throw new Problem(`Run name "${name}" must be 1-64 letters, digits, dots, dashes or underscores.`);
-  fs11.mkdirSync(runsDir(game), { recursive: true });
-  const file2 = path12.join(runsDir(game), `${name}.json`);
-  fs11.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
+  fs12.mkdirSync(runsDir(game), { recursive: true });
+  const file2 = path13.join(runsDir(game), `${name}.json`);
+  fs12.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun2(game, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path12.resolve(nameOrFile) : path12.join(runsDir(game), `${nameOrFile}.json`);
-  return fs11.existsSync(file2) ? JSON.parse(fs11.readFileSync(file2, "utf8")) : null;
+  const file2 = nameOrFile.endsWith(".json") ? path13.resolve(nameOrFile) : path13.join(runsDir(game), `${nameOrFile}.json`);
+  return fs12.existsSync(file2) ? JSON.parse(fs12.readFileSync(file2, "utf8")) : null;
 }
 function listRuns2(game) {
   try {
-    return fs11.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+    return fs12.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
   } catch {
     return [];
   }
@@ -41279,7 +41681,7 @@ function toRun(saved) {
       render_cpu_ms: p50(m.render_cpu_ms),
       update_cpu_ms: p50(m.update_cpu_ms ?? m.process_ms),
       draw_calls: m.draw_calls && typeof m.draw_calls === "object" ? m.draw_calls.avg : m.draw_calls ?? null,
-      hitches_per_min: m.seconds ? round((m.hitch_count || 0) / (m.seconds / 60)) : null,
+      hitches_per_min: m.seconds ? round2((m.hitch_count || 0) / (m.seconds / 60)) : null,
       errors_per_session: m.new_errors ?? null,
       crashes: 0,
       errors: (m.errors || []).map((e) => ({ fingerprint: errorType(e), message: e.message, location: e.location, count: e.count, sessions: 1 })),
@@ -41364,7 +41766,7 @@ ${saveAs ? `Saved as \`${saveAs}\`.` : "Nothing to compare with yet: save one wi
   const comparison = compareRuns(toRun(baseline), toRun(saved));
   return { verdict: comparison.verdict, report: measureReport(saved, comparison, baseline), comparison, run: saved, baseline, files: files2 };
 }
-var NAME2, runsDir, p50, round, errorType, fmt2;
+var NAME2, runsDir, p50, round2, errorType, fmt2;
 var init_measure = __esm({
   "../../node_modules/glitchless-deck/src/measure.js"() {
     init_src();
@@ -41376,11 +41778,11 @@ var init_measure = __esm({
     init_ssh();
     init_util2();
     NAME2 = /^[A-Za-z0-9._-]{1,64}$/;
-    runsDir = (game) => path12.join(game._root, ".glitchless", "deck", game.id);
+    runsDir = (game) => path13.join(game._root, ".glitchless", "deck", game.id);
     p50 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
-    round = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
+    round2 = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
     errorType = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
-    fmt2 = (v) => v == null ? "\u2013" : typeof v === "number" ? String(round(v, 2)) : String(v);
+    fmt2 = (v) => v == null ? "\u2013" : typeof v === "number" ? String(round2(v, 2)) : String(v);
   }
 });
 
@@ -41410,7 +41812,7 @@ var init_src2 = __esm({
 
 // src/tools/deck.js
 var deck_exports = {};
-import path13 from "node:path";
+import path14 from "node:path";
 function progress(ctx) {
   const token = ctx?.mcpReq._meta?.progressToken;
   let step = 0;
@@ -41423,7 +41825,7 @@ function progress(ctx) {
   return { log, lines };
 }
 function find(game, project) {
-  return gameNamed(game, { cwd: path13.resolve(project || process.cwd()) });
+  return gameNamed(game, { cwd: path14.resolve(project || process.cwd()) });
 }
 var common2, problem;
 var init_deck2 = __esm({

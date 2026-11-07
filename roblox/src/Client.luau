@@ -9,7 +9,8 @@
 --     server;
 --   - the kind of device, in Roblox's own words (Computer, Phone, Tablet, Console, VR: Roblox doesn't tell a script
 --     the OS), its screen and graphics quality;
---   - the game's calls from LocalScripts (track, count, levels, deaths, properties, zones), passed on as they are.
+--   - the game's calls from LocalScripts (track, count, levels, deaths, properties, zones), passed on as they are;
+--     calls made before the client started wait in init.luau and are made here when it starts, each at its own time.
 -- Everything goes to the server over the module's RemoteEvent, once a window (or within a second of an error). While
 -- the window isn't focused (alt-tabbed, a phone in the background) no frames are measured.
 
@@ -101,6 +102,8 @@ function Client.start(module: Instance, options: any)
 		lastNetAt = 0,
 		sendSoonAt = nil :: number?,
 		loadSent = false,
+		at = nil :: number?, -- while a call made before the client started is made again: when it was made
+		chosen = nil :: boolean?, -- setEnabled before the RemoteEvent was found: told to the server once it is
 		connections = {} :: { RBXScriptConnection },
 	}, Client)
 	self.warn = function(key: string, message: string)
@@ -145,6 +148,12 @@ function Client.start(module: Instance, options: any)
 			task.wait(0.1)
 		end
 		self:hello()
+		if self.chosen ~= nil then
+			-- the player's choice, made before the RemoteEvent was found
+			pcall(function()
+				(self.remote :: RemoteEvent):FireServer({ op = "enabled", on = self.chosen })
+			end)
+		end
 		self:send()
 	end)
 	return self
@@ -321,7 +330,7 @@ function Client.queue(self: Client, e: any)
 	if not self.on then
 		return
 	end
-	e.ts = e.ts or nowMs()
+	e.ts = e.ts or self.at or nowMs()
 	if #self.buffer >= MAX_BUFFER then
 		table.remove(self.buffer, 1)
 	end
@@ -395,7 +404,7 @@ end
 
 function Client.count(self: Client, name: any, what: any, n: any)
 	if self.on then
-		self.counter:count(name, what, n)
+		self.counter:count(name, what, n, self.at)
 	end
 end
 
@@ -464,16 +473,18 @@ function Client.setContext(self: Client, gauges: any)
 	end
 end
 
-function Client.error(self: Client, err: any, attrs: any)
-	self:onError("manual", tostring(err), debug.traceback("", 2), Words.attrs(attrs))
+function Client.error(self: Client, err: any, attrs: any, stack: string?)
+	self:onError("manual", tostring(err), stack or debug.traceback("", 2), Words.attrs(attrs))
 end
 
 function Client.setEnabled(self: Client, on: boolean)
-	pcall(function()
-		if self.remote then
-			self.remote:FireServer({ op = "enabled", on = on == true })
-		end
-	end)
+	if self.remote then
+		pcall(function()
+			(self.remote :: RemoteEvent):FireServer({ op = "enabled", on = on == true })
+		end)
+	else
+		self.chosen = on == true
+	end
 	if not on then
 		self.on = false
 		self.buffer = {}

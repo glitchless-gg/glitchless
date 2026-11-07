@@ -6,19 +6,33 @@ export function fmtNum(v, d = 0) {
 }
 
 // Money in its currency, with the symbol and two decimals ("$1,234.50", "€4.99"); `short` for chart axes
-// ("$1.2K"). A code the browser doesn't know is written after the number. Robux (Roblox's currency) are whole:
-// "2,400 Robux", "24.5k Robux"; on an axis, Roblox's own short mark: "2.4k R$".
+// ("$1.2K"). A code the browser doesn't know is written after the number. Robux (Roblox's currency) are whole, after
+// the hexagon Roblox marks them with: "⬡ 2,400", "⬡ 24.5k", on an axis "⬡ 2.4k" (the board's own Robux and the
+// Roblox integration's read the same). None of the dashboard's fonts has ⬡ (U+2B21), so it is the system's: Apple
+// Symbols, Segoe UI Symbol, Noto Sans Symbols 2 or DejaVu Sans, which every desktop and phone has.
+export const ROBUX_MARK = '\u2B21';
 export function fmtMoney(v, currency, short = false) {
   if (v == null || Number.isNaN(v)) return '–';
   if (currency === 'ROBUX') {
-    if (short) return `${Math.abs(v) >= 1e6 ? `${fmtNum(v / 1e6, 1)}M` : Math.abs(v) >= 1e3 ? `${fmtNum(v / 1e3, 1)}k` : fmtNum(v)} R$`;
-    return `${Math.abs(v) >= 1e4 ? fmtNum(v, 1) : Math.round(v).toLocaleString('en-US')} Robux`;
+    if (short) return `${ROBUX_MARK}\u00a0${Math.abs(v) >= 1e6 ? `${fmtNum(v / 1e6, 1)}M` : Math.abs(v) >= 1e3 ? `${fmtNum(v / 1e3, 1)}k` : fmtNum(v)}`;
+    return `${ROBUX_MARK}\u00a0${Math.abs(v) >= 1e4 ? fmtNum(v, 1) : Math.round(v).toLocaleString('en-US')}`;
   }
   try {
     return Number(v).toLocaleString('en-US', short ? { style: 'currency', currency, notation: 'compact', maximumFractionDigits: 1 } : { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
   } catch {
     return `${short ? fmtNum(v, 1) : Number(v).toFixed(2)} ${currency}`;
   }
+}
+
+// A currency's name in a sentence: Robux by name, any other by its code ("5 in Robux", "2 in EUR").
+export function currencyName(c) {
+  return c === 'ROBUX' ? 'Robux' : c;
+}
+
+// What some Robux would be worth in US dollars at Roblox's DevEx rate (server/src/robux.js), always said as an
+// estimate: "Estimated $1.06 through DevEx".
+export function fmtDevex(usd) {
+  return usd == null ? null : `Estimated ${fmtMoney(usd, 'USD')} through DevEx`;
 }
 
 // A sum (server/src/sums.js): money when it has a currency, else a number with up to two decimals.

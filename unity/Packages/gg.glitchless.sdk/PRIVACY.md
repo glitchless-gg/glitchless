@@ -38,7 +38,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.6.4`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-unity/0.7.0`) and `batch_id` (random, made for each batch and sent again with its retries). A game server's batches add `role: "server"` ([below](#server-mode)).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game sets them, events and windows also carry `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` ([Groups](#groups)).
 
@@ -61,6 +61,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `reconnect` | `after_s`, `transport` | connected again |
 | `custom` (by Glitchless) | `screen_change` {screen, window}, `app_resume` {away_s}, `rage_input` {key name or `pointer`, count; off on phones} | as they happen |
 | `pos` | **full** or `Positions`: `[time, x, y, z]` samples | every 5 s while positions are on |
+| `map` | a picture of a level (a JPEG the SDK renders with a camera of its own, never the player's screen), the plane, its bounds in game-world units and its size in pixels: nothing about the player | **full** or `Positions`: the game calls `Glitchless.CaptureMap()`, once per level and version from a device |
 | `bug_report` | `note` (what the player typed), `screenshot` (a JPEG of the screen as Unity drew it), `device` (the same fields as `session_start`, in the same mode), `recent` (the last 20 game events and hitches: when, which, and the few fields above that say what happened), `frames` (fps and p95 of the last frame windows); **full** or `Positions`: `x`, `y`, `z` | the player sends one from the form, or the game calls `Glitchless.ReportBug()`. Off unless the game turns it on |
 
 `device` in `session_start`:
@@ -169,6 +170,7 @@ Turning it back on starts a new session. With `OptIn = true`, a device where the
 | `persistentDataPath/glitchless/player_id` (WebGL: PlayerPrefs `glitchless.player_id`) | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one |
 | `persistentDataPath/glitchless/launched` (WebGL: PlayerPrefs `glitchless.launched`) | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 | `persistentDataPath/glitchless/enabled` (WebGL: PlayerPrefs `glitchless.enabled`) | `on` or `off`, the player's choice ([Turning it off](#turning-it-off)), and nothing else: the same on every device that made the same choice, so it ties nothing to anyone. Written only once the game calls `Glitchless.SetEnabled()` | all |
+| `persistentDataPath/glitchless/maps` (WebGL: PlayerPrefs `glitchless.maps`) | the game's version and the names of the levels whose map this device has sent for it, so each goes once. The same on every device that played the same levels: it ties nothing to anyone. Written only when the game calls `Glitchless.CaptureMap()` | **full** or `Positions` |
 
 Uninstalling the game deletes them all (in WebGL, clearing the site's data does).
 

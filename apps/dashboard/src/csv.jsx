@@ -4,6 +4,7 @@
 // seconds, frame times in ms, money in its currency's units. A file is named <game>-<panel>-<from>-<to>.csv.
 import { useFilters } from './filters.js';
 import { STORE_TYPES, storeCsv } from './stores.jsx';
+import { zoneCsv } from './zones.jsx';
 
 // Rows (arrays of cells) as CSV text.
 export function toCsv(rows) {
@@ -66,6 +67,7 @@ export function CsvButton({ name, rows }) {
 
 const iso = (ts) => (ts == null ? null : new Date(ts).toISOString());
 const sumHeader = (label, currency) => (currency ? `${label} (${currency})` : label);
+const DEVEX_HEADER = 'Estimated USD at the DevEx rate';
 
 // ───────────────────────────── board panels ─────────────────────────────
 
@@ -74,6 +76,9 @@ const sumHeader = (label, currency) => (currency ? `${label} (${currency})` : la
 export function panelCsv(p) {
   if (p.empty) return null;
   if (STORE_TYPES.has(p.type)) return storeCsv(p);
+  // Time in each zone, frame time by zone or level (zones.jsx).
+  const zones = zoneCsv(p);
+  if (zones) return zones;
   switch (p.type) {
     case 'stat': {
       const head = ['Stat', p.currency ? `Value (${p.currency})` : p.unit ? `Value (${p.unit})` : 'Value'];
@@ -101,6 +106,11 @@ export function panelCsv(p) {
         head.push('Left out (sandbox purchases)');
         row.push(p.sandbox);
       }
+      // A Robux stat's estimate in dollars at DevEx's rate (server/src/robux.js), always named an estimate.
+      if (p.devex?.estimate) {
+        head.push(DEVEX_HEADER);
+        row.push(p.devex.usd);
+      }
       return [head, row];
     }
     case 'series':
@@ -119,9 +129,10 @@ export function panelCsv(p) {
       const players = p.rows.some((r) => r.players != null);
       // Split without an event, the count is the sessions.
       if (p.counts === 'sessions') return [[by, 'Sessions', ...(players ? ['Players'] : [])], ...p.rows.map((r) => [r.value, r.sessions, ...(players ? [r.players] : [])])];
+      const devex = !!p.devex?.estimate;
       return [
-        [by, 'Count', ...(sessions ? ['Sessions'] : []), ...(players ? ['Players'] : []), ...(p.sum ? [sumHeader(p.sum, p.currency)] : [])],
-        ...p.rows.map((r) => [r.value, r.count, ...(sessions ? [r.sessions] : []), ...(players ? [r.players] : []), ...(p.sum ? [r.sum] : [])]),
+        [by, 'Count', ...(sessions ? ['Sessions'] : []), ...(players ? ['Players'] : []), ...(p.sum ? [sumHeader(p.sum, p.currency)] : []), ...(devex ? [DEVEX_HEADER] : [])],
+        ...p.rows.map((r) => [r.value, r.count, ...(sessions ? [r.sessions] : []), ...(players ? [r.players] : []), ...(p.sum ? [r.sum] : []), ...(devex ? [r.usd] : [])]),
       ];
     }
     case 'funnel':
@@ -205,7 +216,7 @@ export function panelCsv(p) {
       ];
     }
     case 'positions': {
-      // One row per bin: its centre on the level's plane and how many fell in it.
+      // One row per bin: its centre on the place's plane and how many fell in it.
       const b = p.axis === 'xy' ? 'y' : 'z';
       return [['Layer', 'x', b, 'Count'], ...(p.deaths || []).map(([x, y, n]) => ['death', x, y, n]), ...(p.path?.cells || []).map(([x, y, n]) => ['path', x, y, n])];
     }

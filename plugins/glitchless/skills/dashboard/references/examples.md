@@ -96,3 +96,8 @@ and Errors. No Performance unless it's slow, no Heatmaps, no deaths.
 A platformer or shooter: an Overview with `stat` frame_p95 and crash_free_pct, `findings`, `frame_time`, `levels`,
 `deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions. A
 level whose deaths tell its story gets a `positions` panel (`"show": "both"` to see where players went too).
+
+An avatar hub with puzzle levels (a Roblox experience): the lobby is no level, so the `levels` panel shows only the
+puzzles. A Lobby board has a `positions` panel with no level or zone (`"show": "path"`, over a background uploaded
+with `glitchless_set_dashboard`'s `background`), a `breakdown` of what players do there by `$zone`, and the hub's purchases;
+the Heatmaps view picks a puzzle, a zone or Everywhere.
