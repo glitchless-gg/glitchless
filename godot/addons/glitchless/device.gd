@@ -7,6 +7,10 @@ extends RefCounted
 ## memory. PRIVACY.md beside this file lists every field; keep the two in step.
 ## A web export describes the device as the browser SDK does (web_info).
 
+# Fields that are a number or null (JSON's "not measured") are written `value if known else null`: Godot warns that
+# the two branches differ in type, which is the point, so that warning is off for this file.
+@warning_ignore_start("incompatible_ternary")
+
 const WebPage := preload("web_page.gd")
 
 

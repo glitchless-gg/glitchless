@@ -278,10 +278,10 @@ static func fit_screenshot(img: Image, max_chars: int = MAX_SCREENSHOT) -> Strin
 	var longest := maxi(rgb.get_width(), rgb.get_height())
 	for size: Array in SIZES:
 		var copy := rgb
-		var scale := minf(1.0, float(size[0]) / longest)
-		if scale < 1.0:
+		var shrink := minf(1.0, float(size[0]) / longest)
+		if shrink < 1.0:
 			copy = rgb.duplicate() as Image
-			copy.resize(maxi(1, roundi(rgb.get_width() * scale)), maxi(1, roundi(rgb.get_height() * scale)), Image.INTERPOLATE_TRILINEAR)
+			copy.resize(maxi(1, roundi(rgb.get_width() * shrink)), maxi(1, roundi(rgb.get_height() * shrink)), Image.INTERPOLATE_TRILINEAR)
 		var url := "data:image/jpeg;base64," + Marshalls.raw_to_base64(copy.save_jpg_to_buffer(size[1]))
 		if url.length() <= max_chars:
 			return url

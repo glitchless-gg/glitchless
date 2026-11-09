@@ -52,7 +52,11 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.6.5"
+# Many fields go out as a number or null (JSON's "not measured"), written `value if known else null`: Godot warns
+# that the two branches differ in type, which is the point, so that warning is off for this file.
+@warning_ignore_start("incompatible_ternary")
+
+const SDK_VERSION := "0.6.6"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -145,7 +149,9 @@ const DEFAULTS := {
 
 ## The bug report form opened or closed. The game is paused meanwhile unless
 ## bug_reports has "pause": false; then pause and resume the game here.
+@warning_ignore("unused_signal")  # emitted by bug_report.gd
 signal bug_report_opened
+@warning_ignore("unused_signal")
 signal bug_report_closed
 
 var session_id := ""
@@ -705,7 +711,7 @@ func count(event: String, what: Variant = null, n: int = 1) -> void:
 	var key := _count_key(event, group)
 	if not counts.has(key) and counts.size() >= MAX_COUNTS:
 		# A full window: a new group of a name already counted goes under (other); a new name is dropped.
-		if not counts.values().any(func(c: Dictionary) -> bool: return c.name == event):
+		if not counts.values().any(func(entry: Dictionary) -> bool: return entry.name == event):
 			_win.dropped += mini(n, MAX_COUNT_N)
 			return
 		for k: String in group:
@@ -1527,9 +1533,9 @@ func _gauge(key: String, v: float) -> void:
 		p.ctx_max[key] = maxf(float(p.ctx_max.get(key, -INF)), v)
 
 
-func _last_frames(count: int) -> Array[float]:
+func _last_frames(n: int) -> Array[float]:
 	var out: Array[float] = []
-	for i in range(mini(count, _ring_count), 0, -1):
+	for i in range(mini(n, _ring_count), 0, -1):
 		out.append(_ring[(_ring_idx - i + RING_SIZE) % RING_SIZE])
 	return out
 
@@ -1803,17 +1809,17 @@ func _report_error(entry: Dictionary) -> void:
 	var file: String = top.file if not top.is_empty() else entry.file
 	var line: int = top.line if not top.is_empty() else entry.line
 	var fingerprint := _fingerprint(kind, message, fn)
-	var count: int = _error_counts.get(fingerprint, 0) + 1
-	_error_counts[fingerprint] = count
+	var times: int = _error_counts.get(fingerprint, 0) + 1
+	_error_counts[fingerprint] = times
 	stats.errors += 1
 	var recent := _recent_names(6)
 	_remember("error:" + message.substr(0, 40))
 	var location := "%s (%s:%d)" % [fn, file.get_file(), line] if file != "" else ""
 	if _error_log.has(fingerprint):
-		_error_log[fingerprint].count = count
+		_error_log[fingerprint].count = times
 	else:
-		_error_log[fingerprint] = {"message": message, "kind": kind, "location": location, "count": count}
-	if count > MAX_ERRORS_PER_FINGERPRINT:
+		_error_log[fingerprint] = {"message": message, "kind": kind, "location": location, "count": times}
+	if times > MAX_ERRORS_PER_FINGERPRINT:
 		return
 	_push({
 		"type": "error",
@@ -2107,9 +2113,9 @@ func _recent_within(ms: int) -> Array[String]:
 	return out
 
 
-func _recent_names(count: int) -> Array[String]:
+func _recent_names(n: int) -> Array[String]:
 	var out: Array[String] = []
-	for r in _recent.slice(maxi(0, _recent.size() - count)):
+	for r in _recent.slice(maxi(0, _recent.size() - n)):
 		out.append(r.name)
 	return out
 

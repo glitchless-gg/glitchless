@@ -8,6 +8,10 @@ extends RefCounted
 ## server would merge buckets that mean different things:
 ## godot/test/sketch_test.gd and packages/sdk/test/godot-sketch.test.js check it.
 
+# Fields that are a number or null (JSON's "not measured") are written `value if known else null`: Godot warns that
+# the two branches differ in type, which is the point, so that warning is off for this file.
+@warning_ignore_start("incompatible_ternary")
+
 const DEFAULT_ALPHA := 0.02
 
 var a: float

@@ -1,11 +1,17 @@
-// Copies the Godot addon into its own public repo (glitchless-gg/glitchless-godot), shaped for the Godot Asset Library:
-// the library installs a commit's zip into the project, so the addon sits at addons/glitchless/ from the repo's root,
-// with the LICENSE file the library requires, a short README, and a .gitattributes that keeps all but the addon out of
-// the zip.
+// Copies the Godot addon into its own public repo (glitchless-gg/glitchless-godot) and makes the zip for the Godot
+// Asset Store. Godot has two catalogues, and each release goes to both:
+// - The Asset Library (godotengine.org/asset-library, listing 5587) installs a commit's zip from the mirror, so the
+//   addon sits at addons/glitchless/ from the repo's root, with the LICENSE file the library requires, a short README,
+//   and a .gitattributes that keeps all but the addon out of the zip. Its entry takes each release's commit.
+// - The Asset Store (store.godotengine.org, built into the editor from Godot 4.7) takes an uploaded zip per version:
+//   dist/godot-asset-store/glitchless-<version>.zip, holding addons/glitchless/ alone (its guidelines want that
+//   folder, the licence inside it, and no .gitignore, .gitattributes or .DS_Store).
 //   node scripts/export-godot-addon.mjs [path to the glitchless-godot checkout]   (default ../glitchless-godot)
+//   node scripts/export-godot-addon.mjs --fields [path]   after the mirror's commit is tagged and pushed: what to type
+//                                                           into the Asset Library's edit form
 // It copies the files git tracks in godot/addons/glitchless (no editor caches), replacing what was there so removed
 // files go too, and points links that leave the addon at this repo on GitHub. Run it at each Godot release, then
-// commit, tag v<version> and push the mirror after looking at the diff; the Asset Library entry takes the new commit.
+// commit, tag v<version> and push the mirror after looking at the diff, and run it again with --fields.
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,11 +19,36 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ADDON = 'godot/addons/glitchless';
-const TO = path.resolve(process.argv[2] || path.join(ROOT, '..', 'glitchless-godot'));
+const FIELDS = process.argv.includes('--fields');
+const TO = path.resolve(process.argv.slice(2).find((a) => !a.startsWith('--')) || path.join(ROOT, '..', 'glitchless-godot'));
 const SOURCE = 'https://github.com/glitchless-gg/glitchless';
+const MIRROR = 'https://github.com/glitchless-gg/glitchless-godot';
+const LISTING = 'https://godotengine.org/asset-library/asset/5587';
 
 const version = fs.readFileSync(path.join(ROOT, ADDON, 'plugin.cfg'), 'utf8').match(/^version="([^"]+)"/m)?.[1];
 if (!version) throw new Error(`${ADDON}/plugin.cfg has no version`);
+
+// The Asset Library's edit form, from the mirror's commit for this version. Refuses a commit that isn't tagged
+// v<version> or isn't on GitHub yet, since the library downloads it from there.
+if (FIELDS) {
+  const git = (...args) => execFileSync('git', args, { cwd: TO, encoding: 'utf8' }).trim();
+  const commit = git('rev-parse', 'HEAD');
+  let tagged = '';
+  try {
+    tagged = git('rev-parse', `v${version}^{commit}`);
+  } catch {}
+  if (tagged !== commit) throw new Error(`the mirror's HEAD (${commit.slice(0, 7)}) isn't tagged v${version}: commit and tag it first`);
+  const remote = git('ls-remote', '--tags', `${MIRROR}.git`, `v${version}`);
+  if (!remote.split('\n').some((line) => line.startsWith(commit))) {
+    throw new Error(`push the mirror and its tag first: GitHub has no v${version} at ${commit.slice(0, 7)}`);
+  }
+  console.log(`Asset Library edit for Glitchless ${version} (${LISTING}, "Submit an edit"):
+  Version:          ${version}
+  Download Commit:  ${commit}
+  Download URL:     ${MIRROR}/archive/${commit}.zip
+Everything else stays as it is. A moderator approves the edit.`);
+  process.exit(0);
+}
 const tracked = execFileSync('git', ['ls-files', ADDON], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 if (!tracked.length) throw new Error(`git tracks nothing in ${ADDON}`);
 
@@ -83,3 +114,11 @@ open-source server yourself. MIT licence.
 `,
 );
 console.log(`${ADDON} ${version} → ${out} (${tracked.length} files), with LICENSE, README.md, .gitattributes and .gitignore`);
+
+// The Asset Store's zip: the mirror's addons/glitchless/ alone, just written, so nothing else can be in it. -X leaves
+// out macOS's extra attributes, which would otherwise come out as __MACOSX files.
+const zip = path.join(ROOT, 'dist', 'godot-asset-store', `glitchless-${version}.zip`);
+fs.mkdirSync(path.dirname(zip), { recursive: true });
+fs.rmSync(zip, { force: true });
+execFileSync('zip', ['-r', '-X', '-q', zip, 'addons/glitchless', '-x', '*.DS_Store'], { cwd: TO });
+console.log(`Asset Store zip → ${path.relative(ROOT, zip)} (${Math.round(fs.statSync(zip).size / 1024)} KB): upload it as version ${version}`);

@@ -16,6 +16,10 @@ extends RefCounted
 ## device: a page on the developer's own machine follows the debug-build rule,
 ## and ?glitchless there is --glitchless (flags).
 
+# Fields that are a number or null (JSON's "not measured") are written `value if known else null`: Godot warns that
+# the two branches differ in type, which is the point, so that warning is off for this file.
+@warning_ignore_start("incompatible_ternary")
+
 const HIDDEN := 0  ## another tab or app, or the phone locked: the browser may freeze or drop the page from here
 const SHOWN := 1  ## visible again
 const LEAVING := 2  ## pagehide: closed, another page, or into the back-forward cache

@@ -10,6 +10,10 @@ extends RefCounted
 ## build without the ENet or WebSocket module (a web export has no ENet) still
 ## loads. Nothing here sends an address, a host name or a peer's ID.
 
+# Fields that are a number or null (JSON's "not measured") are written `value if known else null`: Godot warns that
+# the two branches differ in type, which is the point, so that warning is off for this file.
+@warning_ignore_start("incompatible_ternary")
+
 const TARGET_SERVER := 1  # MultiplayerPeer.TARGET_PEER_SERVER: a client's peer for its server
 
 

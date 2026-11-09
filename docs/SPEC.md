@@ -2568,7 +2568,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.5"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.6"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |

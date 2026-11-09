@@ -393,7 +393,7 @@ It isn't a profiler: it hooks no functions and runs no engine profiler. Each fra
 
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.5"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.6"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
 
 ## Limits
 
