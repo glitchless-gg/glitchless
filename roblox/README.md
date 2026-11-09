@@ -23,7 +23,7 @@ Put the `Glitchless` module in **ReplicatedStorage**, whichever way you manage y
 
 | | |
 | --- | --- |
-| **Wally** | `Glitchless = "glitchless-gg/glitchless@0.2.0"` under `[dependencies]` in `wally.toml`, then `wally install` (it lands in `ReplicatedStorage.Packages`) |
+| **Wally** | `Glitchless = "glitchless-gg/glitchless@0.3.0"` under `[dependencies]` in `wally.toml`, then `wally install` (it lands in `ReplicatedStorage.Packages`) |
 | **Rojo** | copy `roblox/src` into your project as a folder named `Glitchless`, mapped under `ReplicatedStorage` (see `place.project.json` here) |
 | **Studio** | download `Glitchless.rbxm` from the [release](https://github.com/glitchless-gg/glitchless/releases), right-click ReplicatedStorage → **Insert from File**. Or take it from the Creator Store |
 
@@ -63,7 +63,7 @@ The client token only writes, and it never leaves your server: it lives in a ser
 | **Loading** | how long each player sat on the loading screen: from joining to their first frame after the game loaded |
 | **The connection** | each player's round trip to the server (`GetNetworkPing`) and the data in and out, once a second |
 | **Deaths** | each time a player's Humanoid dies (`deaths = false` turns this off) |
-| **The device** | the kind of device in Roblox's own words (`Computer`, `Phone`, `Tablet`, `Console`, `VR`: Roblox doesn't tell scripts the OS), screen size, graphics quality, and whether it has touch, a keyboard or a gamepad |
+| **The device** | the kind of device in Roblox's own words (`Computer`, `Phone`, `Tablet`, `Console`, `VR`: Roblox doesn't tell scripts the OS), on a console whether it's an Xbox or a PlayStation (from its controller, so boards and the Performance view split the two), screen size, graphics quality, and whether it has touch, a keyboard or a gamepad |
 | **Your servers** | each server's own session: its frame rate (Heartbeat), late frames, players, memory, the data it sends and receives, the players' pings as it sees them, and its errors |
 | **Sessions** | one per player join, ending when they leave (`quit`), are kicked (`kicked`) or the server closes (`close`) |
 | **Matches** | until your game sets matches of its own, everyone in a Roblox server and the server itself share one match (the server), so Glitchless can tell a whole server lagging from one player's bad connection |

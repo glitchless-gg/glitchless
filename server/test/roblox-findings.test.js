@@ -45,7 +45,11 @@ test('Roblox sessions are a Roblox game: the device kind is its platform, the br
   const ctx = ctxOf([...session({ os: 'Phone' }), ...session({ os: 'Computer' })]);
   assert.equal(gameEngine(ctx), 'roblox');
   assert.equal(platformOf({ os: 'Phone' }), 'Phone');
-  assert.equal(platformOf({ os: 'Console' }), 'Console');
+  assert.equal(platformOf({ os: 'Console' }), 'Console', "a console that didn't say which one");
+  assert.equal(platformOf({ os: 'Console', console: 'Xbox' }), 'Xbox', 'which console, from its controller');
+  assert.equal(platformOf({ os: 'Console', console: 'PlayStation' }), 'PlayStation');
+  assert.equal(platformOf({ os: 'Computer', console: 'PlayStation' }), 'Computer', 'only a console is a console');
+  assert.equal(platformOf({ os: 'Console', console: 'Switch' }), 'Console', 'only the two Roblox runs on');
   assert.equal(browserOf({ browser: 'Roblox', os: 'Phone' }), 'Roblox app');
 });
 

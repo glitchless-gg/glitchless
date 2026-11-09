@@ -35,7 +35,7 @@ local Map = require(script.Parent.Map)
 local Server = {}
 Server.__index = Server
 
-local SDK = "glitchless-roblox/0.2.0"
+local SDK = "glitchless-roblox/0.3.0"
 local MAX_SERVER_SESSION_MS = 6 * 3600 * 1000
 local NAME_MEMORY_S = 120 -- a player who left is still scrubbed from text this long (their character's errors)
 

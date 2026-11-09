@@ -1079,13 +1079,14 @@ function vitalsPanel(ctx, st) {
 const ROBLOX_VITALS = "Roblox's numbers are its own, from every player's client: the crash rate is the sessions in which the Roblox app crashed, of the sessions that ended (the same unit Glitchless counts: a player's time in a server), and the frame rates are of the median player and the slowest tenth. Roblox keeps them 28 days. A version is the place version (game.PlaceVersion), which the Roblox SDK sends as the game's version.";
 
 // Roblox's vitals by platform (Computer, Phone, Tablet, Console, VR) over its last days, next to what Glitchless
-// measured on the same platform in the window: the Roblox SDK names a session's platform in Roblox's own words.
+// measured on the same platform in the window: the Roblox SDK names a session's platform in Roblox's own words
+// (device.os), and a console's Xbox or PlayStation sessions count under Console, as Roblox counts them.
 function platformsOf(ctx, st) {
   const snap = st.snapshots?.platforms;
   if (!snap?.rows?.length) return null;
   const by = new Map();
   for (const s of ctx.daily ? [] : (ctx.sessions?.values() ?? [])) {
-    const key = platformOf(s.device);
+    const key = s.device?.os === 'Console' ? 'Console' : platformOf(s.device);
     const g = by.get(key) ?? { sessions: 0, crashed: 0, fps: [] };
     g.sessions++;
     if (s.crashed) g.crashed++;

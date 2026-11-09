@@ -298,12 +298,15 @@ end
 
 -- The kind of device the client says it is (the client's hello). Only Roblox's own words for platforms pass.
 local OS = { Computer = true, Phone = true, Tablet = true, Console = true, VR = true }
+-- Which console, on a Console (Client.console: read from its controller).
+local CONSOLES = { Xbox = true, PlayStation = true }
 function Inbox.device(d: any): { [string]: any }
 	local out: { [string]: any } = { browser = "Roblox" }
 	if type(d) ~= "table" then
 		return out
 	end
 	out.os = if OS[d.os] then d.os else nil
+	out.console = if out.os == "Console" and CONSOLES[d.console] then d.console else nil
 	out.mobile = out.os == "Phone" or out.os == "Tablet"
 	out.browser_version = if type(d.browser_version) == "string" and string.find(d.browser_version, "^[%d%.]+$") then Words.cut(d.browser_version, 32) else nil
 	if type(d.screen) == "table" then

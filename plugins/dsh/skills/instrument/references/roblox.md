@@ -52,7 +52,7 @@ It reads and changes the user's open places: say what you will do before you do 
 
 Put the module in ReplicatedStorage, the way the project manages code:
 
-- **Wally** (a `wally.toml`): add `Glitchless = "glitchless-gg/glitchless@0.2.0"` under `[dependencies]`, run
+- **Wally** (a `wally.toml`): add `Glitchless = "glitchless-gg/glitchless@0.3.0"` under `[dependencies]`, run
   `wally install`, and require `ReplicatedStorage.Packages.Glitchless`.
 - **Rojo without Wally**: copy `~/.glitchless/roblox/src` into the project (for example `src/shared/Glitchless`) so it
   syncs to `ReplicatedStorage.Glitchless`. Keep the files as they are: `init.luau` makes the folder the module, and

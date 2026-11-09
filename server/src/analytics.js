@@ -2128,12 +2128,15 @@ function naturalSortBy(arr, key) {
 // whatever OS the build is for (a Windows build runs on a Deck under Proton), else the OS, in the words the SDKs use
 // (Windows, macOS, Linux, iOS, Android, SteamOS, ChromeOS, Web for an engine's web build…; other spellings of them are
 // read as these). Steamworks names the hardware (steam_hardware) when the game uses it; otherwise the SDKs' own
-// steam_deck tag finds a Deck.
+// steam_deck tag finds a Deck. A console that says which one it is (the Roblox SDK reads it from its controller,
+// device.console) is that console: Xbox or PlayStation, not Roblox's "Console".
 const STEAM_PLATFORMS = { deck: 'Steam Deck', machine: 'Steam Machine', frame: 'Steam Frame' };
+const CONSOLES = new Set(['Xbox', 'PlayStation']);
 const OS_NAMES = { windows: 'Windows', win32: 'Windows', win64: 'Windows', macos: 'macOS', mac: 'macOS', osx: 'macOS', macosx: 'macOS', 'mac os x': 'macOS', linux: 'Linux', x11: 'Linux', ios: 'iOS', ipados: 'iOS', android: 'Android', steamos: 'SteamOS', chromeos: 'ChromeOS', tvos: 'tvOS', web: 'Web', html5: 'Web', webgl: 'Web' };
 export function platformOf(dev) {
   if (STEAM_PLATFORMS[dev?.steam_hardware]) return STEAM_PLATFORMS[dev.steam_hardware];
   if (dev?.steam_deck === true) return 'Steam Deck';
+  if (dev?.os === 'Console' && CONSOLES.has(dev.console)) return dev.console;
   const os = String(dev?.os ?? '').trim();
   return os ? (OS_NAMES[os.toLowerCase()] ?? os) : 'unknown';
 }

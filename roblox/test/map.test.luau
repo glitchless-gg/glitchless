@@ -137,7 +137,7 @@ t.test("captureMap: draws the place and sends a map event in a batch of its own,
 	for _, b in batches do
 		if b.events[1].type == "map" then
 			t.eq(#b.events, 1, "a batch of its own")
-			t.eq({ b.service, b.role, b.sdk }, { "starlift", nil, "glitchless-roblox/0.2.0" }, "under the game's service")
+			t.eq({ b.service, b.role, b.sdk }, { "starlift", nil, "glitchless-roblox/0.3.0" }, "under the game's service")
 			t.ok(string.match(b.session_id, "^s_%x+$"), "a session ID of its own")
 			table.insert(maps, b.events[1])
 			for _, other in batches do

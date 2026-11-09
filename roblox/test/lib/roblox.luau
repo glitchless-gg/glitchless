@@ -318,6 +318,8 @@ local Enum = {
 		CreatorKick = enumItem("PlayerExitReason", "CreatorKick", 2),
 	},
 	SavedQualitySetting = { Automatic = enumItem("SavedQualitySetting", "Automatic", 0) },
+	KeyCode = { ButtonA = enumItem("KeyCode", "ButtonA", 1000) },
+	UserInputType = { Gamepad1 = enumItem("UserInputType", "Gamepad1", 12) },
 }
 for i = 1, 10 do
 	Enum.SavedQualitySetting["QualityLevel" .. i] = enumItem("SavedQualitySetting", "QualityLevel" .. i, i)
@@ -635,12 +637,27 @@ function World:dataModel(isServer, localPlayer)
 	stats.DataReceiveKbps = 12.5
 	stats.DataSendKbps = 3.25
 
-	local uis = self:service(dm, "UserInputService")
+	-- Gamepads: `Pads` connected, and `PadStyle` the style of the last one ("playstation" names its buttons as
+	-- PlayStation's: ButtonA is ButtonCross), as Roblox's button-prompt API answers.
+	local uis = self:service(dm, "UserInputService", {
+		GetConnectedGamepads = function(u)
+			return table.clone(rawget(u, "_props").Pads)
+		end,
+		GetStringForKeyCode = function(u, keyCode)
+			if rawget(u, "_props").PadStyle == "playstation" and keyCode == Enum.KeyCode.ButtonA then
+				return "ButtonCross"
+			end
+			return keyCode.Name
+		end,
+	})
 	uis.TouchEnabled = false
 	uis.KeyboardEnabled = true
 	uis.GamepadEnabled = false
+	uis.Pads = {}
+	uis.PadStyle = "xbox"
 	uis.WindowFocused = Signal.new(self)
 	uis.WindowFocusReleased = Signal.new(self)
+	uis.GamepadConnected = Signal.new(self)
 
 	local gui = self:service(dm, "GuiService", {
 		IsTenFootInterface = function(g)
@@ -973,6 +990,13 @@ local function newPlayer(world, name, displayName, userId)
 end
 
 -- A player joins: the server's Player and PlayerAdded, and a client DataModel of their own.
+-- A client's controller connects (a console that joined with `padLater`).
+function World:connectPad(c)
+	local uis = c.dm.UserInputService
+	uis.Pads = { Enum.UserInputType.Gamepad1 }
+	uis.GamepadConnected:Fire(Enum.UserInputType.Gamepad1)
+end
+
 function World:join(name, opts)
 	opts = opts or {}
 	local userId = opts.userId or self.nextUserId
@@ -993,6 +1017,17 @@ function World:join(name, opts)
 		dm.UserInputService.TouchEnabled = true
 		dm.UserInputService.KeyboardEnabled = false
 		dm.Workspace.CurrentCamera = { ViewportSize = { X = 844, Y = 390 } }
+	end
+	-- A console (the ten-foot interface) with its controller: "xbox" or "playstation", connected from the start
+	-- unless `padLater` (World:connectPad connects it).
+	if opts.console then
+		dm.GuiService.TenFoot = true
+		dm.UserInputService.KeyboardEnabled = false
+		dm.UserInputService.GamepadEnabled = true
+		dm.UserInputService.PadStyle = opts.console
+		if not opts.padLater then
+			dm.UserInputService.Pads = { Enum.UserInputType.Gamepad1 }
+		end
 	end
 	-- remotes that already exist
 	local function each(inst)

@@ -182,7 +182,7 @@ t.test("a player's session: start with device and properties, frame windows, a l
 	t.eq(fin.reason, "quit", "they left")
 
 	for _, b in batches do
-		t.eq(b.sdk, "glitchless-roblox/0.2.0", "sdk")
+		t.eq(b.sdk, "glitchless-roblox/0.3.0", "sdk")
 		t.eq(b.service, "nardo-racing", "service")
 		t.eq(b.version, "1.4.0", "version")
 		t.eq(b.env, "prod", "env")
@@ -304,6 +304,38 @@ t.test("errors: a LocalScript's and a server Script's, scrubbed of names, read i
 	t.eq(errs[1].message, "<player> has no kart <user>", "names and user IDs scrubbed from the message")
 	t.eq(errs[1].source, "Workspace.<player>.Kart", "and from the path")
 	t.eq(errs[1].fn, "Kart.spawn", "fn")
+end)
+
+t.test("a console says which one it is from its controller: Xbox, PlayStation, a controller connected late; a PC's controller says nothing", function()
+	local world, _, batches = game()
+	local xbox = world:join("Couch", { console = "xbox" })
+	local ps = world:join("Sofa", { console = "playstation" })
+	local late = world:join("Beanbag", { console = "playstation", padLater = true })
+	local pc = world:join("Desk")
+	pc.dm.UserInputService.GamepadEnabled = true
+	pc.dm.UserInputService.Pads = { Enum.UserInputType.Gamepad1 }
+	pc.dm.UserInputService.PadStyle = "playstation"
+	for _, c in { xbox, ps, late, pc } do
+		world:startClient(c)
+	end
+	world:run(0.5)
+	world:connectPad(late)
+	world:run(8)
+	for _, c in { xbox, ps, late, pc } do
+		world:leave(c)
+	end
+	world:run(1)
+	local seen = {}
+	for _, s in sessions(batches) do
+		if s.role == nil then
+			local start = eventsOf(batches, s.id)[1]
+			t.eq(start.type, "session_start", "each session starts with its device")
+			local d = start.device
+			table.insert(seen, `{d.os}/{d.console or "-"}`)
+		end
+	end
+	table.sort(seen)
+	t.eq(seen, { "Computer/-", "Console/PlayStation", "Console/PlayStation", "Console/Xbox" }, "Xbox and PlayStation from their controllers (the late one too); a PC with a PlayStation controller is a Computer")
 end)
 
 t.test("a phone, a kick, and an automatic death with its place when positions are on", function()

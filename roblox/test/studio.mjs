@@ -244,7 +244,7 @@ test('Studio said nothing is wrong: the demo ran, no Glitchless warning but the 
 test("a player's session: its device, frames, loading time, stutters and an error from a LocalScript", () => {
   const [start] = of(SERVICE, 'session_start');
   assert.ok(start, `services: ${[...new Set(run.events.map((e) => e.service))]}`);
-  assert.equal(start.sdk, 'glitchless-roblox/0.2.0');
+  assert.equal(start.sdk, 'glitchless-roblox/0.3.0');
   assert.equal(start.session_type, 'tester', 'a Studio session is a tester\'s');
   assert.equal(start.device.os, 'Computer');
   assert.ok(start.device.screen[0] > 1 && start.device.screen[1] > 1, `the camera's real size: ${start.device.screen}`);

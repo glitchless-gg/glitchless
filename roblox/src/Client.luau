@@ -8,7 +8,7 @@
 --   - errors from the game's LocalScripts (ScriptContext.Error), scrubbed of players' names here and again on the
 --     server;
 --   - the kind of device, in Roblox's own words (Computer, Phone, Tablet, Console, VR: Roblox doesn't tell a script
---     the OS), its screen and graphics quality;
+--     the OS), on a console which one from its controller (Xbox, PlayStation), its screen and graphics quality;
 --   - the game's calls from LocalScripts (track, count, levels, deaths, properties, zones), passed on as they are;
 --     calls made before the client started wait in init.luau and are made here when it starts, each at its own time.
 -- Everything goes to the server over the module's RemoteEvent, once a window (or within a second of an error). While
@@ -104,6 +104,7 @@ function Client.start(module: Instance, options: any)
 		loadSent = false,
 		at = nil :: number?, -- while a call made before the client started is made again: when it was made
 		chosen = nil :: boolean?, -- setEnabled before the RemoteEvent was found: told to the server once it is
+		awaitingGamepad = false, -- a console said hello before its controller was connected (Client.hello)
 		connections = {} :: { RBXScriptConnection },
 	}, Client)
 	self.warn = function(key: string, message: string)
@@ -161,9 +162,38 @@ end
 
 export type Client = typeof(Client.start(...))
 
+-- Which console a Console is, read from its controller: Roblox gives scripts no way to tell (on purpose), but its
+-- button-prompt API names the buttons of the gamepad last connected (ButtonA is "ButtonCross" on a PlayStation
+-- controller), and a console's controller is its own. Only once a gamepad is connected, since before that the API
+-- answers with its default names, Xbox's. Nil when it can't tell.
+function Client.console(): string?
+	local connected = false
+	pcall(function()
+		connected = #UserInputService:GetConnectedGamepads() > 0
+	end)
+	if not connected then
+		return nil
+	end
+	local ok, name = pcall(function()
+		return UserInputService:GetStringForKeyCode(Enum.KeyCode.ButtonA)
+	end)
+	if not ok then
+		return nil
+	end
+	if name == "ButtonCross" then
+		return "PlayStation"
+	elseif name == "ButtonA" then
+		return "Xbox"
+	end
+	return nil
+end
+
 function Client.hello(self: Client)
+	local os = Client.platform()
+	local console = if os == "Console" then Client.console() else nil
 	local device = {
-		os = Client.platform(),
+		os = os,
+		console = console,
 		browser_version = version(),
 		screen = screen(),
 		quality = quality(),
@@ -174,6 +204,20 @@ function Client.hello(self: Client)
 	pcall(function()
 		(self.remote :: RemoteEvent):FireServer({ op = "hello", v = 1, device = device })
 	end)
+	-- A console whose controller wasn't connected yet says hello again once it is (before the session's first batch,
+	-- its session_start says which console; after it, the session stays a Console).
+	if os == "Console" and not console and not self.awaitingGamepad then
+		self.awaitingGamepad = true
+		pcall(function()
+			local connection
+			connection = UserInputService.GamepadConnected:Connect(function()
+				connection:Disconnect()
+				self.awaitingGamepad = false
+				self:hello()
+			end)
+			table.insert(self.connections, connection)
+		end)
+	end
 end
 
 function Client.onServer(self: Client, message: any)

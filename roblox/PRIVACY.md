@@ -19,7 +19,7 @@ The other Glitchless SDKs have three privacy modes; the Roblox SDK has only the 
 | --- | --- |
 | Session ID | random (`s_` and 24 hex characters), made when the player joins, in the server's memory only |
 | Player ID | **none**. No Roblox user ID, name or display name is ever sent, and nothing ties one session to another: a player who comes back tomorrow is a new, unrelated session |
-| Device | the kind of device in Roblox's words (`Computer`, `Phone`, `Tablet`, `Console`, `VR`), the Roblox client's version, the screen size, the graphics quality setting, and whether it has touch, a keyboard or a gamepad |
+| Device | the kind of device in Roblox's words (`Computer`, `Phone`, `Tablet`, `Console`, `VR`), on a console whether it's an `Xbox` or a `PlayStation` (read from the style of its controller's buttons), the Roblox client's version, the screen size, the graphics quality setting, and whether it has touch, a keyboard or a gamepad |
 | Positions | **not sent** unless the game sets `positions = true`: then the server samples each player's character position 4 times a second, in studs, and deaths carry where they happened |
 | Extras | **not sent** unless the game turns each on (below): ProximityPrompts and seats used, as counts; whether the player followed a friend in, as true or false; how many of their friends are in the server, as a number |
 | Kept | nothing on the player's device. On the server, in memory only, until it is sent. The player's on/off choice in the game's own DataStore, once the game asks (below) |
@@ -47,7 +47,7 @@ Roblox names a player's scripts and character after the player: an error in a Lo
 
 Every event has `type`, `ts` (milliseconds, Roblox's synced server time), `level` (the game's current level or null),
 and while set `zone`, `match`, `party` and `run`. The envelope has `service`, `env`, `version`, `session_id`, `sdk`
-(`glitchless-roblox/0.2.0`), `batch_id` (random, names the batch, never the player), and `role: "server"` on the
+(`glitchless-roblox/0.3.0`), `batch_id` (random, names the batch, never the player), and `role: "server"` on the
 server's own session.
 
 | event | fields | when |

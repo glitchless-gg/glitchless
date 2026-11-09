@@ -28,8 +28,8 @@ local RunService = game:GetService("RunService")
 
 local Glitchless = {}
 
-Glitchless.VERSION = "0.2.0"
-Glitchless.SDK = "glitchless-roblox/0.2.0"
+Glitchless.VERSION = "0.3.0"
+Glitchless.SDK = "glitchless-roblox/0.3.0"
 
 local Json = require(script.Json)
 
