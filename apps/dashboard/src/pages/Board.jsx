@@ -504,8 +504,8 @@ function PanelBody({ p }) {
       if (p.per === '$hours') return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.per_hour ?? 0, color: colorFor(r.value, i), display: r.per_hour == null ? '–' : `${p.currency ? fmtMoney(r.per_hour, p.currency) : fmtNum(r.per_hour, r.per_hour < 10 ? 2 : 1)} / h`, title: `${r.value}: ${p.sum ? fmtSum(r.sum, p.currency) : fmtNum(p.counts === 'sessions' ? r.sessions : r.count)} in ${fmtNum(r.hours, 1)} hours played${r.why ? ` (${r.why})` : ''}` }))} />;
       // Each bar says its number; its sessions and players are in its tooltip (and the CSV).
       if (p.sum) return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sum, color: colorFor(r.value, i), display: fmtSum(r.sum, p.currency), title: `${r.value}: ${fmtSum(r.sum, p.currency)} from ${plural(r.count, 'event')}${r.usd != null ? ` (${fmtDevex(r.usd).toLowerCase()})` : ''}` }))} />;
-      // By $platform, $browser or $device_tier without an event: the sessions in each, and their players when the game
-      // sends player IDs.
+      // By a session split ($platform, $graphics…) without an event: the sessions in each, and their players when the
+      // game sends player IDs.
       if (p.counts === 'sessions') return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.sessions, color: colorFor(r.value, i), display: r.players != null ? `${fmtNum(r.sessions)} · ${plural(r.players, 'player')}` : plural(r.sessions, 'session') }))} />;
       // A list (a deck): each row also says the share of the events that have it.
       return <BarList rows={p.rows.map((r, i) => ({ label: r.value, value: r.count, color: colorFor(r.value, i), display: r.share != null ? `${fmtNum(r.count)} · ${fmtPct(r.share, 0)}` : fmtNum(r.count), title: r.sessions == null ? undefined : `${r.value}: ${fmtNum(r.count)} in ${plural(r.sessions, 'session')}${r.players != null ? ` from ${plural(r.players, 'player')}` : ''}` }))} />;

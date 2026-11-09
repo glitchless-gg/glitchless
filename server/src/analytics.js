@@ -335,6 +335,7 @@ export function performance(ctx, { byProp = null } = {}) {
   const byBrowser = new Map();
   const byGpu = new Map();
   const byPlatform = new Map();
+  const byGraphics = new Map();
   const byBranch = new Map();
   const byBuild = new Map();
   const byZone = new Map();
@@ -379,8 +380,8 @@ export function performance(ctx, { byProp = null } = {}) {
   for (const s of sessionsByFirstWindow(ctx)) {
     const dev = s.device || {};
     // Steam branches and builds only for the sessions that read them from Steamworks; screens for the sessions whose
-    // SDK sends a frame budget.
-    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)], [byBranch, steamValue(s, 'steam_branch')], [byBuild, steamValue(s, 'steam_build')], [byDisplay, displayOf(s)]]) {
+    // SDK sends a frame budget; graphics settings for the sessions that have one (graphicsOf).
+    for (const [map, key] of [[byTier, dev.gpu_tier || 'unknown'], [byBrowser, dev.browser || 'unknown'], [byGpu, dev.gpu || 'unknown'], [byPlatform, platformOf(dev)], [byGraphics, graphicsOf(s)], [byBranch, steamValue(s, 'steam_branch')], [byBuild, steamValue(s, 'steam_build')], [byDisplay, displayOf(s)]]) {
       if (key == null) continue;
       const g = group(map, key);
       mergeCell(g, s.cell);
@@ -462,6 +463,7 @@ export function performance(ctx, { byProp = null } = {}) {
     by_browser: [...byBrowser.values()].map(summarize).sort((a, b) => b.frames - a.frames),
     by_gpu: [...byGpu.values()].map(summarize).sort((a, b) => b.sessions - a.sessions).slice(0, 10),
     by_platform: [...byPlatform.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
+    by_graphics: graphicsRows([...byGraphics.values()].map(summarize)),
     by_steam_branch: [...byBranch.values()].map(summarize).sort((a, b) => b.sessions - a.sessions),
     by_steam_build: [...byBuild.values()].map(summarize).sort((a, b) => Number(a.key) - Number(b.key)),
     by_display: displayRows([...byDisplay.values()].map((g) => [summarize(g), g.fw])),
@@ -1248,8 +1250,8 @@ function steamEventsBy(ctx, f, dim) {
 
 // What a board can split sessions by (series and breakdowns, `by: "$<name>"`), each from the session's session_start
 // device, in plain words: the platform it ran on (platformOf: Windows, macOS, Linux, Steam Deck, iOS, Android…), the
-// browser it ran in (browserOf), and its GPU tier as the Performance view sorts it (high to low). `order`: rows in this
-// order rather than most first.
+// browser it ran in (browserOf), its GPU tier as the Performance view sorts it (high to low), its connection and its
+// graphics setting. `order`: rows in this order rather than most first (a list of values, or a value's rank).
 const TIERS = { high: 'High-end GPU', mid: 'Mid-range GPU', low: 'Low-end GPU', software: 'Software rendering (no GPU)', unknown: 'Unknown GPU' };
 export const SESSION_SPLITS = {
   platform: { label: 'platform', of: (s) => platformOf(s.device) },
@@ -1257,7 +1259,33 @@ export const SESSION_SPLITS = {
   device_tier: { label: 'device tier', of: (s) => TIERS[s.device?.gpu_tier] ?? TIERS.unknown, order: Object.values(TIERS) },
   // The kind of connection the session played most of its connected time on (A8): Wi-Fi, mobile data, wired.
   link: { label: 'connection', of: (s) => linkOf(s) },
+  // The graphics setting the session played at (graphicsOf), lowest to highest.
+  graphics: { label: 'graphics quality', of: (s) => graphicsOf(s) ?? NONE, order: graphicsRank },
 };
+
+// A session's graphics setting, for a board's $graphics and the Performance view's by_graphics: the `graphics`
+// property when the game sets one (any engine, in its own words: "low", "high", "ultra"), else what the SDK read itself
+// (Roblox's Graphics Quality: "Automatic", or 1 to 10, device.quality), or null. The property comes first so a game
+// that already names its presets keeps them.
+export function graphicsOf(s) {
+  const prop = propOf(s, 'graphics');
+  if (prop != null) return prop;
+  const q = s.device?.quality;
+  if (q == null || q === '') return null;
+  return q === 'auto' ? 'Automatic' : String(q);
+}
+
+// Where a graphics setting goes in a list: Automatic first, then levels low to high (numbers by value, the usual
+// preset words in their order), then other words, then sessions without one. Equal ranks keep the most first.
+const GRAPHICS_WORDS = ['lowest', 'very low', 'low', 'medium', 'normal', 'high', 'very high', 'ultra', 'epic', 'cinematic', 'max'];
+export function graphicsRank(v) {
+  if (v === NONE) return 4e6;
+  const word = String(v).trim().toLowerCase().replace(/[_-]+/g, ' ');
+  if (word === 'automatic' || word === 'auto') return -1;
+  if (/^-?\d+(\.\d+)?$/.test(word)) return 1e6 + Number(word);
+  const i = GRAPHICS_WORDS.indexOf(word);
+  return i >= 0 ? 2e6 + i : 3e6;
+}
 
 // How sessions split by `dim` (a name without its $): one of SESSION_SPLITS, or a session property (A6,
 // properties.js) → { label, of(s), order? }, or null for anything else.
@@ -1293,7 +1321,7 @@ export function sessionsBy(ctx, f = null, split = 'platform') {
     if (f) x.spread += placeEvents(ctx, s, f, n, x.series);
     else for (const i of new Set([...s.minutes].map((m) => bucketIndex(ctx, m)))) x.series[i]++;
   }
-  const rank = (v) => (order ? order.indexOf(v) : 0);
+  const rank = typeof order === 'function' ? order : (v) => (order ? order.indexOf(v) : 0);
   const rows = [...out.values()].map((x) => ({ ...x, players: ids ? x.players.size : null })).sort((a, b) => rank(a.value) - rank(b.value) || b.count - a.count || (a.value < b.value ? -1 : 1));
   return { rows, players: ids ? everyone.size : null };
 }
@@ -2120,6 +2148,11 @@ export function browserOf(dev) {
   if (!b) return 'unknown';
   if (ENGINES.has(b)) return WEB_OS.test(String(dev?.os ?? '')) ? `${b} web build` : `${b} app`;
   return b;
+}
+
+// The Performance view's by_graphics rows (summarized groups keyed by graphicsOf): lowest setting to highest.
+export function graphicsRows(rows) {
+  return rows.sort((a, b) => graphicsRank(a.key) - graphicsRank(b.key) || b.sessions - a.sessions || (a.key < b.key ? -1 : 1));
 }
 
 function tierRank(t) {

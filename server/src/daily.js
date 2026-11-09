@@ -39,7 +39,7 @@ import { MARK, sessionMs, rageInputsOf } from './session-state.js';
 import { sessionAttempts, attemptValues } from './levels.js';
 import { Distinct, Sample, QMap, hashId, repeatedIds } from './sketches.js';
 import { addZoneDay, zoneDayToJSON, zoneDayFromJSON, mergeZoneDays, withZoneTime } from './zones.js';
-import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, displayOf, displayRows, matchAttrs, stepLabel, rageInputRow, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
+import { sessionSummary, overview, performance, eventIndex, errorIssues, funnel, cellsOf, round, pct, noWin, rageDeathTs, retentionAnswer, hasPlayerId, platformOf, graphicsOf, graphicsRows, displayOf, displayRows, matchAttrs, stepLabel, rageInputRow, RETENTION_DAYS, SLOW_START_MS } from './analytics.js';
 
 export const DAY = 86_400_000;
 
@@ -51,6 +51,7 @@ export const CAPS = {
   rageQuits: 50, // latest rage quits: the players page lists 50
   rageInputs: 50, // latest rage inputs, with their level, time and place: the players query lists 50
   gpus: 30, // GPUs per (env, version) and day; the performance page lists the top 10
+  graphics: 40, // graphics settings per (env, version) and day: a game's own `graphics` property could have many
   deaths: 100, // deaths with coordinates per level, (env, version) and day
   sample: 256, // sessions with custom events per day, for ordered funnels
   values: 200, // values per custom event attribute (sessions that sent each)
@@ -148,7 +149,7 @@ function newGroup(env, version, caps) {
     tex: { n: 0, g: q(), f: q(), l: q() }, // texture growth per level load, first, last
     ga: new Map(), // context gauge → { n: sessions that followed it, c: sessions it only climbed in, f, l: their first and last }
     nodes: { n: 0, og: q(), of: q(), ol: q(), ng: q(), nf: q(), nl: q() }, // orphan and live node growth, first, last
-    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map(), sb: new Map(), sv: new Map(), hz: new Map() }, // GPU tier, browser, GPU, platform, Steam branch and build, screen → { n, cell }
+    dev: { t: new Map(), b: new Map(), g: new Map(), p: new Map(), q: new Map(), sb: new Map(), sv: new Map(), hz: new Map() }, // GPU tier, browser, GPU, platform, graphics setting, Steam branch and build, screen → { n, cell }
     fwl: new Map(), // level (or '(menu)') → sessions that sent frame windows there
     lv: new Map(), // level → funnel row
     dc: {}, // death causes
@@ -238,6 +239,7 @@ function addSession(g, s, day, caps, newPlayers = null) {
       [g.dev.b, dev.browser || 'unknown'],
       [g.dev.g, dev.gpu || 'unknown'],
       [g.dev.p, platformOf(dev)],
+      [g.dev.q, graphicsOf(s)],
       [g.dev.sb, dev.steam_branch == null ? null : String(dev.steam_branch)],
       [g.dev.sv, dev.steam_build == null ? null : String(dev.steam_build)],
       [g.dev.hz, displayOf(s)],
@@ -421,6 +423,10 @@ function seal(g, caps) {
   if (g.dev.g.size > caps.gpus) {
     g.dev.g = new Map(byDevice([...g.dev.g]).sort((a, b) => b[1].n - a[1].n).slice(0, caps.gpus));
     g.cut.add('gpus');
+  }
+  if (g.dev.q.size > caps.graphics) {
+    g.dev.q = new Map(byDevice([...g.dev.q]).sort((a, b) => b[1].n - a[1].n).slice(0, caps.graphics));
+    g.cut.add('graphics');
   }
   for (const [level, list] of g.dx) {
     if (list.length <= caps.deaths) continue;
@@ -617,8 +623,8 @@ function groupFromJSON(o) {
     tex: o.tex ? qs(o.tex) : { n: 0, g: q(), f: q(), l: q() },
     ga: new Map((o.ga || []).map(([k, n, c, f, l]) => [k, { n, c, f: q(f), l: q(l) }])),
     nodes: qs(o.nodes),
-    // Days stored before screens were kept have none.
-    dev: { p: new Map(), sb: new Map(), sv: new Map(), hz: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
+    // Days stored before screens (or graphics settings) were kept have none.
+    dev: { p: new Map(), q: new Map(), sb: new Map(), sv: new Map(), hz: new Map(), ...Object.fromEntries(Object.entries(o.dev).map(([k, list]) => [k, new Map(list.map(([key, n, c]) => [key, { n, cell: cellFromJSON(c) }]))])) },
     fwl: new Map(o.fwl),
     // Days stored before time in zone was kept have none.
     zt: zoneDayFromJSON(o.zt),
@@ -720,7 +726,7 @@ function mergeGroup(into, g) {
     y.f.merge(x.f);
     y.l.merge(x.l);
   }
-  for (const k of ['t', 'b', 'g', 'p', 'sb', 'sv', 'hz']) {
+  for (const k of ['t', 'b', 'g', 'p', 'q', 'sb', 'sv', 'hz']) {
     for (const [key, x] of g.dev[k]) {
       const y = into.dev[k].get(key);
       if (!y) into.dev[k].set(key, { n: x.n, cell: mergeCell(newCell(), x.cell) });
@@ -869,10 +875,12 @@ export function dailyPerformance(ctx) {
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 10);
   p.by_platform = list(g.dev.p).sort((a, b) => b.sessions - a.sessions);
+  p.by_graphics = graphicsRows(list(g.dev.q));
   p.by_steam_branch = list(g.dev.sb).sort((a, b) => b.sessions - a.sessions);
   p.by_steam_build = list(g.dev.sv).sort((a, b) => Number(a.key) - Number(b.key));
   p.by_display = displayRows(byDevice([...g.dev.hz]).map(([key, x]) => [summarize(key, x), x.cell.fw]));
   approximate(ctx, 'gpus', g.cut.has('gpus'));
+  approximate(ctx, 'graphics', g.cut.has('graphics'));
   for (const l of p.by_level) l.sessions = g.fwl.get(l.key) || 0;
   for (const v of p.by_version) v.sessions = ctx.daily.byVersion.get(v.key)?.fw || 0;
   if (p.by_zone) p.by_zone = withZoneTime(ctx, p.by_zone);

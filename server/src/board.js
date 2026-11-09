@@ -33,9 +33,10 @@
 //   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
 //               (`by` can also be $version or $level, which every event has: purchases by version, or a
 //               Steam fact of the session that sent it, such as $steam_branch, counted by count only)
-//               Both take `by` $platform, $browser or $device_tier: the platform, browser or GPU tier of the
-//               sessions that sent the event (Windows, macOS, Steam Deck, iOS, Android…; Chrome, Safari…; high to
-//               low), counted (no sum); without `event`, the sessions in each (and their players). Both take
+//               Both take `by` $platform, $browser, $device_tier, $link or $graphics: the platform, browser, GPU
+//               tier, connection or graphics setting of the sessions that sent the event (Windows, macOS, Steam
+//               Deck, iOS, Android…; Chrome, Safari…; high to low; Wi-Fi…; Automatic, then low to high), counted
+//               (no sum); without `event`, the sessions in each (and their players). Both take
 //               `per` $hours (each bucket or row per hour played) and `rate` or `avg`: a breakdown's rows then
 //               each have their rate with its interval (or average) next to the overall one, leaving out rows
 //               of fewer than `min` events, in `order`, and marking rows whose interval misses `expect` (a
@@ -158,7 +159,8 @@ const MAX_PANELS = 24;
 const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
 const DIMENSIONS = ['version', 'level', 'zone'];
-// What series and breakdowns can split sessions by (analytics.js SESSION_SPLITS): $platform, $browser, $device_tier.
+// What series and breakdowns can split sessions by (analytics.js SESSION_SPLITS): $platform, $browser, $device_tier,
+// $link, $graphics.
 const SESSION_BY = Object.keys(SESSION_SPLITS).map((k) => `$${k}`);
 const SESSION_WORDS = `${SESSION_BY.join(', ')}, or a session property ($rank, $class…)`;
 // Session properties (A6, properties.js) split wherever $platform does: `$<key>` for any key the property rules allow.
@@ -301,7 +303,7 @@ function validatePanel(p, at) {
     } else if (v.startsWith('$') && !isSessionBy(v) && !DIMENSIONS.includes(v.slice(1))) throw new BoardError(`${at}.by is an attribute name, or $version, $level, $zone, ${SESSION_WORDS}${steam ? `, or a Steam fact of the session (${STEAM_BY.join(', ')})` : ''}`);
     out.by = v;
   };
-  // A series or breakdown by $platform, $browser or $device_tier without an event counts the sessions in each.
+  // A series or breakdown by a session split ($platform, $graphics…) without an event counts the sessions in each.
   const eventOrSessions = () => {
     if (p.event == null && isSessionBy(p.by)) {
       if (p.sum != null) throw new BoardError(`${at}.sum goes with event`);

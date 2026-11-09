@@ -116,7 +116,7 @@ main { display: flex; flex-direction: column; min-width: 0; height: 100%; overfl
 .widget .wt { font-weight: 600; font-size: 13px; color: var(--text); min-width: 0; }
 /* The panel's one short line, under its title. */
 .widget .ws { flex-basis: 100%; color: var(--muted); font-size: 11.5px; margin-top: 1px; }
-.widget .wa { margin-left: auto; display: flex; gap: 6px; align-items: center; min-height: 22px; }
+.widget .wa { margin-left: auto; display: flex; gap: 6px; align-items: center; min-height: 22px; min-width: 0; max-width: 100%; }
 .widget .wb { padding: 4px 12px 12px; flex: 1; min-width: 0; }
 .widget.flush .wb { padding: 0; }
 .group-title { grid-column: span 12; display: flex; align-items: center; gap: 8px; margin: 8px 0 -2px; font-weight: 600; font-size: 13px; color: var(--text-2); }
@@ -257,8 +257,10 @@ table.dt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .tl .ti { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; background: var(--quiet); }
 .tl.error .ti { background: var(--alert-solid); } .tl.death .ti { background: var(--warn-solid); } .tl.hitch .ti { background: var(--coral); border-radius: 2px; } .tl.level .ti { background: var(--brand-500); } .tl.annotation .ti { background: var(--info); border-radius: 2px; }
 .tl.cur { background: var(--brand-50); }
-.segmented { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 4px; overflow: hidden; }
-.segmented button { border: 0; background: var(--panel); color: var(--text); padding: 4px 10px; cursor: pointer; font-size: 12px; border-right: 1px solid var(--border); }
+.segmented { display: inline-flex; max-width: 100%; border: 1px solid var(--border-strong); border-radius: 4px; overflow-x: auto; scrollbar-width: none; }
+/* On a phone more options than fit scroll sideways inside the control, not past the panel. */
+.segmented::-webkit-scrollbar { display: none; }
+.segmented button { flex: none; white-space: nowrap; border: 0; background: var(--panel); color: var(--text); padding: 4px 10px; cursor: pointer; font-size: 12px; border-right: 1px solid var(--border); }
 .segmented button:last-child { border-right: 0; }
 .segmented button.on { background: var(--brand-100); color: var(--brand-fg); font-weight: 600; }
 .heatwrap { position: relative; width: 100%; background: #120c20; border-radius: 4px; overflow: hidden; }

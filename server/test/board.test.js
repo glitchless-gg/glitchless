@@ -249,7 +249,7 @@ test("versions compare the board's own numbers, and a board can split any event 
   const [byLevel] = evaluateBoard(ctxOf(mobile, 'starlift'), validateBoard({ panels: [{ type: 'breakdown', event: 'play', by: '$level' }] }));
   assert.ok(byLevel.rows.length && byLevel.rows.every((r) => r.sessions === null), JSON.stringify(byLevel.rows));
   // A name that can't be a session property (it names a person) isn't a split.
-  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$email' }] }), /\$version, \$level, \$zone, \$platform, \$browser, \$device_tier, \$link, or a session property/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$email' }] }), /\$version, \$level, \$zone, \$platform, \$browser, \$device_tier, \$link, \$graphics, or a session property/);
 });
 
 test('built-in sections as panels: findings, sessions that sent an event, versions and live', () => {
@@ -443,7 +443,7 @@ test('a breakdown or series by $platform: the sessions on each platform, or an e
   assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$platform', sum: 'amount' }] }), /a sum can't be split by \$platform/);
   assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', by: 'what' }] }), /needs event/);
   assert.throws(() => validateBoard({ panels: [{ type: 'series', by: '$platform', sum: 'amount' }] }), /sum goes with event/);
-  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$user_id' }] }), /\$version, \$level, \$zone, \$platform, \$browser, \$device_tier, \$link, or a session property/);
+  assert.throws(() => validateBoard({ panels: [{ type: 'breakdown', event: 'buy', by: '$user_id' }] }), /\$version, \$level, \$zone, \$platform, \$browser, \$device_tier, \$link, \$graphics, or a session property/);
   assert.throws(() => validateBoard({ panels: [{ type: 'series', event: 'buy', by: '$browser', sum: 'amount' }] }), /a sum can't be split by \$browser/);
   // Over 31 days, answered by day without each session: it says so.
   const [daily] = evaluateBoard({ ...ctx, daily: { all: { n: 12 } } }, validateBoard({ panels: [{ type: 'breakdown', by: '$platform' }] }));

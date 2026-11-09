@@ -83,7 +83,7 @@ export function sessionOccurrenceCount(s, f) {
 }
 
 // The groups an occurrence falls in, split `by` (as a board writes it): an attribute's value, or each element of a
-// list; $version or $level; a session split ($platform, $browser, $device_tier), a property or a Steam fact. [] when it
+// list; $version or $level; a session split ($platform, $browser, $device_tier, $link, $graphics), a property or a Steam fact. [] when it
 // has none.
 export function occurrenceGroups(by, ctx = null) {
   if (by == null) return () => [''];

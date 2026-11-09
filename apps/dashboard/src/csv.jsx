@@ -120,7 +120,7 @@ export function panelCsv(p) {
       return [[`${p.of} from`, `${p.of} to`, 'Events'], ...(p.under ? [['', p.histogram[0]?.lo, p.under]] : []), ...p.histogram.map((b) => [b.lo, b.hi, b.count]), ...(p.over ? [[p.histogram.at(-1)?.hi, '', p.over]] : [])];
     }
     case 'breakdown': {
-      // A split of sessions ($platform, $browser, $device_tier) names its column in words.
+      // A split of sessions ($platform, $browser, $device_tier, $link, $graphics) names its column in words.
       const by = p.split ?? (p.by.startsWith('$') ? p.by.slice(1) : p.by);
       if (p.rate) return [[by, 'Rate (%)', 'Likely from (%)', 'Likely to (%)', 'Events', 'Sessions'], ...p.rows.map((r) => [r.value, r.rate, r.low, r.high, r.events, r.sessions])];
       if (typeof p.avg === 'string') return [[by, `Average ${p.avg}`, 'Events', 'Sessions'], ...p.rows.map((r) => [r.value, r.avg, r.events, r.sessions])];

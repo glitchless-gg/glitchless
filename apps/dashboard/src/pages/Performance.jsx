@@ -34,9 +34,9 @@ export function Performance({ route }) {
   const lines = budgetLines(Object.fromEntries(screens.map((r) => [r.budget_ms, r.windows_pct])), budget);
   const s = data.series;
   const versionSeries = Object.entries(s.p95_by_version || {}).map(([v, values], i) => ({ label: `p95 · ${v}`, values, color: PALETTE[i % PALETTE.length] }));
-  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, version: data.by_version, steam_branch: data.by_steam_branch, steam_build: data.by_steam_build, display: data.by_display };
+  const dims = { gpu_tier: data.by_gpu_tier, browser: data.by_browser, gpu: data.by_gpu, platform: data.by_platform, graphics: data.by_graphics, version: data.by_version, steam_branch: data.by_steam_branch, steam_build: data.by_steam_build, display: data.by_display };
   // Steam branches and builds only for a game whose sessions read them from Steamworks (SPEC §4c).
-  const segments = [{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, { value: 'version', label: 'Version' }, ...(data.by_display?.length > 1 ? [{ value: 'display', label: 'Screen' }] : []), ...(data.by_steam_branch?.length ? [{ value: 'steam_branch', label: 'Steam branch' }] : []), ...(data.by_steam_build?.length ? [{ value: 'steam_build', label: 'Steam build' }] : [])];
+  const segments = [{ value: 'gpu_tier', label: 'GPU tier' }, { value: 'gpu', label: 'GPU' }, { value: 'browser', label: 'Browser' }, { value: 'platform', label: 'Platform' }, ...(data.by_graphics?.length ? [{ value: 'graphics', label: 'Graphics' }] : []), { value: 'version', label: 'Version' }, ...(data.by_display?.length > 1 ? [{ value: 'display', label: 'Screen' }] : []), ...(data.by_steam_branch?.length ? [{ value: 'steam_branch', label: 'Steam branch' }] : []), ...(data.by_steam_build?.length ? [{ value: 'steam_build', label: 'Steam build' }] : [])];
   const gauges = data.hitch_context?.gauges || [];
   const preceding = data.hitch_context?.preceding_events || [];
 
