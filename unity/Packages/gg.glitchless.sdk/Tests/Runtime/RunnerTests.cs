@@ -28,6 +28,24 @@ namespace GlitchlessSdk.Tests
 
         static IEnumerable<Dictionary<string, object>> Queued(string type) => GlitchlessRunner.Core.Queued.Where(e => (string)e["type"] == type);
 
+        // Frames go by until `done`, for at most two seconds.
+        static IEnumerator Until(Func<bool> done)
+        {
+            var t = Time.realtimeSinceStartup;
+            while (!done() && Time.realtimeSinceStartup - t < 2) yield return null;
+        }
+
+        // Every test starts and ends with the runner's bug report form shut and the game running, even after a test
+        // that failed with it open.
+        [SetUp, TearDown]
+        public void NoFormOpen()
+        {
+            var runner = GameObject.Find("Glitchless");
+            var form = runner ? runner.GetComponent<BugReportForm>() : null;
+            if (form) form.Close();
+            Time.timeScale = 1;
+        }
+
         [UnityTest]
         public IEnumerator StartsBeforeTheFirstSceneAndTimesFrames()
         {
@@ -110,7 +128,9 @@ namespace GlitchlessSdk.Tests
             {
                 Time.timeScale = 1;
                 Glitchless.OpenBugReport();
-                for (var i = 0; i < 3; i++) yield return null; // the screenshot is taken at the end of the frame
+                // The screenshot is taken at the end of the frame. In batch mode with a graphics device the end never
+                // comes, and the form opens without one a few frames later.
+                yield return Until(() => opened > 0);
                 Assert.IsTrue(Glitchless.IsBugReportOpen);
                 Assert.AreEqual(0, Time.timeScale, "the game is paused");
                 Assert.AreEqual(1, opened);
@@ -195,7 +215,7 @@ namespace GlitchlessSdk.Tests
         {
             (bool sent, string reason)? result = null;
             Glitchless.ReportBug("before init", done: (sent, reason) => result = (sent, reason));
-            for (var i = 0; i < 3 && result == null; i++) yield return null;
+            yield return Until(() => result != null); // after the screenshot, or a few frames without one (as above)
             Assert.AreEqual((false, "offline"), result);
         }
 

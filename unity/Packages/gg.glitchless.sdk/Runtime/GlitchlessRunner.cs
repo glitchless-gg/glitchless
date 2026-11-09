@@ -429,18 +429,17 @@ namespace GlitchlessSdk
                 done?.Invoke(false, "off"); // the player turned Glitchless off: no screenshot is taken either
                 return;
             }
-            instance.StartCoroutine(instance.Report(Core.BugSnapshot(), note, screenshot, done));
+            var snap = Core.BugSnapshot();
+            if (screenshot) BugScreenshot.CaptureAtEndOfFrame(instance, picture => Report(snap, note, picture, done)); // the frame as drawn
+            else Report(snap, note, null, done);
         }
 
-        IEnumerator Report(Dictionary<string, object> snap, string note, bool screenshot, Action<bool, string> done)
+        static void Report(Dictionary<string, object> snap, string note, Texture2D picture, Action<bool, string> done)
         {
-            string shot = null;
-            if (screenshot && BugScreenshot.CanCapture)
+            var shot = BugScreenshot.Fit(picture);
+            if (picture)
             {
-                yield return new WaitForEndOfFrame(); // the frame as drawn
-                var tex = BugScreenshot.Capture();
-                shot = BugScreenshot.Fit(tex);
-                if (tex) Destroy(tex);
+                Destroy(picture);
                 Core?.SkipNextFrame(); // reading the screen back stalls this frame: that isn't the game stuttering
             }
             if (Core == null) done?.Invoke(false, "offline");

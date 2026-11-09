@@ -43,6 +43,40 @@ namespace GlitchlessSdk
         /// <summary>False where nothing is drawn (batch mode with -nographics).</summary>
         public static bool CanCapture => SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null;
 
+        // Frames to wait for the end of the frame before going on without the screen. It comes in the frame it was asked
+        // for (the next one when asked from the end of a frame), but never in the Editor while its Game view isn't
+        // drawn: in batch mode with a graphics device, as PlayMode tests run, frames go by and it never does.
+        const int EndOfFrameWait = 5;
+
+        /// <summary>The screen as drawn this frame, read at its end, handed to `got` once: the texture (the caller
+        /// destroys it), or null where nothing is drawn. When the end of the frame doesn't come within a few frames,
+        /// `got` has null then, so a report goes without its screenshot rather than never.</summary>
+        internal static void CaptureAtEndOfFrame(MonoBehaviour host, Action<Texture2D> got)
+        {
+            if (!CanCapture)
+            {
+                got(null);
+                return;
+            }
+            var done = false;
+            IEnumerator AtEnd()
+            {
+                yield return new WaitForEndOfFrame();
+                if (done) yield break;
+                done = true;
+                got(Capture());
+            }
+            IEnumerator GiveUp()
+            {
+                for (var i = 0; i < EndOfFrameWait && !done; i++) yield return null;
+                if (done) yield break;
+                done = true;
+                got(null);
+            }
+            host.StartCoroutine(AtEnd());
+            host.StartCoroutine(GiveUp());
+        }
+
         /// <summary>The screen, read at the end of a frame (after WaitForEndOfFrame), or null.</summary>
         public static Texture2D Capture()
         {
@@ -188,20 +222,24 @@ namespace GlitchlessSdk
             note = "";
             closeAt = -1;
             snap = Core.BugSnapshot();
-            StartCoroutine(Take(++token));
+            var t = ++token;
+            if (Options.Screenshot) BugScreenshot.CaptureAtEndOfFrame(this, picture => Show(t, picture)); // the frame the player saw, before the form is drawn
+            else Show(t, null);
         }
 
-        IEnumerator Take(int t)
+        void Show(int t, Texture2D picture)
         {
-            if (Options.Screenshot && BugScreenshot.CanCapture)
+            if (t != token) // closed meanwhile
             {
-                yield return new WaitForEndOfFrame(); // the frame the player saw, before the form is drawn
-                if (t != token) yield break;
-                preview = BugScreenshot.Capture();
-                shot = BugScreenshot.Fit(preview);
+                if (picture) Destroy(picture);
+                return;
+            }
+            if (picture)
+            {
+                preview = picture;
+                shot = BugScreenshot.Fit(picture);
                 Core.SkipNextFrame(); // reading the screen back stalls this frame: that isn't the game stuttering
             }
-            if (t != token) yield break;
             state = State.Form;
             if (Options.PauseGame)
             {

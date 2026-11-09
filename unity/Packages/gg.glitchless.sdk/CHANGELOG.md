@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A bug report no longer waits for ever for its screenshot. The screenshot is read at the end of the frame, and in the Editor the end of a frame comes only while the Game view is drawn: in batch mode with a graphics device (PlayMode tests without `-nographics`) it never came, so `ReportBug` never answered, and the form stayed open and empty without pausing the game until it was closed. When the end of the frame doesn't come within 5 frames, the report goes, and the form opens, without a screenshot. Players' builds, and the Editor with its Game view showing, take it as before.
+
 ## 0.7.2
 
 - Runs on Unity 6.0 LTS (6000.0) and later: the package's `unity` is `6000.0`, down from `6000.3`, so Package Manager installs it in a Unity 6.0 project. Nothing in it needed 6.1 or later, so the code is unchanged. On Unity 6.0 LTS (6000.0.85f2), as on 6.3 LTS, the EditMode and PlayMode tests pass, the Fetch! sample runs as a macOS player against a local server, and `CaptureMap` renders in the built-in pipeline, in URP 17.0's 2D and Universal renderers and in a WebGL build in Chromium.
