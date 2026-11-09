@@ -304,10 +304,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path17) {
-  if (!path17)
+function getElementAtPath(obj, path18) {
+  if (!path18)
     return obj;
-  return path17.reduce((acc, key) => acc?.[key], obj);
+  return path18.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -566,11 +566,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path17, issues) {
+function prefixIssues(path18, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path17);
+    iss.path.unshift(path18);
     return iss;
   });
 }
@@ -1103,16 +1103,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path17 = []) => {
+  const processError = (error63, path18 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else {
-        const fullpath = [...path17, ...issue2.path];
+        const fullpath = [...path18, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -1151,17 +1151,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path17 = []) => {
+  const processError = (error63, path18 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
       } else {
-        const fullpath = [...path17, ...issue2.path];
+        const fullpath = [...path18, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -1200,8 +1200,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path17 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path17) {
+  const path18 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path18) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -4619,7 +4619,7 @@ function isRef(value) {
 function cloneIssues(issues) {
   return issues.map((iss) => iss.path ? { ...iss, path: iss.path.slice() } : { ...iss });
 }
-function isRecursive(inst, stack, resolve) {
+function isRecursive(inst, stack, resolve2) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -4629,7 +4629,7 @@ function isRecursive(inst, stack, resolve) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve);
+      const answer = isRecursive(child, stack, resolve2);
       if (answer > result)
         result = answer;
     }
@@ -4640,7 +4640,7 @@ function isRecursive(inst, stack, resolve) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve2) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -4704,7 +4704,7 @@ function isRecursive(inst, stack, resolve) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve2 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -9067,8 +9067,8 @@ var capitalizeFirstCharacter, error33;
 var init_lt = __esm({
   "../../node_modules/zod/v4/locales/lt.js"() {
     init_util();
-    capitalizeFirstCharacter = (text) => {
-      return text.charAt(0).toUpperCase() + text.slice(1);
+    capitalizeFirstCharacter = (text2) => {
+      return text2.charAt(0).toUpperCase() + text2.slice(1);
     };
     error33 = () => {
       const Sizable = {
@@ -14324,7 +14324,7 @@ function generateRecordCheck(doc, ctx, schema, accessor) {
   }, `return INVALID;`);
   return outputVar;
 }
-function emitOwnKeys(doc, ctx, accessor, kVar, body, onSymbol) {
+function emitOwnKeys(doc, ctx, accessor, kVar, body2, onSymbol) {
   const propIsEnumerableConst = addConstant(ctx, Object.prototype.propertyIsEnumerable);
   const symsVar = newVar(ctx);
   const keysVar = newVar(ctx);
@@ -14335,7 +14335,7 @@ function emitOwnKeys(doc, ctx, accessor, kVar, body, onSymbol) {
   doc.indented((d) => {
     d.write(`const ${kVar} = ${keysVar}[${iVar}];`);
     d.write(`if (${kVar} === "__proto__" || !${propIsEnumerableConst}.call(${accessor}, ${kVar})) continue;`);
-    body(d);
+    body2(d);
   });
   doc.write(`}`);
   doc.write(`for (let ${iVar} = 0; ${iVar} < ${symsVar}.length; ${iVar}++) {`);
@@ -14345,7 +14345,7 @@ function emitOwnKeys(doc, ctx, accessor, kVar, body, onSymbol) {
     if (onSymbol)
       d.write(onSymbol);
     else
-      body(d);
+      body2(d);
   });
   doc.write(`}`);
 }
@@ -19233,13 +19233,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path17 = ref.slice(1).split("/").filter(Boolean);
-  if (path17.length === 0) {
+  const path18 = ref.slice(1).split("/").filter(Boolean);
+  if (path18.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path17[0] === defsKey) {
-    const key = path17[1] === void 0 ? void 0 : decodeJSONPointerSegment(path17[1]);
+  if (path18[0] === defsKey) {
+    const key = path18[1] === void 0 ? void 0 : decodeJSONPointerSegment(path18[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -23695,17 +23695,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path17, reachable) => {
+  const visit2 = (node2, path18, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path17.length === 0) return `${pathName(path17)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path18.length === 0) return `${pathName(path18)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path17)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path17)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path18)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path18)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path17)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path18)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -23714,14 +23714,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path17,
+        path: path18,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path17, key], reachable);
+      const fault$1 = visit2(child, [...path18, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -23729,7 +23729,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path17, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path18, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -23748,8 +23748,8 @@ function scanXMcpHeaderDeclarations(inputSchema) {
     declarations
   };
 }
-function pathName(path17) {
-  return path17.length === 0 ? "<root>" : path17.join(".");
+function pathName(path18) {
+  return path18.length === 0 ? "<root>" : path18.join(".");
 }
 function mcpParamPrimitiveToString(value) {
   if (typeof value === "string") return value;
@@ -23776,9 +23776,9 @@ function decodeMcpParamValue(value) {
     return;
   }
 }
-function valueAtPath(root, path17) {
+function valueAtPath(root, path18) {
   let node2 = root;
-  for (const key of path17) {
+  for (const key of path18) {
     if (node2 === null || typeof node2 !== "object") return void 0;
     node2 = node2[key];
   }
@@ -23798,17 +23798,17 @@ function validateMcpParamHeaders(declarations, args, headers2) {
     if (!((decl.type === "integer" || decl.type === "number") && CANONICAL_DECIMAL.test(decoded) && typeof bodyRaw === "number" ? Number(decoded) === bodyRaw : decoded === bodyString)) return paramHeaderMismatchRejection("param-header-mismatch", headerKey, `the ${headerKey} header decodes to ${JSON.stringify(decoded)} but the body carries ${pathName(decl.path)}=${JSON.stringify(bodyRaw)}`);
   }
 }
-function paramHeaderMismatchRejection(cell, header2, body) {
+function paramHeaderMismatchRejection(cell, header2, body2) {
   return {
     kind: "reject",
     rung: "param-header-validation",
     cell,
     httpStatus: 400,
     code: HEADER_MISMATCH_ERROR_CODE,
-    message: `Bad Request: the request headers and body disagree: ${body}`,
+    message: `Bad Request: the request headers and body disagree: ${body2}`,
     data: { mismatch: {
       header: header2,
-      body
+      body: body2
     } },
     settled: true
   };
@@ -23829,10 +23829,10 @@ function rejection(rung, cell, httpStatus, error62, settled) {
     settled
   };
 }
-function crossCheckMismatch(cell, header2, body, rung = "era-classification") {
-  return rejection(rung, cell, 400, new ProtocolError(HEADER_MISMATCH_ERROR_CODE, `Bad Request: the request headers and body disagree: ${body}`, { mismatch: {
+function crossCheckMismatch(cell, header2, body2, rung = "era-classification") {
+  return rejection(rung, cell, 400, new ProtocolError(HEADER_MISMATCH_ERROR_CODE, `Bad Request: the request headers and body disagree: ${body2}`, { mismatch: {
     header: header2,
-    body
+    body: body2
   } }), true);
 }
 function mcpNameSource(method, params) {
@@ -23896,9 +23896,9 @@ function carriesValidModernEnvelopeClaim(params) {
   const meta3 = requestMetaOf(params);
   return meta3 !== void 0 && validateEnvelopeMeta(meta3).length === 0;
 }
-function classifyBatch(body) {
-  if (body.length === 0) return rejection("jsonrpc-shape", "empty-batch", 400, new ProtocolError(ProtocolErrorCode.InvalidRequest, "Bad Request: empty JSON-RPC batch"), true);
-  for (const element of body) {
+function classifyBatch(body2) {
+  if (body2.length === 0) return rejection("jsonrpc-shape", "empty-batch", 400, new ProtocolError(ProtocolErrorCode.InvalidRequest, "Bad Request: empty JSON-RPC batch"), true);
+  for (const element of body2) {
     if (hasEnvelopeClaim(isPlainObject$2(element) ? element["params"] : void 0)) return rejection("jsonrpc-shape", "batch-with-modern-element", 400, new ProtocolError(ProtocolErrorCode.InvalidRequest, "Bad Request: JSON-RPC batches may not contain requests for protocol revision 2026-07-28 or later"), true);
     if (!(isJSONRPCRequest(element) || isJSONRPCNotification(element) || isJSONRPCResultResponse(element) || isJSONRPCErrorResponse(element))) return rejection("jsonrpc-shape", "batch-with-invalid-element", 400, new ProtocolError(ProtocolErrorCode.InvalidRequest, "Bad Request: JSON-RPC batch contains an invalid message"), true);
   }
@@ -23907,9 +23907,9 @@ function classifyBatch(body) {
     reason: "batch"
   };
 }
-function classifyRequestBody(request, body) {
-  const params = body.params;
-  const method = body.method;
+function classifyRequestBody(request, body2) {
+  const params = body2.params;
+  const method = body2.method;
   const headerVersion = request.protocolVersionHeader;
   const headerNamesModern = headerVersion !== void 0 && isModernProtocolVersion(headerVersion);
   if (method === "initialize" && !carriesValidModernEnvelopeClaim(params)) {
@@ -23931,7 +23931,7 @@ function classifyRequestBody(request, body) {
     return {
       kind: "modern",
       messageKind: "request",
-      message: body,
+      message: body2,
       classification: classificationForClaim(claimedVersion)
     };
   }
@@ -23947,9 +23947,9 @@ function classifyRequestBody(request, body) {
     ...headerVersion !== void 0 && { requestedVersion: headerVersion }
   };
 }
-function classifyNotificationBody(request, body) {
-  const params = body.params;
-  const method = body.method;
+function classifyNotificationBody(request, body2) {
+  const params = body2.params;
+  const method = body2.method;
   const headerVersion = request.protocolVersionHeader;
   const headerNamesModern = headerVersion !== void 0 && isModernProtocolVersion(headerVersion);
   if (hasEnvelopeClaim(params)) {
@@ -23968,7 +23968,7 @@ function classifyNotificationBody(request, body) {
     return {
       kind: "modern",
       messageKind: "notification",
-      message: body,
+      message: body2,
       classification
     };
   }
@@ -23977,7 +23977,7 @@ function classifyNotificationBody(request, body) {
     return {
       kind: "modern",
       messageKind: "notification",
-      message: body,
+      message: body2,
       classification: {
         era: "modern",
         revision: headerVersion
@@ -24001,14 +24001,14 @@ function classifyInboundRequest(request) {
     kind: "legacy",
     reason: "http-method"
   };
-  const body = request.body;
-  if (Array.isArray(body)) return classifyBatch(body);
-  if (isJSONRPCResultResponse(body) || isJSONRPCErrorResponse(body)) return {
+  const body2 = request.body;
+  if (Array.isArray(body2)) return classifyBatch(body2);
+  if (isJSONRPCResultResponse(body2) || isJSONRPCErrorResponse(body2)) return {
     kind: "legacy",
     reason: "response"
   };
-  if (isPlainObject$2(body) && isJSONRPCRequest(body)) return classifyRequestBody(request, body);
-  if (isPlainObject$2(body) && isJSONRPCNotification(body)) return classifyNotificationBody(request, body);
+  if (isPlainObject$2(body2) && isJSONRPCRequest(body2)) return classifyRequestBody(request, body2);
+  if (isPlainObject$2(body2) && isJSONRPCNotification(body2)) return classifyNotificationBody(request, body2);
   return rejection("jsonrpc-shape", "invalid-json-rpc-body", 400, new ProtocolError(ProtocolErrorCode.InvalidRequest, "Bad Request: the request body is not a valid JSON-RPC message"), true);
 }
 function modernOnlyStrictRejection(route, supportedVersions) {
@@ -24168,7 +24168,7 @@ function convertStandardElicitationSchema(schema) {
 function isAnnotationOnlyJsonSchemaKeyword(key) {
   return ANNOTATION_ONLY_JSON_SCHEMA_KEYWORDS.has(key) || key.startsWith("x-");
 }
-function walkProperty(node2, path17, vendor, unsupported) {
+function walkProperty(node2, path18, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -24176,8 +24176,8 @@ function walkProperty(node2, path17, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path17}.${key}`);
-  } else unsupported.push(`${path17}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path18}.${key}`);
+  } else unsupported.push(`${path18}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -24194,11 +24194,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path17 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path17}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path18 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path18}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path17 ? `${path17}.${key}` : key;
+    const childPath = path18 ? `${path18}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -24237,14 +24237,14 @@ function inputRequiredRoundsExceededMessage(method, maxRounds) {
   return `Multi-round-trip request '${method}' still required input after ${maxRounds} rounds (inputRequired.maxRounds)`;
 }
 function sleep(ms, signal) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     if (signal?.aborted) {
       reject(signal.reason instanceof SdkError ? signal.reason : new SdkError(SdkErrorCode.RequestTimeout, String(signal.reason)));
       return;
     }
     const timer = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
-      resolve();
+      resolve2();
     }, ms);
     const onAbort = () => {
       clearTimeout(timer);
@@ -24967,9 +24967,9 @@ var init_src_DdvbAHrR = __esm({
         });
         const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta3);
         if (!parsed.success) for (const issue2 of parsed.error.issues) {
-          const path17 = issue2.path.map(String);
-          const key = path17.length > 0 ? path17.join(".") : "_meta";
-          if (path17.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+          const path18 = issue2.path.map(String);
+          const key = path18.length > 0 ? path18.join(".") : "_meta";
+          if (path18.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
           issues.push({
             key,
             problem: issue2.message
@@ -26114,7 +26114,7 @@ var init_src_DdvbAHrR = __esm({
         const flowStartedAt = Date.now();
         let onAbort;
         let cleanupMessageId;
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           const earlyReject = (error62) => {
             reject(error62);
           };
@@ -26183,7 +26183,7 @@ var init_src_DdvbAHrR = __esm({
             }
             if (decoded.kind === "invalid") return reject(decoded.error);
             if (decoded.kind === "input_required") {
-              if (options?.allowInputRequired === true) return resolve(manualInputRequiredValue(decoded));
+              if (options?.allowInputRequired === true) return resolve2(manualInputRequiredValue(decoded));
               const flow = {
                 codec: codec2,
                 request,
@@ -26195,11 +26195,11 @@ var init_src_DdvbAHrR = __esm({
                   params
                 }, resultSchema, legOptions)
               };
-              return resolve(this._resolveNonCompleteResult(decoded, flow));
+              return resolve2(this._resolveNonCompleteResult(decoded, flow));
             }
             const result = decoded.result;
             validateStandardSchema(resultSchema, result).then((parseResult) => {
-              if (parseResult.success) resolve(parseResult.data);
+              if (parseResult.success) resolve2(parseResult.data);
               else reject(new SdkError(SdkErrorCode.InvalidResult, `Invalid result for ${request.method}: ${parseResult.error}`));
             }, reject);
           });
@@ -27273,9 +27273,9 @@ var init_ajvProvider_DyjnscPj = __esm({
         throw(error62) {
           return this._leafNode(new Throw(error62));
         }
-        block(body, nodeCount) {
+        block(body2, nodeCount) {
           this._blockStarts.push(this._nodes.length);
-          if (body) this.code(body).endBlock(nodeCount);
+          if (body2) this.code(body2).endBlock(nodeCount);
           return this;
         }
         endBlock(nodeCount) {
@@ -28486,13 +28486,13 @@ var init_ajvProvider_DyjnscPj = __esm({
         validateFunction(it, () => (0, boolSchema_1.topBoolOrEmptySchema)(it));
       }
       exports.validateFunctionCode = validateFunctionCode;
-      function validateFunction({ gen, validateName, schema, schemaEnv, opts }, body) {
+      function validateFunction({ gen, validateName, schema, schemaEnv, opts }, body2) {
         if (opts.code.es5) gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${names_1.default.valCxt}`, schemaEnv.$async, () => {
           gen.code((0, codegen_1._)`"use strict"; ${funcSourceUrl(schema, opts)}`);
           destructureValCxtES5(gen, opts);
-          gen.code(body);
+          gen.code(body2);
         });
-        else gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${destructureValCxt(opts)}`, schemaEnv.$async, () => gen.code(funcSourceUrl(schema, opts)).code(body));
+        else gen.func(validateName, (0, codegen_1._)`${names_1.default.data}, ${destructureValCxt(opts)}`, schemaEnv.$async, () => gen.code(funcSourceUrl(schema, opts)).code(body2));
       }
       function destructureValCxt(opts) {
         return (0, codegen_1._)`{${names_1.default.instancePath}="", ${names_1.default.parentData}, ${names_1.default.parentDataProperty}, ${names_1.default.rootData}=${names_1.default.data}${opts.dynamicRef ? (0, codegen_1._)`, ${names_1.default.dynamicAnchors}={}` : codegen_1.nil}}={}`;
@@ -29018,7 +29018,7 @@ var init_ajvProvider_DyjnscPj = __esm({
         ref = (0, resolve_1.resolveUrl)(this.opts.uriResolver, baseId, ref);
         const schOrFunc = root.refs[ref];
         if (schOrFunc) return schOrFunc;
-        let _sch = resolve.call(this, root, ref);
+        let _sch = resolve2.call(this, root, ref);
         if (_sch === void 0) {
           const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
           const { schemaId } = this.opts;
@@ -29044,7 +29044,7 @@ var init_ajvProvider_DyjnscPj = __esm({
       function sameSchemaEnv(s1, s2) {
         return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
       }
-      function resolve(root, ref) {
+      function resolve2(root, ref) {
         let sch;
         while (typeof (sch = this.refs[ref]) == "string") ref = sch;
         return sch || this.schemas[ref] || resolveSchema.call(this, root, ref);
@@ -29282,8 +29282,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
         return ind;
       }
-      function removeDotSegments(path17) {
-        let input2 = path17;
+      function removeDotSegments(path18) {
+        let input2 = path18;
         const output2 = [];
         let nextSlash = -1;
         let len = 0;
@@ -29621,8 +29621,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         if (wsComponent.resourceName) {
           const queryIndex = wsComponent.resourceName.indexOf("?");
-          const path17 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-          wsComponent.path = path17 && path17 !== "/" ? path17 : void 0;
+          const path18 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+          wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
           wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
           wsComponent.resourceName = void 0;
         }
@@ -29739,7 +29739,7 @@ var init_ajvProvider_DyjnscPj = __esm({
         else if (typeof uri === "object") uri = parse3(serialize(uri, options), options);
         return uri;
       }
-      function resolve(baseURI, relativeURI, options) {
+      function resolve2(baseURI, relativeURI, options) {
         const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
         const { parsed: baseParsed, malformedAuthorityOrPort: baseMalformed, malformedPercentEncoding: baseMalformedPercentEncoding, malformedSchemeSpecific: baseMalformedSchemeSpecific, malformedHost: baseMalformedHost, malformedScheme: baseMalformedScheme } = parseWithStatus(baseURI, schemelessOptions);
         const { parsed: relativeParsed, malformedAuthorityOrPort: relativeMalformed, malformedPercentEncoding: relativeMalformedPercentEncoding, malformedSchemeSpecific: relativeMalformedSchemeSpecific, malformedHost: relativeMalformedHost, malformedScheme: relativeMalformedScheme } = parseWithStatus(relativeURI, schemelessOptions);
@@ -30021,7 +30021,7 @@ var init_ajvProvider_DyjnscPj = __esm({
       const fastUri = {
         SCHEMES,
         normalize,
-        resolve,
+        resolve: resolve2,
         resolveComponent,
         equal,
         serialize,
@@ -30419,7 +30419,7 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         errorsText(errors = this.errors, { separator = ", ", dataVar = "data" } = {}) {
           if (!errors || errors.length === 0) return "No errors";
-          return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text, msg) => text + separator + msg);
+          return errors.map((e) => `${dataVar}${e.instancePath} ${e.message}`).reduce((text2, msg) => text2 + separator + msg);
         }
         $dataMetaSchema(metaSchema, keywordsJsonPointers) {
           const rules = this.RULES.all;
@@ -33870,8 +33870,8 @@ function protectedResourceMetadataPath(resourceServerUrl) {
   const rsPath = stripTrailingSlash(resourceServerUrl.pathname);
   return `/.well-known/oauth-protected-resource${rsPath === "/" ? "" : rsPath}`;
 }
-function stripTrailingSlash(path17) {
-  return path17.length > 1 && path17.endsWith("/") ? path17.slice(0, -1) : path17;
+function stripTrailingSlash(path18) {
+  return path18.length > 1 && path18.endsWith("/") ? path18.slice(0, -1) : path18;
 }
 function supportsScopeChallengeResolver(transport) {
   return typeof transport === "object" && transport !== null && "setScopeChallengeResolver" in transport && typeof transport.setScopeChallengeResolver === "function";
@@ -33886,9 +33886,9 @@ function validateScopeChallenge(challenge) {
   if (challenge.errorDescription !== void 0 && !/^[\u0020-\u0021\u0023-\u005B\u005D-\u007E]+$/.test(challenge.errorDescription)) throw new TypeError("scope challenge errorDescription must satisfy the RFC 6750 error-description grammar");
   return challenge;
 }
-async function findScopeChallenge(requests, authInfo, resolve) {
+async function findScopeChallenge(requests, authInfo, resolve2) {
   for (const request of requests) {
-    const challenge = await resolve({
+    const challenge = await resolve2({
       request,
       ...authInfo !== void 0 && { authInfo }
     });
@@ -34107,15 +34107,15 @@ var init_mcp_oHn3ureC = __esm({
         };
         if (isJSONRPCRequest(message)) {
           this._requestId = message.id;
-          let resolve;
+          let resolve2;
           let reject;
           const promise2 = new Promise((promiseResolve, promiseReject) => {
-            resolve = promiseResolve;
+            resolve2 = promiseResolve;
             reject = promiseReject;
           });
           this._deferredResponse = {
             promise: promise2,
-            resolve,
+            resolve: resolve2,
             reject,
             settled: false
           };
@@ -35976,26 +35976,26 @@ async function readRequestBody(request, maxBytes = DEFAULT_MAX_REQUEST_BODY_SIZE
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
   let received = 0;
-  let text = "";
+  let text2 = "";
   try {
     for (; ; ) {
       const { done, value } = await reader.read();
       if (done) break;
       received += value.byteLength;
       if (received > maxBytes) return { tooLarge: true };
-      text += decoder.decode(value, { stream: true });
+      text2 += decoder.decode(value, { stream: true });
     }
   } finally {
     reader.releaseLock();
   }
   return {
     tooLarge: false,
-    text: text + decoder.decode()
+    text: text2 + decoder.decode()
   };
 }
-function echoableRequestId(body) {
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
-  const { method, id } = body;
+function echoableRequestId(body2) {
+  if (body2 === null || typeof body2 !== "object" || Array.isArray(body2)) return null;
+  const { method, id } = body2;
   if (typeof method !== "string") return null;
   return typeof id === "string" || typeof id === "number" ? id : null;
 }
@@ -36107,7 +36107,7 @@ function standardHeadersOf(request) {
 }
 async function classifyEntryRequest(request, providedParsedBody, needsForward = true, maxRequestBodySize = DEFAULT_MAX_REQUEST_BODY_SIZE) {
   const httpMethod = request.method.toUpperCase();
-  let body;
+  let body2;
   let parsedBody = providedParsedBody;
   let forwardRequest = request;
   let unparseable = false;
@@ -36123,13 +36123,13 @@ async function classifyEntryRequest(request, providedParsedBody, needsForward = 
         return { step: "unreadable-body" };
       }
       try {
-        body = bodyText.length === 0 ? void 0 : JSON.parse(bodyText);
+        body2 = bodyText.length === 0 ? void 0 : JSON.parse(bodyText);
       } catch {
         unparseable = true;
       }
-      if (!unparseable && body !== void 0) parsedBody = body;
-    } else body = parsedBody;
-    if (unparseable || body === void 0) return {
+      if (!unparseable && body2 !== void 0) parsedBody = body2;
+    } else body2 = parsedBody;
+    if (unparseable || body2 === void 0) return {
       step: "no-json-body",
       forwardRequest
     };
@@ -36139,9 +36139,9 @@ async function classifyEntryRequest(request, providedParsedBody, needsForward = 
     outcome: classifyInboundRequest({
       httpMethod,
       ...standardHeadersOf(request),
-      ...body !== void 0 && { body }
+      ...body2 !== void 0 && { body: body2 }
     }),
-    body,
+    body: body2,
     parsedBody,
     forwardRequest
   };
@@ -36297,12 +36297,12 @@ function createMcpHandler(factory, options = {}) {
       if (legacyHandler !== void 0) return legacyHandler(classified.forwardRequest, { ...authInfo !== void 0 && { authInfo } });
       return jsonRpcErrorResponse(400, -32700, "Parse error: the request body is not valid JSON");
     }
-    const { outcome, body, parsedBody, forwardRequest } = classified;
+    const { outcome, body: body2, parsedBody, forwardRequest } = classified;
     try {
       switch (outcome.kind) {
         case "reject":
           reportError(/* @__PURE__ */ new Error(`Rejected inbound request (${outcome.cell}): ${outcome.message}`));
-          return rejectionResponse(outcome, echoableRequestId(body));
+          return rejectionResponse(outcome, echoableRequestId(body2));
         case "modern":
           return await serveModern(outcome, request, authInfo);
         case "legacy":
@@ -36310,7 +36310,7 @@ function createMcpHandler(factory, options = {}) {
       }
     } catch (error62) {
       reportError(toError(error62));
-      return internalServerErrorResponse(echoableRequestId(body));
+      return internalServerErrorResponse(echoableRequestId(body2));
     }
   }
   const fetchFace = async (request, requestOptions) => {
@@ -36720,13 +36720,13 @@ data:
           const request = req;
           let rawMessage;
           if (options?.parsedBody === void 0) try {
-            const body = await readRequestBody(req, this._maxRequestBodySize);
-            if (body.tooLarge) {
+            const body2 = await readRequestBody(req, this._maxRequestBodySize);
+            if (body2.tooLarge) {
               const message = requestBodyTooLargeMessage(this._maxRequestBodySize);
               this.onerror?.(new Error(message));
               return this.createJsonErrorResponse(413, -32e3, message);
             }
-            rawMessage = JSON.parse(body.text);
+            rawMessage = JSON.parse(body2.text);
           } catch (error62) {
             this.onerror?.(error62);
             return this.createJsonErrorResponse(400, -32700, "Parse error: Invalid JSON");
@@ -36783,9 +36783,9 @@ data:
           const streamId = crypto.randomUUID();
           const initRequest = messages.find((m) => isInitializeRequest(m));
           const clientProtocolVersion = initRequest ? initRequest.params.protocolVersion : req.headers.get("mcp-protocol-version") ?? DEFAULT_NEGOTIATED_PROTOCOL_VERSION;
-          if (this._enableJsonResponse) return new Promise((resolve) => {
+          if (this._enableJsonResponse) return new Promise((resolve2) => {
             this._streamMapping.set(streamId, {
-              resolveJson: resolve,
+              resolveJson: resolve2,
               cleanup: () => {
                 this._streamMapping.delete(streamId);
               }
@@ -37027,6 +37027,7 @@ __export(context_exports, {
   agent: () => agent,
   apiKey: () => apiKey,
   base: () => base,
+  canManage: () => canManage,
   common: () => common,
   connection: () => connection,
   createServer: () => createServer,
@@ -37043,6 +37044,7 @@ __export(context_exports, {
   readCredentials: () => readCredentials,
   reply: () => reply,
   resolveService: () => resolveService,
+  setupSteps: () => setupSteps,
   slimGroup: () => slimGroup,
   slimIssue: () => slimIssue,
   stdioConnection: () => stdioConnection,
@@ -37106,22 +37108,22 @@ async function projectFor(game) {
     list = await workspaceGames(true);
     hit = find2();
   }
-  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play), and the setup steps for adding Glitchless to a game are at ${SETUP_URL}.`);
+  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play). To add Glitchless to a game: ${setupSteps()}.`);
   if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(", ")}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(", ")}.`);
   c.game = hit.id;
   return hit.id;
 }
 async function headers(extra = {}) {
   const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || "mcp";
-  const named = !isWorkspace() && (calls.getStore()?.game || conn().game);
-  return { "x-glitchless-client": client, ...apiKey() ? { "x-glitchless-api-key": apiKey() } : {}, ...isWorkspace() ? { "x-glitchless-project": await projectFor(calls.getStore()?.game) } : {}, ...named ? { "x-glitchless-game": encodeURIComponent(named) } : {}, ...extra };
+  const named2 = !isWorkspace() && (calls.getStore()?.game || conn().game);
+  return { "x-glitchless-client": client, ...apiKey() ? { "x-glitchless-api-key": apiKey() } : {}, ...isWorkspace() ? { "x-glitchless-project": await projectFor(calls.getStore()?.game) } : {}, ...named2 ? { "x-glitchless-game": encodeURIComponent(named2) } : {}, ...extra };
 }
-async function agent(method, p, body) {
+async function agent(method, p, body2) {
   if (!isWorkspace()) throw new Error("This needs a workspace: sign in with glitchless_sign_in (or run `npx -y glitchless-mcp login`) on Glitchless Cloud.");
   const res = await conn().fetch(`${base()}/v1/agent${p}`, {
     method,
-    headers: { "x-glitchless-api-key": apiKey(), ...body ? { "content-type": "application/json" } : {} },
-    ...body ? { body: JSON.stringify(body) } : {}
+    headers: { "x-glitchless-api-key": apiKey(), ...body2 ? { "content-type": "application/json" } : {} },
+    ...body2 ? { body: JSON.stringify(body2) } : {}
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`${data.error || `HTTP ${res.status}`}`);
@@ -37148,11 +37150,11 @@ function windowNote() {
   return parts.length ? `
 (Note: ${parts.join("; ")}.)` : "";
 }
-async function write(method, p, body) {
+async function write(method, p, body2) {
   const res = await conn().fetch(`${base()}${p}`, {
     method,
     headers: await headers({ "content-type": "application/json" }),
-    ...body ? { body: JSON.stringify(body) } : {}
+    ...body2 ? { body: JSON.stringify(body2) } : {}
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 403) throw new Error(`${data.error || "forbidden"}. Saving a dashboard needs a key with the dashboard scope (a workspace key from glitchless_sign_in has it).`);
@@ -37170,7 +37172,7 @@ async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
   const { services } = await query("services");
-  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next; the setup steps for adding the SDK are at ${SETUP_URL}. Data shows a few minutes after a level is played.`);
+  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next. To add the SDK: ${setupSteps()}. Data shows a few minutes after a level is played.`);
   return services.sort((a, b) => b.last_seen - a.last_seen)[0].service;
 }
 function range(hours = 24) {
@@ -37211,13 +37213,13 @@ function toolList({ remote = false, scopes = null } = {}) {
 function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
   const server = new McpServer(
     { name: "glitchless", title: "Glitchless", version: VERSION, websiteUrl: "https://www.glitchless.gg", icons: [{ src: "https://app.glitchless.gg/brand/glitchless-icon-512.png", mimeType: "image/png", sizes: ["512x512"] }] },
-    { instructions: instructions(remote) }
+    { instructions: instructions(remote, !scopes || scopes.includes("manage")) }
   );
   for (const t of tools) {
     if (remote && t.local || scopes && !scopes.includes(t.scope)) continue;
     const { inputSchema = {}, ...config2 } = t.config;
     server.registerTool(t.name, { ...config2, title: titleOf(t), inputSchema: external_exports.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
-      const run2 = () => calls.run({ game: args.game, server, remote }, async () => {
+      const run2 = () => calls.run({ game: args.game, server, remote, scopes }, async () => {
         try {
           return await t.handler(args, ctx);
         } catch (err) {
@@ -37229,9 +37231,10 @@ function createServer({ remote = false, scopes = null, connection: c = null } = 
   }
   return server;
 }
-function instructions(remote) {
+function instructions(remote, manage = true) {
   return [
     "Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker.",
+    manage ? "To add Glitchless to a game (the person asks you to set it up, or for performance monitoring, analytics or telemetry in their game), call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files: what you find in the game's folder. It makes the game, or finds the one already here by that name, and returns that engine's steps with where the game sends and its client token in them." : `To add Glitchless to a game, follow the setup steps at ${SETUP_URL}: this connection may only read, so the person makes the game in Glitchless, and glitchless_list_games then has its client token.`,
     remote ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_links makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else." : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_links makes a read-only link to a board.",
     "Start with glitchless_triage for a game's headline numbers and ranked, evidence-backed findings, then drill in with glitchless_performance, glitchless_get_error, glitchless_player_funnel (levels, and with hotspots where players die on one) or glitchless_session.",
     "When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.",
@@ -37257,7 +37260,7 @@ function noPlayersLine(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
+var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, canManage, setupSteps, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
@@ -37280,6 +37283,11 @@ var init_context = __esm({
     isWorkspace = () => conn().apiKey.startsWith("gl_ws_");
     workspaceIntake = () => conn().games?.intake ?? null;
     SETUP_URL = "https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md";
+    canManage = () => {
+      const scopes = calls.getStore()?.scopes;
+      return !scopes || scopes.includes("manage");
+    };
+    setupSteps = () => canManage() ? "glitchless_create_game with the game's name and its engine (or files: what's in the game's folder) returns the steps for that engine" : `the setup steps are at ${SETUP_URL}`;
     calls = new AsyncLocalStorage();
     isRemote = () => !!calls.getStore()?.remote;
     common = {
@@ -37311,8 +37319,8 @@ import fs2 from "node:fs";
 import os2 from "node:os";
 import path2 from "node:path";
 import { spawn } from "node:child_process";
-async function call(url2, p, body) {
-  const res = await fetch(`${url2}/v1/agent${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+async function call(url2, p, body2) {
+  const res = await fetch(`${url2}/v1/agent${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body2) });
   const data = await res.json().catch(() => ({}));
   if (res.status === 404 && p === "/connect") throw new Error(`${url2} has no agent sign-in. A self-hosted Glitchless server needs no key; set GLITCHLESS_URL to it instead.`);
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -37609,9 +37617,11 @@ function sessionRow(s) {
     ...s.rage_quit ? { rage_quit: true } : {}
   };
 }
-function nextStep(game, intake) {
+function nextStep(game, intake, manage) {
   if (game.demo) return "This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.";
-  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, follow the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll("<the game>", game.name)}`;
+  const sends = `client_token ${game.client_token}${intake ? ` and intake ${intake}` : ""}`;
+  const how = manage ? `call glitchless_create_game with game: "${game.name}" and engine (or files: what's in its folder), which returns the steps for its engine with ${sends} in them` : `follow the setup steps at ${SETUP_URL} with ${sends}`;
+  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, ${how}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll("<the game>", game.name)}`;
 }
 var CANT_EDIT;
 var init_core3 = __esm({
@@ -37624,15 +37634,15 @@ var init_core3 = __esm({
         const list = await workspaceGames(true);
         if (!list.length) {
           const who = await agent("GET", "/whoami").catch(() => null);
-          const make = who?.scopes?.includes("manage") ? "Make one with glitchless_create_game (name: the game's name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play." : `Make one in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
-          return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, []);
+          const make = who?.scopes?.includes("manage") ? "Make one with glitchless_create_game (name: the game's name; with its engine, or files, it also returns the steps that add Glitchless to the game's code), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play." : `Make one in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links". Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}.`;
+          return reply(`No games in this workspace yet. ${make} ${CANT_EDIT.replaceAll("<the game>", "my game")}`, []);
         }
         const intake = workspaceIntake();
-        const rows = list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake) });
+        const rows = list.map((g) => g.services?.length ? g : { ...g, next_step: nextStep(g, intake, canManage()) });
         if (list.every((g) => g.demo)) {
           const who = await agent("GET", "/whoami").catch(() => null);
-          const add2 = who?.scopes?.includes("manage") ? "To add the person's own game, glitchless_create_game with its name." : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games.`;
-          return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add2} Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll("<the game>", "my game")}`, rows);
+          const add2 = who?.scopes?.includes("manage") ? "To add the person's own game, glitchless_create_game with its name, and with its engine (or files: what's in the game's folder) for the steps that put Glitchless into the game's code." : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? "the dashboard"}): this connection may only read, so it can't create games. Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}.`;
+          return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add2} ${CANT_EDIT.replaceAll("<the game>", "my game")}`, rows);
         }
         return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, rows);
       }
@@ -37989,6 +37999,217 @@ var init_pictures = __esm({
   }
 });
 
+// src/skills.js
+var TEXTS;
+var init_skills = __esm({
+  "src/skills.js"() {
+    TEXTS = {
+      "plugin/glitchless/skills/instrument/SKILL.md": "---\nname: instrument\ndescription: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or \"observability\" in a game, or asks to add Glitchless.\n---\n\n# Instrument a game with Glitchless\n\nGoal: after this skill, every play session reports how the game *felt* (frame times, hitches and their causes),\nwhat broke (errors, crashes) and what the player did (levels, deaths, pickups, positions), and you (the agent)\nhave a way to measure the running game before and after a change.\n\n## 0. Find the engine, and the settings\n\n| You find | Engine | Follow |\n| --- | --- | --- |\n| `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 6.0+ | [references/unity.md](references/unity.md) |\n| `project.godot` | Godot 4.5+ | the Godot addon's README: `godot/addons/glitchless/README.md` in the Glitchless repo (`~/.glitchless/godot/addons/glitchless/README.md` if it's cloned there), then [references/godot.md](references/godot.md) for bug reports, streams, properties and multiplayer |\n| a `*.uproject` file | Unreal Engine 5.8 (5.7 untested) | [references/unreal.md](references/unreal.md) |\n| `three` or `@react-three/fiber` in package.json | Three.js | [references/threejs.md](references/threejs.md) |\n| a Rojo `default.project.json` (or `*.project.json`), `wally.toml`, `*.rbxl` / `*.rbxlx`, or `.luau` scripts that call `game:GetService` | Roblox | [references/roblox.md](references/roblox.md) |\n| `phaser` in package.json, or a `<script>` that loads Phaser | Phaser 3.60+ or 4 | [references/phaser.md](references/phaser.md) |\n| `@babylonjs/core` or `babylonjs` in package.json, or a `<script>` that loads Babylon.js | Babylon.js 5+ | [references/babylon.md](references/babylon.md) |\n| `playcanvas` in package.json, a PlayCanvas Editor project (scripts using `pc.createScript` or `pc.Script`), or a `<script>` that loads PlayCanvas | PlayCanvas 2.x | [references/playcanvas.md](references/playcanvas.md) |\n| a `*.yyp` file | GameMaker 2024.2+ | [references/gamemaker.md](references/gamemaker.md) |\n\nRead only the file for this game's engine: each one walks through reading the game, installing,\nlevels and events, bots and measuring, and checking it works. Apply these settings first.\n\nSettings, for every engine:\n\n- **Intake URL and client token.** If the user gave you them (a hosted Glitchless server prints both, for example\n  `Send telemetry to https://api.example.com with client token gl_pub_\u2026`), use those. Otherwise use\n  `http://localhost:7777` and `gl_pub_dev`, a local server. On Glitchless Cloud with no token yet, call\n  `glitchless_create_game`: it returns the game's client token and intake URL. The hosted MCP server\n  (`https://api.glitchless.gg/mcp`) is signed in once it's connected; a local one signs in first\n  (`glitchless_sign_in`, or `npx -y glitchless-mcp login`; the user approves a code). The client token is public and\n  write-only, so it may live in the game's source. A secret or workspace key (`gl_sk_\u2026`, `gl_ws_\u2026`) never goes in\n  the game.\n- **Privacy.** Keep the default anonymous mode: no player ID, coarse device facts, no positions. Ask the user\n  before choosing another mode, since the game's privacy policy and store answers must then say so (each SDK's\n  PRIVACY.md lists every field and has the wording). If they want to know whether players come back (retention:\n  D1, D7, D30), offer install mode: it adds only a random player ID kept on the device (`privacy: 'install'`;\n  Godot `\"privacy\": \"install\"`; Unity `Privacy = Privacy.Install`; Unreal `Privacy=Install`). Anonymous mode\n  can't count returning players. Full mode adds a stored player ID, device detail and positions. The Roblox SDK is\n  anonymous only: on Roblox a stored ID would be kept against the player's account, which Roblox's rules protect. For\n  a Roblox game's retention, connect Roblox on Glitchless Cloud instead (Settings \u2192 Integrations \u2192 Roblox, with an Open\n  Cloud API key that has only `universe.analytics:read` for the experience): Roblox's own D1, D7 and D30, daily active\n  and new users, Robux and its crash rate by place version then sit next to what the SDK measures.\n- **A \"share performance data\" setting.** If the game has a settings or options menu, offer to add a toggle wired to\n  Glitchless's off switch, so players can turn it off and back on at any time (store rules such as the Unity Asset\n  Store's ask for it, and it lets the store forms answer \"optional\"): `glitchless.setEnabled(on)`; Godot\n  `Glitchless.set_enabled(on)`; Unity `Glitchless.SetEnabled(on)`; Unreal `FGlitchless::SetEnabled(bOn)` or the\n  Blueprint node Set Enabled; GameMaker `glitchless_set_enabled(on)`; Roblox `Glitchless.setEnabled(on)` from the\n  LocalScript that runs the menu (or `Glitchless.setEnabled(player, on)` on the server). Off stops measuring and sending at once and drops\n  what was waiting; on starts a new session. Glitchless saves the choice on the device itself, so it holds from the\n  first frame of the next launch: show the toggle from the game's own saved setting and call the switch when it\n  changes (calling it with the saved value at start changes nothing when they agree). If the user wants players to\n  agree before anything is collected, set the opt-in option (`optIn: true`; Godot and GameMaker `opt_in`; Unity\n  `OptIn`; Unreal `bOptIn` or Project Settings > Opt In) and call the switch with `true` when the player says yes.\n  Each SDK's reference below has the code.\n- **Bots.** Sessions from autoplay bots and tests must be marked synthetic, so they stay out of player numbers. An\n  autoplay bot (`--autoplay --seed=N` in an engine game, `?autoplay=1&seed=N` on the web) also lets `glitchless_playtest`\n  compare builds before and after a change; the Unity, Godot, Unreal, GameMaker and Phaser references show its\n  `glitchless.playtest.json`.\n- **Testers.** On iOS the Godot, Unity and Unreal SDKs tell a TestFlight install from an App Store one themselves\n  (`distribution` in the device fields) and mark its sessions `tester`, out of player numbers, even though a\n  TestFlight build is a release build that reports `prod`. Don't pass a session type that would undo this. On\n  Android the Godot SDK marks debug builds and sideloaded ones (adb, an APK file) `tester` the same way; a game sold\n  as an APK outside the stores (itch.io) passes `session_type: \"user\"`. Google Play's testing tracks can't be told\n  apart on the device: if the developer ships test builds there, give the testing-track build its own env (`beta`)\n  from a build flag. The developer's own play (checking the setup, a playtest) counts as a player's: on Glitchless\n  Cloud, once it arrives, offer to mark their player as the team's with `glitchless_mark_known`'s `player` (`glitchless_session`\n  without a session id lists the latest sessions with their `player_id`). It then reads as `tester` everywhere, past\n  sessions too.\n- **Version.** Find where the game's version lives and pass it; bump it on every release so Glitchless can compare versions.\n\n## Every engine: the game's own metrics, and its board\n\nGames differ: a puzzle game cares about solve time and hints, a mobile game about opens, modes, the paywall and\npurchases, a platformer about where players die. Glitchless doesn't assume a genre, so this part is yours.\n\n1. Find the moments this game's designer would want counted, and send each with `track`: one event name per\n   moment, plus one word or a few attributes about it. Never anything about the player.\n   - Three.js or Phaser: `glitchless.track('play', { mode: 'endless' })`\n   - Godot: `Glitchless.track(\"play\", \"endless\")` (one word becomes the attribute `what`) or a dictionary\n   - Unity: `Glitchless.Track(\"play\", \"endless\");` or a `Dictionary<string, object>`\n   - Unreal: `FGlitchless::Track(TEXT(\"play\"), TEXT(\"endless\"));` (the attribute `what`) or a `TMap` of attributes\n     and one of numbers; in Blueprint, Track Event (What) or Track Event\n   - GameMaker: `glitchless_track(\"play\", \"endless\");` (the attribute `what`) or a struct\n   - Roblox: `Glitchless.track(player, \"play\", { mode = \"endless\" })` in a server script, or\n     `Glitchless.track(\"play\", { mode = \"endless\" })` in a LocalScript\n\n   Good candidates: the game opening (with the edition, free or full), a mode or run starting, a run ending and\n   how, shop and paywall views and where they were opened, purchases started and finished, hints, choices that\n   matter (difficulty), shares and rating prompts. Levels, stages and puzzles go through levelStart,\n   levelComplete and levelFail, not `track`. Attributes are strings, numbers, booleans or lists of them, at most 12\n   per event.\n\n   Send them in the shape boards can measure:\n   - **An outcome as a boolean**: `won: true`, `picked: true`, `top: true`, so a board can give its rate by hero,\n     weapon or banner, with how sure it is. A word (`result: 'win'`) works too, and can go next to the boolean.\n     Unreal: until its attributes take booleans, send the outcome as 1 or 0 in the numbers map; rates read both alike.\n   - **An amount as a number**: `duration_s: 184`, `wait_s: 41`, `placement: 17`, `floor: 14`, never `\"3:04\"`.\n     Boards give its median, its p90 and a histogram, and its average.\n   - **What a match or run used as a list**: `deck: ['hog_rider', 'fireball']`, `items: [...]`, `boons: [...]`. Each\n     element counts (the first 16), so a board shows \"decks with each card\" and their win rate. A list holds the\n     game's words, never people (party members' names, friends).\n   - **One event at the end of each match or run** with its outcome and numbers (`match_end`, `run_end`,\n     `battle_end`), not one per hit: rates and distributions split by another attribute read a session's first 16\n     of an event.\n   - **Bands, not exact values, for what describes the player**: `level_band: '30-39'`, `trophy_band: '3000-3499'`.\n\n   ```js\n   glitchless.track('match_end', { hero: 'ember', won: true, duration_s: 1930, items: ['boots', 'blink', 'bkb'] });\n   ```\n\n   And four calls for what `track` shouldn't carry (each engine's reference has its spelling):\n   - **Track a moment, count a stream.** Anything that happens many times a second (shots, hits, kills, gold and XP\n     pickups, taps) goes through `count(name, attrs, n)`: the SDK adds it up per 5-second window (up to 4 words to\n     group by, up to 4 numbers summed: `count('gold', { source: 'loot', amount: 35 })`) and sends one `counts` event,\n     so the queue never fills with them. Boards read a counter by its name like any event. A `track` per hit would\n     push frame windows out of the queue.\n   - **Properties: what holds for the session.** `setProperties({ rank: 'gold', class: 'druid', region: 'eu' })` where\n     the game learns it (after sign-in, at the menu, at matchmaking); every board then splits and filters by it\n     (`$rank`). Bands and the game's words only, at most 12 keys, set again each session: never a name, an account or\n     device ID, an email, an exact level or amount (the SDKs and the server drop keys like `user_id` and values shaped\n     like an ID). They go in every privacy mode, so the game's privacy page should mention them (each PRIVACY.md has\n     the paragraph). What changes from match to match (hero, deck, map) goes on the event or the level start.\n   - **Level attributes.** `levelStart('nmd_ghoa', { tier: 'pit_80', party_size: 3 })`: what describes the attempt,\n     so boards show clears and wipes by tier, group size or build. The outcome after it needs nothing more.\n   - **Groups and zones.** `setGroup('match', id)` with the match ID the game's server made, the same on every\n     player and on the server (the SDKs hash it the same way before sending it, by default); `setGroup('match', null)`\n     ends it. `setGroup('party', id)` for a party (never a guild or friends list), `setGroup('run')` for a roguelite\n     run (the SDK makes its ID). `setZone(name)` for where the player is in an open world or a hub (an MMO zone, a room, a\n     lobby hall): not a level, it never ends in a win or a fail. Time in each zone and frame time per zone come from the\n     frames drawn there, so don't send zone entries or zone timing as events.\n\n   Purchases have one convention in every engine, so boards can add them up into revenue: a `purchase` event\n   when the store confirms it, with `amount` (a number in the currency's units: 4.99, not 499), `currency` (the\n   ISO code the store charged in) and `item`. A game has one currency on its boards; purchases in another are\n   listed as left out, not added in. Never send receipts, order ids or payment details. A free test purchase\n   (TestFlight, Xcode, a Play licence tester) is not revenue: the engine SDKs add `sandbox: true` to purchases in a\n   TestFlight or development install on iOS by themselves, and where the game's billing library says a purchase is\n   a sandbox one (RevenueCat's `isSandbox`, on Android too) pass `sandbox: true` yourself. Boards count those\n   purchases but never add them into revenue.\n   - Web games (Three.js, Phaser, Babylon.js, PlayCanvas): `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })`\n   - Godot: `Glitchless.track(\"purchase\", {\"amount\": 4.99, \"currency\": \"USD\", \"item\": \"gems_500\"})`\n   - Unity: `Glitchless.Track(\"purchase\", new Dictionary<string, object> { [\"amount\"] = 4.99, [\"currency\"] = \"USD\", [\"item\"] = \"gems_500\" });`\n   - Unreal: `FGlitchless::Track(TEXT(\"purchase\"), {{TEXT(\"currency\"), TEXT(\"USD\")}, {TEXT(\"item\"), TEXT(\"gems_500\")}}, {{TEXT(\"amount\"), 4.99}});`\n     (in Blueprint, Track Event with `amount` in Numbers)\n   - Roblox: the price in Robux, `Glitchless.track(player, \"purchase\", { item = \"gems_500\", amount = 99, currency = \"ROBUX\" })`\n     in `ProcessReceipt` (boards show Robux with \u2B21, never added to dollars; give the dashboard `currency: \"ROBUX\"`)\n2. A multiplayer game also reports its network, and its dedicated servers (follow the engine reference's\n   multiplayer section):\n   - **Ping, loss and disconnects.** The Unity SDK reads Netcode for GameObjects and Mirror by itself, Godot its\n     MultiplayerAPI with ENet or WebSocket, Unreal its own net driver; a web game passes its ping with\n     `netSample({ rtt_ms })` about once a second (or `instrumentNet` for WebRTC), GameMaker with\n     `glitchless_net_sample`, the Roblox SDK reads each player's ping by itself, and any engine on another library (Steam Networking Sockets, Photon, Nakama, a game's\n     own) the same way. Call `disconnect({ reason })` when the connection drops and `reconnect()` when it comes back,\n     where the netcode doesn't say: a disconnect ends a level attempt as an abandon, never a fail. Nothing about the\n     other end is sent (no addresses).\n   - **Server mode.** A dedicated or authoritative server runs the SDK as a server: `glitchless/server` on a Node\n     server (with `instrumentWs`, `instrumentSocketIO` or `glitchlessRoom` for Colyseus), the Unity and Godot SDKs in a\n     dedicated-server build (or `--glitchless-server`), the Unreal plugin on a dedicated server; on Roblox the server\n     is always measured, since it is the one that sends. It sends its tick time\n     against its tick rate, players connected, CPU, memory and crashes, never anything about players, and Glitchless\n     keeps it apart from players under `<game>.server`. It uses the game's own service and client token, and sets\n     the same match groups as its players. It needs a Glitchless server that lists `server_mode` in `GET /v1/health`\n     (any current one does) and sends nothing to an older one.\n3. Once events arrive, design the game's own dashboard: follow the `dashboard` skill (next to this one), which\n   turns the developer's questions into collectors, panels and pages and saves them with the\n   `glitchless_set_dashboard` MCP tool.\n\n## In a jam room\n\nWhen the user is at a Glitchless jam and gives you a room code (5 letters and digits, such as `K7Q2M`), the game also\ngoes to the room's arcade, where everyone plays everyone's game on their phones:\n\n- Add the `glitchless-jam` MCP server (`npx -y glitchless-jam`, the same `GLITCHLESS_URL`; it uses the same sign-in as\n  `glitchless-mcp`). It is the jam's own tool, kept apart from the production one.\n- Build with relative paths, since the room serves the game from a folder of its own: `vite build --base ./` (or\n  `base: './'` in `vite.config.js`), and no `fetch('/\u2026')` of the game's own files. Keep `localStorage` keys prefixed\n  with the game's name: every game in a room shares one origin.\n- Keep the default anonymous mode; the room counts plays.\n- Publish the build folder with `glitchless_jam` (`action: \"publish\"`, `dir: \"dist\"`, `room`), or\n  `npx -y glitchless-jam publish dist --room <code>` in a terminal. It joins the room, checks the folder, reads the\n  version from `Glitchless.init`, and answers with the game's link and a QR code: show both to the user.\n- Before publishing a fix, bump the version passed to `Glitchless.init`: a room takes each version once, and its\n  \"biggest improvement\" award compares the first version with the last.\n- An online jam's games are often on itch.io instead. Then the game sends to a Glitchless address its players reach\n  (Glitchless Cloud, never `localhost`); export it for the web and zip the folder, `index.html` at the root of the\n  zip, for the user to upload to the game's itch.io page as HTML5; then link that version with `glitchless_jam`\n  (`action: \"link\"`, `url: \"https://<name>.itch.io/<game>\"`, `version`), or\n  `npx -y glitchless-jam link <page> --room <code> --version <v>`. Nothing is uploaded to the room: it counts the\n  version's plays, and its arcade sends players to the page. Bump the version and link again after each fix.\n\n## Report\n\nTell the user what you wired (with file:line), the gauges you chose and why, the events you track and count, the\nproperties and groups you set, the netcode and server mode you wired for a multiplayer game, and the board you\ndesigned, the agent tools or measure commands you set up, and anything you weren't sure about.\n",
+      "plugin/glitchless/skills/instrument/references/babylon.md": "# Babylon.js\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game's own metrics and dashboard, and the report.\n\n\nThe same `glitchless` package, with a Babylon.js adapter (Babylon.js 5+, WebGL or WebGPU). It times frames from the\nengine's own loop, reads Babylon's draw-call, triangle and shader-compile counters, reports scenes as levels, and\ncatches shader errors, failed textures, context loss and a render loop that stopped.\n\n## 1. Read the game\n\nNote file:line for: `new Engine(...)` (or `WebGPUEngine`), each `new Scene(engine)` and whether each level is its own\nscene or one scene rebuilt; the render loop (`engine.runRenderLoop`) and the game update (`scene.onBeforeRenderObservable`\nor `registerBeforeRender`); player death and respawn, level complete, game over, pickups; anything created in bulk at\nruntime (meshes, `ShaderMaterial`s, particle systems, `DynamicTexture`s); where the version lives.\n\n## 2. Install and initialize\n\n```bash\nnpm install glitchless\n```\n\nInit before the engine starts, and hand over the engine and the first scene right after creating them:\n\n```js\nimport * as BABYLON from '@babylonjs/core';\nimport { Glitchless } from 'glitchless';\nimport { instrumentBabylon } from 'glitchless/babylon';\n\nconst glitchless = Glitchless.init({\n  service: '<game-id>',\n  version: GAME_VERSION,\n  intake: 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',\n  sessionType: isBot ? 'synthetic' : 'user',\n});\nconst engine = new BABYLON.Engine(canvas, true);\nconst scene = new BABYLON.Scene(engine);\ninstrumentBabylon(glitchless, { engine, scene, BABYLON }); // BABYLON (the namespace) lets captureMap draw levels\n```\n\nA game that imports single modules (`import { Engine } from '@babylonjs/core/Engines/engine'`) can leave `BABYLON`\nout; then `captureMap` is off. Script-tag games: `Glitchless.instrumentBabylon(glitchless, { engine, scene })` (the\n`BABYLON` global is found on its own).\n\n## 3. Levels\n\n- Each level is its own scene: set `scene.metadata = { level: 'forest' }` when you create it. The level starts when the\n  scene first renders and ends when it is disposed; scenes created later are picked up on their own.\n- One scene rebuilt for each level: set `scene.metadata.level` to the next name, or call `glitchless.levelStart('forest-2')`\n  (any manual call turns scene levels off).\n- Odd cases: `instrumentBabylon(glitchless, { engine, scene, levels: (scene) => name or null })`.\n\n## 4. Wire game semantics\n\nThe same calls as for Three.js: `levelComplete`, `levelFail`, `death({ x, y, z, cause })`, `track`, `setPosition`\n(every frame, from the player's mesh position), `setContext`, `error`. The adapter already sends `meshes`,\n`active_meshes`, `materials`, `textures`, `particles` and `render_observers` as gauges; add the game's own counts with\n`setContext`. After a level is built, `glitchless.captureMap(level, { axis: 'xz', bounds: { min: [x0, z0], max: [x1, z1] }, exclude: [player] })`\ndraws its picture for the heatmaps (pass `BABYLON` for it). Register WebMCP tools, bug reports and source maps as for\nThree.js ([4](threejs.md#4-give-agents-hands-register-game-tools-webmcp), [4b](threejs.md#4b-bug-reports-from-players-ask-first),\n[4c](threejs.md#4c-readable-errors-from-the-production-build-source-maps)).\n\nStreams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in\n[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,\nand its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).\nIf the game has a settings screen, offer a \"share performance data\" toggle wired to `glitchless.setEnabled(on)`\n([step 4d](threejs.md#4d-a-share-performance-data-setting-offer-it)).\n\n## 5. Bots and playtests\n\nAs for Phaser ([5](phaser.md#5-bots-and-playtests)): `?autoplay=1&seed=N&skill=0..1&level=N`, synthetic sessions and\n`window.__GLITCHLESS_PLAYTEST_DONE__`. `apps/babylon-demo` in the Glitchless repo is a working example.\n\n## 6. Verify\n\nRun the game, press `` ` `` for the overlay (draw calls, triangles, the gauges, the level), play a level and die\nonce, then call `glitchless_list_games`. With WebMCP connected, `glitchless_inspect_scene` lists each scene's mesh\ngroups and flags copies that should be instances or thin instances.\n",
+      "plugin/glitchless/skills/instrument/references/gamemaker.md": '# GameMaker\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nThe Glitchless SDK for GameMaker (`gamemaker/` in the Glitchless repo; `~/.glitchless/gamemaker` if it\'s cloned\nthere) is GML: nine scripts and two objects. Its README (`gamemaker/README.md`) has the whole API; this is the\norder to wire it in.\n\n## 1. Read the project\n\nNote: the `.yyp` (it must be GameMaker 2024.2 or later: `"$GMProject"` at its top; an older project needs opening\nonce in a newer GameMaker), the first room in `RoomOrderNodes` and its creation code, the controller objects that\nlive through the game (`persistent`), which rooms are levels and which are menus, the objects for the player, its\ndeath and respawn, level complete and fail, pickups, and anything created in bulk (bullets, enemies, particles,\nsparks). Check for an existing `exception_unhandled_handler` call and any analytics the game already sends.\n\n## 2. Install\n\nWithout the IDE (an agent), from the Glitchless repo:\n\n```bash\nnode ~/.glitchless/gamemaker/tools/install.mjs path/to/Game.yyp\n```\n\nIt copies the scripts and objects into the project and lists them in the `.yyp` under a *Glitchless* folder; run it\nagain to update. In the IDE, **Tools \u2192 Import Local Package** with `Glitchless-<version>.yymps` does the same. Never\nplace `obj_glitchless` in a room: `glitchless_init` makes it.\n\n## 3. Initialize\n\nOnce, as early as possible: the first room\'s creation code, or the Create event of the game\'s first persistent\ncontroller.\n\n```gml\nglitchless_init("my-game", "", "prod", "<intake URL>", { client_token: "<client token>" }); // "" = GM_version\n```\n\nA build run from the IDE sends nothing without `-glitchless`; executables send. If the game sets its own\n`exception_unhandled_handler`, move it into the `exception_handler` option, or call `glitchless_crash(ex)` first\nthing in it, or crashes go unreported.\n\n## 4. Levels and game semantics\n\n- **Levels:** a room that reads as a level (`rm_cave_2`, not `rm_main_menu` or `rm_title`) starts that level on its\n  own. A game whose levels aren\'t rooms calls `glitchless_level_start(id)` (the first call turns the rooms off), and\n  every game calls `glitchless_level_complete(undefined, score)` and `glitchless_level_fail(undefined, cause)` where\n  a level ends, and `glitchless_level_abandon()` where the player leaves one mid-level (the menu, a restart): never a\n  fail. Quitting mid-level sends the abandon by itself. Where an attempt has a difficulty, mode, party size or build,\n  pass it: `glitchless_level_start("nmd_ghoa", { tier: "pit_80", party_size: 3 })` (lists of words are fine).\n- **Deaths:** `glitchless_death(x, y, cause)` where the player dies.\n- **Gauges:** `glitchless_set_context({ enemies: instance_number(obj_enemy), bullets: instance_number(obj_bullet) })`\n  in a controller\'s End Step: whatever is created in bulk. The SDK already sends `instances`, `surfaces`, `ds_maps`,\n  `ds_lists` and `buffers`.\n- **Errors the game catches:** `glitchless_error(_e)` in its `catch` blocks.\n- **Quit button:** `glitchless_quit()` in place of `game_end()`, so the last batch goes now, not next launch.\n\n## 4c. Streams, properties, groups and zones\n\n- **Track a moment, count a stream.** Anything that happens many times a minute per player (a shot, a kill, a coin,\n  a tap, XP and gold) is `glitchless_count("kill", { monster: "elite" })` or `glitchless_count("gold", { source:\n  "loot", amount: 35 })`, never `glitchless_track`: counts are added up on the device and go once a window. Words and\n  true/false split the count (at most 4), numbers are added up (at most 4). Outcomes stay `glitchless_track`, once a\n  match or run, with booleans and numbers: `glitchless_track("match_end", { hero: "ember", won: true, duration_s:\n  1930 })`.\n- **Properties** are what holds for the whole session: rank tier, class, region, mode, input, a spender band.\n  Call `glitchless_set_properties({ rank: "diamond", region: "eu-west" })` where the game learns them (after\n  sign-in, at the menu, at matchmaking), or pass `properties` in the options. Bands, not exact numbers\n  (`level_band: "30-39"`); never a name, account or anything the player typed (the SDK drops keys such as `email`\n  and values shaped like an ID). What changes per match (hero, deck, map) goes on events or level attributes.\n- **Groups:** `glitchless_set_group("match", id)` when the game\'s server hands out a match or lobby ID (shared by\n  everyone in it), `glitchless_set_group("party", id)` while a party lasts, and `glitchless_set_group("match",\n  undefined)` when it ends. IDs are sent hashed. A roguelite calls `glitchless_set_group("run")` at a run\'s start\n  (it returns the run\'s ID; save it with the run to resume it with `glitchless_set_group("run", saved_id)`) and\n  `glitchless_set_group("run", undefined)` at its end.\n- **Zones:** in an open world (MMO regions, metroidvania rooms) where levels don\'t start and end,\n  `glitchless_set_zone(name)` as the player moves between areas. Keep levels for things that end.\n\n## 4d. Multiplayer (GameMaker\'s `network_*`)\n\nLook for `network_create_socket`, `network_connect`/`network_connect_async`, `network_create_server` and the\n`Async - Networking` events. GameMaker doesn\'t measure the connection, so:\n\n- On the client, ping the server about once a second with a timestamp it sends straight back, and call\n  `glitchless_net_sample(current_time - sent)` when the answer comes (`loss_pct` and `jitter_ms` too, if the game\n  counts them). The host of a listen server sends none.\n- Call `glitchless_disconnect(reason)` where the game sees the connection go: `failed_to_connect` from a failed\n  `network_type_non_blocking_connect`, `connection_lost` when `network_send_packet` returns below 0, `timeout`\n  after several seconds without an answer, `kicked` or `server_closed` when the server says so. `glitchless_reconnect()`\n  when it gets back in. A level going ends as an abandon with reason `disconnect`.\n- `gamemaker/README.md` ("Multiplayer: ping and disconnects") has a whole client and server example to adapt.\n\n## 4b. Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first), and the same question to the user first. In GameMaker,\n`bug_reports: true` in the options of `glitchless_init` adds the F8 form; it deactivates the game\'s instances while\nit\'s open, so a game with its own pause passes `bug_reports: { pause: false, on_open: f, on_close: g }`. A pause menu\ncalls `glitchless_open_bug_report()`, and the game\'s own form `glitchless_report_bug(note, true, callback)`. The\nscreenshot is a PNG of the application surface. Privacy wording: `gamemaker/PRIVACY.md`.\n\n## 4e. A "Share performance data" setting (where the game has a settings menu)\n\nIf the game has a settings or options menu, offer the user a toggle there, so players can turn Glitchless off and back\non (ask before adding UI). Keep the setting with the game\'s others, and call `glitchless_set_enabled` with it as the game\nstarts and whenever the player flips it:\n\n```gml\nglitchless_set_enabled(global.settings.share_data); // at start (safe before glitchless_init) and in the toggle\n```\n\nOff stops measuring and sending at once, drops what was waiting (the outbox too) and is remembered in\n`glitchless/enabled`, so later launches send nothing until it\'s on again; a call that changes nothing does nothing. The\nmenu shows the game\'s own setting, not `glitchless_is_enabled()`, which is false in a build run from the IDE without\n`-glitchless` whatever the player chose. For a game that asks players before collecting anything, pass `opt_in: true`\nto `glitchless_init` and call `glitchless_set_enabled(true)` when they say yes. With a toggle, the store forms can answer\nthat collection is optional, and the privacy page gets a sentence about it (`gamemaker/PRIVACY.md`).\n\n## 5. Bots and measuring\n\nGive the game an `-autoplay` flag (read it with `glitchless_has_flag("autoplay")`, and seed its randomness from\n`glitchless_flag_value("seed", "1")`) that plays a few levels, for longer than you measure, and calls `glitchless_quit()`. Sessions run with `-autoplay` are synthetic. GameMaker must be set up once by a person\n(`gamemaker/README.md`, "Setting up GameMaker for the end-to-end test"). Igor\'s `Run` (the IDE\'s, and `gm-cli run`)\nstarts the game with macOS\'s `open`, which passes no command line or environment on, so for a run from the IDE or\nIgor put the flags in `glitchless/args.txt` in the runner\'s save area:\n\n```bash\nmkdir -p ~/Library/Application\\ Support/com.yoyogames.macyoyorunner/glitchless\necho "-autoplay -glitchless-measure=10" > ~/Library/Application\\ Support/com.yoyogames.macyoyorunner/glitchless/args.txt\nnpx @gamemaker/gm-cli@2.4.1 run Game.yyp --target=mac --runtime=vm   # or Run in the IDE\n```\n\nOr compile once and start the runner with the flags on its command line, as `gamemaker/test/e2e.mjs` does. The run\nprints the stats as one line of JSON and where it saved them (`glitchless/measure.json` in the save area). Delete\n`args.txt` afterwards. Measure before and after a change.\n\n`glitchless_playtest` does the before-and-after for you with a compiled game started with flags on its command line:\nan executable, or the runner as `gamemaker/test/e2e.mjs` starts it. In `glitchless.playtest.json`:\n\n```json\n{\n  "command": ["open", "-n", "-W", "-a", "<runtime>/mac/YoYo Runner.app", "--args", "-game", "<absolute path>/build/game.ios"],\n  "measure_file": "~/Library/Application Support/com.yoyogames.macyoyorunner/glitchless/measure.json"\n}\n```\n\n`open` keeps the runner\'s output from the playtest, so it reads `measure_file` (an executable\'s is\n`glitchless/measure.json` in the game\'s own save area). Each run adds `-autoplay -seed=N` (seeds 7 and 21 by default)\nand the measure flags, and the run is compared with the saved baseline.\n\n## 6. Verify\n\nRun the game with `-glitchless` (from the IDE or gm-cli, in `args.txt` as above), play a level and die once, then\ncall `glitchless_list_games` or open the dashboard. `-glitchless-debug` logs each batch as it is sent.\n',
+      "plugin/glitchless/skills/instrument/references/godot.md": '# Godot\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nFollow the addon\'s README (`godot/addons/glitchless/README.md`): install, `Glitchless.init`, levels, deaths,\n`track`, and `--glitchless-measure` for bots.\n\n## Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first), and the same question to the user first. In Godot,\n`"bug_reports": true` in the options of `Glitchless.init` adds the F8 form; it pauses the tree while it\'s open, so\na game with its own pause logic passes `"bug_reports": {"pause": false}` and connects `Glitchless.bug_report_opened` and\n`bug_report_closed`. A pause menu can call `Glitchless.open_bug_report()`, and the game\'s own form\n`await Glitchless.report_bug(note)`. The screenshot is the root viewport; headless runs have none. Privacy wording:\n`godot/addons/glitchless/PRIVACY.md`.\n\n## The player\'s off switch (where the game has a settings menu)\n\nIf the game has a settings or options menu, offer the user a "Share performance data" toggle there (ask first, as for\nbug reports). Store it with the game\'s own settings, show that saved value in the menu, and call\n`Glitchless.set_enabled(on)` when it changes; calling it again at start-up with the saved value does nothing. Use a\n`CheckButton` like the game\'s other toggles (README, "The player\'s off switch"). Don\'t show `Glitchless.is_enabled()`\nthere: it is false in a debug build without `--glitchless`. Glitchless saves the choice itself\n(`user://glitchless/enabled`), so it holds from the first frame of the next launch. For a game that asks before\ncollecting anything, pass `"opt_in": true` to `init` and call `set_enabled(true)` when the player says yes. With the\ntoggle, Google Play\'s Data safety form can say collection is optional (PRIVACY.md, "For the store forms").\n\n## Runs from the editor\n\nEvery run the Godot editor starts is a debug build, and a debug build sends nothing without `--glitchless` (README,\n"Off in debug builds"). So a game with no players yet sends nothing at all, and Glitchless looks empty to its developer.\nIf the game has no players yet, or the user asks for their own runs or playtests to show, add `--glitchless` to\n`run/main_run_args` in the `[editor]` section of `project.godot` (after any arguments already there; the editor adds\nthem to every run). Tell the user it\'s there, that it counts their runs as a player\'s, and to take it out once the game\nhas players. Don\'t pass `"enabled": true` to `init` instead: that turns on every debug build for good.\n\n## Playtests\n\n`glitchless_playtest` runs the game with its autoplay bot before and after a change and compares the two. If the game\nhas no autoplay mode, add one: in the main scene\'s `_ready()`, read `--autoplay` and `--seed=N` from\n`OS.get_cmdline_user_args()`, let a bot play with a `RandomNumberGenerator` seeded from N, call `level_start` as it\ngoes, and keep playing for at least 10 seconds (`godot/demo/demo.gd` in the Glitchless repo does this). Then add\n`glitchless.playtest.json` beside `project.godot`:\n\n```json\n{\n  "command": ["godot", "--path", "."],\n  "scenarios": [\n    { "name": "seed 7", "params": { "autoplay": true, "seed": 7 }, "seconds": 10 },\n    { "name": "seed 21", "params": { "autoplay": true, "seed": 21 }, "seconds": 10 }\n  ]\n}\n```\n\n`godot` is Godot 4.5 or later on the PATH, or its full path; an exported build works too (`["build/Game.x86_64"]`).\nCall `glitchless_playtest` with `save_as: "baseline"` before changing code and with no arguments after. Each run opens\nthe game\'s window for about 10 seconds; with `--headless`, frame times only warn.\n\n## Web exports\n\nA Godot web export (a game jam\'s entry on itch.io, say) needs nothing more: the addon works there with Thread Support\noff (the default) or on, and sends what a desktop build does (README, "Web exports"). What differs:\n\n- **Debug builds.** Godot\'s export dialog exports with debug on unless it\'s unticked, so a web export sends, debug or\n  not, once its page is anywhere but the developer\'s own machine. On their machine (the editor\'s Run in Browser, a local\n  server) a debug build sends only with `?glitchless` in the page\'s address: `main_run_args` doesn\'t reach a browser.\n  Tell the user to open `http://localhost:8060/tmp_js_export.html?glitchless` to see their own runs.\n- **Sessions name the browser** (Chrome, Safari, Firefox, Edge) and its OS, as the browser SDK\'s do, so a board splits a\n  web game by `$browser` and `$platform` like a Three.js one; Godot\'s version is in `session_start.engine`.\n- **Closing the tab** ends the session (`session_end` and `level_abandon`, reason `pagehide`), sent by beacon.\n- **Measuring:** `--glitchless-measure` needs a command line, so measure a desktop export of the same game (or the\n  game run from the editor); there are no WebMCP tools for a Godot web export.\n\n## Streams, properties, matches and zones\n\n- **Count a stream, track a moment.** Shots, hits, kills, loot and gold go through\n  `Glitchless.count("kill", {"monster": "elite"})` (numbers are summed: `{"source": "loot", "amount": 35}`), never\n  one `track()` each: the queue holds 2,000 events. A debug build warns when a name is tracked over 20 times a second.\n- **Properties** hold for the session, in the game\'s words: `Glitchless.set_properties({"mode": "squads", "rank": "gold"})`\n  where the game knows them (after sign-in, at the menu, at matchmaking), or `"properties"` in the options. Bands, not\n  exact numbers (`"level_band": "30-39"`); never a name, account, email or ID (they are dropped). Hero, deck and map\n  change per match: put them on events or on `level_start`.\n- **Level attributes:** `Glitchless.level_start("pit", {"tier": "pit_80", "party_size": 3})`.\n- **Groups:** `Glitchless.set_group("match", match_id)` with the ID the game\'s server made for the match (the client\n  and the server set the same one; Glitchless hashes it), `set_group("party", id)`, and for a roguelite\n  `var run_id := Glitchless.set_group("run")` at the run\'s start (save it, and pass it back to resume).\n  `set_group("match", null)` when it ends.\n- **Zones** for open worlds and metroidvania rooms: `Glitchless.set_zone("ashen_wastes")` as the player moves.\n\n## Multiplayer\n\n- **Godot\'s MultiplayerAPI with ENet** (the usual Godot multiplayer): nothing to add. Glitchless reads ping, jitter,\n  packet loss and bytes from the ENet peer, and disconnects from `multiplayer`\'s signals. If the game knows why a\n  connection dropped (it was kicked), call `Glitchless.net_disconnect("kicked")` in its `server_disconnected` handler.\n- **WebSocket (web exports) or other netcode** (Steam Networking Sockets, Nakama, a custom protocol): call\n  `Glitchless.net_sample(rtt_ms, loss_pct, jitter_ms)` once a second with the game\'s own ping while connected,\n  `Glitchless.net_disconnect(reason)` and `Glitchless.net_reconnect()`.\n- **A dedicated server** (a dedicated-server export, or started with `--server`) reports as the game\'s server on its\n  own: tick time against `Engine.physics_ticks_per_second`, players from `multiplayer.get_peers()`. In its `init`, pass\n  `{"region": "eu-west", "max_players": 100}`; call `level_start(map)` for the map and `set_group("match", id)` with\n  the match\'s ID. A game whose `--server` flag means something else passes `{"role": "player"}`; one that starts its\n  server another way passes `{"role": "server"}`. With other netcode, `Glitchless.set_players(n)`.\n- A server sends nothing to a Glitchless server that predates server mode, and says so in its log.\n',
+      "plugin/glitchless/skills/instrument/references/phaser.md": "# Phaser\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game's own metrics and dashboard, and the report.\n\n\nThe same `glitchless` package, with a Phaser adapter (Phaser 3.60+ and 4). It times frames from Phaser's own loop,\ncounts draw calls, reports scenes as levels, and catches failed loads and a game loop that stopped.\n\n## 1. Read the game\n\nNote file:line for: `new Phaser.Game(config)` and the scene list; which scene keys are levels and which are\nboot/preload/menu/UI/game-over scenes; player death and respawn, level complete, game over, pickups; anything\nspawned in bulk (Groups, particle emitters, bullets); where the version lives.\n\n## 2. Install and initialize\n\n```bash\nnpm install glitchless\n```\n\nInit before the game is created, so the session starts with the page, and hand the game over right after:\n\n```js\nimport * as Phaser from 'phaser';\nimport { Glitchless } from 'glitchless';\nimport { instrumentPhaser } from 'glitchless/phaser';\n\nconst glitchless = Glitchless.init({\n  service: '<game-id>',\n  version: GAME_VERSION,\n  intake: 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',\n  sessionType: isBot ? 'synthetic' : 'user',\n});\nconst game = new Phaser.Game(config);\ninstrumentPhaser(glitchless, { game, Phaser });\n```\n\nScript-tag games: load `{GLITCHLESS_URL}/sdk/glitchless.js`, then `Glitchless.instrumentPhaser(glitchless, { game })`.\n\n## 3. Levels\n\nA scene that starts is a level, named by its key, unless the key reads as a loader, menu, overlay or end screen\n(`Boot`, `Preloader`, `MainMenu`, `UIScene`, `HUD`, `GameOver`, `Pause`, `Settings`, `Credits`\u2026). Check the\ngame's keys against that:\n\n- Levels are scenes (`Level1`, `Level2`): nothing to do.\n- One `Game` scene plays every level: call `glitchless.levelStart('world-1-2')` in its `create()` with the real\n  level name. Any manual call turns scene levels off.\n- Odd keys: `instrumentPhaser(glitchless, { game, Phaser, levels: ['Forest', 'Cave'] })` or `levels: (scene) => name or null`.\n\n## 4. Wire game semantics\n\nThe same calls as for Three.js: `levelComplete`, `levelFail`, `death({ x, y, cause })`, `track`, `setPosition`,\n`setContext`, `error`. The adapter already sends `game_objects`, `physics_bodies`, `particles`, `tweens`,\n`listeners` and `sounds` as gauges; add the game's own counts (enemies, bullets) with `setContext`.\nPhaser's y axis points down, so heatmaps show a Phaser level upside down for now; leave the coordinates as they are.\n\nRegister WebMCP tools as for Three.js (`glitchless.registerTool`). Bug reports work as for Three.js too\n(`bugReports` in init, [step 4b](threejs.md#4b-bug-reports-from-players-ask-first)): the form's screenshot is the Phaser canvas.\nSo do source maps for the production build ([step 4c](threejs.md#4c-readable-errors-from-the-production-build-source-maps)).\n\nStreams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in\n[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,\nand its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).\nIf the game has a settings screen, offer a \"share performance data\" toggle wired to `glitchless.setEnabled(on)`\n([step 4d](threejs.md#4d-a-share-performance-data-setting-offer-it)).\n\n## 5. Bots and playtests\n\nIf the game has (or can get) an autoplay bot, make it read `?autoplay=1&seed=N&skill=0..1&level=N`, mark its\nsessions synthetic, and set `window.__GLITCHLESS_PLAYTEST_DONE__ = true` when a run is over. Then\n`glitchless-playtest` can compare builds. `apps/phaser-demo` in the Glitchless repo is a working example,\nincluding `glitchless.playtest.json`.\n\n## 6. Verify\n\nRun the game, press `` ` `` for the overlay (draw calls, the gauges, the current level), play a level and die once,\nthen call `glitchless_list_games`. With WebMCP connected, `glitchless_inspect_scene` lists each running scene's\ndisplay list, physics bodies and busiest event listeners.\n",
+      "plugin/glitchless/skills/instrument/references/playcanvas.md": "# PlayCanvas\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game's own metrics and dashboard, and the report.\n\n\nThe same `glitchless` package, with a PlayCanvas adapter (the PlayCanvas engine 2.x, WebGL2 or WebGPU; editor\nprojects and engine-only games). It times frames from the app's loop, reads the device's draw calls and shaders,\ncounts triangles, reports editor scenes as levels, and catches failed assets, context loss and script errors.\n\n## 1. Read the game\n\nNote file:line for: where the `pc.Application` (or `AppBase`) is created, or for an editor project the scripts and\nscenes; how levels load (`app.scenes.changeScene()`, `loadSceneHierarchy()`, or built in code); the scripts that handle\ndeath, level complete, pickups; anything spawned in bulk (entities cloned or built per effect, meshes made at runtime);\nwhere the version lives.\n\n## 2. Install and initialize\n\nEngine-only game (`npm install glitchless`):\n\n```js\nimport * as pc from 'playcanvas';\nimport { Glitchless } from 'glitchless';\nimport { instrumentPlayCanvas } from 'glitchless/playcanvas';\n\nconst glitchless = Glitchless.init({\n  service: '<game-id>',\n  version: GAME_VERSION,\n  intake: 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',\n  sessionType: isBot ? 'synthetic' : 'user',\n});\nconst app = new pc.Application(canvas);\ninstrumentPlayCanvas(glitchless, { app, pc }); // pc (the namespace) lets captureMap draw levels\napp.start();\n```\n\nPlayCanvas Editor project: add `{GLITCHLESS_URL}/sdk/glitchless.js` as an external script in the project settings,\nthen a script on the first entity that loads:\n\n```js\nconst GlitchlessInit = pc.createScript('glitchlessInit');\nGlitchlessInit.prototype.initialize = function () {\n  const glitchless = Glitchless.init({ service: '<game-id>', version: '1.0.0', intake: 'http://localhost:7777', clientToken: 'gl_pub_dev' });\n  Glitchless.instrumentPlayCanvas(glitchless, { app: this.app });\n};\n```\n\n## 3. Levels\n\n- Editor scenes: `app.scenes.changeScene('Level2')` and `loadSceneHierarchy()` start a level named after the scene,\n  unless the name reads as a loader, menu, overlay or end screen. Odd names: `levels: ['Forest', 'Cave']` or\n  `levels: (name) => name or null`.\n- Levels built in code: call `glitchless.levelStart('track-2')` where the level is built (this turns scene levels off).\n\n## 4. Wire game semantics\n\nThe same calls as for Three.js, from the scripts that handle them (`levelComplete`, `levelFail`, `death`, `track`,\n`setPosition` every frame from the player entity's `getPosition()`, `setContext`, `error`). The adapter already sends\n`entities`, `mesh_instances`, `materials`, `textures` and `lights` as gauges. After a level is built,\n`glitchless.captureMap(level, { axis: 'xz', bounds, exclude: [player] })` draws its picture (pass `pc` for it). WebMCP\ntools, bug reports and source maps work as for Three.js. Vite's dev server runs PlayCanvas's debug build, which turns\na script off after it throws; the adapter reports those errors too.\n\nStreams (`count`), session properties (`setProperties`), level attributes and zones are the same calls as in\n[step 3 for Three.js](threejs.md#3-wire-game-semantics). A multiplayer game adds match groups, ping and disconnects,\nand its Node server `glitchless/server`: [step 4a](threejs.md#4a-multiplayer-matches-ping-disconnects-and-the-games-server).\nIf the game has a settings screen, offer a \"share performance data\" toggle wired to `glitchless.setEnabled(on)`\n([step 4d](threejs.md#4d-a-share-performance-data-setting-offer-it)).\n\n## 5. Bots and playtests\n\nAs for Phaser ([5](phaser.md#5-bots-and-playtests)). `apps/playcanvas-demo` in the Glitchless repo is a working example.\n\n## 6. Verify\n\nRun the game, press `` ` `` for the overlay, play a level and fail once, then call `glitchless_list_games`. With\nWebMCP connected, `glitchless_inspect_scene` lists entity groups and flags copies that should be instanced or batched.\n",
+      "plugin/glitchless/skills/instrument/references/roblox.md": '# Roblox\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\nThe Glitchless SDK for Roblox (`roblox/` in the Glitchless repo; `~/.glitchless/roblox` if it\'s cloned there) is one\nLuau ModuleScript, `Glitchless`, with a server half and a client half. Its README (`roblox/README.md`) has the whole\nAPI; this is the order to wire it in.\n\nHow it works, because it shapes everything below: only server scripts can make HTTP requests on Roblox. So the\nserver sends everything: it keeps a session for each player (from joining to leaving) and one for itself, and each\nplayer\'s client measures frames, stutters, errors and ping and hands them to the server over a RemoteEvent the module\nmakes. Calls from server scripts take the player first; calls from LocalScripts take no player.\n\n## 1. Read the project\n\nA Roblox game an agent can edit is usually files synced into Studio: a `default.project.json` (Rojo), often a\n`wally.toml` (Wally packages in `ReplicatedStorage.Packages`), `aftman.toml` or `rokit.toml`, and `.luau` or `.lua`\nfiles named `*.server.luau` (Scripts) and `*.client.luau` (LocalScripts). Note:\n\n- where server code starts (ServerScriptService), where client code starts (StarterPlayerScripts, StarterGui,\n  ReplicatedFirst), and where shared modules live (ReplicatedStorage);\n- the game\'s rounds, races, stages or levels, and where each starts and ends (a round manager, checkpoints in an\n  obby, a race finish line). On Roblox these are almost always in server scripts;\n- deaths (`Humanoid.Died`, or the game\'s own health system), respawns, pickups, purchases (`MarketplaceService`\n  `ProcessReceipt`, game passes, developer products);\n- anything that creates many instances at once (projectiles, effects, map loading, Clone() in loops);\n- any analytics the game already sends (`AnalyticsService`, `HttpService` calls, other SDKs).\n\nIf the game only lives in Studio (a `.rbxl` with no project files), you can\'t edit its scripts as files: work through\nStudio\'s own MCP server (below), or ask the user to insert the module and paste the scripts.\n\n### Studio\'s MCP server\n\nRoblox Studio has an MCP server built in ([docs](https://create.roblox.com/docs/studio/mcp)): the user turns it on in\nAssistant \u2192 \u2026 \u2192 Manage MCP Servers \u2192 **Enable Studio as MCP server**, and it is the stdio command\n`/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP` on a Mac (`cmd.exe /c %LOCALAPPDATA%\\Roblox\\mcp.bat` on\nWindows), or one switch for Claude Code, Codex, Cursor and others under Quick connect. Every tool takes a `studio_id`\nfrom `list_roblox_studios` (it can be empty for a second while the server finds Studio: ask again). With it you can:\n\n- read and write the open place\'s scripts (`script_read`, `script_grep`, `multi_edit` in Edit), or set any script\'s\n  `Source` with `execute_luau` (`datamodel_type: "Edit"`), so a Studio-only game can be instrumented;\n- play it: `start_stop_play` (`is_start: true`, then `false`), `get_studio_state` (the mode), and\n  `get_console_output`, which during a play test holds that test\'s Output only (Glitchless\'s `[glitchless]` warnings\n  are there), and keeps it after Stop;\n- look inside a running test: `execute_luau` with `datamodel_type: "Server"` or `"Client"`.\n\nIt reads and changes the user\'s open places: say what you will do before you do it.\n\n## 2. Install\n\nPut the module in ReplicatedStorage, the way the project manages code:\n\n- **Wally** (a `wally.toml`): add `Glitchless = "glitchless-gg/glitchless@0.3.0"` under `[dependencies]`, run\n  `wally install`, and require `ReplicatedStorage.Packages.Glitchless`.\n- **Rojo without Wally**: copy `~/.glitchless/roblox/src` into the project (for example `src/shared/Glitchless`) so it\n  syncs to `ReplicatedStorage.Glitchless`. Keep the files as they are: `init.luau` makes the folder the module, and\n  `GlitchlessClient.client.luau` must stay a LocalScript inside it.\n- **Studio only**: build the model with `rojo build ~/.glitchless/roblox/default.project.json -o Glitchless.rbxm`\n  and ask the user to insert it into ReplicatedStorage (right-click \u2192 Insert from File).\n\nThen the user turns on **Allow HTTP Requests** (Game Settings \u2192 Security). Tell them: without it nothing is sent, and\nit can\'t be turned on from a script in a published game.\n\n## 3. Initialize\n\nOne server Script that runs when the server starts (ServerScriptService):\n\n```lua\nlocal ReplicatedStorage = game:GetService("ReplicatedStorage")\nlocal Glitchless = require(ReplicatedStorage.Glitchless) -- ReplicatedStorage.Packages.Glitchless with Wally\n\nGlitchless.init({\n	service = "<the game\'s name in Glitchless>",\n	clientToken = "<client token>",\n	intake = "<intake URL>", -- leave out for Glitchless Cloud (https://api.glitchless.gg)\n	properties = { mode = "classic" }, -- optional: what holds for every session\n})\n```\n\n- The client token goes in this server Script only. It never reaches players\' devices.\n- `http://localhost:7777` works while the user tests in Studio (Studio runs on their computer); a published game\'s\n  servers can\'t reach it. For a published game use Glitchless Cloud or the user\'s own server\'s `https://` address.\n- The version defaults to the place\'s published version (`game.PlaceVersion`), which changes with every publish. Pass\n  `version` only if the game has its own version string.\n- No client code is needed: `init` puts the module\'s `GlitchlessClient` LocalScript in StarterPlayerScripts. If the\n  game already has its own client bootstrap and wants it there, pass `client = false` and call\n  `require(ReplicatedStorage.Glitchless).init()` from a LocalScript.\n- In Studio, sessions are marked `tester` and `env` is `dev`, so test plays stay out of player numbers. Nothing else\n  marks bots: Roblox has none.\n- Calls made before Glitchless starts wait for it: a LocalScript that runs before `GlitchlessClient`, a server Script\n  that runs before the one calling `init`, a `PlayerAdded` handler that runs before Glitchless\'s. Don\'t poll\n  `isEnabled()` before calling, and don\'t call `init()` from the game\'s LocalScripts to hurry it.\n\n## 4. Levels, deaths and the game\'s own events\n\nFrom server scripts, the player first:\n\n```lua\nGlitchless.levelStart(player, "desert_loop", { mode = "ranked", laps = 3 })\nGlitchless.levelComplete(player, "desert_loop", { score = placement, durationS = raceTime })\nGlitchless.levelFail(player, "desert_loop", { cause = "out_of_time" })\nGlitchless.track(player, "boost_used", { kind = "nitro" })\nGlitchless.count(player, "coin", { source = "track" }, amount) -- a stream: added up, sent once a window\nGlitchless.setProperties(player, { car_class = "s", rank_band = "gold" })\n```\n\nFrom a LocalScript (UI, input, client-side effects), the same calls without the player:\n\n```lua\nGlitchless.track("settings_opened", { from = "pause" })\nGlitchless.setContext({ effects = #workspace.Effects:GetChildren() }) -- gauges on this device\'s frame windows\n```\n\n- **Levels**: an obby\'s stages, a race, a round, a dungeon floor. Use the game\'s own names. A player who leaves\n  mid-level gets a `level_abandon` by itself; never send a fail for leaving.\n- **Deaths** are sent by themselves when a player\'s Humanoid dies. If the game knows why (lava, fell, an enemy), call\n  `Glitchless.death(player, { cause = "lava" })` where it handles the death: the first such call turns the automatic\n  ones off, so each death is sent once, with its cause.\n- **Purchases**: in `ProcessReceipt`, after granting the item:\n  `Glitchless.track(player, "purchase", { item = productName, amount = price, currency = "ROBUX" })`, the price in\n  Robux. Boards keep Robux apart from dollars (the dashboard\'s `currency: "ROBUX"`), and a panel can add an estimate in\n  dollars at Roblox\'s DevEx rate. A purchase that didn\'t go through can be the same event with `result = "cancelled"`\n  (and `result = "done"` on the ones that did); never send the receipt or purchase ID.\n- **The server\'s own session** (the map it runs, its rounds): `Glitchless.server.levelStart(mapName)`,\n  `Glitchless.server.track("round_started", { players = #Players:GetPlayers() })`.\n- Never put a player\'s name, display name or user ID in an event, a level name or a property. The server scrubs\n  the ones it can see, but a name it doesn\'t know (a friend who isn\'t in the server) would go through.\n\n## 5. Multiplayer: matches and the server\n\nEvery Roblox game is multiplayer, and Glitchless measures the server (its frame rate, late frames, players, memory,\ndata rates, errors) and each player\'s ping by itself. Until the game sets a match of its own, everyone in a server and\nthe server share one match: the server. A game with rounds or races inside one server sets each as the match, on the\nserver and on every player in it, with the same ID:\n\n```lua\nlocal roundId = HttpService:GenerateGUID(false)\nGlitchless.server.setGroup("match", roundId, { mode = "ranked" })\nfor _, player in Players:GetPlayers() do\n	Glitchless.setGroup(player, "match", roundId)\nend\n-- when the round ends\nGlitchless.server.endGroup("match")\nfor _, player in Players:GetPlayers() do\n	Glitchless.endGroup(player, "match")\nend\n```\n\nParties (players who queued together) use `"party"`. IDs are hashed before they\'re sent.\n\n### Extras for hangouts and hubs\n\nFour more things the server reads by itself once `init` turns them on, each off by default. Ask the user which fit,\nand turn on those:\n\n| Option | Turn it on when | What arrives |\n| --- | --- | --- |\n| `prompts = true` | the game uses ProximityPrompts (doors, shops, NPCs, machines) | `prompt` counts by `action` and `object` (the prompt\'s ActionText and ObjectText) |\n| `seats = true` | players sit (sofas, cars, rides, arcade cabinets) | `sit` counts by `seat` (the seat\'s or its model\'s name) and `vehicle` |\n| `joinedWithFriend = true` | it\'s social: do players who follow a friend in stay longer? | the session property `joined_with_friend`, to split anything by |\n| `friendsInServer = true` | the same, while they play | the gauge `friends_in_server` on every frame window |\n\nThey replace hand-written `count` calls for prompts and seats: don\'t add both. Name prompts\' ActionText and\nObjectText, and seats\' models, in words a board can show ("Open", "Starter Pack"; "Sofa", "Kart").\n\nGlitchless uses up to 100 of a server\'s 500 HTTP requests a minute (`requestsPerMinute`). If the game makes many\nHTTP requests of its own, lower it; with many players, each one\'s batches simply come less often.\n\n## 6. The player\'s off switch\n\nIf the game has a settings menu, add a "Share performance data" toggle. From the LocalScript that runs the menu:\n\n```lua\ntoggle.Activated:Connect(function()\n	local on = not Glitchless.isEnabled()\n	Glitchless.setEnabled(on)\n	-- show `on` in the toggle\nend)\n```\n\nGlitchless keeps the choice in the game\'s DataStore (`Glitchless` store, key `u<UserId>`) and reads it when the player\njoins, so it holds on every server. Tell the user: in Studio this needs Enable Studio Access to API Services and a\npublished place, and the key is the player\'s data under Roblox\'s erasure requests (delete it with the rest). With\n`optIn = true` in `init`, nothing is sent for a player until the game calls `Glitchless.setEnabled(player, true)`\n(after asking them).\n\n## 7. Privacy\n\nThe Roblox SDK is anonymous only: there is no install or full mode, so it can\'t count returning players. Roblox can,\nby account: on Glitchless Cloud, connect the experience in Settings \u2192 Integrations \u2192 Roblox (its universe ID, or its\nroblox.com address) with an Open Cloud API key the user makes in Creator Dashboard \u2192 Open Cloud \u2192 API Keys, with the\nexperience under Access Permissions \u2192 `universe-analytics` and only `universe.analytics:read`. Roblox\'s D1, D7 and D30\nretention, daily active and new users, Robux and its crash rate and frame rate by place version then show on the\ngame\'s Roblox page and in `glitchless_store` (`show: "vitals"`, `store: "roblox"`) and `glitchless_revenue`. Without a\nkey it still brings players now and the thumbs up and down. The user pastes the key there themselves; it never goes in\nthe game. Every session has a random ID, and no user ID, name or display name is sent.\nRoblox\'s rules count those identifiers as protected data; `roblox/PRIVACY.md` has what Roblox\'s policies say, every\nfield sent, and a paragraph for the game\'s privacy notice. If the game sets properties, the notice needs the\nproperties line.\n\nPositions are off. With `positions = true` in `init`, the server samples each player\'s character position for\nheatmaps and puts deaths on the map; ask the user first. The extras (section 5) are counts and true/false only; with\n`friendsInServer` or `joinedWithFriend`, the privacy notice gets the friends line in `roblox/PRIVACY.md`.\n\n### A map under the heatmap\n\nWith positions on, give the heatmap a map. The server draws one itself, from the place\'s parts, one ray down per\npixel; call it once the place is built, from a server Script:\n\n```lua\ntask.spawn(Glitchless.captureMap)                                                -- the whole place\ntask.spawn(Glitchless.captureMap, { zone = "hall", area = workspace.Zones.Hall })  -- a zone, by its volume\ntask.spawn(Glitchless.captureMap, { level = "obby_1", area = workspace.Obby1 })    -- a level, by its folder\n```\n\nIts map is the parts\' colours, lit and outlined (no textures or decals). For a picture that looks like the game,\ntake one in Studio with Studio\'s MCP server: `execute_luau` (`datamodel_type: "Edit"`) with\n`return require(game.ReplicatedStorage.Glitchless).mapBounds(workspace.Zones.Hall)` for the rectangle on x and z,\nthen `screen_capture` with `camera_position` high above its centre and `look_at_position` straight below. The\npicture\'s top edge is the smallest z, its left edge the smallest x. Hand it and the bounds to the game\'s map upload.\n\n## 8. Check that it works\n\n1. In Studio, press Play (Test \u2192 Start Test Session \u2192 Test) with the intake set (`http://localhost:7777` for a local\n   server), play for half a minute, then Stop. Stop closes the server, which sends everything. With Studio\'s MCP\n   server, do it yourself: `start_stop_play` with `is_start: true`, wait, then `false`.\n2. The Output window shows `[glitchless]` warnings if something is off (HTTP requests off, a token refused, a\n   property dropped). One about DataStore in an unpublished place is expected.\n3. Call `glitchless_list_games`: the game is listed, with its server under it (`<game>.server`). Then\n   `glitchless_triage` (game set) shows the sessions, `glitchless_servers` the server\'s frames, and\n   `glitchless_session` one player\'s frame windows, level and errors.\n\n## 9. Playtests\n\n`glitchless_playtest` with `engine: "roblox"` plays the place open in Studio before and after a change and compares the\ntwo, over Studio\'s MCP server (it must be on; with several Studios open, pass `studio`, part of the place\'s name). The\ngame needs an autoplay mode it turns on from Workspace attributes, which the playtest sets before each play test and\nputs back after (by default `autoplay = true` with `seed = 7`, then `seed = 21`):\n\n```lua\n-- In the server Script that calls Glitchless.init:\nlocal autoplay = workspace:GetAttribute("autoplay")\nGlitchless.init({\n	-- \u2026the options above, and:\n	sessionType = if autoplay then "synthetic" else nil, -- a bot\'s sessions stay out of player numbers\n})\nif autoplay then\n	local rng = Random.new(workspace:GetAttribute("seed") or 1) -- the same seed plays the same way\n	-- drive each player\'s character (Humanoid:MoveTo, the game\'s own actions), Glitchless.levelStart as it goes,\n	-- and when the run is over:\n	workspace:SetAttribute("GlitchlessPlaytestDone", true)\nend\n```\n\nA play test ends when `GlitchlessPlaytestDone` is true, or after 90 seconds (a scenario\'s `max_s`). The playtest reads\nthe run back from the Glitchless server the MCP server reads, so the game\'s intake must be that server. Without\nAllow HTTP Requests, or with Studio in a play test already, it stops and says so. `roblox/demo/server.server.luau`\nin the Glitchless repo does this.\n\nA published game\'s first sessions arrive once real players join a server running the new version. Each publish is a\nnew place version (`game.PlaceVersion`), which the SDK sends as the game\'s version, so `glitchless_compare_versions`\nand Roblox\'s own vitals line up version by version.\n',
+      "plugin/glitchless/skills/instrument/references/threejs.md": "# Three.js\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game's own metrics and dashboard, and the report.\n\n\n## 1. Read the game first\n\nFind, and note file:line for each:\n- where the `THREE.WebGLRenderer` (or `WebGPURenderer`), `scene` and main `camera` are created\n- the game loop (`renderer.setAnimationLoop` / `requestAnimationFrame`)\n- level/stage load and unload, player death/respawn, level complete/win, pickups/power-ups, game over\n- anything spawned in bulk at runtime (particles, projectiles, enemies, debris): these become context gauges\n- where the version lives (`package.json` version or a constant); if none, create `src/version.js`\n\n## 2. Install and initialize (right after the renderer exists)\n\n```bash\nnpm install glitchless\n```\n\n```js\nimport * as THREE from 'three';\nimport { Glitchless, instrumentThree } from 'glitchless';\n\nconst glitchless = Glitchless.init({\n  service: '<game-id>',               // kebab-case, stable\n  version: GAME_VERSION,\n  env: import.meta.env?.MODE ?? 'dev',\n  intake: import.meta.env?.VITE_GLITCHLESS_INTAKE ?? 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',\n  sessionType: isBot ? 'synthetic' : 'user',\n});\ninstrumentThree(glitchless, { renderer, scene, camera, THREE });\n```\n\nNo bundler? Use `<script src=\"{GLITCHLESS_URL}/sdk/glitchless.js\"></script>` and `Glitchless.init(...)` / `Glitchless.instrumentThree(...)`.\n\n**Telemetry must never break the game.** Load the SDK through a small facade with try/catch and a no-op fallback\n(see `apps/zoomies/src/telemetry.js` in the Glitchless repo for the pattern) and support a `?nogd=1` kill switch.\n\n## 3. Wire game semantics\n\n| Game moment | Call |\n| --- | --- |\n| level/stage starts (incl. restarts) | `glitchless.levelStart('level-2')`; with what describes the attempt: `levelStart('rift', { mode: 'ranked', hero: 'ember' })` |\n| level beaten | `glitchless.levelComplete('level-2', { durationS, score })` |\n| game over: the player lost the level | `glitchless.levelFail('level-2', { cause })` |\n| the player leaves mid-level (back to the menu, a restart) | `glitchless.levelAbandon('level-2')`: never a fail. Closing the page or app mid-level sends one by itself |\n| player dies | `glitchless.death({ x, y, z, cause: 'fell' })`: short, low-cardinality causes |\n| pickups, power-ups, checkpoints | `glitchless.track('powerup', { kind: 'speed' })` |\n| something that happens many times a second: shots, hits, kills, gold, taps | `glitchless.count('kill', { monster: 'elite' })`, `glitchless.count('gold', { source: 'loot', amount: 35 })`: summed per 5 s window. Track a moment, count a stream |\n| what holds for the session: mode, rank tier, class, server region, input | `glitchless.setProperties({ mode: 'squads', rank: 'gold' })` where the game knows it (after sign-in, at the menu, at matchmaking). Bands, never exact numbers or anything about the person |\n| an open world: the region or room the player is in | `glitchless.setZone('westfall')` on each change (a zone has no start or end; a level does) |\n| a purchase the store confirmed | `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })` |\n| every frame | `glitchless.setPosition(player.position)` |\n| every frame | `glitchless.setContext({ particles, enemies, projectiles })`: counts of anything that scales |\n| after a level is built | `glitchless.captureMap(levelId, { axis: 'xy' /* side-scroller */ \\| 'xz' /* top-down */, bounds: { min: [a, b], max: [a, b] } })` |\n| handled errors worth knowing about | `glitchless.error(err, { where: 'save-game' })` |\n\n## 4. Give agents hands: register game tools (WebMCP)\n\nRegister 3\u20135 tools that let an agent reproduce problems. Handlers return a plain object or string and never throw.\n\n```js\nglitchless.registerTool('mygame_get_state', 'Current level, player position, score, enemy/particle counts', { type: 'object', properties: {} }, () => ({ ... }));\nglitchless.registerTool('mygame_load_level', 'Jump to a level', { type: 'object', properties: { level: { type: 'string' } }, required: ['level'] }, ({ level }) => { loadLevel(level); return `loaded ${level}`; });\n```\n\nGood candidates: load level, teleport player, trigger the expensive effect (explosion, power-up), toggle pause.\n\n## 4a. Multiplayer: matches, ping, disconnects and the game's server\n\nSkip this for a single-player game. Find the netcode first (`ws`, Socket.IO, Colyseus, WebRTC, or the game's own) and\nnote file:line for: joining a match or lobby and the ID the server gives it, the client's ping (or where one could\ngo), the disconnect and reconnect handlers, and the server's tick loop.\n\nOn the client:\n\n```js\nglitchless.setGroup('match', match.id);   // the ID the game's server made, shared by everyone in the match\nglitchless.setGroup('party', party.id);   // a party, until it breaks up. Never an account, guild or friends-list ID\nglitchless.setGroup('match', null);       // the match is over\nconst run = glitchless.setGroup('run');   // a roguelite run across levels: the SDK makes the ID\n```\n\nMatch and party IDs are hashed before they're sent, the same way in every Glitchless SDK and on the server, so the\nmatch lines up from every side; leave `hashGroupIds` on unless the user wants to match IDs against their server logs.\n\nPing, about once a second: a WebSocket has no round trip of its own, so time an app-level ping (Socket.IO: an emit\nwith an acknowledgement; `ws` or Colyseus: a ping message the server echoes) and pass it:\n\n```js\nglitchless.netSample({ rtt_ms, transport: 'socket.io' });    // loss_pct and jitter_ms too where the netcode knows them\nglitchless.disconnect({ reason: 'timeout' });                // timeout, connection_lost, kicked, server_closed, failed_to_connect, other\nglitchless.reconnect();                                      // back in the same game\n```\n\nCall `disconnect` only when the connection dropped, not when the player chose to leave (Socket.IO's\n`io client disconnect`, a close the game made itself). A disconnect mid-level ends it as an abandon with reason\n`disconnect`, never a fail. A WebRTC game: `import { instrumentNet } from 'glitchless/net'` and\n`instrumentNet(glitchless, { peer })` with its `RTCPeerConnection` does all of this from `getStats()`.\n\nOn a Node game server (in the same repo or the user's server project), add `glitchless/server`:\n\n```js\nimport { GlitchlessServer, instrumentWs } from 'glitchless/server'; // or instrumentSocketIO, glitchlessRoom\n\nconst server = GlitchlessServer.init({\n  service: '<game-id>',                 // the game's own id, not \"<game-id>.server\": intake files it apart\n  version: GAME_VERSION,\n  intake: process.env.GLITCHLESS_INTAKE ?? 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',            // the game's client token\n  tickHz: 30,                           // the server's target tick rate\n  maxPlayers: 16,\n  region: process.env.REGION,           // in the game's words: 'eu-west'\n  sessionType: isLoadTest ? 'synthetic' : 'user',\n});\ninstrumentWs(server, wss);                           // ws: players, pings, how connections end\n// instrumentSocketIO(server, io);                   // Socket.IO\n// gameServer.define('battle', glitchlessRoom(server, BattleRoom)); // Colyseus: each room is a match\nsetInterval(server.measureTick(update), 1000 / 30); // the tick loop (Colyseus: done by glitchlessRoom)\nserver.setGroup('match', matchId);                   // the same ID the players get; server.match(id) when it hosts several at once\nprocess.on('SIGTERM', async () => { await server.close(); process.exit(0); });\n```\n\nUncaught errors are reported as crashes and the process still dies as before. It sends nothing to a Glitchless\nserver that doesn't read server sessions yet, so on an old one nothing shows: say so in the report.\n\n## 4b. Bug reports from players (ask first)\n\nFor playtests, jams and early access, players can flag a problem where it happens: a key (F8) or a button in the\noverlay opens a small form, and the note, a screenshot of the canvas, the level, the position (when positions are\non) and the last events go to Glitchless. They show under Bug Reports, in findings once a level has three, and in\n`glitchless_bug_reports`. The note is free text the player types, so ask the user before turning it on and tell\nthem to mention it in the game's privacy page (`packages/sdk/PRIVACY.md` in the Glitchless repo has the wording).\n\n```js\nconst glitchless = Glitchless.init({\n  // \u2026\n  bugReports: { hotkey: 'F8', onOpen: () => pauseGame(), onClose: () => resumeGame() },\n});\n```\n\nWhile the form is open the SDK holds keys, clicks and mouse movement back from the game; `onOpen`/`onClose` pause\nit (a game that reads a gamepad needs the pause). A game with its own pause menu can add \"Report a bug\" there with\n`glitchless.openBugReport()`, or send one from its own UI with `glitchless.reportBug({ note })`.\n\n## 4c. Readable errors from the production build (source maps)\n\nA minified build reports its errors as `e (index-3f2a.js:1:48213)`. With the build's source maps uploaded,\nGlitchless shows them as `fireShotgun (weapons.js:141)`, with the original stack and the failing line, in the\ndashboard and in `glitchless_get_error`, and an error keeps one fingerprint across builds. Most web games build\nwith Vite; add the plugin there:\n\n```bash\nnpm install -D glitchless-sourcemaps\n```\n\n```js\n// vite.config.js\nimport glitchlessSourcemaps from 'glitchless-sourcemaps/vite';\nimport { GAME_VERSION } from './src/version.js'; // wherever the version passed to Glitchless.init lives\n\nexport default defineConfig({\n  plugins: [glitchlessSourcemaps({ version: GAME_VERSION, service: '<game-id>', deleteMaps: true })],\n});\n```\n\n`version` and `service` must match what the game passes to `Glitchless.init` (the defaults are package.json's\n`version` and `name`). The plugin builds with `build.sourcemap: 'hidden'`; leave `build.sourcemap` unset or set it to\n`'hidden'`, because `true` points players' browsers at the maps. It uploads only when `GLITCHLESS_API_KEY` holds a\nsecret key that can upload source maps (tick \"Can upload source maps\" when creating it); put the key in CI secrets\nor the user's environment, never in the game or a committed file. `deleteMaps: true` keeps the maps out of `dist`.\nWithout a key the build works as before and uploads nothing.\n\nOther bundlers, or a CI step after the build (upload before deploying):\n\n```bash\nGLITCHLESS_API_KEY=\u2026 npx glitchless-sourcemaps upload dist --version 1.2.0 --service <game-id> --delete\n```\n\n`--url` (or `GLITCHLESS_URL`) is the Glitchless server, as for the MCP server.\n\n## 4d. A \"share performance data\" setting (offer it)\n\nIf the game has a settings or options screen, offer a toggle for it, so players can turn Glitchless off at any time and\nback on. `setEnabled(false)` stops measuring and sending at once, drops what was waiting and sends nothing more, not\neven a closing event; `setEnabled(true)` starts a new session. The SDK saves the choice in localStorage itself, so the\nnext visit sends nothing until the player turns it back on. Wire it next to the game's other settings:\n\n```js\n// where the settings load\nglitchless.setEnabled(settings.shareData !== false); // changes nothing when it already agrees\n// where the toggle changes\nsettings.shareData = checked;\nsaveSettings();\nglitchless.setEnabled(checked);\n```\n\nIf the user wants players to agree before anything is collected, add `optIn: true` to init and call\n`setEnabled(true)` when the player says yes. Tell them to mention the setting in the game's privacy page\n(`packages/sdk/PRIVACY.md` has a sentence for it).\n\n## 5. Verify\n\n1. Run the game, press `` ` ``: the Glitchless overlay shows fps, p95 frame time, draw calls, context gauges.\n2. Play a level and die once. Then confirm data arrived: call `glitchless_list_games`, or open the dashboard.\n3. If WebMCP is connected, call `glitchless_live_performance` and `glitchless_inspect_scene`.\n",
+      "plugin/glitchless/skills/instrument/references/unity.md": '# Unity\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nThe `gg.glitchless.sdk` package, for Unity 6.0 LTS and later (6.3 and 6.5 included).\n\n## 1. Read the project\n\nNote: the Unity version (`ProjectSettings/ProjectVersion.txt`; 6000.0 or later: on an older Unity, such as 2022.3, say Glitchless needs Unity 6.0 LTS or later), the first scene\n(`ProjectSettings/EditorBuildSettings.asset`), which scenes are levels, the scripts for player death and respawn,\nlevel complete and fail, pickups, and anything spawned in bulk; where the version lives (`bundleVersion` in\n`ProjectSettings/ProjectSettings.asset` is `Application.version`).\n\n## 2. Install\n\nAdd one line to `dependencies` in `Packages/manifest.json`:\n\n```json\n"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"\n```\n\nUnity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.7.2`.\n\n## 3. Initialize, without touching a scene file\n\nCreate `Assets/Scripts/GlitchlessSetup.cs`:\n\n```csharp\nusing GlitchlessSdk;\nusing UnityEngine;\n\nstatic class GlitchlessSetup\n{\n    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]\n    static void Init() => Glitchless.Init(new GlitchlessOptions\n    {\n        Service = "<game-id>",\n        Intake = "http://localhost:7777",\n        ClientToken = "gl_pub_dev",\n    });\n}\n```\n\nIt runs before the first scene loads, so no scene needs editing. (If the project has an assembly definition for\nits scripts, add `GlitchlessSdk` to its references.) The Editor and development builds send with `Env` `dev`;\nrelease builds with `prod`.\n\n## 4. Levels and game semantics\n\nScenes are levels on their own: each scene that becomes active is a level unless its name reads as a menu, loader,\noverlay or end screen (`Boot`, `Loading`, `MainMenu`, `UI`, `HUD`, `GameOver`\u2026). If one scene plays many levels,\ncall `Glitchless.LevelStart("world-1-2")` where a level begins (that turns scene levels off), or set\n`LevelForScene` in the options.\n\n| Game moment | Call |\n| --- | --- |\n| level beaten | `Glitchless.LevelComplete("level-2", score: 1200)` |\n| game over: the player lost the level | `Glitchless.LevelFail("level-2", "fell")` |\n| the player leaves mid-level (the menu, a restart) | `Glitchless.LevelAbandon("level-2")`: never a fail; quitting or going to the background mid-level sends one by itself |\n| player dies | `Glitchless.Death(player.position, "spikes")` |\n| pickups, checkpoints | `Glitchless.Track("powerup", "magnet")` |\n| a stream: shots, hits, kills, gold, taps | `Glitchless.Count("kill", "elite")`, `Glitchless.Count("gold", new Dictionary<string, object> { ["source"] = "loot", ["amount"] = 35 })` |\n| what holds for the session: mode, rank tier, class, server region | `Glitchless.SetProperty("rank", "diamond")`, or `Properties` in the options |\n| what kind of attempt a level is | `Glitchless.LevelStart("deadmines", new Dictionary<string, object> { ["difficulty"] = "heroic", ["party_size"] = 5 })` |\n| where the player is in an open world | `Glitchless.SetZone("westfall")` |\n| a purchase the store confirmed | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" })` |\n| counts of anything that scales, each frame | `Glitchless.SetContext("enemies", enemies.Count)` |\n| the player\'s place, each frame | `Glitchless.SetPosition(player.position)` (sent with `Positions = true` in the options, or Full mode) |\n| a level is built (its picture under the heatmaps) | `Glitchless.CaptureMap("level-2", new Rect(0, 0, width, height))`: 2D or a side view; a 3D level from above: `Glitchless.CaptureMap("arena", bounds)` |\n| a caught exception | `Glitchless.Error(e)` |\n\nUncaught exceptions, `Debug.LogError` and engine errors are reported without any code.\n\n**Heatmaps.** With positions on, call `CaptureMap` where a level is built, so the dashboard draws deaths and paths\nover a picture of it. Give it the level\'s area in world units: a tile room `new Rect(0, 0, room.Width, room.Height)`\n(a long stage whole, not the screen the camera shows); a 3D level its renderers\' bounds put together\n(`var b = renderers[0].bounds; foreach (var r in renderers) b.Encapsulate(r.bounds);`), whose top is where the camera\nlooks down from, so leave a roof above it out. Pass what shouldn\'t be in the picture:\n`new MapOptions { Exclude = new[] { player.gameObject, backdrop.gameObject } }` (a backdrop that follows the camera\nwould cover the level). Calling it every time the level starts is fine: each level\'s map goes once per version.\n\nTrack a moment, count a stream: anything that happens several times a second (each bullet, each coin) goes through\n`Count`, which adds it up on the device; a `Track` for each would fill the SDK\'s queue. Properties hold for the whole\nsession: set them where the game knows them (after sign-in, at the menu, at matchmaking), as bands (`"30-39"`) rather\nthan exact numbers, and never anything that says who the player is (the SDK drops `email`, `user_id`, IDs and links).\nWhat changes from match to match (hero, deck, map) goes on `LevelStart` or the event.\n\n## 4c. Multiplayer\n\nLook for the netcode first: `com.unity.netcode.gameobjects` in `Packages/manifest.json` (NGO, often with\n`com.unity.services.multiplayer`, Relay or Lobby), or a `Mirror` folder or package.\n\n- **NGO 2.x or Mirror:** nothing to add for ping and disconnects. The SDK finds them at run time and sends round trips,\n  jitter, Relay or not, and disconnects with their reason; a level going ends as an abandon with reason `disconnect`.\n- **Anything else** (Steam Networking Sockets, Photon, Fish-Net, EOS, the game\'s own): call\n  `Glitchless.NetSample(rttMs: ping, lossPct: loss)` once a second where the game reads its ping,\n  `Glitchless.Disconnect("timeout")` where it handles a drop (`timeout`, `connection_lost`, `kicked`, `server_closed`,\n  `failed_to_connect`, `other`), and `Glitchless.Reconnect()` when it\'s back.\n- **The match:** where every player joins one match or lobby, `Glitchless.SetGroup("match", id)` with an ID everyone in\n  it shares (a Lobby\'s `lobby.Id`, a Multiplayer Services `session.Id`, or the game server\'s match ID), and\n  `Glitchless.SetGroup("match", null)` when it ends. A party: `SetGroup("party", id)`, never a guild or friends list.\n  A roguelite run: `var run = Glitchless.SetGroup("run")`, saved with the run if it survives a restart. The SDK hashes\n  match and party IDs.\n- **A dedicated server:** a build with the Dedicated Server target reports as `<service>.server` by itself, with its\n  tick time, players and the players\' ping, and never counts as a player; for a headless server built otherwise, add\n  `--glitchless-server` to its command line or `Role = GlitchlessRole.Server` to its options. Set `ServerRegion` (in the\n  game\'s words) and `MaxPlayers`, and `SessionPerMatch = true` when a server process hosts one match at a time. Call\n  `Glitchless.SetPlayers(n)` only if the game counts players without NGO or Mirror. The server\'s code should set the\n  same match group as its players.\n\n## 4b. Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first): ask the user first, since the note is free text the\nplayer types, and point them at the privacy wording in the package\'s `PRIVACY.md`. Then add one line to the options:\n\n```csharp\nBugReports = new BugReportOptions(), // F8 opens the form; OnOpen / OnClose to pause, Hotkey to change the key\n```\n\nThe form is IMGUI, so the game needs no Canvas or EventSystem, and it works with the Input Manager and the Input\nSystem. While it\'s open, `Time.timeScale` is 0 and the Input System\'s actions are off (`PauseGame`). Input the game\nreads straight from `UnityEngine.Input` or a device isn\'t held back: guard it with `if (Glitchless.IsBugReportOpen)\nreturn;`. A pause menu can call `Glitchless.OpenBugReport()`, and the game\'s own form `Glitchless.ReportBug(note)`.\n\n## 4d. A "Share performance data" setting\n\nIf the game has a settings or options menu, offer the user a toggle there that the player can turn off (store privacy\nforms then count the data as optional). Add it next to the game\'s other settings, saved the way they are, and pass it\non as the game starts and on every change:\n\n```csharp\ntoggle.isOn = PlayerPrefs.GetInt("share_data", 1) == 1;   // the game\'s own saved setting\nGlitchless.SetEnabled(toggle.isOn);                       // changes nothing when it agrees\ntoggle.onValueChanged.AddListener(on => { PlayerPrefs.SetInt("share_data", on ? 1 : 0); Glitchless.SetEnabled(on); });\n```\n\nOff stops Glitchless at once and deletes what was waiting; the SDK saves the choice and reads it before anything else\nnext launch, so it holds even though Glitchless starts before the menu. Show the game\'s own setting on the toggle, not\n`Glitchless.Enabled` (false in a build that sends nothing). For a game that asks before collecting anything, add\n`OptIn = true` to the options and default the setting to off. Don\'t add a toggle without asking; a game with no\nsettings menu can go without.\n\n## 5. Bots and measuring\n\nIf the game has an autoplay or test mode, start it from the command line (`--autoplay --seed=N`): the SDK marks\nthose sessions synthetic. To measure a build before and after a change, run the player with\n`--glitchless-measure=10 --glitchless-out=measure.json` (add `-batchmode -nographics` on a machine without a\nscreen); it writes frame stats as JSON and quits. In a live Editor you can drive, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))`\ndoes the same.\n\n`glitchless_playtest` does the before-and-after for you: build the player, then give the playtest the build, as the\ntool\'s `command` or in `glitchless.playtest.json` (`{"command": ["Builds/Game.app"]}`, `Builds/Game.exe` on Windows).\nEach run starts it with `--autoplay --seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure\nflags, and the run is compared with the saved baseline, including GPU time, physics and what grew over the run. The\ngame\'s autoplay mode has to read those flags and keep playing for the whole measure (10 seconds by default).\nRebuild before each playtest: it runs the build, not the Editor.\n\n## 6. Verify\n\nPress Play in the Editor, play a level and die once, then call `glitchless_list_games` or open the dashboard.\nFor an online game, play one match with the console open: in the Editor the SDK says there if it dropped a property or\na group ID, or if the server doesn\'t take counters or a game server\'s sessions yet.\nThe **Glitchless** GameObject under DontDestroyOnLoad shows the SDK is running.\n',
+      "plugin/glitchless/skills/instrument/references/unreal.md": '# Unreal\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nThe Glitchless plugin (`unreal/Plugins/Glitchless` in the Glitchless repo), for Unreal Engine 5.8. It is C++\nsource: it times every frame on the game, render and RHI threads and the GPU, names each hitch\'s likely causes\n(pipeline states created on the spot, garbage collection, map loads, streamed levels, asset loads), and reports\n`UE_LOG` errors, ensures, Blueprint runtime errors and crashes. Maps are levels on their own.\n\n## 1. Read the project\n\nNote: `EngineAssociation` in the `.uproject` (5.8), whether there is a `Source/` folder (a C++ project) or not\n(Blueprint only), `GameDefaultMap` in `Config/DefaultEngine.ini` and which maps are levels, the classes for player\ndeath and respawn, level complete and fail, pickups, and anything spawned in bulk (projectiles, enemies, effects);\nwhere the version lives (`ProjectVersion` under `[/Script/EngineSettings.GeneralProjectSettings]` in\n`Config/DefaultGame.ini`). Blueprints are binary `.uasset` files: you can\'t read them as text. If Unreal MCP is\nconnected (below), use it to look inside them; otherwise ask the user where those moments live.\n\n## 2. Install\n\nCopy the plugin into the project, so it builds with the game (from the agent kit, or the GitHub release zip):\n\n```bash\ncp -R ~/.glitchless/unreal/Plugins/Glitchless "<Project>/Plugins/Glitchless"\n```\n\nAdd it to the `.uproject`\'s `Plugins` list: `{ "Name": "Glitchless", "Enabled": true }`. The plugin is source, so a\nBlueprint-only project needs a C++ module once: ask the user to add one in the editor (**Tools \u2192 New C++ Class**,\nany class) or add a minimal `Source/` folder yourself (a module, `<Game>.Target.cs` and `<Game>Editor.Target.cs`).\nThen build the editor target: on a Mac `"/Users/Shared/Epic Games/UE_5.8/Engine/Build/BatchFiles/Mac/Build.sh"\n<Game>Editor Mac Development -project="<path>/<Game>.uproject"`, on Windows `Engine\\Build\\BatchFiles\\Build.bat\n<Game>Editor Win64 Development -project=...`. Add `-NoHotReload` if an editor has the project open. C++ code that\ncalls Glitchless adds `"Glitchless"` to `PublicDependencyModuleNames` in its `.Build.cs`. If the user installed it\nfrom Fab instead, it is an engine plugin that comes built: enabling it is all, and a Blueprint-only project needs no\nC++ module. `unreal/demo` in the Glitchless repo is a working example, with three planted problems and a script\nthat checks Glitchless finds them.\n\n## 3. Settings, without code\n\nAdd this to `Config/DefaultGame.ini` (or set it in **Project Settings \u2192 Plugins \u2192 Glitchless**); the game instance\nstarts Glitchless with it, so nothing calls Init:\n\n```ini\n[/Script/Glitchless.GlitchlessSettings]\nService=<game-id>\nIntake=http://localhost:7777\nClientToken=gl_pub_dev\nPrivacy=Anonymous\nbSendInDevelopmentBuilds=True\n```\n\nPlay In Editor and Development builds send as env `dev`, Shipping builds as `prod`. The version is the project\'s\n`ProjectVersion` unless `Version=` is set here: bump it on every release. For a game jam, keep\n`bSendInDevelopmentBuilds=True`: jam submissions are Development builds.\n\n## 4. Levels and game semantics\n\nMaps are levels, except those that read as a menu, lobby, loader or end screen (`Entry`, `MainMenu`, `L_Frontend`,\n`Lobby`, `Loading`, `GameOver`\u2026). If one map plays many levels, call `LevelStart` where each begins; the first call\nturns map levels off.\n\n| Game moment | C++ (`#include "Glitchless.h"`) | Blueprint node |\n| --- | --- | --- |\n| level starts | `FGlitchless::LevelStart(TEXT("forest-2"))` | Level Start |\n| level beaten | `FGlitchless::LevelComplete(TEXT(""), Score)` (empty: the current level) | Level Complete |\n| game over: the player lost the level | `FGlitchless::LevelFail(TEXT(""), TEXT("timeout"))` | Level Fail |\n| the player leaves mid-level (the menu, a restart) | `FGlitchless::LevelAbandon(TEXT(""))`: never a fail; quitting or going to the background mid-level sends one by itself | Level Abandon |\n| player dies | `FGlitchless::Death(GetActorLocation(), TEXT("fell"))` | Death |\n| pickups, checkpoints | `FGlitchless::Track(TEXT("powerup"), TEXT("magnet"))` | Track Event (What), Track Event |\n| a purchase the store confirmed | `FGlitchless::Track(TEXT("purchase"), {{TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}}, {{TEXT("amount"), 4.99}})` | Track Event, `amount` in Numbers |\n| counts of anything that scales, each frame | `FGlitchless::SetContext(TEXT("enemies"), Enemies.Num())` | Set Context |\n| the player\'s place, each frame | `FGlitchless::SetPosition(GetActorLocation())` | Set Position |\n| a problem the game noticed | `FGlitchless::Error(TEXT("save failed"))` | Report Error |\n\nPass Unreal units: the plugin sends positions in metres with y up, like the other SDKs. Every call is safe before\nInit and from any thread.\n\n**Outcomes, decks and streams.** Track a moment, count a stream, and send outcomes as flags so boards can show a win\nrate. `FGlitchlessAttributes` takes words, numbers, flags and lists (in Blueprint: the **Glitchless Attributes**\nstruct, or the Add Word, Add Number, Add Flag and Add List nodes):\n\n| What | C++ | Blueprint node |\n| --- | --- | --- |\n| a match, run or battle ends | `FGlitchless::Track(TEXT("match_end"), FGlitchlessAttributes().Add(TEXT("won"), true).Add(TEXT("hero"), Hero).Add(TEXT("items"), Items))` (`Items` a `TArray<FString>`) | Track Event (Attributes) |\n| shots, kills, gold, taps: anything many times a second | `FGlitchless::Count(TEXT("gold"), FGlitchlessAttributes().Add(TEXT("source"), TEXT("loot")).Add(TEXT("amount"), 35.0))`: words and flags (4) say which, numbers (4) are summed, sent once every 5 s | Count Event |\n| what the attempt is | `FGlitchless::LevelStart(TEXT("nmd_ghoa"), FGlitchlessAttributes().Add(TEXT("tier"), TEXT("pit_80")).Add(TEXT("party_size"), 3))` | Level Start\'s Attributes pin |\n| what holds for the session: mode, rank tier, class, region | `FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"))` (words, whole numbers, flags; a band like `"30-39"`, not an exact level), `ClearProperty` | Set Glitchless Property (and Number, Flag) |\n| a match or party from the game\'s server | `FGlitchless::SetGroup(EGlitchlessGroup::Match, MatchId)` when it starts, `ClearGroup(EGlitchlessGroup::Match)` when it ends: every event carries the ID, hashed | Set Group, Clear Group |\n| a roguelite run across levels | `FString Run = FGlitchless::SetGroup(EGlitchlessGroup::Run)`; save `Run` to resume it after a restart (Install and Full mode) | Set Group (Run) |\n| where the player is in an open world (a zone, a room) | `FGlitchless::SetZone(TEXT("westfall"))`, empty to leave | Set Zone |\n\nProperties and group IDs are checked: never a name, an account or platform ID, an email or a friends list. Match and\nparty IDs must be the ones the game\'s server made for that match (8 to 64 of `A-Z a-z 0-9 _ . : -`).\n\n**Multiplayer on Unreal\'s replication needs nothing more.** Once a second a client\'s frame windows carry its round\ntrip, packet loss, jitter and traffic from the net driver, and a lost connection sends a `disconnect` (and abandons\nthe level, never a fail). A **dedicated server** reports itself as the game\'s server (role `server`, filed under\n`<service>.server`): its tick time against `NetServerMaxTickRate`, players, their pings, CPU, memory and crashes. A\n**listen server** is a player (`net.host`) and, while it hosts, a server too. Set `ServerRegion` in the settings (or\n`-glitchless-region=eu-west` on each server\'s command line) to split ping by region, and `bServerSessionPerMatch` for\na server that hosts one match at a time. A game on another library (Steam Networking Sockets, EOS) calls\n`FGlitchless::NetSample(RttMs, LossPct)` once a second and `FGlitchless::Disconnect(TEXT("timeout"))` itself. Call\n`SetGroup(Match, \u2026)` on the server and every client with the same ID, so a match reads from every side. `UE_LOG` errors, ensures, Blueprint runtime errors (Accessed None\u2026) and crashes are\nreported without code; a crash is sent the next time the game starts. UObject and actor counts are sent as gauges\nalready; add the game\'s own counts with `SetContext`. To find a Blueprint-only game\'s moments, add the nodes in the\nBlueprints that handle them (with Unreal MCP, or by asking the user to).\n\n## 4b. Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first): ask the user first, since the note is free text the\nplayer types, and point them at the privacy wording in the plugin\'s `PRIVACY.md`. Then add `BugReportKey=F8` to the\nsettings above: F8 opens a small Slate box over the game with a screenshot and a note. It takes the game\'s input\nand pauses the game while open (`bPauseForBugReport`, on by default; a game paused already stays paused). A pause\nmenu can call **Show Bug Report Dialog** (`FGlitchless::ShowBugReportDialog()`), the game\'s own form **Report Bug**\n(`FGlitchless::ReportBug(Note)`), and `FGlitchless::OnBugReportDialog()` (or the Glitchless subsystem\'s On Bug\nReport Dialog) says when the box opens and closes.\n\n## 4c. A "Share performance data" setting (where the game has a settings menu)\n\nIf the game has a settings or options menu, offer the user a toggle there that the player can turn off (ask before\nadding UI; a game with no settings menu can go without). Keep it with the game\'s other settings, saved the way they are\n(its SaveGame or `UGameUserSettings`), and pass it on as the game starts and on every change:\n\n```cpp\nFGlitchless::SetEnabled(Settings->bSharePerformanceData); // in UGameInstance::Init, and when the toggle changes\n```\n\nIn Blueprint: the Check Box\'s **On Check State Changed** \u2192 **Set Enabled** (Is Checked into On), and the same node with\nthe saved value where the game loads its settings. Off stops measuring and sending at once and drops what was waiting\n(the outbox on disk too); the plugin saves the choice in `Saved/Glitchless/enabled` and reads it before the first frame\nof the next launch, so it holds even though Glitchless starts from Project Settings before any menu. A call that\nchanges nothing does nothing. Show the game\'s own setting on the toggle, not **Is Enabled** (false in a build that\nsends nothing, such as a development build without `-glitchless`). For a game that asks before collecting anything,\nset `bOptIn=True` in the settings above and default the toggle to off. With a toggle, the store forms can answer that\ncollection is optional, and the privacy page gets a sentence about it (the plugin\'s `PRIVACY.md`).\n\n## 5. Bots and measuring\n\nPackage a Development build, then run it with flags:\n\n```bash\n"/Users/Shared/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.sh" BuildCookRun -project="<path>/<Game>.uproject" -platform=Mac -clientconfig=Development -build -cook -stage -pak -unattended\n<Game> -glitchless-warmup=2 -glitchless-measure=10 -glitchless-out=measure.json\n```\n\n`-glitchless-measure=S` waits for the first map plus the warmup, measures S seconds, prints\n`{"glitchless_measure": {...}}` as one line on stdout and quits; the numbers are `glitchless_measure`\'s (frame_ms\npercentiles, fps, game/render/RHI/GPU ms, hitches with causes, memory, new errors) plus `session_id`. If the game has\nan autoplay or test mode, start it with `-autoplay`; that and `-glitchless-synthetic` mark the session synthetic.\n`-glitchless-intake=URL` sends to another server for one run. A Windows build has no console: read the\n`-glitchless-out` file. A UE 5.8 Mac build is sandboxed: it can write `-glitchless-out` only inside\n`~/Library/Containers/<bundle id>/Data` (its `tmp` is a good place), and stdout works anywhere. Don\'t start a build\nor cook while another Unreal build, cook or shader compile is running on the machine.\n\n`glitchless_playtest` does the before-and-after for you: give it the packaged build (under `Saved/StagedBuilds/`), as\nthe tool\'s `command` or in `glitchless.playtest.json` (`{"command": ["Saved/StagedBuilds/Mac/<Game>.app"]}`). Each run\nstarts it with `-autoplay -seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure flags, and\nthe run is compared with the saved baseline, including the RHI thread and GPU time. The game\'s autoplay mode\n(`FParse::Param(FCommandLine::Get(), TEXT("autoplay"))`, the seed from `FParse::Value`) has to keep playing for the\nwhole measure (10 seconds by default). Package again before each playtest.\n\n## 6. Agents in the editor: Unreal MCP\n\nUE 5.8 ships Unreal MCP (Experimental), Epic\'s MCP server inside the editor: with it you can open maps, look inside\nBlueprints and actors, edit them and run Play In Editor. Glitchless doesn\'t replace it; the two split the work:\n\n- **Unreal MCP** is your hands in the editor: find where deaths and level ends happen in Blueprints, add the\n  Glitchless nodes there, change the scene or material a finding points at, and start Play In Editor.\n- **Glitchless** says what is wrong and whether a change fixed it: the `glitchless` MCP server reads what players and\n  bots sent (findings, hitches with causes, errors, sessions), and the optional **Glitchless Toolset** plugin\n  (`unreal/Plugins/GlitchlessToolset`) adds `Status` and `Measure` tools to Unreal MCP, so you can measure the game\n  while it plays in the editor, as `glitchless_measure` does for a web game.\n\nTo set it up, copy `GlitchlessToolset` next to `Glitchless` in `Plugins/`, enable **Unreal MCP**, **All Toolsets** (or\n**Toolset Registry**) and **Glitchless Toolset** in **Edit \u2192 Plugins** (or the `.uproject`), start the server\n(`ModelContextProtocol.StartServer` in the editor console, or Editor Preferences \u2192 Model Context Protocol \u2192 Auto\nStart Server), and run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex\u2026) for the client\nconfig. Start Play In Editor before calling `Measure`. Numbers from the editor run slower than a packaged build\n(shaders compile on first use there): confirm a fix with a packaged Development build and `-glitchless-measure`.\n\n## 7. Verify\n\nPress Play in the editor (or run a Development build), play a level and die once, then call `glitchless_list_games`\nor open the dashboard. The log shows `LogGlitchless` lines; `-glitchless-debug` logs each batch as it is sent.\n',
+      "plugin/glitchless/skills/dashboard/SKILL.md": '---\nname: dashboard\ndescription: Build a game\'s own Glitchless dashboard. Work out what this game\'s developer wants to know, add the collectors for it (custom events with track(), levels, gauges, positions, game tools agents can call), check the data arrives, then design the game\'s dashboard (its pages, which are boards of panels and the built-in views it needs) with the glitchless_set_dashboard MCP tool. Use when the user asks for a dashboard, metrics, KPIs or analytics for their game, wants to track or count something, asks "how many players\u2026", "which mode\u2026", "does the paywall convert", or wants a different view of their game in Glitchless.\n---\n\n# Build a game\'s own dashboard\n\nEvery game needs different numbers. A mobile game cares whether players come back, which mode they pick and\nwhether the paywall turns into purchases; a puzzle game, how long a puzzle takes and how often hints are used; a\nplatformer or shooter, where players die and whether frames hold up in a fight. Glitchless doesn\'t guess: you\nadd the collectors this game needs, and design its dashboard from them: its own pages, in its own words. The\ndeveloper then sees it in Glitchless, and you can read the same data back over MCP to debug.\n\nBefore this skill, the game should already send data (the `instrument` skill). If it doesn\'t, do that first.\n\n## 1. Find out what they want to know\n\nWrite down three to eight questions, in the developer\'s words. Ask if they haven\'t said; read the game to\nsuggest some (menus, modes, shops, level lists, settings, anything with a counter). Good questions are about\ndecisions: "Do players finish the tutorial?", "Which mode do they play?", "Does the paywall convert?", "Which\nstage is too hard?", "Does it stutter on phones?". Leave out what nobody would act on.\n\n## 2. Pick a collector for each question\n\n| The question is about | Collector | Shows on a board as |\n| --- | --- | --- |\n| how often something happens, or which option players choose | `track(name, attrs)` | `stat`, `series`, `breakdown` |\n| how much: revenue, coins, seconds | a number in `track`\'s attributes (`purchase` with `amount` and `currency`) | `stat` or `breakdown` with `sum` |\n| how many players do it at all (conversion) | `track(name)` | `stat` with `per: "$players"` |\n| how long until players first do something (leave the lobby, open the shop, first purchase), and how many never do | `track(name)` when it happens: nothing timed by hand | `stat` with `first: "hall_left"` (the median seconds from a session\'s start to its first one), `stat` with `never: "hall_left"` (the share of ended sessions that never sent it) |\n| a sequence (tutorial \u2192 first win, paywall \u2192 purchase) | one `track` per step | `funnel` |\n| progress or difficulty through stages, puzzles, waves, stops | `levelStart` / `levelComplete` / `levelFail` | `levels` |\n| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level, one zone, or the whole game), the Heatmaps view |\n| where players go in a hub, a lobby or an open world with no levels | `setPosition`, and `setZone` for its areas (never a pretend level: it would show up in the levels funnel) | `positions` with `zone`, or with neither level nor zone, over a background picture (below) |\n| smoothness, and what makes it worse | automatic frame times, plus `setContext` gauges (enemies, particles) | `frame_time`, `stat: frame_p95` |\n| crashes and errors | automatic, plus `error()` for handled ones | `errors`, `stat: crash_free_pct` |\n| whether players come back (D1, D7, D30) | install mode: privacy `install` in the SDK, a stored random player ID (ask the user first: the privacy page must say so) | `retention`, the Players view |\n| how many are playing right now | automatic | `stat: players_now` |\n| who wins: a hero, weapon, card, heat or difficulty that wins too often or too rarely | one event at the end of each match or run with the outcome as a boolean (`match_end` with `hero` and `won: true`) | `breakdown` by `hero` with `rate: "won"` (each row\'s win rate with its likely range, next to all of them), `stat` with `rate` |\n| how long, how far, how many: match length, time in queue, placement, floors reached, pulls to a top unit | a number on that one event (`duration_s`, `wait_s`, `floor`) | `distribution` (half under, 1 in 10 over, a histogram), `stat` with `of` and `quantile: 50` (the median) |\n| each run, match or day one by one: today\'s daily runs and their scores, the last matches with their seed | one `track` per run with what describes it (`daily_run` with `day_label`, `score`, `attempt`) | `table`: a row per event, grouped by `day_label`, best score first (below) |\n| what a match or run used: a deck, items, a build, boons | a list attribute (`deck: [...]`) | `breakdown` by the list (each card a row), with `rate` for the win rate of decks with each card |\n| how fast players earn or play: gold, XP or kills per hour, matches per hour | the event (with its `amount`) | `stat` or `breakdown` with `per: "$hours"` (per hour played), and a `versions` panel to catch an economy that jumps |\n| a stream: shots, hits, kills, gold pickups, taps (many a second) | `count(name, attrs)`: summed on the device, sent once every 5 s, never a `track` per hit | like any event by its name: `stat` per `$hours`, `breakdown` by its words, `sum` of its numbers (no distribution) |\n| who is playing: rank, class, region, mode, a graphics preset, a spender band | `setProperties({ rank: \'gold\' })`, set where the game knows it (after sign-in, the menu, matchmaking); name a graphics preset `graphics` (`setProperties({ graphics: \'high\' })`) so `$graphics` and the Performance view\'s graphics rows read it (a Roblox game has it without code) | `by: "$rank"` on any breakdown, series, rate, distribution, `levels`, `retention` or `versions`; a page with `where` (only the high ranks) |\n| clears and wipes by difficulty, tier, group size or build | `levelStart(id, { tier, party_size, build: [...] })` | `levels` with `by: "tier"` (one level\'s rows: `level`), `deaths` with `by` |\n| runs that cross several levels (a roguelite) | `setGroup(\'run\')` at the run\'s start | `levels` with `count: "runs"` (runs that reach each biome), `stat: runs` |\n| one match from every side, and whether the lobby or one player lagged | `setGroup(\'match\', id)` with the ID the game\'s server made (`\'party\'` for a party; its size goes on `levelStart` as `party_size`) | the Matches view (each match\'s page), the lobby finding; clears by group size: `levels` by `party_size` |\n| where the player is in an open world or a hub (an MMO zone, a room, a lobby hall), and how long they stay | `setZone(name)`; nothing else: time in a zone is the frames drawn there, so never send zone timing as events | `breakdown` with `by: "$zone"` and no `event` (each zone\'s share of play time, the sessions that went there, their median time in it), `stat` `zone_time_pct` or `zone_median_s` with `zone`, `frame_time` with `by: "$zone"` (frame time and hitches per zone), `by: "$zone"` on any breakdown or series (kept like levels: any range) |\n| lag, packet loss and dropped players | read from the netcode by the SDK, or `netSample` / `disconnect` (the `instrument` skill) | `net` (ping, loss, disconnects), `stat: ping_p95`, `disconnect_pct`, the Network section of Performance |\n| dedicated servers: tick rate under load, crashes that end matches, leaks | the SDK in server mode on the server build (the `instrument` skill) | `servers` panels, `stat: servers_now` / `server_tick_p95` / `server_crash_free_pct`, the Servers view |\n\nThe calls, per engine:\n\n| | Three.js or Phaser | Godot | Unity | Unreal (C++; the Blueprint nodes match) |\n| --- | --- | --- | --- | --- |\n| a game event | `glitchless.track(\'play\', { mode: \'endless\' })` | `Glitchless.track("play", "endless")` | `Glitchless.Track("play", "endless");` | `FGlitchless::Track(TEXT("play"), TEXT("endless"));` (Track Event (What)) |\n| several attributes | `glitchless.track(\'buy\', { step: \'done\', item: \'full_game\' })` | `Glitchless.track("buy", {"step": "done"})` | `Glitchless.Track("buy", new Dictionary<string, object> { ["step"] = "done" });` | `FGlitchless::Track(TEXT("buy"), TMap<FString, FString>{{TEXT("step"), TEXT("done")}});` (Track Event) |\n| a purchase | `glitchless.track(\'purchase\', { amount: 4.99, currency: \'USD\', item: \'gems_500\' })` | `Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})` | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` | `FGlitchless::Track(TEXT("purchase"), {{TEXT("amount"), TEXT("4.99")}, {TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}});` (Track Event) |\n| a level | `levelStart(id)`, `levelComplete(id, { score })`, `levelFail(id, { cause })`, `levelAbandon(id)` (left, not lost) | `level_start`, `level_complete`, `level_fail`, `level_abandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` (maps are levels on their own) |\n| a gauge | `glitchless.setContext({ enemies })` | `Glitchless.set_context({"enemies": n})` | `Glitchless.SetContext("enemies", n)` | `FGlitchless::SetContext(TEXT("enemies"), N)` |\n\nRules that keep the numbers useful:\n\n- One event name per moment, in the game\'s own words (`open`, `play`, `paywall`, `buy`), and keep names stable:\n  renaming an event splits its history.\n- Put the choice in an attribute, not the name: `play` with `mode: \'endless\'`, not `play_endless`. Godot, Unity\n  and Unreal turn one word into the attribute `what`.\n- Attributes are strings, numbers, booleans or lists of them, at most 12 per event; strings are cut to 64\n  characters. Keep their values to a small set (modes, places, outcomes): a value per player or per run makes a\n  useless breakdown.\n- Outcomes as booleans (`won: true`), amounts as numbers (`duration_s: 184`), what a match or run used as a list\n  (`deck: [...]`, its first 16 count), and one event at the end of each match or run carrying all of them, not one\n  per hit. What describes the player goes in bands (`level_band: \'30-39\'`), never exact levels or amounts.\n- Track a moment, count a stream: `count()` for anything that happens many times a second (shots, hits, kills,\n  gold); `track()` for a moment worth its own event (a match\'s end, a purchase).\n- A property is what holds for the session (rank tier, class, region, mode, preset), set again each session: bands\n  and words, never an ID, a name or an exact number (intake drops keys like `email` or `user_id` and values shaped\n  like one). What changes from match to match (hero, deck, map) goes on the event or the level start instead.\n- Never send anything that identifies a player: no names, emails, account ids or anything they typed.\n- Purchases: one `purchase` event when the store confirms it (not when the button is tapped), with `amount` (a\n  number, in the currency\'s units: 4.99, not 499), `currency` (the ISO code the store charged in) and `item`. A\n  Roblox game sells for Robux: `currency: "ROBUX"` and the price in Robux (`amount: 99`); Robux are kept apart and\n  never added to dollars. A game that also reports purchases that didn\'t go through sends them as the same event\n  with a `result` (`"done"`, `"cancelled"`) and the amount on each, and its revenue panels read\n  `"purchase:result=done"`. A number sent next to `currency` counts as money, so put other numbers (gems granted)\n  on an event of their own. Never send receipts, order ids or payment details. Taps are other events (`buy` with\n  `step`).\n\nAdd the calls where the moment happens in code, then run the game (or let the bots play it) and check with\n`glitchless_events` that every event arrives with the attributes you expect.\n\n## 3. Design the dashboard\n\nA dashboard is the game\'s pages, at most 20, in the order its sidebar shows them; the first opens first. Each page is a\nboard, panels you choose, or a built-in view the game keeps: `events` (every event, breakdowns, funnels),\n`performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on a level, in a zone or anywhere), `sessions`\n(each with its replay), `versions`, `live` (events as they arrive; `options.events` keeps only some), `reports`\n(bug reports players sent, with screenshots), `matches` (a multiplayer game\'s matches, each opening a page with every\nplayer\'s ping slot by slot and the server\'s ticks under it) and `servers` (a game whose dedicated servers run the SDK\nin server mode: ticks by map and players connected, crashes, memory). Give the game the pages its developer would open, named in the game\'s\nwords, and drop the views it has no data for: no Heatmaps for a puzzle or mobile game, no Performance for a game\nthat sends no frame times, no reports page for a game that doesn\'t turn bug reports on.\n\nStart from what is there: `glitchless_dashboard` returns the current pages (`spec`; an automatic dashboard until\nsomeone saves one). Then call `glitchless_set_dashboard` with every page. On a board: a row of stats, then the\ngame\'s own events and funnels, then levels, then frame time and errors. Title each panel with the question it\nanswers. Each panel takes `size`: `s` (a quarter row, for stats), `m` (half) or `l` (full width); and a `note`,\none line on why it matters. People see the note behind the info icon next to the title, so put what they must see\nin the title. Panels keep their order and pack under each other, so a short panel can sit next to a tall one.\nGive the game its own colour with `accent` ("#rrggbb", such as the main colour of its logo or key art) in\n`glitchless_set_dashboard`, alone or with the pages: it colours the links, the selected page, stats, the main chart\nseries and the map on its boards and share links. `logo` and `banner` (its key art, the header behind each board\'s\ntitle, cropped to a strip around its `focus`) take the game\'s own pictures, a file or base64, also alone; use what the\ngame already has (its icon, its store or itch.io art) and ask before making one. `glitchless_dashboard` says whether\nthe game has them. Through the hosted server (connected by URL, which can\'t read your files) a `file` is answered with\nan upload link: run the `curl` it gives (`curl -X PUT --data-binary @file \'<link>\'`, no key) within 10 minutes. The link\ntakes one picture for that slot and then stops working; curl\'s answer says what was saved, or what to fix (a picture\nrefused for its size or type can go to the same link again). Don\'t send a big picture as base64: a banner is about a\nquarter of a million characters. `upload: true` asks for a link from any server.\n\n| type | fields |\n| --- | --- |\n| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played, players_now: playing now, whatever the range; runs; for a multiplayer game ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct; with servers in server mode servers_now, server_tick_p95, server_crash_free_pct, players_per_server; with `zone` (a zone\'s name from `setZone`) zone_time_pct, its share of play time, and zone_median_s, the median time in it of the sessions that went there), or `event` with an optional `per`: another event (a percentage), `$players` / `$sessions` (the share of them that sent it: conversion) or `$hours` (per hour played: matches per hour; `deaths` and `errors` take it too). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player, `"$hours"` per hour played (gold per hour). `rate`: the share of the events where a flag holds (`"won"`) or a word is sent (`"result=win"`), with `expect` for a rate the game intends; `avg`: a numeric attribute\'s average; `of` with `quantile` (1 to 99) and `unit`: one percentile (the median match). Instead of `event`, `first` (an event: the median seconds from a session\'s start to its first one, or `quantile`) or `never` (an event: the share of ended sessions that never sent it), 31 days or less. A money stat in Robux takes `devex: true`: an estimate in dollars at Roblox\'s DevEx rate under it, always labelled one |\n| `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level` / `$zone`, or the sessions\' `$platform` / `$browser` / `$device_tier` / `$link` / `$graphics` or a property, `$rank`), `limit`, `sum`, `rate` or `avg`, `per: "$hours"` |\n| `breakdown` | `event`, `by`, `limit`, `sum` (each value\'s sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026; a Roblox game\'s Computer, Phone, Tablet, Xbox, PlayStation, VR), `$browser` (Chrome, Safari, Firefox, Edge\u2026; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low), `$link` (Wi-Fi, Mobile data, Wired), `$graphics` (the graphics setting: a `graphics` property the game sets, else what the SDK read itself, Roblox\'s Graphics Quality as Automatic or 1 to 10; Automatic first, then low to high), or a property the game sets (`$rank`, `$class`; sessions without it are "(none)"). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Ranges of 31 days or less. With `rate` (`"won"`, `"result=win"`) or `avg`, each row\'s rate with its likely range (or its average) next to the overall one: `min` leaves out rows of fewer events (default 30 for a rate), `expect` draws the rate the game intends (a gacha\'s published odds, as a percentage: 0.6), `order` is `rate` (default), `count` or `value` (heat 0, 1, 2). Any breakdown takes `order: "value"` (the values\' own order: streak day 1, 2 \u2026 10) or `"count"`. `per: "$hours"` makes each row per hour played. By a list attribute (a deck), each element is a row. With `sum` in Robux, `devex: true` gives each row and the total an estimate in dollars. `by: "$zone"` without `event`: the time played in each zone, most first (share of play time, sessions that went there, their median time; time outside every zone is "(none)"), any range |\n| `distribution` | `event`, `of` (a numeric attribute), optional `by` (an attribute, `$version`, `$level`, a session split), `limit` (rows, up to 8), `bins` (bars, up to 40), `unit` (`"s"` shows minutes and hours; or the game\'s word, `"floors"`). How it spreads: half under, 1 in 10 over, and a histogram |\n| `funnel` | `steps`: events in order, comma-separated |\n| `levels` | `label`: what the game calls a level ("Stop", "Puzzle", "Wave"); shows each one\'s median clear time and the slowest 1 in 10, and the attempts a disconnect ended. `by` splits each level\'s attempts: an attribute of its `levelStart` (`"tier"`, `"party_size"`, a list such as `"build"`), a property (`"$class"`) or a split; `level` keeps one level; `count: "runs"` counts each run once at each level it reached |\n| `net` | `show`: `ping` (median and slowest 5% over time, and the share of play over 150 ms), `loss` or `disconnects` (per hour played, by reason); `by`: `$region` (a property), `$link`, `$platform`, `$level`, `$version` |\n| `servers` | `show`: `ticks` (tick time against its budget; `by`: `players` connected, `$level` or `$version`), `players` or `crashes` (with the matches and players each ended). Read from the game\'s servers in server mode |\n| `sessions` | `sent`: only sessions that sent this event ("buy=done"), `limit` |\n| `versions` | none: this board\'s stats, version by version; `by` a property (`$class`) compares its values instead |\n| `live` | `events`: only these names or types, as they arrive |\n| `frame_time` | none: p50 and p95 over time against players\' screens; `by: "$zone"` or `"$level"`: a row per zone or level with its p50, p95, frames over budget, hitches per minute and share of play time, most played first (`limit`, up to 20) |\n| `findings`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports; `by` and `level` for deaths, as on `levels`) |\n| `retention` | `limit`: how many of the latest first-seen days (default 14); `by` a property (`$spender`): each value\'s D1, D7 and D30. Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on, except a Roblox game connected to Roblox, whose panel shows Roblox\'s own retention |\n| `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat\'s `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe\'s `refunds`, `customers` (new paying customers) and `by_product`; Roblox\'s (in Robux) `installs` (new users), `active_users` (daily active users), `players_by_day` and `retention` (D1, D7, D30 by cohort day, size `m`), no `by_version`. `store`: `revenuecat`, `stripe` or `roblox` (default: the first connected). Real revenue from RevenueCat or the game\'s own Stripe account, or Roblox\'s Robux, for a game connected to it in Glitchless Cloud |\n| `store_score` | `store` (`app_store`, `google_play`, `steam` or `roblox`): a store\'s rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple\'s own rating on the App Store. Google Play has no API for its overall rating, so its panel is the reviews\' average and says so. Roblox has no reviews: its thumbs up and down, favorites and visits |\n| `positions` | `level`, or `zone` (what the game passes to `setZone`), or neither: every position and death in the game, for a hub with no levels; `show`: `deaths` (default), `path` or `both`, `bin`: a bin\'s width in world units (default about a hundredth of the place). Where players died there, counted per bin, and where they went on a coarser grid, over the place\'s background: one panel per place |\n| `table` | `event` (required), `columns` (up to 12: attributes, `$time`, `$version`, `$platform`, `$level`, `$session`; `{ "key": "duration_s", "unit": "s" }` for a unit; default the event\'s own attributes, up to 8), `group_by` (an attribute, `$version`, `$level` or `$platform`), `sort` (`"-score"`: highest first; default newest first), `of` (a number whose lowest, average and highest each group shows), `limit` (rows a group, up to 100; default 20). The event\'s events one by one, size `l` |\n\nAn event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. A list matches when it\nhas the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_spirit` when it has all of them:\nask about any pair or trio this way. A filtered event can be added up by an attribute too: completed purchases by\nitem is `event: "purchase:result=done"`, `by: "item"`, `sum: "amount"`. A dashboard\'s `currency` is an ISO code or\n`"ROBUX"`.\n\nFor a game with heroes, decks or builds to balance, money, player properties, online play, or several platforms\nand devices, read [references/genres.md](references/genres.md): the panels each of those asks for.\n\nEvery panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a\ndeveloper can take any number to a spreadsheet: no export panel is needed.\n\nWhole dashboards to start from, a mobile game, a competitive game, a battle royale, a puzzle game and a platformer,\nare in [references/examples.md](references/examples.md). Take the shape, not the words: every page and panel uses\nthis game\'s own names.\n\n**A background for a heatmap.** A positions panel and the Heatmaps view draw a place over its picture: one an SDK\ncaptured (`captureMap`), or one you upload with `glitchless_set_dashboard`\'s `background` (it can be sent alone),\nwhich needs no game code. Give it\na top-down picture of the level, zone or whole hub (a screenshot from the editor\'s top view, or the level\'s own map\nart) as a PNG or JPEG of at most 256 KB, and the world coordinates its edges stand for: with `axis` `xz` (seen from\nabove) the left edge is `bounds.min[0]` (x), the right `bounds.max[0]`, the top `bounds.min[1]` (z) and the bottom\n`bounds.max[1]`. Read those from the level\'s own data (the floor\'s corners), never guess them; the tool says when\nthe picture\'s shape doesn\'t match the bounds. One picture of the whole hub (no level, no zone) serves its zones too:\na zone without a picture of its own is drawn over it, and one of its own gives a closer look. Through the hosted\nserver, which can\'t read your files, a `file` is answered with an upload link for that place and those bounds: run the\n`curl` it gives within 10 minutes, as for the logo and banner above.\n\n**A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], \u2026]` on the\nlevel\'s plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,\nand the game itself can poll that link to draw everyone\'s deaths without a backend of its own: one board, one\npositions panel per level (or zone), a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_\u2026&days=30`\nabout once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so\nevery player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.\n\n**Reading events one by one.** Every other panel adds events up. When the developer wants to read each run, match\nor day ("26 Oct was Ferrum, Downpour, Boosters, Slow Burn: 6 runs in 5 sessions, best 171,230"), send one event per\nrun with what describes it and give it a `table`:\n\n```json\n{ "type": "table", "title": "Daily runs by day", "event": "daily_run", "group_by": "day_label",\n  "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "limit": 20, "size": "l" }\n```\n\nEach day gets a header with its runs, the sessions they came from and the lowest, average and highest score, the\nnewest day first, and runs without a `day_label` go under "(none)". `glitchless_dashboard` returns the same groups\nand rows to read. Only `track()` events have rows (`count()` sends totals), a session keeps its first 16 of each\nevent, and in anonymous mode a session is a session, never a player: say so rather than calling them players. A\nshare link numbers sessions instead of showing them.\n\nSaving checks every page and answers with each panel as it looks over the last week; a panel without data says\nwhy ("No "buy" events in this window"), and `glitchless_dashboard` with `page` shows one board\'s numbers. Show the\ndeveloper, then change what they ask for: "split opens by version", "add the shop" is one more `track` call and one\nmore panel, "a page for the tutorial" one more board. People can rename, reorder, add and remove pages in the\ndashboard too (Edit pages), so read the current pages before saving over them.\n\n## 4. Use it to debug\n\nThe boards also decide what a release is judged on: the Versions view and `glitchless_compare_versions` compare\nthe stats on every board, version by version (purchases per paywall view, revenue per session, opens per session), so ship a change,\nbump the version, and read whether it moved the numbers this game cares about. For one event across versions on a\nboard, use `by: "$version"`; for a board\'s own stats, a `versions` panel.\n\nThe dashboard\'s numbers are what you read when something looks wrong: `glitchless_events` with a `funnel` finds\nwhere players drop off, `glitchless_triage` ranks performance, crash, difficulty, network and server problems (and\nnames a property when most of one falls on a value: "crashes are mostly class necromancer"),\n`glitchless_network`, `glitchless_match` and `glitchless_servers` read a multiplayer game, and in a browser game the\nWebMCP tools let you reproduce one in the running game. Add a panel for anything you find yourself\nchecking twice.\n\n## Report\n\nList the questions, the events and calls you added (file:line), and the dashboard\'s pages and panels, and say\nwhich panels will fill in only once players or bots send that data.\n',
+      "plugin/glitchless/skills/dashboard/references/examples.md": '# Example dashboards\n\nDashboards for the [dashboard skill](../SKILL.md) to start from, each in the form `glitchless_set_dashboard`\ntakes. Keep the shape and rename everything to the game\'s own words.\n\nA mobile game with modes, stops and a paywall:\n\n```json\n{\n  "currency": "USD",\n  "pages": [\n    { "title": "Overview", "icon": "overview", "panels": [\n      { "type": "stat", "metric": "players", "size": "s" },\n      { "type": "stat", "event": "open", "title": "App opens", "size": "s" },\n      { "type": "stat", "event": "buy=done", "per": "paywall", "title": "Paywall to purchase", "size": "s" },\n      { "type": "stat", "event": "purchase", "sum": "amount", "title": "Revenue", "size": "s" },\n      { "type": "findings", "limit": 3, "size": "l" },\n      { "type": "breakdown", "event": "play", "by": "what", "title": "Which modes they play", "size": "m" },\n      { "type": "series", "event": "open", "by": "what", "title": "Opens, free vs full", "size": "m" }\n    ] },\n    { "id": "paywall", "title": "Paywall", "icon": "bolt", "panels": [\n      { "type": "stat", "event": "purchase", "sum": "amount", "per": "$players", "title": "Revenue per player", "size": "s" },\n      { "type": "stat", "event": "purchase", "per": "$players", "title": "Players who bought", "size": "s" },\n      { "type": "breakdown", "event": "purchase", "sum": "amount", "by": "item", "title": "Revenue by item", "size": "m" },\n      { "type": "funnel", "steps": "paywall,buy=tapped,buy=done", "title": "Paywall to purchase", "size": "l" },\n      { "type": "breakdown", "event": "paywall", "by": "what", "title": "Where the paywall opens", "size": "m" },\n      { "type": "versions", "title": "Paywall numbers by version", "size": "m" },\n      { "type": "sessions", "sent": "buy=done", "title": "Sessions that bought", "size": "l" }\n    ] },\n    { "id": "stops", "title": "Stops", "icon": "flag", "panels": [\n      { "type": "levels", "label": "Stop", "title": "Stops won and lost", "size": "l" },\n      { "type": "breakdown", "event": "difficulty", "by": "what", "title": "Difficulty picked", "size": "m" }\n    ] },\n    { "id": "daily", "title": "Daily", "icon": "clock", "panels": [\n      { "type": "stat", "event": "daily_run", "title": "Daily runs", "size": "s" },\n      { "type": "stat", "event": "daily_run", "of": "score", "quantile": 50, "title": "Median daily score", "size": "s" },\n      { "type": "table", "event": "daily_run", "group_by": "day_label", "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "title": "Daily runs by day", "size": "l" }\n    ] },\n    { "id": "purchases-live", "title": "Purchases, live", "view": "live", "options": { "events": ["paywall", "buy"] } },\n    { "view": "events" },\n    { "view": "sessions" },\n    { "view": "versions" },\n    { "view": "errors" }\n  ]\n}\n```\n\nA competitive game (a MOBA, a card battler, a roguelite: the same shape with its own words):\n\n```json\n{ "pages": [\n  { "id": "heroes", "title": "Heroes", "icon": "players", "panels": [\n    { "type": "stat", "event": "match_end", "rate": "won", "title": "Matches won", "size": "s", "note": "Should sit near 50%" },\n    { "type": "stat", "event": "match_end", "of": "duration_s", "quantile": 50, "unit": "s", "title": "Median match", "size": "s" },\n    { "type": "stat", "event": "match_end", "per": "$hours", "title": "Matches per hour played", "size": "s" },\n    { "type": "breakdown", "event": "match_end", "by": "hero", "rate": "won", "min": 100, "limit": 20, "title": "Win rate by hero", "size": "l" },\n    { "type": "breakdown", "event": "match_end", "by": "items", "rate": "won", "min": 100, "limit": 20, "title": "Win rate of builds with each item", "size": "m" },\n    { "type": "distribution", "event": "match_end", "of": "duration_s", "by": "mode", "unit": "s", "title": "Match length", "size": "m" },\n    { "type": "versions", "title": "Version by version", "size": "l" }\n  ] },\n  { "view": "performance" },\n  { "view": "errors" }\n] }\n```\n\nA battle royale or other online game, next to its own pages:\n\n```json\n{ "pages": [\n  { "id": "network", "title": "Network", "icon": "live", "panels": [\n    { "type": "stat", "metric": "ping_p95", "title": "Ping for the slowest 5%", "size": "s" },\n    { "type": "stat", "metric": "disconnect_pct", "title": "Matches ended by a disconnect", "size": "s" },\n    { "type": "net", "show": "ping", "by": "$region", "title": "Ping by server region", "size": "l" },\n    { "type": "net", "show": "disconnects", "title": "Disconnects and why", "size": "m" },\n    { "type": "findings", "limit": 5, "size": "m" }\n  ] },\n  { "id": "servers", "title": "Servers", "icon": "perf", "panels": [\n    { "type": "stat", "metric": "servers_now", "title": "Servers running", "size": "s" },\n    { "type": "stat", "metric": "server_tick_p95", "title": "Server tick, slowest 5%", "size": "s" },\n    { "type": "stat", "metric": "server_crash_free_pct", "title": "Server runs without a crash", "size": "s" },\n    { "type": "servers", "show": "ticks", "by": "players", "title": "Tick time by players connected", "size": "l" }\n  ] },\n  { "id": "endgame", "title": "Dungeons", "icon": "flag", "panels": [\n    { "type": "levels", "label": "Dungeon", "by": "tier", "title": "Clears by tier", "size": "l" },\n    { "type": "levels", "label": "Dungeon", "by": "$class", "title": "Clears by class", "size": "m" }\n  ] },\n  { "view": "matches" },\n  { "view": "performance" }\n] }\n```\n\nA puzzle game: an Overview with `stat` players and average session, `levels` with `"label": "Puzzle"` (completion\nand time), a `breakdown` of `hint` by `what` and a `funnel` of `tutorial=done,puzzle_solved`; then Events, Sessions\nand Errors. No Performance unless it\'s slow, no Heatmaps, no deaths.\n\nA platformer or shooter: an Overview with `stat` frame_p95 and crash_free_pct, `findings`, `frame_time`, `levels`,\n`deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions. A\nlevel whose deaths tell its story gets a `positions` panel (`"show": "both"` to see where players went too).\n\nAn avatar hub with puzzle levels (a Roblox experience): the lobby is no level, so the `levels` panel shows only the\npuzzles. A Lobby board has a `positions` panel with no level or zone (`"show": "path"`, over a background uploaded\nwith `glitchless_set_dashboard`\'s `background`), a `breakdown` of what players do there by `$zone`, and the hub\'s purchases;\nthe Heatmaps view picks a puzzle, a zone or Everywhere.\n',
+      "plugin/glitchless/skills/dashboard/references/genres.md": '# Panels for each kind of game\n\nWhat the [dashboard skill](../SKILL.md) adds for a game with these features. Use the game\'s own names for\nevents, attributes and pages.\n\n**Balance, outcomes and economies.** A rate breakdown answers "which hero wins too often" with how sure it is: each\nrow\'s whisker is the range its rate likely sits in, and a row whose range misses the line (all heroes, or `expect`)\nis drawn in colour. Set `min` so rows of a handful of matches stay out (100 or more for a balance question), and say\nin the `note` what the line should be ("Should sit near 50%"). A game with published odds (a gacha banner\'s 0.6%) can\nput them in `expect` on a rate of its pulls: the board and a finding then say when what players got misses it, and the\ndeveloper decides what that means. Per-hour numbers (`per: "$hours"`) compare versions fairly when sessions get\nlonger or shorter, so put an economy\'s earn and spend rates in stats and add a `versions` panel; a sum per hour that\nmoves 50% between versions, or a distribution whose median moves 30%, becomes a finding. To check one combination\nthe board doesn\'t show, ask `glitchless_events` with `name`, `rate` and `by` (and a filter in `name`), or `of` for a\ndistribution.\n\n**Money.** A sum of events that carry a `currency` is money: the dashboard shows it with the currency\'s symbol and\ntwo decimals. A game has one currency, the dashboard\'s `currency` (`glitchless_set_dashboard` with\n`currency: "USD"`, sent again with every save) or else the one most purchases are sent in; purchases in another\ncurrency are listed on the panel as left out, never added in. If one shows up, fix the game (convert before\nsending, or send the store\'s price in one currency) rather than the board. Revenue is hidden on a shared board\nunless the link is made to show it. A game connected to RevenueCat (Glitchless Cloud: Settings \u2192 Integrations) gets a Revenue page of\n`store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs\nand active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game\'s\nown `purchase` sums are for revenue by item, level or player. A game that sells through its own Stripe account gets a\nStripe one (refunds, fees, new paying customers, revenue by product). For its revenue by version, the game\'s server puts\nthe player\'s Glitchless session ID (`Glitchless.instance.sessionId` in a web game) in the Checkout Session\'s\n`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent. A Roblox game connected to Roblox\ngets a Roblox page (thumbs up, daily active and new users, Roblox\'s retention, players now, Roblox\'s crash rate and\nframe rate by place version) and a Revenue page in Robux: keep both, since its SDK is anonymous and Roblox\'s retention\nis the only one it has.\n\n**A Roblox game\'s own money and lobby.** Its purchase events carry `currency: "ROBUX"` and the price in Robux, and its\ndashboard takes `currency: "ROBUX"`: the board shows Robux with \u2B21 and never adds them to dollars. `devex: true` on a\nRobux stat, breakdown or series adds what they\'d be worth through Roblox\'s Developer Exchange, always as an estimate\n(the price players paid at DevEx\'s standard rate; the experience earns less). Revenue of completed purchases by item,\nwhen cancelled ones carry their amount too: a breakdown with `event: "purchase:result=done"`, `by: "item"`, `sum:\n"amount"`. A hub with a lobby asks how long players stay in it and how many never leave: the game sends one event when\na player first leaves (`hall_left`, from the server for that player), and the board has a stat with `first:\n"hall_left"` (the median seconds from joining) and one with `never: "hall_left"` (the share of ended sessions that\nnever left). A streak or a step number reads best in its own order: a breakdown by `day` with `order: "value"`.\n\n**Who is playing.** A game that sets properties splits anything by them (`by: "$rank"`): win rate by hero at each\nrank is a page with `"where": { "$rank": ["diamond", "master"] }` and the same breakdown on it; retention by\n`$spender`, frame time by `$preset` (the Performance view\'s by-property table), versions by `$class`. A property with\nmore than 200 values a day is an ID and reads as "(too many values)": fix the game. These read the sessions, so\nranges of 31 days or less.\n\n**Multiplayer.** A game with online play gets a Network page: `stat` ping_p95 and disconnect_pct, a `net` panel by\n`$region` (or `$link` on mobile: Wi-Fi against mobile data) and one with `show: "disconnects"`, and `findings`; a\nwhole lobby lagging at once (the server) and one player lagging (their connection) are findings of their own. With\nmatch groups, keep the `matches` view. With dedicated servers in server mode, a Servers page (`servers_now`,\n`server_tick_p95`, `server_crash_free_pct`, a `servers` panel `by: "players"`) or the built-in `servers` view; the\nservers\' sessions are kept under `<game>.server`, never counted as players.\n\n**Open worlds and hubs.** A game with zones (an MMO\'s regions, a metroidvania\'s rooms, an avatar hub\'s hall and the\nzones around it) gets a Zones page: a `breakdown` by `$zone` without `event` (where play time goes, and how long the\nsessions that go to each zone stay), `stat` `zone_median_s` with `zone` for the zone that matters most (the hall),\n`frame_time` by `$zone` (which zone hitches), and its own events by `$zone` (purchases by zone). Levels inside zones\n(a puzzle in the garden) keep their `levels` panel; `frame_time` by `$level` reads them apart.\n\n**Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by\n`$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or\nsessions on each), the same with `event: "purchase"` (purchases tracked on each), and with RevenueCat connected,\n`store_revenue` `by_store` (the money in each store) and `by_country` (where installs and money come from). Add a\n`store_score` per store the game is connected to.\n',
+      "godot/addons/glitchless/README.md": '# Glitchless for Godot\n\nA Glitchless SDK for Godot 4.5 and later, built for 4.7 and the Mobile renderer. It sends the same events as the browser SDK (`packages/sdk`), so a Godot game shows up in the same Glitchless server, dashboard, findings, Datadog forwarding and MCP tools with no server changes beyond the small ones listed under [Limits](#limits).\n\nIt reports:\n\n- **Frame times.** Each 5 s window carries a mergeable 2% sketch, so the server\'s p95 and p99 cover every player. Slow frames are flagged the way the browser SDK flags them.\n- **Hitches with likely causes.** A pipeline (shader) compile, a burst of new nodes, a scene change, slow `_process` code, physics, rendering, or a frozen frame. Each hitch also carries the game\'s gauges and the events in the 1.5 s before it.\n- **Engine counts.** Draw calls, primitives, objects, nodes, orphan nodes, video memory, and static memory (debug builds only). They\'re the leak watch.\n- **Errors** through Godot 4.5\'s custom loggers, with script backtraces and the last game events as breadcrumbs.\n- **Play events:** the level funnel, deaths, game events and gauges.\n- **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed. A [web export](#web-exports) names the player\'s browser and its OS, as the browser SDK does.\n- **Bug reports from players**, when the game turns them on: F8 (or the game\'s own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.\n- **Multiplayer:** ping, packet loss and disconnects from Godot\'s own MultiplayerAPI (ENet, and WebSocket for web exports), which match and party each event belongs to, and a dedicated server\'s tick time and players, kept apart from players\' sessions.\n- **Genre numbers:** counters for streams of events (shots, kills, gold), properties that hold for a session (mode, rank tier, class, region), level attributes (difficulty, party size) and zones in an open world.\n\nIt also has an agent flag, `--glitchless-measure=SECONDS`, which prints frame stats as JSON and quits. It\'s the native version of the browser SDK\'s `glitchless_measure` tool.\n\nAnonymous mode, the default, sends nothing that can be tied to a person. [PRIVACY.md](PRIVACY.md) lists every field each mode sends. [PORTING.md](PORTING.md) shows how a game that counts events with its own `Metrics.count(event, word)` moves over.\n\n## Install\n\n1. Copy `addons/glitchless/` into the game\'s `addons/`.\n2. Add the autoload. Either turn on the plugin under *Project Settings \u2192 Plugins*, or add this line under `[autoload]` in `project.godot`:\n\n   ```ini\n   Glitchless="*res://addons/glitchless/glitchless.gd"\n   ```\n\n3. Optional, for script lines on errors in release builds: *Project Settings \u2192 Debug \u2192 GDScript \u2192 Always Track Call Stacks* (`debug/settings/gdscript/always_track_call_stacks=true`). It makes every GDScript call do a little more work. Without it, a release build reports the engine\'s own file and function instead.\n\nThe addon uses no `class_name`, so it adds no global names and works in a project that has never been opened in the editor.\n\n## Use\n\n```gdscript\nfunc _ready() -> void:\n	Glitchless.init("starlift", "", "prod", "https://glitchless.example.com")  # "" = the Steam build, else application/config/version\n\nGlitchless.level_start("voyage_3")\nGlitchless.level_complete("voyage_3", score)          # duration measured since level_start\nGlitchless.level_fail("voyage_3", "lost")              # lost it: died, ran out of time\nGlitchless.level_abandon("voyage_3")                  # left it: home, restart, a menu. Never a fail\nGlitchless.death(pos.x, pos.y, "meteor")              # the place is sent only when positions are on\nGlitchless.track("play", "endless")                   # one word, a number, or a dictionary\nGlitchless.set_context({"blocks": blocks.size()})     # at the end of the frame\'s work\nGlitchless.set_position(player.position)              # ignored unless positions are on\nGlitchless.error("save slot unreadable", {"slot": 2}) # an error the game caught itself\nvar stats := await Glitchless.measure(5.0)            # what --glitchless-measure prints\nGlitchless.open_bug_report()                          # the bug report form, from a pause menu\nawait Glitchless.report_bug(note)                     # or a report from the game\'s own form\nGlitchless.count("kill", {"monster": "elite"})        # a stream of events: counted, sent once a window\nGlitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for this session\nGlitchless.level_start("pit_80", {"tier": "pit_80", "party_size": 3})  # an attempt with its attributes\nGlitchless.set_group("match", match_id)               # every event until set_group("match", null) carries it\nGlitchless.set_zone("ashen_wastes")                   # where the player is in an open world\nGlitchless.set_enabled(on)                            # the player\'s "Share performance data" setting\nGlitchless.is_enabled()                               # true while this build sends and the player hasn\'t turned it off\n```\n\n**Leaving a level is not losing it.** Call `level_abandon()` when the player leaves a level before it ends (goes to the menu, restarts it), not `level_fail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background or closes with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session\'s end, and drops a `level_fail` or `level_abandon` the game sends for that level afterwards (from `_exit_tree`, say). Back from the background in the same session, the level carries on and the server takes the abandon back.\n\n`track` is for the game\'s own metrics, whatever they are: `track("open", "full")`, `track("play", "endless")`,\n`track("buy", {"step": "done"})`. One word becomes the attribute `what`. The dashboard\'s Events page counts each\nevent over time, breaks it down by attribute and builds funnels between events, and the game\'s own dashboard (its\npages designed by your coding agent with `glitchless_set_dashboard`) shows the ones that matter. Attributes are strings, numbers or\nbooleans, at most 12 per event.\n\nPurchases have one convention in every Glitchless SDK:\n`Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`. Send it when the store confirms the purchase, with `amount` a number in the currency\'s units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game\'s one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS, or in an Android debug build, is a sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. In an Android release build, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat\'s `isSandbox`).\n\n`init(service, version, env, intake, options)` options. Every one is optional.\n\n| option | default | |\n| --- | --- | --- |\n| `privacy` | `"anonymous"` | `"install"` adds a random player ID kept in `user://`, so retention can be counted; `"full"` that, device detail and positions. See [PRIVACY.md](PRIVACY.md) |\n| `positions` | on in full mode only | death places and 4 Hz position samples |\n| `client_token` | `"gl_pub_dev"` | the server\'s `GLITCHLESS_CLIENT_TOKENS` |\n| `sample_rate` | `1.0` | the share of sessions that send |\n| `flush_interval` | `5.0` | seconds between batches; the first goes 2 s after `init` |\n| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on the phones Google Play\'s pre-launch report runs a new build on (the Android setting `firebase.test.lab`, or a GPU that draws in software, as theirs do). `"tester"` is automatic on a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart), and on Android on a debug build or one installed outside a store (by adb, which Godot\'s one-click deploy uses, or from an APK file), from the app that installed it; a build from Google Play or another store stays a player\'s. It keeps testers out of the players\' numbers. A game sold as an APK outside the stores (on itch.io, say) passes `"user"` |\n| `session_timeout` | `300.0` | seconds in the background after which coming back starts a new session |\n| `engine_gauges` | `true` | put `nodes`, `orphan_nodes` and `objects` in `ctx` |\n| `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |\n| `capture_warnings` | `false` | also report `push_warning` and engine warnings |\n| `rage_input` | off on phones | the same key or tap four times in a second; fast tapping is normal play in a phone game |\n| `enabled` | off in debug builds | force sending on or off. This is the build\'s switch, which the player\'s [off switch](#the-players-off-switch) can\'t override |\n| `opt_in` | `false` | `true`: each device starts off until the game calls `set_enabled(true)`, for a game that asks the player first. A choice the player already made wins. A dedicated server has no player to ask, so it starts on |\n| `debug` | `false` | print each batch |\n| `bug_reports` | `false` | `true`, or `{"hotkey": KEY_F8, "pause": true, "screenshot": true}`: F8 opens the [bug report form](#bug-reports) |\n| `properties` | `{}` | the session\'s [properties](#properties) from the start, as `set_properties` takes them |\n| `hash_group_ids` | `true` | send [match and party IDs](#matches-parties-and-runs) hashed; `false` sends them as the game\'s server made them |\n| `network` | `true` | read [ping, packet loss and disconnects](#multiplayer-ping-packet-loss-and-disconnects) from Godot\'s MultiplayerAPI |\n| `role` | `""` | `"server"` makes this a [dedicated server](#dedicated-servers); `"player"` stops a game\'s own `--server` flag from meaning one. `""`: a dedicated-server export, `--glitchless-server` or `--server` is a server |\n| `region` | `""` | a server\'s region, in the game\'s words (`"eu-west"`) |\n| `max_players` | `0` | the most players a server takes |\n| `session_per_match` | `false` | a server\'s session lasts one match, for a server that hosts one at a time |\n\nFrame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings. A player who turned Glitchless off has nothing collected from the first frame on.\n\n### Retention needs install mode\n\nIn anonymous mode (the default) nothing is kept between launches, so the dashboard can\'t tell a returning player from a new one. `{"privacy": "install"}` keeps a random `p_\u2026` player ID in `user://glitchless/player_id` (the one full mode uses) and sends it with every batch; nothing else changes. The Players page and `retention` board panels then show D1, D7 and D30. `Glitchless.reset_install_id()` forgets it (for a "reset my ID" setting): this session keeps its ID, the next launch makes a new one. On a Steam Deck, `session_start` carries `steam_deck: true` and, on SteamOS, `os: "SteamOS"` (Linux builds and Windows builds under Proton).\n\n### Steam\n\nIf the game already uses [GodotSteam](https://godotsteam.com), every session also says which Steam build and beta branch it ran, whether on a Steam Deck (with GodotSteam 4.21, also a Steam Machine or Steam Frame, and Proton), in Big Picture mode, with which kind of controller, in which Steam language, and whether through Family Sharing or a timed trial. Nothing to set up and no dependency: the addon reads the `Steam` singleton only when the game has one (`Engine.has_singleton("Steam")`), and only once GodotSteam says Steam is initialised (`steamInitEx()`, initialising from the Project Settings, or `steamInit()` with your app ID), since its calls print engine errors before that. The facts are read when the first batch goes, so a game that initialises Steam after Glitchless still sends them. The controller is known once the game has called `inputInit()`. No Steam ID or name is ever read ([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).\n\n**Versions are Steam builds.** Pass `""` as the version and a Steam build reports `steam-<build>` (`steam-18231`), so every upload to Steam is a version the Versions page and `glitchless_compare_versions` can compare. Outside Steam it falls back to `application/config/version`. A version you pass always wins.\n\n**Branches.** Filter any dashboard query with `steam_branch=beta`, split a breakdown panel by `$steam_branch`, or compare branches with a versions panel `by: "$steam_branch"` or `glitchless_compare_versions` with `by: "steam_branch"`.\n\n### Off in debug builds\n\nAs with the `Metrics` autoload in Linebreakers and Starlift, a debug build (the editor, or an export with debug on) sends nothing unless it is run with `--glitchless`. That keeps a developer\'s phone and the agents\' bot runs out of the players\' numbers. Release exports send by default.\n\nEvery run the editor starts is a debug build, so a game that only runs in the editor so far sends nothing. To send your own runs, put `--glitchless` in *Project Settings \u2192 Editor \u2192 Run \u2192 Main Run Args* (turn on Advanced Settings to see it). The editor adds it to every run it starts. In `project.godot`:\n\n```ini\n[editor]\n\nrun/main_run_args="--glitchless"\n```\n\nThose runs count as a player\'s sessions, so take it out once the game has players, or your own playtests mix with theirs.\n\n**Web exports** have no command line, and Godot\'s export dialog exports with debug on unless *Export With Debug* is unticked, so a game jam\'s entries are often debug builds. A web export therefore goes by where its page is. Played from anywhere but your own machine (itch.io, your site), it sends, debug build or not: players are playing it. On your own machine (the editor\'s *Run in Browser*, a local server, or another device on your network) a debug build follows the rule above, and `?glitchless` in the page\'s address stands in for `--glitchless`: `http://localhost:8060/tmp_js_export.html?glitchless`.\n\n### The player\'s off switch\n\nGive players a "Share performance data" toggle in the game\'s settings and wire it to `Glitchless.set_enabled()`. Turned off, Glitchless stops at once: nothing more is measured or sent, not even a check that the server is there, and what it hadn\'t sent yet is deleted, the outbox on the device included. The session just goes quiet: no `session_end` or `level_abandon` is sent, and the server doesn\'t count it as a crash. Turned back on, a new session starts in the same launch, as after a long time in the background, with the properties and groups the game had set.\n\n```gdscript\n# settings_menu.gd\n@onready var share: CheckButton = %SharePerformanceData\n\nfunc _ready() -> void:\n	share.button_pressed = Settings.share_performance_data  # the game\'s own saved setting\n	share.toggled.connect(_on_share_toggled)\n\nfunc _on_share_toggled(on: bool) -> void:\n	Settings.share_performance_data = on\n	Settings.save()\n	Glitchless.set_enabled(on)\n```\n\n- **The choice is kept on the device**, as `on` or `off` in `user://glitchless/enabled`, and the autoload reads it before the first frame of every launch. A player who turned it off sends nothing from the start of the next launch, even though the game reads its own settings after Glitchless starts, and a batch an earlier launch left in the outbox is deleted unread. The file is written only once the game calls `set_enabled`, in every privacy mode.\n- **A call that changes nothing does nothing**, so the game can also pass its own saved setting each time it starts: `Glitchless.set_enabled(Settings.share_performance_data)`.\n- **Show the game\'s own setting in the menu**, not `Glitchless.is_enabled()`. `is_enabled()` is true only while this build sends and the player hasn\'t turned it off, so it is false in a debug build without `--glitchless` whatever the player chose. `set_enabled(true)` never turns on a build that sends nothing; it still saves the choice.\n- **Asking first.** `{"opt_in": true}` starts each device off until the game calls `set_enabled(true)`, for a game that asks the player before collecting anything, such as a prompt on first launch. A choice the player already made wins over it, and what was collected before `init()` is dropped when `opt_in` leaves it off. A dedicated server has no player to ask, so `opt_in` leaves it on.\n- **While it is off**, every call is safe and does nothing. The F8 form doesn\'t open, `report_bug()` answers `{"sent": false, "reason": "off"}`, and `measure()` and `--glitchless-measure` return an `error` saying Glitchless is off. The level, properties, groups, zone and gauges stay in memory for the next session.\n- **Back on**, the attempt that was going when the player turned it off (or one started while it was off) gets no `level_complete`, `level_fail` or `level_abandon` until the next `level_start`, since its start was never sent in the new session. The load isn\'t sent again.\n- **The player ID stays** (install and full mode), so a player who turns it back on is still one player. `reset_install_id()` is the separate setting that forgets it.\n- A dedicated server follows the same switch, saved in the same file.\n- With the toggle, collection is optional for the store forms ([PRIVACY.md](PRIVACY.md#for-the-store-forms)).\n\n### Bug reports\n\nPlayers and playtesters flag a problem where they see it, and you (or your coding agent, with the `glitchless_bug_reports` MCP tool) see it in Glitchless\'s Bug Reports view with the screenshot and a link to the session\'s replay.\n\n```gdscript\nGlitchless.init("starlift", "", "prod", intake, {"bug_reports": true})   # F8 opens the form\nGlitchless.init("starlift", "", "prod", intake, {"bug_reports": {"hotkey": KEY_F1, "pause": false}})\nGlitchless.bug_report_opened.connect(_pause)          # bug_report_closed too; for games that pause themselves\nGlitchless.open_bug_report()                          # a pause menu\'s "Report a bug" (works without bug_reports)\nvar result := await Glitchless.report_bug(note)       # the game\'s own form: {"sent": true}, or {"sent": false, "reason": "offline" | "off" | "error"}\n```\n\n| `bug_reports` key | default | |\n| --- | --- | --- |\n| `hotkey` | `KEY_F8` | a `Key`, its name (`"F1"`), or `null` for none. It opens and closes the form |\n| `pause` | `true` | pause the tree while the form is open, so the game neither runs nor reads what the player types (nodes set to always process still do). The pause state the game had comes back on close. Use `false` and the signals if the game has its own pause |\n| `screenshot` | `true` | send a screenshot with each report |\n\n- **The screenshot** is the root viewport\'s last frame, read before the form shows, so the form is never in it. It is shrunk until it fits the server\'s 200,000-character limit: the longer side at most 960 px, then 800, 640, 480 and 320, at lower JPEG quality. The frames that read it back and draw the form aren\'t timed, so they never show as hitches. A headless run draws nothing, so its reports have no screenshot; `report_bug(note, image)` sends an `Image` you pass, and `report_bug(note, false)` none.\n- **The form** is a `CanvasLayer` on layer 128 with the note box, Send and Cancel. Esc cancels, Ctrl+Enter (Cmd+Enter) sends, and a captured mouse is set free while it is open.\n- **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn\'t apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so (`"offline"`). While the player has Glitchless [off](#the-players-off-switch), the form doesn\'t open and `report_bug()` takes no screenshot and answers `"off"`.\n- **The note is the player\'s own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.\n\n### Counters\n\n`track()` sends one event per call, and the SDK queues at most 2,000 events. A stream (shots, hits, kills, loot, gold, taps) would fill that in a minute and push out the frame windows. Count a stream instead:\n\n```gdscript\nGlitchless.count("kill", {"monster": "elite"})\nGlitchless.count("gold", {"source": "loot", "amount": 35})   # numbers are summed as passed\nGlitchless.count("shot", "bow", 3)                            # one word is "what"; 3 events at once\n```\n\nNothing is queued per call. Each window (every `flush_interval` seconds, and at each `level_start`, so counts keep their level) adds the calls up per name and per its words and booleans (up to 4), sums its numbers (up to 4), and sends one `counts` event. A window holds 64 entries: past that, a new group of a name already counted goes under `(other)`, and a new name is dropped and counted in `dropped`. Dashboards read a counter by its name like any event (`kill` per hour played, `gold` by `source`, summed by `amount`). A debug build warns once when a name is tracked more than 20 times a second. The rule: track a moment, count a stream.\n\n### Properties\n\nWhat holds for the session, in the game\'s words: its mode, the player\'s rank tier or class, the input they use, the region of the game\'s servers. Any panel can then split by one (`$rank`), and a dashboard page can show only some sessions.\n\n```gdscript\nGlitchless.init("arena", "", "prod", intake, {"properties": {"mode": "squads"}})\nGlitchless.set_property("rank", "gold")               # after sign-in, at the menu, at matchmaking\nGlitchless.set_properties({"class": "necromancer", "level_band": "30-39"})\nGlitchless.set_property("party", null)                # null removes one\n```\n\n- Keys are 1 to 32 of `a-z`, `0-9` and `_`, starting with a letter, at most 12 a session. Values are a word (trimmed, up to 64 characters), a boolean or a whole number from \u22121,000,000 to 1,000,000. Fractions are dropped: send a band (`"30-39"`), not an exact level.\n- The built-in splits can\'t be used as keys (`version`, `level`, `platform`, `zone`, the Steam facts\u2026). Keys that name a person (`name`, `email`, `user_id`, `steam_id`, `age`\u2026) and values shaped like an email, a link, a phone number, a long number or an ID are dropped, with a warning in a debug build. [PRIVACY.md](PRIVACY.md#properties-the-games-words-about-the-session) says why.\n- They go in `session_start` when the first batch goes, and a later change as one `props` event a window with only the keys that changed. A call that changes nothing sends nothing. Nothing is kept on the device: each launch sets them again.\n- What changes from match to match (hero, deck, map) belongs on the events or on `level_start`, not in a property.\n\n### Matches, parties and runs\n\n```gdscript\nGlitchless.set_group("match", match_id, {"mode": "squads", "players": 100})  # the ID the game\'s server made\nGlitchless.set_group("party", party_id)               # while the party lasts; never a guild or friends list\nvar run_id := Glitchless.set_group("run")             # Glitchless makes run IDs: save it with the run\nGlitchless.set_group("run", saved_run_id)             # a run that goes on after a restart\nGlitchless.set_group("match", null)                   # the match ended\n```\n\nEach sends a `group` event, and while it is set every event and window carries `"match": \u2026` (or `party`, `run`), as it carries the level. So everyone in one match can be lined up: the whole lobby lagging at minute 12 is the server; one player lagging is their connection.\n\n- IDs are 8 to 64 of `A-Z`, `a-z`, `0-9` and `_ . : -`. Anything else is dropped.\n- **Match and party IDs go hashed:** `h_` and the first 24 hex characters of SHA-1 over the game\'s service (lowercased), `:` and the ID, as every Glitchless SDK sends them. Everyone in the match sends the same hash, a server and its clients included, whatever engine each runs, but it can\'t be looked up in the game\'s own match logs. `"hash_group_ids": false` sends them as they are, to match them against your own server\'s logs.\n- **Runs:** in install and full mode a saved run ID resumes the run. In anonymous mode it gets a new ID (with `resumed: true`), so nothing ties two launches together.\n- Groups set before `init()` go out once it is called.\n\n### Level attributes and zones\n\n`level_start(level, attrs)` describes the attempt: `{"tier": "pit_80", "party_size": 3}`, `{"heat": 4, "weapon": "rail"}`. The level funnel can then split clears by difficulty or group size. Attributes follow the rules of `track()`\'s.\n\nA **zone** is where the player is in an open world (an MMO region, a metroidvania room), apart from levels, with no start or end. `Glitchless.set_zone("ashen_wastes")` stamps every event and window with it, as the level is, and dashboards split by `$zone`. A window never spans two zones, unless the player crosses back and forth within a second. `set_zone(null)` clears it.\n\n### Multiplayer: ping, packet loss and disconnects\n\nNothing to set up for a game on Godot\'s MultiplayerAPI. Once a second while connected, Glitchless reads the tree\'s `multiplayer.multiplayer_peer`:\n\n| | ENet (`ENetMultiplayerPeer`) | WebSocket (`WebSocketMultiplayerPeer`, web exports) |\n| --- | --- | --- |\n| round trip | `get_peer(1).get_statistic(PEER_ROUND_TRIP_TIME)` | none: pass the game\'s own ping with `net_sample()` |\n| jitter, packet loss | `PEER_ROUND_TRIP_TIME_VARIANCE`; `PEER_PACKET_LOSS` over `PACKET_LOSS_SCALE` | none |\n| bytes in and out | the ENet host\'s `pop_statistic` (which resets its counters: a game that reads them itself gets what is left since the last second) | none |\n| disconnects | `peer_disconnected(1)` then `server_disconnected` | the same, with the WebSocket\'s close code |\n\nEach frame window while connected gains `net`: a 5% sketch of the round trips, their p50, p95 and maximum, jitter, loss, kbps in and out, the transport, and `host: true` on a listen server\'s host (whose own round trip is zero).\n\n**Disconnects.** A `disconnect` event says why (`timeout`, `connection_lost`, `server_closed`, `failed_to_connect`, `kicked`, `other`), how long the player was connected, and the window\'s ping and loss. A server that closes the connection sends ENet\'s goodbye, which arrives with the drop; a connection that timed out brings nothing, so the two are told apart (a kick reads as `server_closed`: say `Glitchless.net_disconnect("kicked")` in your own `server_disconnected` handler and that wins). A player who closes the connection themselves (`multiplayer_peer.close()`) is leaving, not disconnected: Godot sends `server_disconnected` alone then, and Glitchless sends nothing. With a level open, the attempt ends as a `level_abandon` with reason `disconnect`, never a fail, and a fail or abandon the game sends for it afterwards is dropped. Connecting again within 5 minutes is a `reconnect` (`after_s`); a player back in the same level plays on in it. At most 20 disconnects a session.\n\n**Other netcode** (Steam Networking Sockets, Nakama, a WebSocket game\'s own ping): `Glitchless.net_sample(rtt_ms, loss_pct, jitter_ms)` about once a second while connected, `Glitchless.net_disconnect(reason)` and `Glitchless.net_reconnect()`. (`disconnect` is taken: every Godot object has one, for signals.) `"network": false` turns the reading off.\n\n### Dedicated servers\n\nA Godot dedicated-server export (`OS.has_feature("dedicated_server")`), a run with `--server` or `--glitchless-server`, or `{"role": "server"}` reports as the game\'s server, under its companion service `<game>.server`, and never as a player\'s session. A headless server is a live session (`user`), not a bot\'s; `--autoplay` or `--glitchless-synthetic` marks a load test.\n\n```gdscript\nGlitchless.init("arena", "", "prod", intake, {"region": "eu-west", "max_players": 100})\nGlitchless.level_start("island")                      # the map it hosts\nGlitchless.set_group("match", match_id)               # the same ID its players set\nGlitchless.set_players(n)                             # only for netcode other than the MultiplayerAPI\n```\n\n- Every 5 s a `server_window`: each physics tick\'s time (from Glitchless\'s first `_physics_process` to the next tick or the frame\'s `_process`, so the physics step is in it) against the budget, 1000 / `Engine.physics_ticks_per_second`, the ticks over it (`late`), the tick rate reached, the players connected (`multiplayer.get_peers()`) and their round trips, kbps in and out, and on Linux the process\'s memory and CPU (percent of one core). No frame windows, hitches, positions or bug reports.\n- `session_start` says the tick rate, `max_players`, the build (`dedicated` or `headless`), `region` and the host\'s OS, cores and memory. Never its address or host name.\n- Envelopes carry `role: "server"` and no player ID. A server session lasts as long as its process, cut every 6 hours (`session_end` reason `max_duration`), or one match with `"session_per_match": true` (reason `match_end`).\n- A server sends nothing until the Glitchless server says it takes server sessions (`features` in `GET /v1/health`): to an older one it sends nothing at all and says so, so its sessions never land among players\'. Unsent batches wait in `user://glitchless/server_outbox.json`, apart from a player build\'s.\n- `--server` is the flag Godot\'s docs suggest for starting a game as its server. If your game\'s `--server` means something else, pass `{"role": "player"}`.\n\n### Older servers\n\nGlitchless asks the server what it takes when `init()` runs (`GET /v1/health`). A server that predates counters gets none (the game is told once, in the log), and one that predates server mode gets nothing from a dedicated server. Properties, groups, level attributes, zones and network fields go to any server: an older one keeps them in the stored events unread.\n\n### Flags\n\nThese go after `--` on the command line, like the games\' own debug flags. A web export takes `--glitchless`, `--glitchless-debug` and `--glitchless-synthetic` from its page\'s address too (`?glitchless`), and only those: a link can\'t point a player\'s data at another server.\n\n| flag | |\n| --- | --- |\n| `--glitchless` | send from a debug build too |\n| `--glitchless-intake=URL` | send to this server instead of the one in `init()`, and turn sending on |\n| `--glitchless-measure=SECONDS` | print frame stats as one line of JSON, `{"glitchless_measure": {...}}`, then quit |\n| `--glitchless-warmup=SECONDS` | with `--glitchless-measure`: wait this long before measuring |\n| `--glitchless-out=PATH` | with `--glitchless-measure`: write the line to this file too |\n| `--glitchless-synthetic` | mark the session as a bot\'s (`--autoplay` does too) |\n| `--glitchless-server` | report as the game\'s [dedicated server](#dedicated-servers) (a bare `--server` does too) |\n| `--glitchless-debug` | print what is sent |\n\n## For agents: `--glitchless-measure`\n\n```bash\ngodot --path . -- --autoplay --seed=7 --glitchless-measure=10 | grep \'^{"glitchless_measure"\'\n```\n\nIt works in any build, sends nothing unless sending is on, and quits when done. On a device where the player turned Glitchless off it measures nothing, and the JSON holds only an `error` that says so. The fields match the browser SDK\'s `glitchless_measure`:\n\n| field | |\n| --- | --- |\n| `frame_ms` | `p50`, `p95`, `p99`, `worst` |\n| `fps`, `frame_budget_ms`, `refresh_hz`, `pct_frames_over_budget` | the budget is the refresh rate the game actually runs at (60/90/120 Hz, or its own cap), read from the fast frames (their 20th percentile); `refresh_hz` is the screen\'s rate as the OS reports it |\n| `hitches`, `hitch_count` | up to 10 hitches: `ms`, `causes`, `ctx`, `recent` events |\n| `render_cpu_ms`, `gpu_ms` | the renderer\'s time per frame; `gpu_ms` is null where the driver doesn\'t report it (Metal) |\n| `process_ms` | all the game\'s `_process` code per frame |\n| `draw_calls`, `triangles_avg` | |\n| `peak_context` | the highest value of each gauge |\n| `memory`, `memory_delta` | objects, nodes, orphan nodes, resources, video MB and static MB, now and change over the run |\n| `new_errors`, `errors` | errors during the run, grouped, with locations |\n| `level_start`, `level_end`, `headless` | under `--headless` nothing is drawn and frames run uncapped, so frame times mean little there |\n\nRun the same seed before and after a change to compare.\n\n## What it measures\n\n**Frame times** are the wall-clock time between frames, read in `_process`. The `delta` Godot passes in is smoothed (`application/run/delta_smoothing` is on by default) and scaled by `Engine.time_scale`, either of which would hide a stutter. These rules follow `packages/sdk/src/core.js`:\n\n- A **hitch** is a frame over 50 ms *and* over twice the median of the last 60.\n- **Jank** is a frame over 33.4 ms.\n- A **frozen** frame is over 700 ms.\n- A run of long frames is the OS throttling a hidden window, so it is dropped.\n- Time spent in the background is never counted as a frame.\n\n**Hitch causes** come from what the slow frame measured:\n\n| cause | when |\n| --- | --- |\n| `shader_compile` | the engine\'s pipeline-compile counters went up |\n| `scene_change` | `current_scene` changed |\n| `node_spawn` | 50 or more nodes were added |\n| `script` | `_process` code took 40% of the frame. Glitchless runs first in each frame and has a child node that runs last, so the gap between them is every other node\'s `_process` |\n| `physics` | physics steps took 40% of the frame |\n| `render` | the renderer\'s CPU and GPU time took 40% of the frame |\n| `gpu_or_os` | none of the above, and everything measured in the game (`_process`, physics, the renderer\'s CPU and GPU time) adds up to less than 40% of the frame: the time went to the GPU (Godot times it only on Vulkan and Direct3D 12, so on iPhones and the Compatibility renderer it lands here), to presenting the frame, or to the OS |\n| `frozen` | over 700 ms |\n\n**Engine counts** go in each frame window, and with `engine_gauges` they also go in `ctx`. The two say different things: the window\'s own `nodes`, `orphan_nodes` and `objects` are the counts when it closed, and `ctx` holds each gauge\'s highest value in the window. That is where the findings compare a slow level with the smoothest one: *"`orphan_nodes` sits at 2,500 for this whole level vs 0 on level_1, so objects created earlier are never cleaned up"*. Orphan nodes are nodes that were taken out of the tree and never freed, the commonest Godot leak.\n\nA frame window never spans two levels: `level_start` closes the current one.\n\n## Errors\n\nA custom `Logger` (Godot 4.5+) hears every engine and script error, on any thread. Glitchless groups them with the browser SDK\'s fingerprint, made from the kind, the message with long numbers blanked, and the function. Each error event also carries the last six game events (`recent`). The server adds breadcrumbs from the session\'s stored events.\n\n| kind | what |\n| --- | --- |\n| `script` | a GDScript runtime error, which stops the function part way. Counted as unhandled, like an uncaught JS exception |\n| `engine` | an error from the engine\'s own code, usually a bad call from a script (a missing node, a failed load). The engine\'s C++ location is the first stack line, the script lines follow |\n| `push_error` | the game\'s own `push_error()` |\n| `shader` | a shader compile error |\n| `manual` | `Glitchless.error()` |\n| `warning` | only with `capture_warnings` |\n\nPaths on the device are cut out of messages before they\'re sent: the user-data folder becomes `user://`, the user-name part of `/Users/\u2026` or `C:\\Users\\\u2026` becomes `~`, and iOS container IDs become `<id>`. Errors raised inside the addon are never reported, so a failing send can\'t feed itself. Each kind of error is sent at most 25 times per session.\n\n**Release builds catch fewer errors than debug builds.** Godot leaves most GDScript runtime checks out of release exports. This was measured with a macOS release export of Godot 4.7.2, with *Always Track Call Stacks* on:\n\n| in the game\'s code | debug build | release export |\n| --- | --- | --- |\n| `get_node()` on a missing path, `load()` of a missing file, a null argument to an engine call | `engine`, with script line | `engine`, with script line |\n| `push_error()` | `push_error` | `push_error` |\n| index out of range, missing dictionary key, missing method, call on an untyped null, divide by zero | `script` | **nothing**: the code carries on |\n| call on a *typed* null (`var n: Node = null; n.free()`) | `script` | **the game crashes** (SIGSEGV) |\n\nSo run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to catch script mistakes, and let release builds report engine errors, `push_error` and performance. Native crashes are left to the platform: Xcode Organizer and App Store Connect on iOS, Android vitals in the Play Console. Glitchless sees a crash only as a session that stops without a `session_end`.\n\n## Phones: background, close, offline\n\n- **Going to the background ends the session.** iOS and Android usually stop a backgrounded app without warning, so on `NOTIFICATION_APPLICATION_PAUSED` Glitchless sends `session_end` (`reason: "background"`) at once. It waits up to 1.5 s on the network, then saves whatever didn\'t go.\n- **Coming back** within `session_timeout` carries on the same session with an `app_resume` event. A later `session_end` then replaces the first. Coming back later than that starts a new session with a new random ID.\n- **Closing** (the window\'s close button, Android\'s back button, or `get_tree().quit()`) sends `session_end` the same way.\n- **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session\'s batches go out under a new random ID. Each batch keeps its own `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back.\n\n## Web exports\n\nA web export (Godot 4.5 or later, the Compatibility renderer) sends everything a desktop build does: sessions, frame windows, hitches, errors, the level funnel, bug reports with their screenshot, counters and properties (not `--glitchless-measure`: a page has no command line, so measure a desktop export). It works with *Thread Support* off, the default since Godot 4.3, and on (which needs a cross-origin-isolated page). Nothing to set up beyond the [Install](#install) steps; the differences:\n\n- **The device is the browser.** `session_start` names the player\'s browser and its major version (`Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`), the OS it runs on, whether it is a phone, the page\'s screen and pixel ratio, and the GPU tier from the GPU the page names, read by the browser SDK\'s own rules, so a Godot web game splits by browser and OS like a Three.js one. Godot\'s version goes in `session_start.engine` (`{"name": "godot", "version": "4.7.2", "renderer": "webgl"}`).\n- **Hidden and closed.** Godot hears nothing as a tab is hidden or closed, and a web page can\'t wait for a request then. So Glitchless listens to the page itself: when it is hidden (another tab, the phone locked) what is waiting goes by `navigator.sendBeacon` and the session goes on; when it goes (closed, another page) the session ends with `session_end` and, with a level going, `level_abandon`, both `reason: "pagehide"`, sent by beacon too. `get_tree().quit()` sends its end the same way. A page back from the browser\'s back-forward cache carries on as a phone back from the background.\n- **Requests are `text/plain`**, as the browser SDK\'s are, so a batch needs no CORS preflight. The server reads the JSON whatever the type says.\n- **`user://` is the browser\'s IndexedDB.** The outbox, the player ID (install and full mode) and the player\'s off switch are kept there per site, so a player who turned Glitchless off stays off on their next visit, and batches a visit couldn\'t send go on the next.\n- **Debug builds** send from a page anywhere but your own machine; see [Off in debug builds](#off-in-debug-builds).\n\n`npm run test:godot:web` plays the demo as a web export in Chromium, with thread support off and on, and checks the above; [Limits](#limits) lists what it doesn\'t.\n\n## What it costs\n\nIt isn\'t a profiler: it hooks no functions and runs no engine profiler. Each frame it reads the frame\'s wall-clock time and a few counters Godot already keeps (draw calls, primitives, nodes, pipeline compiles, the renderer\'s time), and adds them to a fixed-size summary. Measured with [test/overhead.gd](../../test/overhead.gd) on Godot 4.7.2, a debug build on an Apple M3 Max:\n\n| | How often | Time on the main thread |\n| --- | --- | --- |\n| The frame\'s work | every frame | about 5.6 \xB5s, 0.03% of a 60 fps frame |\n| Closing a window into one summary | every 5 seconds | about 30 \xB5s |\n| A flush: the window and events become a batch | every 15 seconds | about 70 \xB5s (0.5 ms the first time) |\n| Saving the outbox with 3,900 events waiting, offline | every 15 seconds while offline | about 0.4 ms |\n\n- **The outbox file is written on a worker thread**, so no frame waits on the disk, and each batch is turned into JSON once, however many times the outbox is saved or the batch is sent. Closing and going to the background write it at once instead, since the OS may stop the game before a worker finishes. A web export writes it at once too: its `user://` is in memory, copied to IndexedDB after the frame.\n- **A phone is slower**, often several times per operation. Run the script on your own hardware: `godot --headless --path godot --script res://test/overhead.gd`.\n- `measure_render_time: false` turns off the renderer timing (Godot\'s own `viewport_set_measure_render_time`).\n\n## What goes on the wire\n\n`POST {intake}/v1/intake?token=\u2026` with the browser SDK\'s envelope and `sdk: "glitchless-godot/0.6.6"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can\'t fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.\n\n## Limits\n\n- **Godot 4.5 or later.** The `Logger` class came in 4.5.\n- **The server:**\n  - GDScript runtime errors count as unhandled because `server/src/analytics.js` treats kind `script` like `js`.\n  - Deaths sent without a place, as anonymous mode sends them, are left off heatmaps and hotspot findings.\n  - The memory-leak finding still reads three.js geometry counts. Godot leaks show through the `orphan_nodes` and `nodes` gauges instead.\n  - Fix suggestions in findings are written for three.js.\n- **Web exports** are checked in Chromium on macOS (Godot 4.7.2, thread support off and on, `npm run test:godot:web`), with the page hidden by its `visibilitychange` event and left by navigating away. Not checked: Safari, Firefox, browsers on phones, closing a real tab, a page back from the back-forward cache, and itch.io\'s frame. WebSocket disconnects and their close codes were checked in desktop builds, not in a browser.\n- **A cross-origin-isolated page** (thread support on) logs a blocked answer for each beacon to a Glitchless server older than November 2026, which doesn\'t send `Cross-Origin-Resource-Policy`. The batch still arrives.\n- **Network:** Godot can\'t tell Wi-Fi from mobile data, so `net.link` is null. Only ENet gives a round trip; WebRTC and WebSocket need `net_sample()`.\n- **Dedicated servers:** a server\'s memory and CPU come from `/proc/self` on Linux; elsewhere memory is the engine\'s static memory (debug builds only) and CPU is null. `net_objects` is null: Godot doesn\'t count replicated objects.\n- Sending uses `HTTPRequest` while the game runs and a blocking `HTTPClient` for the last batch, which has no frames left to finish an `HTTPRequest` (a web export beacons it). A batch the server received just before a close can arrive twice.\n\n## Tests\n\nFrom the repo root:\n\n- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows) and `test/off_switch_test.gd` (the player\'s off switch). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does. Last, it plays the demo with the off switch (`--off-at`, `--on-at`, `--opt-in`) against a fake intake that keeps every request: off and back on mid-run, off while offline, a launch with the choice saved as off, `opt_in`, and a debug build.\n- `npm run test:godot` then runs `test/web.mjs` (`npm run test:godot:web` on its own; it needs Godot\'s Web export templates and Playwright\'s Chromium). It first checks that `web_page.gd` reads user agents, GPUs and Steam Decks as the browser SDK\'s `device.js` does (`test/web_page_test.gd`). Then it exports the demo for the web, debug, with thread support off and on, plays both in Chromium against a fresh local server and checks what arrives: the session as Chrome on its OS, frame windows, errors, a bug report, `text/plain` with no preflight, the beacon as the page is hidden and the session\'s end as it goes, `get_tree().quit()`, the debug rule on this machine and on a page elsewhere, and the off switch and the outbox kept in IndexedDB from one visit to the next.\n- `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.\n'
+    };
+  }
+});
+
+// src/setup-guide.js
+import path4 from "node:path";
+function engineFrom(files2 = []) {
+  const found = /* @__PURE__ */ new Map();
+  for (const raw of files2) {
+    const file2 = String(raw).trim().toLowerCase().replace(/\\/g, "/").replace(/^["'`]+|["'`,]+$/g, "");
+    const dep = file2.match(/^(@?[^@\s:"']+)/)?.[1] ?? file2;
+    for (const [id, sign] of SIGNS) if (!found.has(id) && [file2, dep, path4.posix.basename(dep)].some((f) => sign.test(f))) found.set(id, String(raw).trim());
+  }
+  const [engine, ...also] = SIGNS.map(([id]) => id).filter((id) => found.has(id));
+  return { engine: engine ?? null, sign: engine ? found.get(engine) : null, also };
+}
+function pickEngine({ engine, files: files2 } = {}) {
+  const found = engine ? { engine, sign: null, also: [] } : engineFrom(files2);
+  return { engine: ENGINES.find((e) => e.id === found.engine) ?? null, sign: found.sign, also: found.also.map((id) => ENGINES.find((e) => e.id === id)).filter(Boolean) };
+}
+function sections(md) {
+  const lines = md.split("\n");
+  const heads = [];
+  let code = false;
+  lines.forEach((line, i) => {
+    if (/^\s*(```|~~~)/.test(line)) code = !code;
+    const m = !code && line.match(/^(#{1,6}) (.+)$/);
+    if (m) heads.push({ i, level: m[1].length, title: m[2].trim() });
+  });
+  return heads.map((h, n) => ({
+    level: h.level,
+    title: h.title,
+    slug: slug(h.title),
+    text: lines.slice(h.i, heads.slice(n + 1).find((x) => x.level <= h.level)?.i ?? lines.length).join("\n").trimEnd(),
+    intro: lines.slice(h.i, heads[n + 1]?.i ?? lines.length).join("\n").trimEnd()
+  }));
+}
+function borrowed(from, text2, own2) {
+  const want = /* @__PURE__ */ new Map();
+  const queue = [[from, text2]];
+  while (queue.length) {
+    const [src, md] = queue.shift();
+    for (const [, , href] of md.matchAll(LINK)) {
+      const [file2, hash2] = href.split("#");
+      if (!file2 || !hash2 || /^[a-z]+:/i.test(href)) continue;
+      const target = resolve(src, file2);
+      if (own2.has(target) || !TEXTS[target] || want.get(target)?.has(hash2)) continue;
+      const s = sections(TEXTS[target]).find((x) => x.slug === hash2);
+      if (!s) continue;
+      want.set(target, (want.get(target) ?? /* @__PURE__ */ new Set()).add(hash2));
+      queue.push([target, s.text]);
+    }
+  }
+  return [...want].map(([file2, slugs]) => ({ file: file2, sections: sections(TEXTS[file2]).filter((s) => slugs.has(s.slug)) }));
+}
+function relink(text2, from, carried) {
+  return text2.replace(LINK, (all, label3, href) => {
+    if (/^[a-z]+:/i.test(href)) return all;
+    const [file2, hash2 = ""] = href.split("#");
+    const target = file2 ? resolve(from, file2) : from;
+    if (!carried.has(target) && !carried.has(`${target}#${hash2}`)) return `[${label3}](${REPO}/blob/main/${target}${hash2 ? `#${hash2}` : ""})`;
+    if (!/\.md$/.test(label3)) return label3;
+    return `the "${hash2 && sections(TEXTS[target]).find((s) => s.slug === hash2)?.title || nameOf(target)}" part of this guide`;
+  });
+}
+function sending(where2, engine) {
+  const head = "## Where this game sends\n\nThese go where the steps below put the intake URL and client token (their examples show a local server, http://localhost:7777 and gl_pub_dev).";
+  const pub = "It's public and can only send data, so it may live in the game's source. A key that starts gl_sk_ or gl_ws_ never goes in the game.";
+  if (where2.cloud) {
+    const here = where2.others?.length ? ` Games already here: ${where2.others.join(", ")}; to set one of those up, pass game with its name instead.` : "";
+    const token = where2.game ? where2.game.client_token ? `${where2.game.client_token} (${where2.game.name}'s). ${pub}` : `${where2.game.name} has no active client token: ask the person to make one in Glitchless (${where2.dashboard ?? "the dashboard"}, Settings \u2192 Keys & access).` : where2.blocked ? `none yet: the game wasn't made (${where2.blocked.replace(/\.$/, "")}).${where2.others?.length ? ` If this game is one already here (${where2.others.join(", ")}), call glitchless_create_game again with game set to its name and engine: "${engine.id}", and the steps come with its client token. Otherwise tell the person why, and ask which they want.` : " Tell the person why."}` : where2.can_make ? `none yet. Call glitchless_create_game again with name (the game's name, as players know it) and engine: "${engine.id}": it makes the game and returns these steps with its client token.${here}` : `none yet, and this connection may only read, so it can't make the game: ask the person to add it in Glitchless (${where2.dashboard ?? "the dashboard"}), then call this again with game set to its name. Or they connect again with "Create games and share links" ticked.${here}`;
+    return [
+      head,
+      "",
+      `Glitchless Cloud${where2.workspace ? `, workspace ${where2.workspace}` : ""}:`,
+      `- intake URL: ${where2.intake}`,
+      `- client token: ${token}`,
+      `- In this server's tools, name the game: game: "${where2.game?.name ?? "<the game's name>"}".`
+    ].join("\n");
+  }
+  if (where2.server) {
+    return [head, "", `- intake URL: ${where2.server}, the Glitchless server this MCP server reads`, `- client token: the game's public one (gl_pub_\u2026): one of that server's GLITCHLESS_CLIENT_TOKENS, or on Glitchless Cloud the one on the game's page in Glitchless. Ask the person for it. ${pub}`].join("\n");
+  }
+  return [
+    head,
+    "",
+    `This MCP server reads a Glitchless server on this computer (${where2.local}) and isn't signed in to Glitchless Cloud.`,
+    "- If the person uses Glitchless Cloud (app.glitchless.gg), sign this server in first: glitchless_sign_in (they approve a code in the browser), or `npx -y glitchless-mcp login` in a terminal. Then call glitchless_create_game again, with the game's name and the engine, for the cloud's intake URL and the game's client token.",
+    `- Otherwise: intake URL ${where2.local}, client token gl_pub_dev. Check that ${where2.local}/v1/health answers. If it doesn't, start a server: with Docker, \`docker run -d --name glitchless -p 7777:7777 -v glitchless-data:/data ghcr.io/glitchless-gg/glitchless\` (\`docker start glitchless\` if that container exists); without, in the agent kit (\`${KIT}\`), \`npm install && npm run build\`, then \`npm run server\` in the background.`
+  ].join("\n");
+}
+function instrumentGuide({ engine, sign, also = [] }, where2) {
+  const extras = EXTRAS[engine.id] ?? {};
+  const [top, settings, ...rest] = sections(body(TEXTS[INSTRUMENT])).filter((s) => s.level <= 2);
+  const ref = body(TEXTS[engine.ref]);
+  const readme = extras.readme ? sections(TEXTS[extras.readme.path]).filter((s) => extras.readme.parts.includes(s.title)) : [];
+  const lent = borrowed(engine.ref, ref, /* @__PURE__ */ new Set([INSTRUMENT, engine.ref]));
+  const carried = /* @__PURE__ */ new Set([INSTRUMENT, engine.ref, ...readme.map((s) => `${extras.readme.path}#${s.slug}`), ...lent.flatMap((b) => b.sections.map((s) => `${b.file}#${s.slug}`))]);
+  const lines = settings.text.split("\n");
+  const table2 = lines.findIndex((l) => l.startsWith("|"));
+  const end = lines.findIndex((l, i) => i > table2 && !l.startsWith("|"));
+  if (table2 >= 0) lines.splice(table2, end - table2, `This game: ${engine.name}${sign ? ` (${sign})` : ""}. Its steps follow these settings${readme.length ? `: the addon's README first, then "${nameOf(engine.ref)}"` : `, under "${nameOf(engine.ref)}"`}.`);
+  const out = [
+    `# Add Glitchless to this ${engine.name} game`,
+    "",
+    `These are the steps of Glitchless's instrument skill, the one in the Glitchless plugin for Claude Code, Codex and Cursor, cut to ${engine.name}. Work through them in order, in the game's folder. Where they say to follow the \`dashboard\` skill, call glitchless_dashboard with guide: true.`,
+    "",
+    sending(where2, engine)
+  ];
+  if (extras.kit) {
+    out.push("", "## Get the SDK", "", `The ${engine.name} steps copy files from the Glitchless agent kit, a copy of the Glitchless repo kept outside the game's folder so it never gets committed. Get it first:`, "", "```bash", KIT, "```", "", `If ~/.glitchless is already there, run \`git -C ~/.glitchless pull\` instead. The ${engine.name} SDK is at ~/.glitchless/${extras.kit}${extras.readme ? `, with its whole README, which the ${engine.name} steps quote below` : ""}.`);
+  }
+  out.push("", relink(top.intro, INSTRUMENT, carried), "", relink(lines.join("\n"), INSTRUMENT, carried));
+  if (readme.length) {
+    out.push("", `# From the ${engine.name} addon's README`, "", `Start here: the parts of ~/.glitchless/${extras.readme.path} that install the addon and wire it into the game. The "${nameOf(engine.ref)}" steps after them add the rest; the file itself has more (Steam, flags, errors, phones).`);
+    for (const s of readme) out.push("", relink(s.title === "Use" ? s.intro : s.text, extras.readme.path, carried));
+  }
+  out.push("", relink(ref, engine.ref, carried));
+  for (const b of lent) {
+    out.push("", `# From the ${nameOf(b.file)} steps`, "", `The ${engine.name} steps above point here.`);
+    for (const s of b.sections) out.push("", relink(s.text, b.file, carried));
+  }
+  for (const s of rest) out.push("", relink(s.text, INSTRUMENT, carried));
+  if (also.length) out.push("", `(The files also name ${also.map((e) => e.name).join(" and ")}. If this game is made with that instead, call glitchless_create_game again with engine: "${also[0].id}".)`);
+  return out.join("\n");
+}
+function findEngine(files2) {
+  const rows = sections(body(TEXTS[INSTRUMENT])).find((s) => s.level === 2).text.split("\n").filter((l) => l.startsWith("|"));
+  const table2 = rows.map((row, i) => {
+    const cells = row.split("|").slice(1, -1).map((c) => c.trim());
+    const id = i === 0 ? "engine:" : i === 1 ? "---" : `\`${cells[2].match(/references\/(\w+)\.md/)?.[1]}\``;
+    return `| ${cells[0]} | ${cells[1]} | ${id} |`;
+  });
+  return [
+    files2?.length ? `None of these names an engine Glitchless has an SDK for: ${files2.slice(0, 20).join(", ")}${files2.length > 20 ? ", \u2026" : ""}. Nothing was made.
+` : "",
+    "To add Glitchless to a game, find its engine first. In the game's folder, look for:",
+    "",
+    ...table2,
+    "",
+    `Then call glitchless_create_game again with engine, or with files: the names of the files at the project's root and its package.json dependencies (for example ["project.godot"], or ["package.json", "phaser", "vite"]).`,
+    "",
+    `Glitchless has SDKs for these engines only. For a game made with something else, tell the person so; a game can still send the wire format itself (${REPO}/blob/main/docs/SPEC.md#2-wire-format).`
+  ].join("\n").trimStart();
+}
+function dashboardGuide() {
+  const refs = Object.keys(TEXTS).filter((p) => p.startsWith(`${path4.posix.dirname(DASHBOARD)}/references/`));
+  const carried = /* @__PURE__ */ new Set([DASHBOARD, ...refs]);
+  return [
+    "# Design this game's Glitchless dashboard",
+    "",
+    "These are the steps of Glitchless's dashboard skill, the one in the Glitchless plugin, with its references after it. The game should send data first: if it doesn't, call glitchless_create_game with game and engine for the steps that add Glitchless to it.",
+    "",
+    relink(body(TEXTS[DASHBOARD]), DASHBOARD, carried),
+    ...refs.flatMap((p) => ["", relink(body(TEXTS[p]), p, carried)])
+  ].join("\n");
+}
+var INSTRUMENT, REFS, DASHBOARD, REPO, KIT, ENGINES, EXTRAS, SIGNS, LINK, slug, body, nameOf, resolve;
+var init_setup_guide = __esm({
+  "src/setup-guide.js"() {
+    init_skills();
+    INSTRUMENT = "plugin/glitchless/skills/instrument/SKILL.md";
+    REFS = "plugin/glitchless/skills/instrument/references/";
+    DASHBOARD = "plugin/glitchless/skills/dashboard/SKILL.md";
+    REPO = "https://github.com/glitchless-gg/glitchless";
+    KIT = "git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless";
+    ENGINES = [...new Set([...TEXTS[INSTRUMENT].matchAll(/\]\(references\/(\w+)\.md\)/g)].map((m) => m[1]))].filter((id) => TEXTS[`${REFS}${id}.md`]).map((id) => ({ id, name: TEXTS[`${REFS}${id}.md`].match(/^# (.+)$/m)[1], ref: `${REFS}${id}.md` }));
+    EXTRAS = {
+      godot: { kit: "godot/addons/glitchless", readme: { path: "godot/addons/glitchless/README.md", parts: ["Install", "Use", "Off in debug builds", "The player's off switch", "For agents: `--glitchless-measure`"] } },
+      unreal: { kit: "unreal/Plugins/Glitchless" },
+      roblox: { kit: "roblox" },
+      gamemaker: { kit: "gamemaker" }
+    };
+    SIGNS = [
+      ["unreal", /\.uproject$/],
+      ["godot", /(^|\/)project\.godot$/],
+      ["gamemaker", /\.yyp$/],
+      ["unity", /(^|\/)(projectsettings(\/projectversion\.txt)?|projectversion\.txt|packages\/manifest\.json|assembly-csharp\.csproj)$|\.unity$/],
+      ["roblox", /\.project\.json$|(^|\/)wally\.toml$|\.rbxlx?$|\.(server|client)\.luau?$/],
+      ["threejs", /^(three|@react-three\/fiber|three(\.module)?(\.min)?\.js)$/],
+      ["phaser", /^phaser((\.min)?\.js)?$/],
+      ["babylon", /^(@babylonjs\/core|babylonjs|babylon(\.max)?\.js)$/],
+      ["playcanvas", /^playcanvas((-stable)?(\.min)?\.js)?$/]
+    ];
+    LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+    slug = (title) => title.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, "").replace(/\s/g, "-");
+    body = (md) => md.replace(/^---\n[\s\S]*?\n---\n+/, "");
+    nameOf = (p) => TEXTS[p].match(/^# (.+)$/m)?.[1] ?? p;
+    resolve = (from, href) => path4.posix.normalize(path4.posix.join(path4.posix.dirname(from), href));
+  }
+});
+
 // src/tools/dashboard.js
 var panelSchema, STORE_PANELS, withStores, pageSchema;
 var init_dashboard = __esm({
@@ -37996,11 +38217,17 @@ var init_dashboard = __esm({
     init_zod();
     init_context();
     init_pictures();
+    init_setup_guide();
     tool(
       "glitchless_dashboard",
-      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (set with glitchless_set_dashboard's logo and banner, or by people in the dashboard: Edit pages \u2192 Look).",
-      { ...common, page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)") },
-      async ({ service, hours, page, ...f }) => {
+      "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (set with glitchless_set_dashboard's logo and banner, or by people in the dashboard: Edit pages \u2192 Look). With guide: true it answers instead with how to design a dashboard that fits the game: the dashboard skill of the Glitchless plugin with its example dashboards and its panels for each kind of game, for an agent without the skill (up to 45,000 characters). Read it before a first glitchless_set_dashboard.",
+      {
+        ...common,
+        page: external_exports.string().optional().describe("Id of the board page to evaluate (default: the first board)"),
+        guide: external_exports.boolean().optional().describe("Instead of reading the dashboard: how to design one for this game, step by step (the Glitchless plugin's dashboard skill)")
+      },
+      async ({ service, hours, page, guide, ...f }) => {
+        if (guide) return { content: [{ type: "text", text: dashboardGuide() }] };
         const svc = await resolveService(service);
         const { dashboard } = await query("dashboard", { service: svc, ...filters(f), ...range(hours) });
         if (!dashboard) return reply(`${svc} has sent no data yet`, {});
@@ -38108,8 +38335,8 @@ var init_dashboard = __esm({
         if (accent !== void 0) said.push(`Accent: ${(await write("PUT", `/v1/brand?service=${encodeURIComponent(svc)}`, { accent })).brand?.accent ?? "none"}.`);
         for (const [kind, picture2] of [["logo", logo], ["banner", banner]]) {
           if (!picture2) continue;
-          const { text, saved } = await saveBrandImage(svc, kind, picture2);
-          said.push(text);
+          const { text: text2, saved } = await saveBrandImage(svc, kind, picture2);
+          said.push(text2);
           look ||= saved;
         }
         const bg = background ? await saveBackground(svc, background) : null;
@@ -38517,6 +38744,49 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
 });
 
 // src/tools/workspace.js
+async function setUp({ name, engine, files: files2, game }) {
+  const picked = pickEngine({ engine, files: files2 });
+  if (!picked.engine) return text(findEngine(files2));
+  if (!isWorkspace()) return text(instrumentGuide(picked, /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(base()) ? { local: base() } : { server: base() }));
+  const [list, who] = await Promise.all([workspaceGames(true), agent("GET", "/whoami").catch(() => null)]);
+  const canMake = !who || who.scopes?.includes("manage");
+  let hit = null;
+  let lead = "";
+  let blocked = null;
+  if (name) {
+    hit = named(list, name) ?? null;
+    if (hit) lead = `${hit.name} is already in this workspace, so nothing was made: these steps use its client token.`;
+    else if (canMake) {
+      try {
+        const made = await agent("POST", "/games", { name });
+        await workspaceGames(true);
+        hit = { id: made.game.id, name: made.game.name, client_token: made.client_token };
+        lead = `Created ${made.game.name}.`;
+      } catch (err) {
+        blocked = err.message;
+        lead = `${name} wasn't made: ${blocked}`;
+      }
+    }
+  } else if (game) {
+    const pid = await projectFor(game);
+    hit = list.find((g) => g.id === pid) ?? null;
+  }
+  if (hit?.demo) throw new Error(`${hit.name} is the demo game: sample play, with no code to add Glitchless to. Give the person's own game (name for a new one, game for one already here)`);
+  if (hit) await projectFor(hit.id);
+  const where2 = {
+    cloud: true,
+    workspace: who?.workspace?.name ?? null,
+    intake: workspaceIntake() ?? who?.intake ?? base(),
+    game: hit ? { name: hit.name, client_token: hit.client_token } : null,
+    others: list.filter((g) => !g.demo).map((g) => g.name),
+    can_make: canMake,
+    blocked,
+    dashboard: who?.dashboard ?? null
+  };
+  return text(`${lead ? `${lead}
+
+` : ""}${instrumentGuide(picked, where2)}`);
+}
 async function markTester(pid, { player, session, note, clear }) {
   const who = player ? `player ${player}` : `session ${session}`;
   const { testers } = await agent("POST", `/games/${pid}/testers`, { ...player ? { player } : { session }, ...clear ? { clear: true } : { note } });
@@ -38538,12 +38808,13 @@ ${rules.join("\n")}`,
 ${sent.join("\n") || "  none yet"}`
   ].join("\n");
 }
-var act, signingIn, RULES;
+var act, signingIn, named, text, RULES;
 var init_workspace = __esm({
   "src/tools/workspace.js"() {
     init_zod();
     init_context();
     init_login();
+    init_setup_guide();
     act = (name, description, inputSchema, handler, { title, annotations, ...opts } = {}) => define(name, { title, description, inputSchema, annotations }, handler, { scope: "manage", ...opts });
     signingIn = null;
     act(
@@ -38583,31 +38854,47 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
       // Over HTTP the person signs in with OAuth before any tool runs, so this one is for stdio only.
       { title: "Sign in", annotations: { openWorldHint: true }, scope: "read", local: true }
     );
+    named = (list, name) => list.find((g) => g.name.trim().toLowerCase() === String(name).trim().toLowerCase());
+    text = (t) => ({ content: [{ type: "text", text: t }] });
     act(
       "glitchless_create_game",
-      "Create a game in the signed-in workspace. Returns its client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
+      "Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
       {
-        name: external_exports.string().optional().describe("The game's name, as players know it (not needed with demo)"),
+        name: external_exports.string().optional().describe("The game's name, as players know it (not needed with demo). One already in the workspace is returned, not made again"),
         demo: external_exports.boolean().optional().describe("Make the demo game, with a week of sample play"),
-        rename: external_exports.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names")
+        rename: external_exports.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names"),
+        engine: external_exports.enum(ENGINES.map((e) => e.id)).optional().describe("Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker"),
+        files: external_exports.array(external_exports.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)")
       },
-      async ({ name, demo, rename, game }) => {
+      async ({ name, demo, rename, engine, files: files2, game }) => {
         if (rename != null) {
-          if (name || demo) throw new Error("rename renames the game that game names; leave out name and demo");
+          if (name || demo || engine || files2) throw new Error("rename renames the game that game names; leave out name, demo, engine and files");
           const pid = await projectFor(game);
           const before = (await workspaceGames()).find((g) => g.id === pid)?.name ?? pid;
           const { game: renamed } = await agent("PATCH", `/games/${pid}`, { name: rename });
           await workspaceGames(true);
           return reply(`Renamed ${before} to ${renamed.name}. Later calls name it game: "${renamed.name}"; its client token and service are unchanged.`, renamed);
         }
+        if (engine || files2) {
+          if (demo) throw new Error("the demo game is sample play, with no code to add Glitchless to: leave out demo, and give the person's own game (name for a new one, game for one already here)");
+          return setUp({ name, engine, files: files2, game });
+        }
         if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
-        const made = await agent("POST", "/games", demo ? { demo: true } : { name });
+        const here = demo ? null : named(await workspaceGames(true), name);
+        if (here) {
+          await projectFor(here.id);
+          return reply(`${here.name} is already in this workspace, so nothing was made. Initialise Glitchless with its client token and intake (engine or files add the steps for the game's engine); a second game needs a name of its own:`, { game: { id: here.id, name: here.name, ...here.demo ? { demo: true } : {} }, client_token: here.client_token, intake: workspaceIntake(), dashboard: here.dashboard });
+        }
+        const made = await agent("POST", "/games", demo ? { demo: true } : { name }).catch(async (err) => {
+          const others = demo ? [] : (await workspaceGames().catch(() => [])).filter((g) => !g.demo).map((g) => g.name);
+          throw new Error(`${err.message}${others.length ? ` Games already here: ${others.join(", ")}. To add Glitchless to one of them, call this with game set to its name and engine (or files).` : ""}`);
+        });
         await workspaceGames(true);
         await projectFor(made.game.id);
         if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
-        return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
+        return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake (call again with game: "${made.game.name}" and engine, or files, for the steps for its engine):`, made);
       },
-      { title: "Create or rename game", annotations: { destructiveHint: false, idempotentHint: false } }
+      { title: "Create, set up or rename game", annotations: { destructiveHint: false, idempotentHint: false } }
     );
     act(
       "glitchless_share_links",
@@ -38795,8 +39082,8 @@ async function toRequest(req, res) {
   for (const [k, v] of Object.entries(req.headers)) if (v != null) headers2.set(k, Array.isArray(v) ? v.join(", ") : v);
   const abort = new AbortController();
   res.on("close", () => res.writableFinished || abort.abort());
-  const body = req.method === "GET" || req.method === "HEAD" || !size ? void 0 : Buffer.concat(chunks);
-  return new Request(new URL(req.url, `http://${req.headers.host || "localhost"}`), { method: req.method, headers: headers2, body, signal: abort.signal });
+  const body2 = req.method === "GET" || req.method === "HEAD" || !size ? void 0 : Buffer.concat(chunks);
+  return new Request(new URL(req.url, `http://${req.headers.host || "localhost"}`), { method: req.method, headers: headers2, body: body2, signal: abort.signal });
 }
 async function send(res, response) {
   const headers2 = {};
@@ -38832,7 +39119,7 @@ async function serve(argv = []) {
       else res.end();
     }
   });
-  await new Promise((resolve, reject) => server.once("error", reject).listen(port, host, resolve));
+  await new Promise((resolve2, reject) => server.once("error", reject).listen(port, host, resolve2));
   console.error(`Glitchless MCP on http://${host.includes(":") ? `[${host}]` : host}:${server.address().port}/mcp, reading ${base()}`);
   return server;
 }
@@ -39254,7 +39541,7 @@ var init_stdio = __esm({
       }
       send(message) {
         if (this._closed) return Promise.reject(/* @__PURE__ */ new Error("StdioServerTransport is closed"));
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve2, reject) => {
           const json2 = serializeMessage(message);
           let settled = false;
           const onError = (error62) => {
@@ -39269,14 +39556,14 @@ var init_stdio = __esm({
             settled = true;
             this._stdout.off("error", onError);
             this._stdout.off("drain", onDrain);
-            resolve();
+            resolve2();
           };
           this._stdout.once("error", onError);
           if (this._stdout.write(json2)) {
             if (settled) return;
             settled = true;
             this._stdout.off("error", onError);
-            resolve();
+            resolve2();
           } else if (!settled) this._stdout.once("drain", onDrain);
         });
       }
@@ -39330,14 +39617,14 @@ var init_stdio = __esm({
       */
       async whenRequestsAnswered(timeoutMs) {
         if (this._closed || this._pendingRequests.size === 0) return true;
-        return await new Promise((resolve) => {
+        return await new Promise((resolve2) => {
           const waiter = () => {
             clearTimeout(timer);
-            resolve(true);
+            resolve2(true);
           };
           const timer = setTimeout(() => {
             this._drainWaiters = this._drainWaiters.filter((pending) => pending !== waiter);
-            resolve(false);
+            resolve2(false);
           }, timeoutMs);
           this._drainWaiters.push(waiter);
         });
@@ -39368,14 +39655,14 @@ var init_stdio = __esm({
 
 // ../playtest/src/run.js
 import os3 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 async function loadPlaywright(cwd = process.cwd()) {
   const unwrap = (mod) => mod?.chromium ? mod : mod?.default;
   try {
-    const req = createRequire(path4.join(cwd, "noop.js"));
+    const req = createRequire(path5.join(cwd, "noop.js"));
     const pw = unwrap(await import(pathToFileURL(req.resolve("playwright")).href));
     if (pw?.chromium) return pw;
   } catch {
@@ -39452,9 +39739,9 @@ async function fetchSummary(cfg, service, sessionIds, started, { log = () => {
   while (true) {
     const res = await fetch(`${base2}/v1/query/playtest?${qs}`, { headers: headers2 });
     if (!res.ok) throw new Error(`Glitchless server ${base2} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const body = await res.json();
-    if (body.error) throw new Error(`Glitchless server: ${body.error}`);
-    last = body.summary;
+    const body2 = await res.json();
+    if (body2.error) throw new Error(`Glitchless server: ${body2.error}`);
+    last = body2.summary;
     const seen = new Set((last?.runs || []).filter((r) => r.ended).map((r) => r.session_id));
     if (sessionIds.every((id) => seen.has(id))) return last;
     if (Date.now() > deadline) {
@@ -39504,11 +39791,11 @@ var init_run = __esm({
 
 // ../playtest/src/roblox.js
 import os4 from "node:os";
-import path5 from "node:path";
+import path6 from "node:path";
 import { spawn as spawn2 } from "node:child_process";
 function studioMcpCommand(cfg) {
   if (cfg.studio_mcp) return [].concat(cfg.studio_mcp).map(String);
-  if (process.platform === "win32") return ["cmd.exe", "/c", path5.join(process.env.LOCALAPPDATA || "", "Roblox", "mcp.bat")];
+  if (process.platform === "win32") return ["cmd.exe", "/c", path6.join(process.env.LOCALAPPDATA || "", "Roblox", "mcp.bat")];
   return ["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"];
 }
 function connectStudio(argv) {
@@ -39538,7 +39825,7 @@ function connectStudio(argv) {
   });
   child.stdin.on("error", () => {
   });
-  const request = (method, params, timeoutMs = 12e4) => new Promise((resolve, reject) => {
+  const request = (method, params, timeoutMs = 12e4) => new Promise((resolve2, reject) => {
     if (failed) return reject(failed);
     const id = ++seq;
     const timer = setTimeout(() => (pending.delete(id), reject(new Error(`Roblox Studio's MCP server didn't answer ${method} in ${timeoutMs / 1e3} s`))), timeoutMs);
@@ -39546,15 +39833,15 @@ function connectStudio(argv) {
       clearTimeout(timer);
       pending.delete(id);
       if (failed && !msg.result) reject(failed);
-      else resolve(msg);
+      else resolve2(msg);
     });
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
   });
   const tool2 = async (name, args = {}) => {
     const msg = await request("tools/call", { name, arguments: args });
-    const text = (msg.result?.content || []).map((c) => c.text ?? "").join("\n");
-    if (msg.error || msg.result?.isError) throw new Error(`Studio ${name}: ${msg.error?.message || text}`);
-    return text;
+    const text2 = (msg.result?.content || []).map((c) => c.text ?? "").join("\n");
+    if (msg.error || msg.result?.isError) throw new Error(`Studio ${name}: ${msg.error?.message || text2}`);
+    return text2;
   };
   return {
     tool: tool2,
@@ -39565,8 +39852,8 @@ function connectStudio(argv) {
     close: () => child.kill()
   };
 }
-function unmark(text) {
-  const m = String(text).match(/GLP<([\s\S]*?)>GLP/);
+function unmark(text2) {
+  const m = String(text2).match(/GLP<([\s\S]*?)>GLP/);
   if (!m) return void 0;
   try {
     return JSON.parse(m[1]);
@@ -39574,10 +39861,10 @@ function unmark(text) {
     return JSON.parse(JSON.parse(`"${m[1]}"`));
   }
 }
-function longString(text) {
+function longString(text2) {
   let eq = "=";
-  while (text.includes(`]${eq}]`)) eq += "=";
-  return `[${eq}[${text}]${eq}]`;
+  while (text2.includes(`]${eq}]`)) eq += "=";
+  return `[${eq}[${text2}]${eq}]`;
 }
 async function pickStudio(mcp, want, waitS = 10) {
   let studios = [];
@@ -39634,8 +39921,8 @@ async function sessionsOf(cfg, service, from, to) {
   const headers2 = { "x-glitchless-client": "playtest", ...cfg.api_key ? { "x-glitchless-api-key": cfg.api_key } : {} };
   const res = await fetch(`${base2}/v1/query/sessions?${qs}`, { headers: headers2 });
   if (!res.ok) throw new Error(`Glitchless server ${base2} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const body = await res.json();
-  return (body.sessions || []).filter((s) => (s.session_type === "synthetic" || s.session_type === "tester") && s.start >= from && s.start <= to);
+  const body2 = await res.json();
+  return (body2.sessions || []).filter((s) => (s.session_type === "synthetic" || s.session_type === "tester") && s.start >= from && s.start <= to);
 }
 function assign(results, sessions, key) {
   for (const r of results) r[key] = [];
@@ -39786,9 +40073,9 @@ return ${MARK("before")}`;
 
 // ../playtest/src/config.js
 import fs4 from "node:fs";
-import path6 from "node:path";
+import path7 from "node:path";
 function loadConfig(cwd = process.cwd(), overrides = {}) {
-  const file2 = path6.join(cwd, "glitchless.playtest.json");
+  const file2 = path7.join(cwd, "glitchless.playtest.json");
   let fromFile = {};
   if (fs4.existsSync(file2)) {
     try {
@@ -39800,7 +40087,7 @@ function loadConfig(cwd = process.cwd(), overrides = {}) {
   const clean = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v != null));
   const cfg = { ...DEFAULTS, ...fromFile, ...clean };
   cfg.thresholds = { ...DEFAULT_THRESHOLDS, ...fromFile.thresholds || {} };
-  cfg.runs_dir = path6.resolve(cwd, cfg.runs_dir);
+  cfg.runs_dir = path7.resolve(cwd, cfg.runs_dir);
   cfg.root = cwd;
   if (cfg.engine) cfg.engine = String(cfg.engine).toLowerCase().replace(/\s+/g, "");
   const roblox = cfg.engine === "roblox";
@@ -39891,10 +40178,10 @@ var init_config = __esm({
 // ../playtest/src/engine.js
 import fs5 from "node:fs";
 import os5 from "node:os";
-import path7 from "node:path";
+import path8 from "node:path";
 import { spawn as spawn3 } from "node:child_process";
-function parseMeasure(text) {
-  const lines = String(text || "").split(/\r?\n/).reverse();
+function parseMeasure(text2) {
+  const lines = String(text2 || "").split(/\r?\n/).reverse();
   for (const line of lines) {
     const at = line.search(MEASURE_LINE);
     if (at < 0) continue;
@@ -39934,25 +40221,25 @@ function resolveCommand(command, cwd) {
   const argv = splitCommand(command);
   if (!argv.length) throw new Error(`"command" in glitchless.playtest.json is empty. Set it to the exported build, or the engine's command line with the project path (for Godot: ["godot", "--path", "."]).`);
   let bin = home(argv[0]);
-  const local2 = path7.resolve(cwd, bin);
+  const local2 = path8.resolve(cwd, bin);
   if (bin.includes("/") || bin.includes("\\") || /\.app\/?$/.test(bin) || fs5.existsSync(local2) && fs5.statSync(local2).isFile()) bin = local2;
-  if (/\.app\/?$/.test(bin) && fs5.existsSync(path7.join(bin, "Contents/MacOS"))) {
-    const name = path7.basename(bin).replace(/\.app\/?$/, "");
-    const inside = fs5.readdirSync(path7.join(bin, "Contents/MacOS"));
-    bin = path7.join(bin, "Contents/MacOS", inside.includes(name) ? name : inside[0]);
+  if (/\.app\/?$/.test(bin) && fs5.existsSync(path8.join(bin, "Contents/MacOS"))) {
+    const name = path8.basename(bin).replace(/\.app\/?$/, "");
+    const inside = fs5.readdirSync(path8.join(bin, "Contents/MacOS"));
+    bin = path8.join(bin, "Contents/MacOS", inside.includes(name) ? name : inside[0]);
   }
   return [bin, ...argv.slice(1)];
 }
 function detectEngine(argv) {
   const [bin, ...rest] = argv;
-  const name = path7.basename(bin || "");
+  const name = path8.basename(bin || "");
   const all = argv.join(" ");
   if (/godot/i.test(name) || rest.some((a) => /\.pck$/.test(a) || a === "--main-pack")) return "godot";
   if (/UnrealEditor|UE4Editor/i.test(name) || rest.some((a) => /\.uproject$/i.test(a))) return "unreal";
   if (/YoYo Runner|Runner\.exe$/i.test(all) || rest.some((a) => /(^|[/\\])(game\.ios|data\.win|game\.unx)$/.test(a))) return "gamemaker";
   if (/^Unity(\.exe)?$/i.test(name)) return "unity";
-  const dir = path7.dirname(bin || "");
-  const near = [dir, path7.join(dir, "../Resources"), path7.join(dir, "../Frameworks"), path7.join(dir, "../UE")];
+  const dir = path8.dirname(bin || "");
+  const near = [dir, path8.join(dir, "../Resources"), path8.join(dir, "../Frameworks"), path8.join(dir, "../UE")];
   const has = (test) => near.some((d) => {
     try {
       return fs5.readdirSync(d).some(test);
@@ -39975,19 +40262,19 @@ function paramFlags(params = {}, dash = "--") {
   return out;
 }
 function scenarioArgs(engine, base2, sc, { out } = {}) {
-  const dash = ENGINES[engine]?.dash || "--";
+  const dash = ENGINES2[engine]?.dash || "--";
   const game = [...paramFlags(sc.params, dash), ...(sc.args || []).map(String)];
   const measure2 = [`${dash}glitchless-measure=${sc.seconds}`, `${dash}glitchless-warmup=${sc.warmup}`, ...out ? [`${dash}glitchless-out=${out}`] : []];
   const separate = engine === "godot" && ![...base2, ...game].some((a) => a === "--" || a === "++");
   return [...separate ? ["--"] : [], ...game, ...measure2];
 }
 function engineScenario(sc, engine, cfg) {
-  const warmup = sc.warmup ?? cfg.warmup ?? ENGINES[engine]?.warmup ?? 1;
+  const warmup = sc.warmup ?? cfg.warmup ?? ENGINES2[engine]?.warmup ?? 1;
   const seconds = sc.seconds ?? cfg.seconds ?? 10;
   return { ...sc, seconds, warmup, max_s: sc.max_s ?? warmup + seconds + 120 };
 }
 function runBuild(argv, { cwd, timeoutMs }) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     const t0 = Date.now();
     let output2 = "";
     let timedOut = false;
@@ -40009,7 +40296,7 @@ function runBuild(argv, { cwd, timeoutMs }) {
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
-      resolve({ code, signal, output: output2, timedOut, seconds: Math.round((Date.now() - t0) / 1e3) });
+      resolve2({ code, signal, output: output2, timedOut, seconds: Math.round((Date.now() - t0) / 1e3) });
     });
   });
 }
@@ -40026,20 +40313,20 @@ async function runEngineScenarios(cfg, { command = cfg.command, scenarios = cfg.
   const root = cfg.root || process.cwd();
   const base2 = resolveCommand(command, root);
   const engine = cfg.engine || detectEngine(base2);
-  const tmp = fs5.mkdtempSync(path7.join(os5.tmpdir(), "glitchless-playtest-"));
+  const tmp = fs5.mkdtempSync(path8.join(os5.tmpdir(), "glitchless-playtest-"));
   for (const sc of scenarios) {
-    if (!paramFlags(sc.params).length && !(sc.args || []).length) throw new Error(`Scenario "${label2(sc)}" passes nothing to the game, so nothing starts its autoplay bot. Give it "params" (such as { "autoplay": true, "seed": 7 }) or "args". ${ENGINES[engine]?.autoplay || GENERIC_AUTOPLAY}`);
+    if (!paramFlags(sc.params).length && !(sc.args || []).length) throw new Error(`Scenario "${label2(sc)}" passes nothing to the game, so nothing starts its autoplay bot. Give it "params" (such as { "autoplay": true, "seed": 7 }) or "args". ${ENGINES2[engine]?.autoplay || GENERIC_AUTOPLAY}`);
   }
   const results = [];
   try {
     for (const [i, raw] of scenarios.entries()) {
       const sc = engineScenario(raw, engine, cfg);
-      const out = path7.join(tmp, `run-${i + 1}.json`);
+      const out = path8.join(tmp, `run-${i + 1}.json`);
       const argv = [...base2, ...scenarioArgs(engine, base2, sc, { out })];
       log(`run ${i + 1}/${scenarios.length}: ${label2(sc)} \u2026`);
       const t0 = Date.now();
       const r = await runBuild(argv, { cwd: root, timeoutMs: sc.max_s * 1e3 });
-      const measure2 = parseMeasure(r.output) || readIfNew(out, t0) || (cfg.measure_file ? readIfNew(path7.resolve(root, home(cfg.measure_file)), t0) : null);
+      const measure2 = parseMeasure(r.output) || readIfNew(out, t0) || (cfg.measure_file ? readIfNew(path8.resolve(root, home(cfg.measure_file)), t0) : null);
       const shown = argv.filter((a) => !a.includes("glitchless-out="));
       const result = { scenario: sc.name || null, params: sc.params, args: sc.args, seconds: sc.seconds, warmup: sc.warmup, command: shown, session_id: measure2?.session_id || null, elapsed_s: r.seconds, finished: !!measure2 && !measure2.error, crashed: false, exit_code: r.code, measure: measure2 && !measure2.error ? measure2 : null };
       if (measure2?.error) throw new Error(`${label2(sc)}: the build measured nothing: ${measure2.error}${/off/i.test(measure2.error) ? ' A playtest needs it on: leave out --glitchless-off, and turn the in-game "share data" setting back on for this device.' : ` The game has to keep drawing frames for warmup + seconds (${sc.warmup} + ${sc.seconds} s): if its autoplay run is shorter, lower "seconds" or let the bot keep playing.`}`);
@@ -40177,9 +40464,9 @@ async function engineRun(cfg, { command = cfg.command, scenarios = cfg.scenarios
   const summary = measureSummary(results);
   const measured = results.filter((r) => r.measure);
   const noLevel = measured.every((r) => r.measure.level_start == null && r.measure.level_end == null);
-  const howTo = ENGINES[engine]?.autoplay || GENERIC_AUTOPLAY;
+  const howTo = ENGINES2[engine]?.autoplay || GENERIC_AUTOPLAY;
   if (noLevel && cfg.default_scenarios) {
-    throw new Error(`The build ran with the default scenarios (${paramFlags(scenarios[0].params, ENGINES[engine]?.dash).join(" ")}) but no run started a level, so it probably has no autoplay mode and measured its menu. ${howTo} Then list the runs in glitchless.playtest.json under "scenarios" (each with the "params" or "args" that start the bot).`);
+    throw new Error(`The build ran with the default scenarios (${paramFlags(scenarios[0].params, ENGINES2[engine]?.dash).join(" ")}) but no run started a level, so it probably has no autoplay mode and measured its menu. ${howTo} Then list the runs in glitchless.playtest.json under "scenarios" (each with the "params" or "args" that start the bot).`);
   }
   const notes = [];
   if (noLevel) notes.push(`No run started a level (Glitchless level_start), so the bot may not have played. If the game has no autoplay mode yet: ${howTo}`);
@@ -40190,9 +40477,9 @@ async function engineRun(cfg, { command = cfg.command, scenarios = cfg.scenarios
     kind: "engine",
     engine,
     command: argv,
-    service: cfg.service || path7.basename(cfg.root || process.cwd()),
+    service: cfg.service || path8.basename(cfg.root || process.cwd()),
     git: gitInfo(cfg.root),
-    machine: { os: `${os5.type()} ${os5.release()}`, cpu: os5.cpus()[0]?.model || null, gpu: null, browser: [ENGINES[engine]?.label, sdk].filter(Boolean).join(" \xB7 ") || "engine build" },
+    machine: { os: `${os5.type()} ${os5.release()}`, cpu: os5.cpus()[0]?.model || null, gpu: null, browser: [ENGINES2[engine]?.label, sdk].filter(Boolean).join(" \xB7 ") || "engine build" },
     scenarios: results,
     summary,
     notes
@@ -40207,11 +40494,11 @@ function matchingEngineRuns(baseline, candidate) {
   if (subset.length === have.length || subset.length !== wanted.size) return baseline;
   return { ...baseline, scenarios: subset, summary: measureSummary(subset), name: `${baseline.name} (matching runs)` };
 }
-var ENGINES, GENERIC_AUTOPLAY, MEASURE_LINE, home, label2, tail, round2, p50, sum, errorType;
+var ENGINES2, GENERIC_AUTOPLAY, MEASURE_LINE, home, label2, tail, round2, p50, sum, errorType;
 var init_engine = __esm({
   "../playtest/src/engine.js"() {
     init_run();
-    ENGINES = {
+    ENGINES2 = {
       godot: {
         label: "Godot",
         dash: "--",
@@ -40239,9 +40526,9 @@ var init_engine = __esm({
     };
     GENERIC_AUTOPLAY = "Give the game an autoplay mode: a flag such as --autoplay that lets a bot play by itself, with --seed=N so the same seed plays the same way on both builds. Have it start levels as it goes (Glitchless level_start) and keep playing for as long as the scenario measures.";
     MEASURE_LINE = /\{\s*"glitchless_measure"\s*:/;
-    home = (p) => p === "~" || p.startsWith("~/") ? path7.join(os5.homedir(), p.slice(1)) : p;
+    home = (p) => p === "~" || p.startsWith("~/") ? path8.join(os5.homedir(), p.slice(1)) : p;
     label2 = (sc) => sc.name || [...paramFlags(sc.params), ...sc.args || []].join(" ") || "run";
-    tail = (text, n = 15) => String(text || "").trimEnd().split(/\r?\n/).slice(-n).join("\n");
+    tail = (text2, n = 15) => String(text2 || "").trimEnd().split(/\r?\n/).slice(-n).join("\n");
     round2 = (n, d = 2) => n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** d) / 10 ** d;
     p50 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
     sum = (xs) => xs.reduce((a, b) => a + b, 0);
@@ -40469,10 +40756,10 @@ var init_report = __esm({
 
 // ../playtest/src/runs.js
 import fs6 from "node:fs";
-import path8 from "node:path";
+import path9 from "node:path";
 function runPath(dir, name) {
   if (!NAME.test(name)) throw new Error(`Run name "${name}" must be 1\u201364 letters, digits, dots, dashes or underscores.`);
-  return path8.join(dir, `${name}.json`);
+  return path9.join(dir, `${name}.json`);
 }
 function saveRun(dir, name, run2) {
   fs6.mkdirSync(dir, { recursive: true });
@@ -40481,7 +40768,7 @@ function saveRun(dir, name, run2) {
   return file2;
 }
 function loadRun(dir, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path8.resolve(nameOrFile) : runPath(dir, nameOrFile);
+  const file2 = nameOrFile.endsWith(".json") ? path9.resolve(nameOrFile) : runPath(dir, nameOrFile);
   if (!fs6.existsSync(file2)) return null;
   return JSON.parse(fs6.readFileSync(file2, "utf8"));
 }
@@ -40632,14 +40919,14 @@ ${files2}` }] };
 
 // ../../node_modules/glitchless-deck/src/util.js
 import fs7 from "node:fs";
-import path9 from "node:path";
+import path10 from "node:path";
 import { spawn as spawn4 } from "node:child_process";
 function which(name, { platform = process.platform, env = process.env } = {}) {
   const exts = platform === "win32" ? ["", ...(env.PATHEXT || ".EXE;.CMD;.BAT").split(";").map((e) => e.toLowerCase())] : [""];
-  for (const dir of (env.PATH || env.Path || "").split(path9.delimiter)) {
+  for (const dir of (env.PATH || env.Path || "").split(path10.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
-      const file2 = path9.join(dir, name + ext);
+      const file2 = path10.join(dir, name + ext);
       try {
         if (fs7.statSync(file2).isFile()) return file2;
       } catch {
@@ -40653,7 +40940,7 @@ function shq(word) {
   return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
 function run(cmd, args, { input: input2, cwd, env, timeout = 0, onLine, shell = false } = {}) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     let child;
     try {
       child = spawn4(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env, shell, windowsHide: true });
@@ -40682,7 +40969,7 @@ function run(cmd, args, { input: input2, cwd, env, timeout = 0, onLine, shell = 
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       if (onLine && pending.trim()) onLine(pending);
-      resolve({ code: code ?? (signal ? 128 : 1), signal, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
+      resolve2({ code: code ?? (signal ? 128 : 1), signal, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
     });
     child.stdin.on("error", () => {
     });
@@ -40706,7 +40993,7 @@ var init_util2 = __esm({
 
 // ../../node_modules/glitchless-deck/src/checks.js
 import fs8 from "node:fs";
-import path10 from "node:path";
+import path11 from "node:path";
 function inspectBinary(file2) {
   let head;
   try {
@@ -40747,8 +41034,8 @@ function inspectBinary(file2) {
 }
 function checkFolder(game) {
   const folder = game._folder;
-  const rel = path10.relative(folder, game._root);
-  if (!rel || !rel.startsWith("..") && !path10.isAbsolute(rel)) {
+  const rel = path11.relative(folder, game._root);
+  if (!rel || !rel.startsWith("..") && !path11.isAbsolute(rel)) {
     throw new Problem(`${game.id}'s folder is the project itself (${folder}). Send only the build: set "folder" to where the build goes, such as build/deck.`);
   }
   if (!fs8.existsSync(folder) || !fs8.statSync(folder).isDirectory() || !fs8.readdirSync(folder).length) {
@@ -40760,12 +41047,12 @@ function checkFolder(game) {
 }
 function checkStart(game, argv, { kiosk = false } = {}) {
   if (kiosk) {
-    if (!fs8.existsSync(path10.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
+    if (!fs8.existsSync(path11.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
     return { kind: "web" };
   }
-  const start = path10.resolve(game._folder, argv[0]);
-  const rel = path10.relative(game._folder, start);
-  if (rel.startsWith("..") || path10.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
+  const start = path11.resolve(game._folder, argv[0]);
+  const rel = path11.relative(game._folder, start);
+  if (rel.startsWith("..") || path11.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
   const what = inspectBinary(start);
   const where2 = `${argv[0]} (in ${game._folder})`;
   if (what.kind === "missing") throw new Problem(`${argv[0]} is not in ${game._folder}; check the game's "run" in ${game._file}.`);
@@ -40794,19 +41081,19 @@ var init_checks3 = __esm({
 // ../../node_modules/glitchless-deck/src/engines.js
 import fs9 from "node:fs";
 import os6 from "node:os";
-import path11 from "node:path";
+import path12 from "node:path";
 function readPackage(root) {
   try {
-    return JSON.parse(fs9.readFileSync(path11.join(root, "package.json"), "utf8"));
+    return JSON.parse(fs9.readFileSync(path12.join(root, "package.json"), "utf8"));
   } catch {
     return null;
   }
 }
 function uprojectIn(game, root) {
-  if (game.unreal?.project) return path11.resolve(root, game.unreal.project);
+  if (game.unreal?.project) return path12.resolve(root, game.unreal.project);
   try {
     const found = fs9.readdirSync(root).find((f) => f.endsWith(".uproject"));
-    return found ? path11.join(root, found) : null;
+    return found ? path12.join(root, found) : null;
   } catch {
     return null;
   }
@@ -40818,7 +41105,7 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
       return { folder: "build/deck", run: `./${game.id}.x86_64` };
     case "unreal": {
       const uproject = uprojectIn(game, root);
-      const name = uproject ? path11.basename(uproject, ".uproject") : game.id;
+      const name = uproject ? path12.basename(uproject, ".uproject") : game.id;
       return unrealTarget(game, platform) === "win64" ? { folder: "build/deck", run: `./Windows/${name}.exe`, proton: true } : { folder: "build/deck", run: `./Linux/${name}.sh` };
     }
     case "web": {
@@ -40833,14 +41120,14 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
 }
 function resolveArgv(game) {
   const argv = [...game._argv];
-  const there = (rel) => fs9.existsSync(path11.resolve(game._folder, rel));
+  const there = (rel) => fs9.existsSync(path12.resolve(game._folder, rel));
   if (there(argv[0]) || game.run !== engineDefaults(game, { root: game._root }).run) return argv;
   if (game.engine === "unreal") {
     const alt = argv[0].replace(/^\.\/(Windows|Linux)\//, (_, p) => `./${p}NoEditor/`);
     if (there(alt)) argv[0] = alt;
   } else if (game.engine === "web" && webMode(game) === "electron" && fs9.existsSync(game._folder)) {
     const skip = /^(chrome-sandbox|chrome_crashpad_handler)$|\.so(\.|$)/;
-    const bins = fs9.readdirSync(game._folder).filter((f) => !skip.test(f) && fs9.statSync(path11.join(game._folder, f)).isFile() && inspectBinary(path11.join(game._folder, f)).kind === "elf");
+    const bins = fs9.readdirSync(game._folder).filter((f) => !skip.test(f) && fs9.statSync(path12.join(game._folder, f)).isFile() && inspectBinary(path12.join(game._folder, f)).kind === "elf");
     if (bins.length === 1) argv[0] = `./${bins[0]}`;
   }
   return argv;
@@ -40878,15 +41165,15 @@ function tail2(file2, lines = 15) {
   }
 }
 function godotPresets(root) {
-  let text;
+  let text2;
   try {
-    text = fs9.readFileSync(path11.join(root, "export_presets.cfg"), "utf8");
+    text2 = fs9.readFileSync(path12.join(root, "export_presets.cfg"), "utf8");
   } catch {
     return [];
   }
   const presets = [];
   let current = null;
-  for (const line of text.split(/\r?\n/)) {
+  for (const line of text2.split(/\r?\n/)) {
     const section = line.match(/^\[preset\.(\d+)(\.options)?\]/);
     if (section) {
       current = section[2] ? presets.find((p) => p.index === section[1]) : { index: section[1] };
@@ -40907,7 +41194,7 @@ function godotBinary(game, platform) {
   if (given) return given;
   const found = which("godot", { platform }) || which("godot4", { platform });
   if (found) return found;
-  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path11.join(os6.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
+  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path12.join(os6.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
   if (platform === "darwin") {
     for (const p of mac3) if (fs9.existsSync(p)) return p;
   }
@@ -40922,26 +41209,26 @@ async function buildGodot(game, log, platform) {
   }
   if (preset.arch && preset.arch !== "x86_64") throw new Problem(`The "${preset.name}" preset builds for ${preset.arch}; the Deck needs x86_64 (Export > Linux > Binary Format > Architecture).`);
   const bin = godotBinary(game, platform);
-  const out = path11.resolve(game._folder, game._argv[0]);
-  fs9.mkdirSync(path11.dirname(out), { recursive: true });
+  const out = path12.resolve(game._folder, game._argv[0]);
+  fs9.mkdirSync(path12.dirname(out), { recursive: true });
   const logFile = logFileFor(game);
   const started = Date.now();
   log(`Godot: importing, then exporting with the "${preset.name}" preset`);
   const steps = [["--headless", "--path", game._root, "--import"], ["--headless", "--path", game._root, "--export-release", preset.name, out]];
-  let text = "";
+  let text2 = "";
   for (const args of steps) {
     const r = await run(bin, args, { cwd: game._root });
-    text += r.stdout + r.stderr;
+    text2 += r.stdout + r.stderr;
   }
-  fs9.writeFileSync(logFile, text);
+  fs9.writeFileSync(logFile, text2);
   let made = null;
   try {
     made = fs9.statSync(out);
   } catch {
   }
   if (!made || !made.size || made.mtimeMs < started - 2e3) {
-    const hint = /export template/i.test(text) ? "\nInstall the export templates: Editor > Manage Export Templates > Download and Install." : "";
-    throw new Problem(`The Godot export did not make ${path11.basename(out)} (log: ${logFile}).${hint}
+    const hint = /export template/i.test(text2) ? "\nInstall the export templates: Editor > Manage Export Templates > Download and Install." : "";
+    throw new Problem(`The Godot export did not make ${path12.basename(out)} (log: ${logFile}).${hint}
 ${tail2(logFile)}`);
   }
 }
@@ -40950,14 +41237,14 @@ function unityEditor(game, root, platform) {
   if (given) return { editor: given };
   let version2;
   try {
-    version2 = fs9.readFileSync(path11.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
+    version2 = fs9.readFileSync(path12.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
   } catch {
     throw new Problem(`${root} doesn't look like a Unity project (no ProjectSettings/ProjectVersion.txt).`);
   }
   const hub = {
     darwin: [`/Applications/Unity/Hub/Editor/${version2}/Unity.app/Contents/MacOS/Unity`, `/Applications/Unity/Hub/Editor/${version2}/PlaybackEngines/LinuxStandaloneSupport`],
     win32: [`C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Unity.exe`, `C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Data\\PlaybackEngines\\LinuxStandaloneSupport`],
-    linux: [path11.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path11.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
+    linux: [path12.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path12.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
   }[platform] || [];
   if (!hub[0] || !fs9.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
   if (platform !== "linux" && !fs9.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
@@ -40965,20 +41252,20 @@ function unityEditor(game, root, platform) {
 }
 async function buildUnity(game, log, platform) {
   const { editor } = unityEditor(game, game._root, platform);
-  const out = path11.resolve(game._folder, game._argv[0]);
+  const out = path12.resolve(game._folder, game._argv[0]);
   const logFile = logFileFor(game);
   fs9.rmSync(game._folder, { recursive: true, force: true });
   fs9.mkdirSync(game._folder, { recursive: true });
   log("Unity: Linux64 build in batch mode (the Editor must be closed on this project)");
   const r = await run(editor, ["-batchmode", "-quit", "-nographics", "-projectPath", game._root, "-buildTarget", "Linux64", "-buildLinux64Player", out, "-logFile", logFile], { cwd: game._root });
   if (r.code !== 0 || !fs9.existsSync(out)) {
-    const text = tail2(logFile, 400);
-    const hint = /another Unity instance is running/i.test(text) ? "\nClose the Unity Editor on this project first: batch mode cannot open a project that is already open." : "";
+    const text2 = tail2(logFile, 400);
+    const hint = /another Unity instance is running/i.test(text2) ? "\nClose the Unity Editor on this project first: batch mode cannot open a project that is already open." : "";
     throw new Problem(`The Unity build failed (log: ${logFile}).${hint}
 ${tail2(logFile)}`);
   }
   for (const f of fs9.readdirSync(game._folder)) {
-    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs9.rmSync(path11.join(game._folder, f), { recursive: true, force: true });
+    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs9.rmSync(path12.join(game._folder, f), { recursive: true, force: true });
   }
 }
 function unrealEngine(game) {
@@ -40987,7 +41274,7 @@ function unrealEngine(game) {
   const base2 = "C:\\Program Files\\Epic Games";
   try {
     const versions = fs9.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
-    if (versions.length) return path11.join(base2, versions.at(-1));
+    if (versions.length) return path12.join(base2, versions.at(-1));
   } catch {
   }
   throw new Problem('Unreal Engine was not found. Set UE_ROOT to the engine folder (the one with Engine/ in it), or "unreal": { "engine": ... } in the game entry.');
@@ -41003,7 +41290,7 @@ async function buildUnreal(game, log, platform) {
   const uproject = uprojectIn(game, game._root);
   if (!uproject) throw new Problem(`No .uproject in ${game._root} (or set "unreal": { "project": ... }).`);
   const engine = unrealEngine(game);
-  const uat = path11.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
+  const uat = path12.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
   if (!fs9.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
   fs9.rmSync(game._folder, { recursive: true, force: true });
   const args = ["BuildCookRun", `-project=${uproject}`, "-noP4", `-platform=${target === "win64" ? "Win64" : "Linux"}`, `-clientconfig=${game.unreal?.config || "Development"}`, "-build", "-cook", "-stage", "-pak", "-archive", `-archivedirectory=${game._folder}`, "-utf8output", "-unattended"];
@@ -41018,25 +41305,25 @@ async function buildElectron(game, pkg, log) {
   if (!command) throw new Problem('Neither electron-builder nor Electron Forge is in package.json. Set "build" to the command that packages the app for Linux x64, and "folder" to where it lands.');
   await shellBuild(game, command, log);
 }
-var ENGINES2, KIOSK_RUN, webMode, unrealTarget, logFileFor;
+var ENGINES3, KIOSK_RUN, webMode, unrealTarget, logFileFor;
 var init_engines = __esm({
   "../../node_modules/glitchless-deck/src/engines.js"() {
     init_util2();
     init_checks3();
-    ENGINES2 = ["godot", "unity", "unreal", "web"];
+    ENGINES3 = ["godot", "unity", "unreal", "web"];
     KIOSK_RUN = "./.glitchless-kiosk.sh";
     webMode = (game) => game.web?.mode === "electron" ? "electron" : "kiosk";
     unrealTarget = (game, platform = process.platform) => (game.unreal?.target || (platform === "win32" ? "win64" : "linux")).toLowerCase();
-    logFileFor = (game) => path11.join(path11.dirname(game._folder), `${path11.basename(game._folder)}-build.log`);
+    logFileFor = (game) => path12.join(path12.dirname(game._folder), `${path12.basename(game._folder)}-build.log`);
   }
 });
 
 // ../../node_modules/glitchless-deck/src/config.js
 import fs10 from "node:fs";
 import os7 from "node:os";
-import path12 from "node:path";
+import path13 from "node:path";
 function configDir() {
-  return process.env.GLITCHLESS_DECK_HOME || path12.join(os7.homedir(), ".config", "glitchless-deck");
+  return process.env.GLITCHLESS_DECK_HOME || path13.join(os7.homedir(), ".config", "glitchless-deck");
 }
 function readJson(file2, fallback) {
   try {
@@ -41047,7 +41334,7 @@ function readJson(file2, fallback) {
   }
 }
 function writeJson(file2, value) {
-  fs10.mkdirSync(path12.dirname(file2), { recursive: true });
+  fs10.mkdirSync(path13.dirname(file2), { recursive: true });
   fs10.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
 `);
 }
@@ -41079,7 +41366,7 @@ function pairedDeck(which2) {
 }
 function projectFileIn(dir) {
   for (const name of PROJECT_FILES) {
-    const file2 = path12.join(dir, name);
+    const file2 = path13.join(dir, name);
     if (fs10.existsSync(file2)) return file2;
   }
   return null;
@@ -41089,7 +41376,7 @@ function listedProjects() {
 }
 function projectFiles(cwd = process.cwd()) {
   const here = projectFileIn(cwd);
-  const out = here ? [path12.resolve(here)] : [];
+  const out = here ? [path13.resolve(here)] : [];
   for (const f of listedProjects()) if (!out.includes(f)) out.push(f);
   return out;
 }
@@ -41129,13 +41416,13 @@ function normalizeGame(raw, file2) {
     throw new Problem(`${file2}: a game's id is its name on the Deck: letters, digits, _ and ., starting with a letter (got ${JSON.stringify(raw?.id)}).`);
   }
   if (id.endsWith(MEASURE_SUFFIX)) throw new Problem(`${file2}: ids ending in ${MEASURE_SUFFIX} are kept for measuring (${id}).`);
-  if (raw.engine && !ENGINES2.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES2.join(", ")}.`);
-  const root = path12.resolve(path12.dirname(file2), raw.root || ".");
+  if (raw.engine && !ENGINES3.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES3.join(", ")}.`);
+  const root = path13.resolve(path13.dirname(file2), raw.root || ".");
   const game = { ...engineDefaults({ ...raw, id }, { root }), ...raw, id, _file: file2, _root: root };
   for (const key of ["folder", "run"]) {
     if (!game[key]) throw new Problem(`${file2}: ${id} needs a "${key}"${raw.engine ? "" : ' (or an "engine" that fills it in)'}.`);
   }
-  game._folder = path12.resolve(root, game.folder);
+  game._folder = path13.resolve(root, game.folder);
   game._argv = Array.isArray(game.run) ? game.run.map(String) : shellWords(String(game.run));
   if (!game._argv.length) throw new Problem(`${file2}: ${id} has an empty "run".`);
   return game;
@@ -41144,7 +41431,7 @@ function readProject(file2) {
   const data = readJson(file2, null);
   if (!data) throw new Problem(`${file2} does not exist.`);
   const games = Array.isArray(data.games) ? data.games : [];
-  return games.map((g) => normalizeGame(g, path12.resolve(file2)));
+  return games.map((g) => normalizeGame(g, path13.resolve(file2)));
 }
 function loadGames({ cwd = process.cwd() } = {}) {
   const games = [];
@@ -41183,11 +41470,11 @@ var init_config2 = __esm({
       const dir = configDir();
       return {
         dir,
-        key: path12.join(dir, "devkit_rsa"),
-        decks: path12.join(dir, "decks.json"),
-        projects: path12.join(dir, "projects.json"),
-        knownHosts: path12.join(dir, "known_hosts"),
-        hashes: path12.join(dir, "hashes")
+        key: path13.join(dir, "devkit_rsa"),
+        decks: path13.join(dir, "decks.json"),
+        projects: path13.join(dir, "projects.json"),
+        knownHosts: path13.join(dir, "known_hosts"),
+        hashes: path13.join(dir, "hashes")
       };
     };
   }
@@ -41319,9 +41606,9 @@ async function findDecks({ timeout = 2500, target = process.env.GLITCHLESS_DECK_
       });
     }
   };
-  const open2 = (bindAddress, iface) => new Promise((resolve) => {
+  const open2 = (bindAddress, iface) => new Promise((resolve2) => {
     const s = dgram.createSocket({ type: "udp4", reuseAddr: true });
-    s.on("error", () => resolve(null));
+    s.on("error", () => resolve2(null));
     s.on("message", take);
     s.bind({ port: 0, address: bindAddress }, () => {
       try {
@@ -41330,7 +41617,7 @@ async function findDecks({ timeout = 2500, target = process.env.GLITCHLESS_DECK_
       } catch {
       }
       sockets.push(s);
-      resolve(s);
+      resolve2(s);
     });
   });
   if (target) await open2("127.0.0.1");
@@ -41338,9 +41625,9 @@ async function findDecks({ timeout = 2500, target = process.env.GLITCHLESS_DECK_
     const ifaces = localAddresses();
     for (const a of ifaces) await open2(void 0, a.address);
     if (!ifaces.length) await open2();
-    await new Promise((resolve) => {
+    await new Promise((resolve2) => {
       const s = dgram.createSocket({ type: "udp4", reuseAddr: true });
-      s.on("error", () => (s.close(), resolve()));
+      s.on("error", () => (s.close(), resolve2()));
       s.on("message", take);
       s.bind(MDNS_PORT, () => {
         try {
@@ -41350,7 +41637,7 @@ async function findDecks({ timeout = 2500, target = process.env.GLITCHLESS_DECK_
         } catch {
           s.close();
         }
-        resolve();
+        resolve2();
       });
     });
   }
@@ -42101,7 +42388,7 @@ var init_glitchless = __esm({
 // ../../node_modules/glitchless-deck/src/transfer.js
 import crypto3 from "node:crypto";
 import fs11 from "node:fs";
-import path13 from "node:path";
+import path14 from "node:path";
 import { spawn as spawn5 } from "node:child_process";
 function transferMode(given, { platform = process.platform } = {}) {
   if (given === "tar" || given === "rsync") return given;
@@ -42112,8 +42399,8 @@ function walk(root) {
   const out = { files: [], links: [], dirs: [] };
   const visit2 = (dir) => {
     for (const entry of fs11.readdirSync(dir, { withFileTypes: true })) {
-      const full = path13.join(dir, entry.name);
-      const rel = path13.relative(root, full).split(path13.sep).join("/");
+      const full = path14.join(dir, entry.name);
+      const rel = path14.relative(root, full).split(path14.sep).join("/");
       if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs11.readlinkSync(full) });
       else if (entry.isDirectory()) {
         out.dirs.push({ rel, full, mtime: fs11.statSync(full).mtimeMs });
@@ -42128,13 +42415,13 @@ function walk(root) {
   return out;
 }
 function sha1File(file2) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     const h = crypto3.createHash("sha1");
-    fs11.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve(h.digest("hex")));
+    fs11.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve2(h.digest("hex")));
   });
 }
 async function hashFiles(id, list) {
-  const cacheFile = path13.join(files().hashes, `${id}.json`);
+  const cacheFile = path14.join(files().hashes, `${id}.json`);
   let cache = {};
   try {
     cache = JSON.parse(fs11.readFileSync(cacheFile, "utf8"));
@@ -42194,11 +42481,11 @@ function rawHeader({ name, size = 0, mode: mode2 = 420, mtime = Date.now() / 1e3
   return h;
 }
 function paxRecord(key, value) {
-  const body = ` ${key}=${value}
+  const body2 = ` ${key}=${value}
 `;
-  let len = Buffer.byteLength(body) + 1;
-  while (String(len).length + Buffer.byteLength(body) !== len) len = String(len).length + Buffer.byteLength(body);
-  return `${len}${body}`;
+  let len = Buffer.byteLength(body2) + 1;
+  while (String(len).length + Buffer.byteLength(body2) !== len) len = String(len).length + Buffer.byteLength(body2);
+  return `${len}${body2}`;
 }
 function tarHeader(entry) {
   const long = (s) => Buffer.byteLength(s) > 99 || /[^\x20-\x7e]/.test(s);
@@ -42213,10 +42500,10 @@ function tarHeader(entry) {
 }
 async function writeTar(out, { send: sendFiles = [], links = [], dirs = [] }, { platform = process.platform, onBytes = () => {
 } } = {}) {
-  const write2 = (buf) => new Promise((resolve, reject) => {
+  const write2 = (buf) => new Promise((resolve2, reject) => {
     if (out.destroyed) return reject(new Error("the connection closed"));
-    if (out.write(buf)) resolve();
-    else out.once("drain", resolve);
+    if (out.write(buf)) resolve2();
+    else out.once("drain", resolve2);
   });
   for (const d of dirs) await write2(tarHeader({ name: `${d.rel}/`, type: "5", mode: 493, mtime: d.mtime / 1e3 }));
   for (const f of sendFiles) {
@@ -42271,7 +42558,7 @@ ${r.stderr.trim().split("\n").slice(-3).join("\n")}` : ""}`);
   return { mode: mode2, total, sent: bytes, files: p.send.length, removed: p.remove.length };
 }
 function sendTar(deck, remote, p, { log, bytes, platform }) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve2, reject) => {
     const [cmd, ...pre] = sshProgram();
     const child = spawn5(cmd, [...pre, ...sshOptions(), destination(deck), `mkdir -p ${shq(remote)} && tar -xf - -C ${shq(remote)}`], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let err = "";
@@ -42291,7 +42578,7 @@ function sendTar(deck, remote, p, { log, bytes, platform }) {
     };
     child.on("error", (e) => reject(new Problem(`Could not start ssh: ${e.message}`)));
     child.on("close", (code) => {
-      if (code === 0) resolve();
+      if (code === 0) resolve2();
       else reject(new Problem(`The transfer failed (ssh exit ${code}). Send again: only what is still different goes.${err.trim() ? `
 ${err.trim().split("\n").slice(-3).join("\n")}` : ""}`));
     });
@@ -42317,7 +42604,7 @@ var init_transfer = __esm({
 
 // ../../node_modules/glitchless-deck/src/send.js
 import fs12 from "node:fs";
-import path14 from "node:path";
+import path15 from "node:path";
 async function install(deck, game, { gameid = game.id, argv, extra = [], linkTo } = {}) {
   const kiosk = isKiosk(game);
   const files2 = {};
@@ -42343,8 +42630,8 @@ function readArtwork(game) {
   for (const [key, rel] of Object.entries(game.artwork || {})) {
     const kind = ART_KINDS[key];
     if (!kind) throw new Problem(`${game._file}: unknown artwork "${key}". Use capsule (600x900), wide (920x430), hero (3840x1240), logo or icon.`);
-    const file2 = path14.resolve(game._root, rel);
-    const ext = path14.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
+    const file2 = path15.resolve(game._root, rel);
+    const ext = path15.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
     if (!["png", "jpg"].includes(ext)) throw new Problem(`${rel}: artwork has to be a .png or .jpg.`);
     if (!fs12.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
     if (fs12.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
@@ -42445,17 +42732,17 @@ var init_play = __esm({
 
 // ../../node_modules/glitchless-deck/src/measure.js
 import fs13 from "node:fs";
-import path15 from "node:path";
+import path16 from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 function saveRun2(game, name, run2) {
   if (!NAME2.test(name)) throw new Problem(`Run name "${name}" must be 1-64 letters, digits, dots, dashes or underscores.`);
   fs13.mkdirSync(runsDir(game), { recursive: true });
-  const file2 = path15.join(runsDir(game), `${name}.json`);
+  const file2 = path16.join(runsDir(game), `${name}.json`);
   fs13.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun2(game, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path15.resolve(nameOrFile) : path15.join(runsDir(game), `${nameOrFile}.json`);
+  const file2 = nameOrFile.endsWith(".json") ? path16.resolve(nameOrFile) : path16.join(runsDir(game), `${nameOrFile}.json`);
   return fs13.existsSync(file2) ? JSON.parse(fs13.readFileSync(file2, "utf8")) : null;
 }
 function listRuns2(game) {
@@ -42586,7 +42873,7 @@ var init_measure = __esm({
     init_ssh();
     init_util2();
     NAME2 = /^[A-Za-z0-9._-]{1,64}$/;
-    runsDir = (game) => path15.join(game._root, ".glitchless", "deck", game.id);
+    runsDir = (game) => path16.join(game._root, ".glitchless", "deck", game.id);
     p502 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
     round3 = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
     errorType2 = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
@@ -42620,7 +42907,7 @@ var init_src2 = __esm({
 
 // src/tools/deck.js
 var deck_exports = {};
-import path16 from "node:path";
+import path17 from "node:path";
 function progress(ctx) {
   const token = ctx?.mcpReq._meta?.progressToken;
   let step = 0;
@@ -42633,7 +42920,7 @@ function progress(ctx) {
   return { log, lines };
 }
 function find(game, project) {
-  return gameNamed(game, { cwd: path16.resolve(project || process.cwd()) });
+  return gameNamed(game, { cwd: path17.resolve(project || process.cwd()) });
 }
 var common2, problem;
 var init_deck2 = __esm({

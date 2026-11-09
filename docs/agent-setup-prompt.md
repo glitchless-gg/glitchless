@@ -59,3 +59,7 @@ Add Glitchless to this game. Glitchless shows how the game runs and plays for re
   if Godot gets a section there, drop the pointer to its README.
 - Name only config locations you're sure of as examples in step 3; the agent knows its own.
 - An agent without MCP support can still do steps 1, 2 and 6. Triage then needs the dashboard.
+- An agent that already has the Glitchless MCP server needs none of this: "Set up Glitchless for my game in this
+  folder" is enough, because `glitchless_create_game` with `engine` (or `files`) hands it the instrument skill for the
+  game's engine (the server's copy is `packages/mcp/src/skills.js`, written by `node scripts/sync-agent-plugin.mjs`).
+  This prompt stays for agents that don't have the server yet, so it can't lean on the tool.

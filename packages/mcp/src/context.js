@@ -88,8 +88,21 @@ export async function workspaceGames(fresh = false) {
 // The intake address games send to, as the last game list gave it.
 export const workspaceIntake = () => conn().games?.intake ?? null;
 
-// How to add Glitchless to a game, in any engine: the setup steps a coding agent follows (docs/agent-setup-prompt.md).
+// How to add Glitchless to a game, in any engine: the setup steps a coding agent follows (docs/agent-setup-prompt.md),
+// for a connection without glitchless_create_game, which hands over the steps for the game's engine itself.
 export const SETUP_URL = 'https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md';
+
+// Whether this call's connection shows the tools that need the manage scope (over HTTP, by the scopes the person gave
+// it; on stdio every tool shows).
+export const canManage = () => {
+  const scopes = calls.getStore()?.scopes;
+  return !scopes || scopes.includes('manage');
+};
+
+// Where an agent gets the steps that add Glitchless to a game's code, as the end of a sentence: from
+// glitchless_create_game (setup-guide.js) where the connection has it, else the setup prompt.
+export const setupSteps = () =>
+  canManage() ? "glitchless_create_game with the game's name and its engine (or files: what's in the game's folder) returns the steps for that engine" : `the setup steps are at ${SETUP_URL}`;
 
 export async function projectFor(game) {
   const c = conn();
@@ -101,7 +114,7 @@ export async function projectFor(game) {
     list = await workspaceGames(true);
     hit = find();
   }
-  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play), and the setup steps for adding Glitchless to a game are at ${SETUP_URL}.`);
+  if (!list.length) throw new Error(`This workspace has no games yet: glitchless_list_games says how to make one (or the demo game, with a week of sample play). To add Glitchless to a game: ${setupSteps()}.`);
   if (!hit) throw new Error(want ? `No game called "${want}" in this workspace. Games: ${list.map((g) => g.name).join(', ')}.` : `Name the game this is about (game: "<name>"): ${list.map((g) => g.name).join(', ')}.`);
   c.game = hit.id;
   return hit.id;
@@ -140,8 +153,8 @@ export async function query(name, params = {}) {
   return data;
 }
 
-// The tool call being answered: the game it names, the server answering it, and the meta of its last query, for
-// windowNote().
+// The tool call being answered: the game it names, the server answering it, the scopes its connection shows tools for
+// (over HTTP), and the meta of its last query, for windowNote().
 const calls = new AsyncLocalStorage();
 
 // How the window was answered, when an agent should know: by day past 31 days, what is estimated, what a
@@ -186,7 +199,7 @@ export async function resolveService(service) {
   if (service) return service;
   if (defaultService()) return defaultService();
   const { services } = await query('services');
-  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next; the setup steps for adding the SDK are at ${SETUP_URL}. Data shows a few minutes after a level is played.`);
+  if (!services?.length) throw new Error(`No game has sent Glitchless any data yet. glitchless_list_games gives each game's client token and what to do next. To add the SDK: ${setupSteps()}. Data shows a few minutes after a level is played.`);
   return services.sort((a, b) => b.last_seen - a.last_seen)[0].service;
 }
 
@@ -273,14 +286,14 @@ const gameField = z.string().optional().describe('The game, by name or id, when 
 export function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
   const server = new McpServer(
     { name: 'glitchless', title: 'Glitchless', version: VERSION, websiteUrl: 'https://www.glitchless.gg', icons: [{ src: 'https://app.glitchless.gg/brand/glitchless-icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }] },
-    { instructions: instructions(remote) },
+    { instructions: instructions(remote, !scopes || scopes.includes('manage')) },
   );
   for (const t of tools) {
     if ((remote && t.local) || (scopes && !scopes.includes(t.scope))) continue;
     const { inputSchema = {}, ...config } = t.config;
     server.registerTool(t.name, { ...config, title: titleOf(t), inputSchema: z.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
       const run = () =>
-        calls.run({ game: args.game, server, remote }, async () => {
+        calls.run({ game: args.game, server, remote, scopes }, async () => {
           try {
             return await t.handler(args, ctx);
           } catch (err) {
@@ -293,9 +306,13 @@ export function createServer({ remote = false, scopes = null, connection: c = nu
   return server;
 }
 
-function instructions(remote) {
+// manage: whether the connection shows glitchless_create_game, which hands over the steps that add Glitchless to a game.
+function instructions(remote, manage = true) {
   return [
     'Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker.',
+    manage
+      ? "To add Glitchless to a game (the person asks you to set it up, or for performance monitoring, analytics or telemetry in their game), call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files: what you find in the game's folder. It makes the game, or finds the one already here by that name, and returns that engine's steps with where the game sends and its client token in them."
+      : `To add Glitchless to a game, follow the setup steps at ${SETUP_URL}: this connection may only read, so the person makes the game in Glitchless, and glitchless_list_games then has its client token.`,
     remote
       ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_links makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else."
       : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_links makes a read-only link to a board.",

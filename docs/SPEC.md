@@ -1658,7 +1658,36 @@ On the lake its data is readable about three minutes after it's made. When the d
 when the key may `manage`, otherwise where in the dashboard). In a workspace with no games at all (one from before),
 it says how to make one (with the demo game when the key may `manage`, otherwise where in the dashboard and how to
 connect again with that scope), and a game that hasn't sent data gets a `next_step`: its client token, the intake and
-the setup steps (`docs/agent-setup-prompt.md`).
+where the setup steps are (`glitchless_create_game` with `game` and `engine`, below; on a connection that may only
+read, which has no such tool, `docs/agent-setup-prompt.md`).
+
+**Setting a game up from the connection alone.** Someone who connected Glitchless in claude.ai or ChatGPT, then says
+"Set up Glitchless for my game in this folder" in a coding agent that has the connection and no Glitchless skill, gets
+the steps from the tools themselves; nothing is fetched.
+- **`glitchless_create_game` with `engine`** (`unity`, `godot`, `unreal`, `threejs`, `roblox`, `phaser`, `babylon`,
+  `playcanvas`, `gamemaker`) **or `files`** (what the agent found in the game's folder: file names at its root and
+  `package.json` dependencies, which name the engine; a native engine's project file wins over a `package.json`)
+  answers with the instrument skill cut to that engine, up to 50,000 characters: where the game sends (the intake URL
+  and the game's client token), getting the SDK, the skill's settings, the engine's reference with the sections it
+  borrows from other references, for Godot the parts of the addon's README it sends the agent to, the game's own
+  metrics, jam rooms and the report. Links the agent can't follow become GitHub addresses.
+  - With `name`, the game is made first; with `game`, it's one already in the workspace; with neither, the steps say
+    how to get a client token and list the games already there.
+  - **A name already in the workspace returns that game** (whatever its capitals), with or without `engine`, instead
+    of making a second one: the game the person named on the connect page is the one their agent sets up.
+  - When the game can't be made (the Free plan has room for one game), the steps still come, with the reason and the
+    games already there. Without `engine` or `files` the same error names those games.
+  - When `files` name no engine, nothing is made and the answer is the skill's table of what to look for.
+  - The demo game has no code to set up, and is refused.
+  - Without a workspace (the open-source server), the steps name the server the MCP server reads: on this computer,
+    `gl_pub_dev` and how to start one, or how to sign in to Glitchless Cloud instead.
+- **`glitchless_dashboard` with `guide: true`** answers with the dashboard skill and its two references (example
+  dashboards, panels for each kind of game), up to 45,000 characters, whether or not the game has sent data.
+- The text is `packages/mcp/src/skills.js`, a copy of `plugin/glitchless/skills/{instrument,dashboard}` and the Godot
+  addon's README that `node scripts/sync-agent-plugin.mjs` writes (`--check`, in `npm test`, fails when it's behind),
+  so the npm package, the Claude Code plugin's bundle and the hosted server all carry it.
+- The server's instructions tell an agent to call `glitchless_create_game` first when asked to add Glitchless to a
+  game; a connection that shows only the read tools is told the setup prompt's address instead.
 
 **Connecting an app by URL** (`#/connect?request=…`, oauth.js) is one page and one button: where connecting goes back
 to, and what the app can do, every scope it asked for on (the person can turn any off: "Change what it can do"). An app

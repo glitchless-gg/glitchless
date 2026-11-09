@@ -92,7 +92,7 @@ above go in its environment.
 | --- | --- |
 | `glitchless_list_games` | Which games report to the server, with their versions and environments; signed in to a workspace, every game in it with its client token |
 | `glitchless_sign_in` | Connect to a Glitchless Cloud workspace: a link and a code for the person to approve |
-| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL; `demo: true` makes the demo game (a week of sample play); `rename` (with `game`) renames one instead, its client token, service and data unchanged |
+| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL (a name already there returns that game); with `engine`, or `files` (what's in the game's folder), also the steps that add Glitchless to the game's code for its engine, for a new game (`name`) or one already there (`game`): the instrument skill, for an agent without it; `demo: true` makes the demo game (a week of sample play); `rename` (with `game`) renames one instead, its client token, service and data unchanged |
 | `glitchless_share_links` | A read-only link to one board page, for a dev log, Discord or a game's "Live stats" link (`page`); lists them, and revokes one (`revoke`) |
 | `glitchless_triage` | The headline numbers (sessions, players, crash-free sessions, frame time, rage quits), then ranked findings: stutter per level and what it correlates with, leaks, top errors, difficulty spikes. Start here |
 | `glitchless_mark_known` | Mark a finding the game's owner accepts as known, so the weekly summary stops listing it (triage shows it last, with the note); with `player` or `session` instead, the team's own play, read as testers in every tool; `clear: true` removes the mark |
@@ -102,7 +102,7 @@ above go in its environment.
 | `glitchless_get_error` | One error issue, with its stack and the gameplay before it |
 | `glitchless_player_funnel` | Per level: starts, completions, deaths and their causes, disconnects, rage quits; split by what describes the attempt (tier, party size, class), runs per level, and retention; with `hotspots`, where players die on a level, in a zone or anywhere in the game (a hub with no levels), clustered in world coordinates |
 | `glitchless_events` | The game's own events (whatever it sends with `track`, and the streams it counts with `count`): counts, attribute breakdowns, rates, distributions and funnels, and the session properties it sets |
-| `glitchless_dashboard` | The game's dashboard: its pages, and one board's panels with their numbers |
+| `glitchless_dashboard` | The game's dashboard: its pages, and one board's panels with their numbers; with `guide: true`, how to design one for the game (the dashboard skill, for an agent without it) |
 | `glitchless_set_dashboard` | Save the game's pages: boards of panels in its own words, and the built-in views it keeps; and, each alone if you like, the boards' accent, logo and banner (the header behind each board's title) and a level's, zone's or the whole game's heatmap background (a picture from a file or base64 and its world bounds; over the hosted server a file is answered with a 10-minute, single-use upload link to send it to with one curl). Needs a key with the dashboard scope |
 | `glitchless_compare_versions` | Two or more versions side by side, in the game's own stats first, to confirm a fix with real players |
 | `glitchless_session` | One play session in detail, with its whole event timeline |

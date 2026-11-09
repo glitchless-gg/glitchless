@@ -1,7 +1,7 @@
 // The built-in reads: which games report, findings, headline numbers, frame time, errors, levels,
 // death hotspots and one session in detail.
 import { z } from 'zod';
-import { base, query, resolveService, range, reply, common, tool, slimIssue, noPlayersLine, slimGroup, filters, isWorkspace, workspaceGames, workspaceIntake, agent, SETUP_URL } from '../context.js';
+import { base, query, resolveService, range, reply, common, tool, slimIssue, noPlayersLine, slimGroup, filters, isWorkspace, workspaceGames, workspaceIntake, agent, SETUP_URL, canManage } from '../context.js';
 import { sessionSummary, timelineView } from '../session-view.js';
 
 tool('glitchless_list_games', 'List the games: with a workspace key, every game in the workspace (its id, name, client token and the services reporting to it); with a key for one game, its services, versions, environments and when they were last seen.', {}, async () => {
@@ -11,19 +11,19 @@ tool('glitchless_list_games', 'List the games: with a workspace key, every game 
       // Someone who connected an app before making a game: say what to do, and what this connection may do about it.
       const who = await agent('GET', '/whoami').catch(() => null);
       const make = who?.scopes?.includes('manage')
-        ? 'Make one with glitchless_create_game (name: the game\'s name), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play.'
-        : `Make one in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links".`;
-      return reply(`No games in this workspace yet. ${make} Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll('<the game>', 'my game')}`, []);
+        ? 'Make one with glitchless_create_game (name: the game\'s name; with its engine, or files, it also returns the steps that add Glitchless to the game\'s code), or try every tool first on the demo game: glitchless_create_game with demo: true adds Zoomies with a week of sample play.'
+        : `Make one in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games. To let it, connect again and tick "Create games and share links". Then add Glitchless to the game's code with its client token: the setup steps are at ${SETUP_URL}.`;
+      return reply(`No games in this workspace yet. ${make} ${CANT_EDIT.replaceAll('<the game>', 'my game')}`, []);
     }
     const intake = workspaceIntake();
-    const rows = list.map((g) => (g.services?.length ? g : { ...g, next_step: nextStep(g, intake) }));
+    const rows = list.map((g) => (g.services?.length ? g : { ...g, next_step: nextStep(g, intake, canManage()) }));
     // A new workspace starts with the demo game only: say it's sample play, and how the person's own game gets in.
     if (list.every((g) => g.demo)) {
       const who = await agent('GET', '/whoami').catch(() => null);
       const add = who?.scopes?.includes('manage')
-        ? "To add the person's own game, glitchless_create_game with its name."
-        : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games.`;
-      return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add} Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}. ${CANT_EDIT.replaceAll('<the game>', 'my game')}`, rows);
+        ? "To add the person's own game, glitchless_create_game with its name, and with its engine (or files: what's in the game's folder) for the steps that put Glitchless into the game's code."
+        : `To add the person's own game, they name it in Glitchless (${who?.dashboard ?? 'the dashboard'}): this connection may only read, so it can't create games. Then Glitchless goes into the game's code with its client token: the setup steps are at ${SETUP_URL}.`;
+      return reply(`Only the demo game so far: ${list[0].name} is a week of sample play to try every tool on (start with glitchless_triage on it). ${add} ${CANT_EDIT.replaceAll('<the game>', 'my game')}`, rows);
     }
     return reply(`${list.length} game(s) in this workspace. Name one with game in any tool:`, rows);
   }
@@ -194,11 +194,16 @@ function sessionRow(s) {
 }
 
 // What to do about a game that hasn't sent anything yet: the demo game's sample play is on its way; any other game needs
-// the SDK in its code. An agent that can edit the code adds it from the setup steps with the game's client token; one
-// that can't (an app in a browser, such as claude.ai or ChatGPT) sends the person to a coding agent in the game's
-// folder, where Claude Code signed in to the same Claude account already has the connection.
+// the SDK in its code. An agent that can edit the code adds it from the steps glitchless_create_game returns for the
+// game's engine (the setup prompt's, on a connection that may only read and so has no such tool); one that can't (an
+// app in a browser, such as claude.ai or ChatGPT) sends the person to a coding agent in the game's folder, where
+// Claude Code signed in to the same Claude account already has the connection.
 const CANT_EDIT = 'If you can\'t edit the game\'s code (in claude.ai or ChatGPT, say), tell the person to open Claude Code in the game\'s folder and say "Set up Glitchless for <the game> in this folder", or to paste the prompt on the Get started page in Glitchless into another coding agent.';
-function nextStep(game, intake) {
+function nextStep(game, intake, manage) {
   if (game.demo) return 'This is the demo game: its sample play can be read a few minutes after it was made. Ask again shortly.';
-  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, follow the setup steps at ${SETUP_URL} with client_token ${game.client_token}${intake ? ` and intake ${intake}` : ''}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll('<the game>', game.name)}`;
+  const sends = `client_token ${game.client_token}${intake ? ` and intake ${intake}` : ''}`;
+  const how = manage
+    ? `call glitchless_create_game with game: "${game.name}" and engine (or files: what's in its folder), which returns the steps for its engine with ${sends} in them`
+    : `follow the setup steps at ${SETUP_URL} with ${sends}`;
+  return `No data yet: ${game.name} hasn't sent a session. Adding Glitchless means changing the game's code. If you can edit ${game.name}'s code, ${how}, then play a level: data shows a few minutes later. ${CANT_EDIT.replaceAll('<the game>', game.name)}`;
 }

@@ -2,7 +2,9 @@
 // Cursor and Antigravity install (its manifests point them at the hosted MCP server; the Claude Code plugin in
 // plugin/glitchless keeps its own local server), and into plugins/dsh, the DeepSeek Harness plugin.
 // plugin/glitchless/skills is the source; the copies are committed because those tools install straight from this
-// repo (and plugins/dsh from its own repo, scripts/export-dsh-plugin.mjs).
+// repo (and plugins/dsh from its own repo, scripts/export-dsh-plugin.mjs). It also writes the MCP server's copy of the
+// instrument and dashboard skills (packages/mcp/src/skills.js), which glitchless_create_game's engine and
+// glitchless_dashboard's guide hand to an agent that has the MCP server and no skills.
 //   node scripts/sync-agent-plugin.mjs           write the copies
 //   node scripts/sync-agent-plugin.mjs --check   fail if they differ from the source (npm test runs this)
 import fs from 'node:fs';
@@ -61,8 +63,30 @@ for (const target of TARGETS) {
   }
 }
 
+// The MCP server's copy, as one module in the package's src/, so the npm package, the Claude Code plugin's bundle and
+// the hosted server all carry it and nothing is fetched: the two skills' Markdown, and the Godot addon's README, which
+// the instrument skill sends Godot games to. Keyed by path in this repo, which is how setup-guide.js follows a link
+// from one file to another.
+const MCP_COPY = 'packages/mcp/src/skills.js';
+const texts = [
+  ...['instrument', 'dashboard'].flatMap((skill) => files(path.join(FROM, skill)).filter((f) => f.endsWith('.md')).sort().map((f) => ['plugin/glitchless/skills', skill, ...f.split(path.sep)].join('/'))),
+  'godot/addons/glitchless/README.md',
+];
+const copy = [
+  "// The instrument and dashboard skills (plugin/glitchless/skills) and the Godot addon's README, as text, for",
+  '// setup-guide.js. Written by scripts/sync-agent-plugin.mjs: edit the skills or the README, then run it.',
+  'export const TEXTS = {',
+  ...texts.map((p) => `  ${JSON.stringify(p)}: ${JSON.stringify(fs.readFileSync(path.join(ROOT, p), 'utf8'))},`),
+  '};',
+  '',
+].join('\n');
+if (!fs.existsSync(path.join(ROOT, MCP_COPY)) || fs.readFileSync(path.join(ROOT, MCP_COPY), 'utf8') !== copy) {
+  stale.push(MCP_COPY);
+  if (!check) fs.writeFileSync(path.join(ROOT, MCP_COPY), copy);
+}
+
 if (check && stale.length) {
-  console.error(`The agent plugins' skills are behind plugin/glitchless/skills (${stale.slice(0, 5).join(', ')}${stale.length > 5 ? ', …' : ''}).\nRun: node scripts/sync-agent-plugin.mjs`);
+  console.error(`The copies of plugin/glitchless/skills are behind it (${stale.slice(0, 5).join(', ')}${stale.length > 5 ? ', …' : ''}).\nRun: node scripts/sync-agent-plugin.mjs`);
   process.exit(1);
 }
-console.log(check ? `${TARGETS.join(' and ')} match the Claude Code plugin.` : `${TARGETS.join(', ')}: ${stale.length} file(s) written or removed.`);
+console.log(check ? `${TARGETS.join(', ')} and the MCP server's copy match the Claude Code plugin.` : `${TARGETS.join(', ')} and the MCP server's copy: ${stale.length} file(s) written or removed.`);

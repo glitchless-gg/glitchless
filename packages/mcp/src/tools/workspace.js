@@ -1,9 +1,11 @@
 // A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
-// OAuth over HTTP): sign in, create or rename a game, make, list and revoke share links, mark findings known and the
-// team's own play as testers, resolve errors, and read and change a game's alerts. Listing games, reading any of them and saving their dashboards are the other tools, with `game`.
+// OAuth over HTTP): sign in, create, set up or rename a game, make, list and revoke share links, mark findings known
+// and the team's own play as testers, resolve errors, and read and change a game's alerts. Listing games, reading any
+// of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
-import { define, base, isWorkspace, agent, workspaceGames, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
+import { define, base, isWorkspace, agent, workspaceGames, workspaceIntake, projectFor, resolveService, reply, useCredentials, readCredentials } from '../context.js';
 import { startSignIn, CLOUD_URL } from '../login.js';
+import { ENGINES, pickEngine, instrumentGuide, findEngine } from '../setup-guide.js';
 
 // A tool that needs the manage scope. opts: { title, annotations, scope, local }.
 const act = (name, description, inputSchema, handler, { title, annotations, ...opts } = {}) => define(name, { title, description, inputSchema, annotations }, handler, { scope: 'manage', ...opts });
@@ -46,31 +48,101 @@ act(
   { title: 'Sign in', annotations: { openWorldHint: true }, scope: 'read', local: true },
 );
 
+// The game a workspace already has under a name, however it's capitalised.
+const named = (list, name) => list.find((g) => g.name.trim().toLowerCase() === String(name).trim().toLowerCase());
+const text = (t) => ({ content: [{ type: 'text', text: t }] });
+
+// glitchless_create_game with engine or files: the steps that add Glitchless to a game's code for its engine
+// (setup-guide.js), with where this connection's game sends. The game is the one the call makes (name), one already
+// in the workspace (name or game), or none yet, and then the steps say how to get its client token. Nothing is made
+// until the engine is known. Without a workspace (the open-source server), the steps name that server.
+async function setUp({ name, engine, files, game }) {
+  const picked = pickEngine({ engine, files });
+  if (!picked.engine) return text(findEngine(files));
+  if (!isWorkspace()) return text(instrumentGuide(picked, /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(base()) ? { local: base() } : { server: base() }));
+  const [list, who] = await Promise.all([workspaceGames(true), agent('GET', '/whoami').catch(() => null)]);
+  const canMake = !who || who.scopes?.includes('manage');
+  let hit = null;
+  let lead = '';
+  let blocked = null;
+  if (name) {
+    hit = named(list, name) ?? null;
+    if (hit) lead = `${hit.name} is already in this workspace, so nothing was made: these steps use its client token.`;
+    else if (canMake) {
+      // The Free plan has room for one game, and many people name theirs on the connect page under another name
+      // than their agent picks. The steps still come, saying why and which games are here.
+      try {
+        const made = await agent('POST', '/games', { name });
+        await workspaceGames(true);
+        hit = { id: made.game.id, name: made.game.name, client_token: made.client_token };
+        lead = `Created ${made.game.name}.`;
+      } catch (err) {
+        blocked = err.message;
+        lead = `${name} wasn't made: ${blocked}`;
+      }
+    }
+  } else if (game) {
+    const pid = await projectFor(game);
+    hit = list.find((g) => g.id === pid) ?? null;
+  }
+  if (hit?.demo) throw new Error(`${hit.name} is the demo game: sample play, with no code to add Glitchless to. Give the person's own game (name for a new one, game for one already here)`);
+  // Later calls keep the game.
+  if (hit) await projectFor(hit.id);
+  const where = {
+    cloud: true,
+    workspace: who?.workspace?.name ?? null,
+    intake: workspaceIntake() ?? who?.intake ?? base(),
+    game: hit ? { name: hit.name, client_token: hit.client_token } : null,
+    others: list.filter((g) => !g.demo).map((g) => g.name),
+    can_make: canMake,
+    blocked,
+    dashboard: who?.dashboard ?? null,
+  };
+  return text(`${lead ? `${lead}\n\n` : ''}${instrumentGuide(picked, where)}`);
+}
+
 act(
   'glitchless_create_game',
-  "Create a game in the signed-in workspace. Returns its client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init; the instrument skill says where for each engine. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
+  "Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
   {
-    name: z.string().optional().describe("The game's name, as players know it (not needed with demo)"),
+    name: z.string().optional().describe("The game's name, as players know it (not needed with demo). One already in the workspace is returned, not made again"),
     demo: z.boolean().optional().describe('Make the demo game, with a week of sample play'),
     rename: z.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names"),
+    engine: z.enum(ENGINES.map((e) => e.id)).optional().describe("Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker"),
+    files: z.array(z.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)"),
   },
-  async ({ name, demo, rename, game }) => {
+  async ({ name, demo, rename, engine, files, game }) => {
     if (rename != null) {
-      if (name || demo) throw new Error('rename renames the game that game names; leave out name and demo');
+      if (name || demo || engine || files) throw new Error('rename renames the game that game names; leave out name, demo, engine and files');
       const pid = await projectFor(game);
       const before = (await workspaceGames()).find((g) => g.id === pid)?.name ?? pid;
       const { game: renamed } = await agent('PATCH', `/games/${pid}`, { name: rename });
       await workspaceGames(true);
       return reply(`Renamed ${before} to ${renamed.name}. Later calls name it game: "${renamed.name}"; its client token and service are unchanged.`, renamed);
     }
+    if (engine || files) {
+      if (demo) throw new Error("the demo game is sample play, with no code to add Glitchless to: leave out demo, and give the person's own game (name for a new one, game for one already here)");
+      return setUp({ name, engine, files, game });
+    }
     if (!demo && !name) throw new Error("give the game's name, or demo: true for the demo game");
-    const made = await agent('POST', '/games', demo ? { demo: true } : { name });
+    // The game the person named on the connect page is the one to send to: a second game of the same name would
+    // take the data and leave theirs empty.
+    const here = demo ? null : named(await workspaceGames(true), name);
+    if (here) {
+      await projectFor(here.id);
+      return reply(`${here.name} is already in this workspace, so nothing was made. Initialise Glitchless with its client token and intake (engine or files add the steps for the game's engine); a second game needs a name of its own:`, { game: { id: here.id, name: here.name, ...(here.demo ? { demo: true } : {}) }, client_token: here.client_token, intake: workspaceIntake(), dashboard: here.dashboard });
+    }
+    const made = await agent('POST', '/games', demo ? { demo: true } : { name }).catch(async (err) => {
+      // A plan with no room for another game (Free has one): name the ones here, since the game is often among them.
+      const others = demo ? [] : (await workspaceGames().catch(() => [])).filter((g) => !g.demo).map((g) => g.name);
+      throw new Error(`${err.message}${others.length ? ` Games already here: ${others.join(', ')}. To add Glitchless to one of them, call this with game set to its name and engine (or files).` : ''}`);
+    });
     await workspaceGames(true);
     await projectFor(made.game.id);
     if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
-    return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake:`, made);
+    return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake (call again with game: "${made.game.name}" and engine, or files, for the steps for its engine):`, made);
   },
-  { title: 'Create or rename game', annotations: { destructiveHint: false, idempotentHint: false } },
+  { title: 'Create, set up or rename game', annotations: { destructiveHint: false, idempotentHint: false } },
 );
 
 act(

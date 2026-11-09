@@ -1,13 +1,20 @@
-// The game's own dashboard: read its pages and one board's numbers, and save a new design.
+// The game's own dashboard: read its pages and one board's numbers, save a new design, and (glitchless_dashboard's
+// guide) how to design one, for an agent without the dashboard skill.
 import { z } from 'zod';
 import { define, query, write, resolveService, range, reply, common, tool, filters } from '../context.js';
 import { saveBackground, listBackgrounds, backgroundSchema, saveBrandImage, logoSchema, bannerSchema } from '../pictures.js';
+import { dashboardGuide } from '../setup-guide.js';
 
 tool(
   'glitchless_dashboard',
-  "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (set with glitchless_set_dashboard's logo and banner, or by people in the dashboard: Edit pages → Look).",
-  { ...common, page: z.string().optional().describe('Id of the board page to evaluate (default: the first board)') },
-  async ({ service, hours, page, ...f }) => {
+  "The game's dashboard: its pages in order, each a board (panels in the game's own terms) or a built-in view (events, performance, errors, players, heatmaps, sessions, versions, live, reports, servers, matches), and one board's panels with their numbers for the window. A board page with `where` shows only the sessions with those property values. `page` picks the board (default: the first). `source` says whether the dashboard was saved (by an agent or a person) or made automatically from what the game sends; `spec` (its pages, and its currency if it has one) is what to edit and send back to glitchless_set_dashboard. Money panels answer their `currency` (an ISO code, or ROBUX), and `mismatch` lists amounts sent in another currency, which are left out; a Robux panel with devex answers `devex`, an estimate in US dollars at Roblox's DevEx rate (never money). `brand` is the game's branding on its boards and share links: its accent colour (set with glitchless_set_dashboard's accent) and whether it has a logo and a banner (set with glitchless_set_dashboard's logo and banner, or by people in the dashboard: Edit pages → Look). With guide: true it answers instead with how to design a dashboard that fits the game: the dashboard skill of the Glitchless plugin with its example dashboards and its panels for each kind of game, for an agent without the skill (up to 45,000 characters). Read it before a first glitchless_set_dashboard.",
+  {
+    ...common,
+    page: z.string().optional().describe('Id of the board page to evaluate (default: the first board)'),
+    guide: z.boolean().optional().describe("Instead of reading the dashboard: how to design one for this game, step by step (the Glitchless plugin's dashboard skill)"),
+  },
+  async ({ service, hours, page, guide, ...f }) => {
+    if (guide) return { content: [{ type: 'text', text: dashboardGuide() }] };
     const svc = await resolveService(service);
     const { dashboard } = await query('dashboard', { service: svc, ...filters(f), ...range(hours) });
     if (!dashboard) return reply(`${svc} has sent no data yet`, {});

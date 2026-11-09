@@ -51,9 +51,14 @@ that app, or a web address other than its own) aren't accepted. An app that only
 (`localhost`, as Claude Code and VS Code do) keeps whatever name it gives: nothing it gets can leave that computer.
 
 If the workspace has no games yet, the page asks for your first one: name it, or take the demo game (Zoomies with a
-week of sample play, which takes no room from your plan), so the app has something to read straight away. The app can
-then add Glitchless to your game with the game's client token and the
-[setup steps](https://github.com/glitchless-gg/glitchless/blob/main/docs/agent-setup-prompt.md).
+week of sample play, which takes no room from your plan), so the app has something to read straight away.
+
+Adding Glitchless to your game takes a coding agent in the game's folder. One that has this connection needs nothing
+else: say "Set up Glitchless for my game in this folder", and `glitchless_create_game` hands it the steps for the
+game's engine, with the game's client token in them (it finds the game you named here, or makes it). Claude Code
+signed in to the same Claude account has the connection already. An agent without it follows the
+[setup steps](https://github.com/glitchless-gg/glitchless/blob/main/docs/agent-setup-prompt.md), as does one whose
+connection may only read.
 
 It acts as you, with your role in the workspace (a Viewer's connection can only read, and a Viewer can have 5 at once),
 and it never deletes data or changes billing or people. The connection shows under the app's name in Agents & MCP and
@@ -77,7 +82,7 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 | `glitchless_store` | Store | read | yes | no | yes | no |
 | `glitchless_revenue` | Revenue | read | yes | no | yes | no |
 | `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages, and removes a background, logo or banner | yes | no |
-| `glitchless_create_game` | Create or rename game | manage | no | no | no | no |
+| `glitchless_create_game` | Create, set up or rename game | manage | no | no | no | no |
 | `glitchless_share_links` | Share links | manage | no | yes: it revokes a link | no | yes: a share link is public |
 | `glitchless_mark_known` | Mark known | manage | no | yes: it replaces a note, clears one, and marks or unmarks a tester | yes | no |
 | `glitchless_resolve_error` | Resolve error | manage | no | yes: it hides an issue, and unresolves one | no: resolving again starts it over | no |

@@ -61,5 +61,5 @@ OpenAI's own examples carry it), delete that line from the zip's `mcp.json` and 
 | `glitchless_store` | true: reads store reviews and vitals already synced into Glitchless | false: calls no store; reads what the workspace already holds | false: changes nothing |
 | `glitchless_revenue` | true: reads revenue already synced into Glitchless | false: calls no payment provider; reads what the workspace already holds | false: changes nothing |
 | `glitchless_set_dashboard` | false: saves the game's dashboard | false: the dashboard stays in the person's workspace | true: it replaces the saved pages, and `reset` deletes them |
-| `glitchless_create_game` | false: adds a game to the workspace | false: the game stays in the person's workspace | false: adds a game and removes nothing |
+| `glitchless_create_game` | false: adds a game to the workspace, or renames one; with engine or files it also returns setup steps | false: the game stays in the person's workspace, and the steps are text the server carries | false: adds or renames a game and removes nothing |
 | `glitchless_share_links` | false: creates, lists and revokes share links | true: anyone with a link can see that board, signed out | true: a revoked link stops working for everyone who has it, and can't be restored |

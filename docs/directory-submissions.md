@@ -127,7 +127,7 @@ tool.
 | `glitchless_session` | Session | yes | no | yes | no | Reads one session |
 | `glitchless_events` | Events | yes | no | yes | no | Reads the game's own events |
 | `glitchless_compare_versions` | Compare versions | yes | no | yes | no | Reads versions side by side |
-| `glitchless_dashboard` | Dashboard | yes | no | yes | no | Reads the dashboard and one board |
+| `glitchless_dashboard` | Dashboard | yes | no | yes | no | Reads the dashboard and one board; with guide, returns the steps for designing one (text the server carries) |
 | `glitchless_bug_reports` | Bug reports | yes | no | yes | no | Reads players' bug reports |
 | `glitchless_store` | Store | yes | no | yes | no | Reads store reviews and vitals Glitchless already synced; calls no store |
 | `glitchless_revenue` | Revenue | yes | no | yes | no | Reads synced revenue |
@@ -135,7 +135,7 @@ tool.
 | `glitchless_network` | Network | yes | no | yes | no | Reads ping, packet loss and disconnects |
 | `glitchless_servers` | Servers | yes | no | yes | no | Reads the game's dedicated servers |
 | `glitchless_set_dashboard` | Save dashboard | no | yes | yes | no | Replaces the saved dashboard (reset: true deletes it); saving the same pages twice changes nothing |
-| `glitchless_create_game` | Create game | no | no | no | no | Adds a game inside the workspace; each call adds another |
+| `glitchless_create_game` | Create, set up or rename game | no | no | no | no | Adds a game inside the workspace (a new name adds another; a name already there returns that game), renames one, or with engine or files also returns the steps that add Glitchless to its code (text the server carries); removes nothing |
 | `glitchless_share_links` | Share links | no | yes | no | yes | Publishes a board to anyone who has the link, signed out; lists them; revoking one ends it for everyone who has it |
 
 The four that write need the `dashboard` or `manage` scope, and so does listing share links; a person who grants only
