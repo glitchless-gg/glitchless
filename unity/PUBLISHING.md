@@ -5,9 +5,10 @@ The package is `gg.glitchless.sdk`, in `unity/Packages/gg.glitchless.sdk` of the
 ## Each release
 
 1. Set the new version in three places: `version` in `Packages/gg.glitchless.sdk/package.json`, `SdkVersion` in `Runtime/GlitchlessCore.cs`, and the `sdk` value in `PRIVACY.md`. Add a section to `CHANGELOG.md`. Update the version in `test/e2e.mjs`'s checks and the pinned URL in the package README.
-2. Run the tests on the current LTS (the project's Editor), and on the newest Unity 6 if it's installed:
+2. Run the tests on the current LTS (the project's Editor), on the oldest supported (Unity 6.0 LTS, the package's `unity`), and on the newest Unity 6 if it's installed. Another Editor runs on a copy of the project, with that Editor's own packages:
    ```bash
    npm run test:unity
+   UNITY=/Applications/Unity/Hub/Editor/6000.0.85f2/Unity.app/Contents/MacOS/Unity npm run test:unity
    UNITY=/Applications/Unity/Hub/Editor/6000.5.9f1/Unity.app/Contents/MacOS/Unity npm run test:unity
    ```
    and the EditMode and PlayMode tests in each (see the dev project's README).
@@ -42,7 +43,7 @@ The Asset Store takes UPM packages through its UPM publishing workflow. It needs
 6. Fill in the listing in the Publisher Portal:
    - Title: Glitchless: game observability. Category: Tools.
    - Price: free.
-   - Unity versions: 6.3 LTS and later (tested on 6.3 LTS and 6.5). Render pipelines: Built-in, URP, HDRP (the SDK draws nothing).
+   - Unity versions: 6.0 LTS and later (tested on 6.0 LTS, 6.3 LTS and 6.5). Render pipelines: Built-in, URP, HDRP (the SDK draws nothing).
    - Description: start from the package README's first section. Say plainly that the package sends performance and error reports to a Glitchless server the developer chooses, and link PRIVACY.md.
    - Images: an icon (160×160), a card image (420×280) and a cover (1200×630), plus a few screenshots of the dashboard and the sample. The brand files are in `assets/brand/glitchless`.
 7. Submit for review. Reviews take one to two weeks; answer any questions from the reviewers in the Publisher Portal.

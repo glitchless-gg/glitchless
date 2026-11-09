@@ -8,6 +8,7 @@
 //                                                  installs it (dist/unity-asset-store/GlitchlessAssetStore; Uploader →
 //                                                  UPM Packages, after the UPM publisher enrollment)
 //   options: --ref <commit> (default HEAD)  --publisher <name>  --unity-release <patch> (default 0f1)  --out <dir>
+//            --editor <version> (the Unity the project is set to open in; see below)
 //
 // The store copy differs from GitHub's. The Asset Store sells code under its own EULA (Submission Guidelines 1.2.c:
 // other terms, open-source ones too, need Unity's written agreement), so LICENSE.md goes and the UPM manifest's
@@ -17,6 +18,10 @@
 // built-in modules the SDK and the sample use instead, and its assets keep the package's GUIDs (in .meta files), so an
 // update replaces files instead of duplicating them; the few folders and files that had none get GUIDs made from their
 // paths, the same every time. Both rewrite the README's install and tests text (and classic the sample's) for the store.
+//
+// The store lists the Unity a package was uploaded from as the oldest it runs on, so the project is set to open in the
+// oldest Unity line the package supports (package.json's "unity", 6000.0): the newest Editor of that line the Hub has
+// installed, or --editor. Without one it keeps the dev project's Editor (6.3), and says the store would list that.
 //
 // Checked here, from the Submission Guidelines (assetstore.unity.com/publishing/submission-guidelines, read
 // 2026-10-26) and the UPM upload page: a .meta for every asset and no stray ones; 2.1.d no folder named
@@ -46,6 +51,7 @@ const ref = flag('ref', 'HEAD');
 const publisher = flag('publisher', 'Glitchless');
 const unityRelease = flag('unity-release', '0f1');
 const out = path.resolve(ROOT, flag('out', 'dist/unity-asset-store'));
+const HUB = '/Applications/Unity/Hub/Editor';
 const project = path.join(out, classic ? 'GlitchlessClassic' : 'GlitchlessAssetStore');
 // Where the SDK sits in the project, and how its paths read from there.
 const pkg = classic ? path.join(project, 'Assets', 'Glitchless') : path.join(project, 'Packages', NAME);
@@ -67,6 +73,17 @@ fs.cpSync(path.join(staging, SOURCE), pkg, { recursive: true });
 fs.copyFileSync(path.join(staging, 'unity/ProjectSettings/ProjectVersion.txt'), path.join(project, 'ProjectSettings/ProjectVersion.txt'));
 fs.rmSync(staging, { recursive: true, force: true });
 const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8'));
+const byVersion = (a, b) => a.localeCompare(b, 'en', { numeric: true });
+const installed = fs.existsSync(HUB) ? fs.readdirSync(HUB).filter((v) => fs.existsSync(path.join(HUB, v, 'Unity.app'))).sort(byVersion) : [];
+const storeEditor = flag('editor', installed.filter((v) => v.startsWith(`${manifest.unity}.`)).at(-1));
+if (storeEditor) {
+  // The revision is in the Editor's Info.plist where it's installed; Unity Hub opens the project without it otherwise.
+  let revision = '';
+  try {
+    revision = execFileSync('plutil', ['-extract', 'UnityBuildNumber', 'raw', path.join(HUB, storeEditor, 'Unity.app/Contents/Info.plist')]).toString().trim();
+  } catch {}
+  fs.writeFileSync(path.join(project, 'ProjectSettings/ProjectVersion.txt'), `m_EditorVersion: ${storeEditor}\n${revision ? `m_EditorVersionWithRevision: ${storeEditor} (${revision})\n` : ''}`);
+}
 // A UPM package brings its own dependencies (Unity's built-in modules). A classic package can't, so its project lists
 // them, as every new Unity project does, and the Uploader's "Include Package Manifest" can declare them.
 const modules = classic ? { ...manifest.dependencies, ...SAMPLE_MODULES } : {};
@@ -184,5 +201,6 @@ if (failures.length) {
 }
 const unity = fs.readFileSync(path.join(project, 'ProjectSettings/ProjectVersion.txt'), 'utf8').match(/m_EditorVersion: (\S+)/)?.[1];
 console.log(`${path.relative(process.cwd(), project)}: ${shown}, Glitchless for Unity ${manifest.version} from ${commit.slice(0, 12)}, ${entries.filter((e) => !e.dir).length} files, ${(bytes / 1024).toFixed(0)} KB, under the Asset Store EULA. Nothing was uploaded.`);
+if (!unity.startsWith(`${manifest.unity}.`)) console.log(`No Unity ${manifest.unity} Editor is installed (or given with --editor), so the project opens in ${unity}, and the store would list ${unity} as the oldest Unity it runs on. Install the newest ${manifest.unity} LTS for the upload.`);
 if (classic) console.log(`Needs Unity's built-in modules ${Object.keys(modules).map((m) => m.replace('com.unity.modules.', '')).join(', ')} (on in every new project). Next: open it in Unity ${unity}, then Window > Tools > Asset Store > Uploader: your draft, the folder Assets/Glitchless, Include Package Manifest with those modules, Validate, Export and Upload.`);
 else console.log(`Author "${publisher}", Unity ${ordered.unity}.${ordered.unityRelease} and later. Next: open it in Unity ${unity}, run Window > Tools > Asset Store > Validator (UPM), then Uploader > UPM Packages.`);

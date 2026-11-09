@@ -15,9 +15,10 @@ until it's live.
 ## Before you start (the parent session)
 
 1. **The package passes.** `node unity/scripts/asset-store.mjs --classic` must print no rule failures, and the
-   project it writes (`dist/unity-asset-store/GlitchlessClassic`) must import in Unity 6000.3.27f1 with no errors or
-   warnings, with the sample scene's scripts found (it did on 27 October 2026, for 0.6.0, and imported with no
-   errors or warnings on 9 November 2026, for 0.7.1, after 0.7.1 declared the UI module 0.7.0 missed).
+   project it writes (`dist/unity-asset-store/GlitchlessClassic`) must import in the Unity it names (6000.0.85f2 from
+   0.7.2; 6000.3.27f1 for 0.7.1) with no errors or warnings, with the sample scene's scripts found (it did on 27
+   October 2026, for 0.6.0, and imported with no errors or warnings on 9 November 2026, for 0.7.1, after 0.7.1
+   declared the UI module 0.7.0 missed).
 2. **The release has the player's off switch.** Rule 1.5.e says analytics must be opt-in, and "customers must be
    permitted to opt out at any time": `Glitchless.SetEnabled` (a "Share performance data" setting) and `OptIn` answer
    it. Upload 0.7.1, the current release, which has them. See REQUIREMENTS.md.
@@ -26,8 +27,10 @@ until it's live.
 
 3. **The store project.** Ask the parent session to run `node unity/scripts/asset-store.mjs --classic` on the
    commit you release, then open `dist/unity-asset-store/GlitchlessClassic` in Unity Hub (**Add → Add project from
-   disk**) with **6000.3.27f1**. Its `Packages/manifest.json` lists the six built-in modules the package uses, as
-   every new project does.
+   disk**) with the Unity it names: **6000.0.85f2** from 0.7.2 (0.7.1 went up from 6000.3.27f1). The store lists
+   the Unity a package came from as the oldest it runs on, so uploading from Unity 6.0 LTS lists 6.0 and later; the
+   script picks the newest 6000.0 Editor the Hub has, and says so when there is none. Its `Packages/manifest.json`
+   lists the six built-in modules the package uses, as every new project does.
 4. **Asset Store Publishing Tools.** The draft page links them (or https://assetstore.unity.com/packages/package/5368745):
    **Add to My Assets**, then in the project **Window → Package Manager → My Assets → Asset Store Publishing Tools →
    Install**. They install under `Packages/`, so they stay out of the upload.
@@ -37,7 +40,7 @@ until it's live.
    the drafts. Upload type **From Assets Folder**, folder **`Assets/Glitchless`**. If it offers **Include Package
    Manifest**, turn it on and tick the six built-in modules (Unity Web Request, IMGUI, Image Conversion, Screen
    Capture, UI, Physics) so a buyer's import turns them on. Then **Export and Upload**. The draft page then shows the
-   package and the Unity version it came from (6000.3.27f1).
+   package and the Unity version it came from (6000.0.85f2 from 0.7.2).
 
 ## Fill in the listing
 
@@ -66,6 +69,6 @@ project until someone imports it. It needs UPM enrollment first:
   **glitchless.gg**, whose TXT record goes in GoDaddy (My Products → glitchless.gg → DNS → Add → TXT). Unity answers in
   5 to 7 business days.
 - **Product.** Once **Active**: **Products → Create product**, **Single package**, namespace `gg.glitchless`,
-  technical name **`gg.glitchless.sdk`**, Unity version **6000.3**.
+  technical name **`gg.glitchless.sdk`**, Unity version **6000.0**.
 - **Package.** `node unity/scripts/asset-store.mjs` (no `--classic`) writes `dist/unity-asset-store/GlitchlessAssetStore`.
   Validate with Validation Type **UPM**, then **Uploader → UPM Packages → Upload** next to `gg.glitchless.sdk`.

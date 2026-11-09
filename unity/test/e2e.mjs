@@ -7,7 +7,8 @@
 //
 // Uses the Editor version in unity/ProjectSettings/ProjectVersion.txt (or, when it isn't installed, the newest
 // one that is) unless UNITY is set; another version runs on a copy of the project, so the committed one isn't
-// upgraded. The player runs in batch mode, so it works on a machine without a screen.
+// upgraded, with that Editor's own packages (editor-packages.mjs), so Unity 6.0 LTS, the oldest supported, opens it.
+// The player runs in batch mode, so it works on a machine without a screen.
 //   1. offline   the server is down: batches are saved in the player's persistent data folder,
 //                in anonymous mode without any ID
 //   2. online    the saved batches go out under a new random ID, then this run's session
@@ -34,6 +35,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
+import { fitManifest } from './editor-packages.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SERVICE = 'fetch-unity';
@@ -55,11 +57,13 @@ const editorVersion = unity.match(/Editor\/([^/]+)\//)?.[1] ?? 'custom';
 const results = [];
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-unity-'));
 
-// A different Editor version would upgrade the project in place: give it a copy.
+// A different Editor version would upgrade the project in place: give it a copy, with that Editor's packages (an
+// older Editor, such as Unity 6.0, can't resolve 6.3's).
 let project = path.join(ROOT, 'unity');
 if (editorVersion !== PROJECT_VERSION) {
   project = path.join(tmp, 'project');
   fs.cpSync(path.join(ROOT, 'unity'), project, { recursive: true, filter: (p) => !/[/\\](Library|Temp|Logs|Builds|UserSettings)$/.test(p) });
+  for (const change of fitManifest(project, unity)) console.log(`  ${change}`);
 }
 
 function editor(method, label, env = {}) {
@@ -227,7 +231,7 @@ try {
     assert.ok(m.frames > 30, `frames ${m.frames}`);
     for (const k of ['p50', 'p95', 'p99', 'worst']) assert.equal(typeof m.frame_ms[k], 'number', `frame_ms.${k}`);
     for (const k of ['fps', 'frame_budget_ms', 'pct_frames_over_budget', 'hitch_count', 'update_cpu_ms', 'physics_ms', 'memory_delta', 'new_errors']) assert.ok(k in m, k);
-    assert.equal(m.sdk, 'glitchless-unity/0.7.1');
+    assert.equal(m.sdk, 'glitchless-unity/0.7.2');
   });
 
   await new Promise((r) => setTimeout(r, 300));
@@ -281,7 +285,7 @@ try {
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
       for (const k of ['process_ms', 'physics_ms', 'render_ms']) assert.equal(typeof w[k], 'number', k);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.7.1'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-unity/0.7.2'));
     assert.ok(windows.some((w) => typeof w.geometries === 'number'), 'no mesh count (a development build has it)');
   });
   check('the confetti bodies show up in the physics time', () => {
@@ -316,7 +320,7 @@ try {
   const opened = reports[0] && (await query(port, 'report', { id: reports[0].id })).report;
   check('bug reports: recent events and frame windows arrive (no screenshot in -nographics)', () => {
     assert.ok(opened, 'no report');
-    assert.equal(opened.sdk, 'glitchless-unity/0.7.1');
+    assert.equal(opened.sdk, 'glitchless-unity/0.7.2');
     assert.ok(opened.recent.some((e) => e.type === 'level_start'), JSON.stringify(opened.recent));
     assert.ok(opened.frames.length > 0 && opened.frames.every((f) => typeof f.fps === 'number'), JSON.stringify(opened.frames));
     assert.equal(opened.screenshot, null);

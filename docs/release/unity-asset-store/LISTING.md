@@ -22,10 +22,10 @@ Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.7
 | Package | A classic package, uploaded from `Assets/Glitchless` (`asset-store.mjs --classic`). As a UPM product: single package, technical name `gg.glitchless.sdk` |
 | Category | **Tools → Integration** (an SDK for a service). If the picker has no Integration, **Tools → Utilities** |
 | Price | **Free** |
-| Unity versions | **6000.3** (Unity 6.3 LTS) and later. Uploaded from and tested on 6000.3.27f1 |
+| Unity versions | 0.7.1 (in review since 9 November 2026): **6000.3** (Unity 6.3 LTS) and later, uploaded from and tested on 6000.3.27f1. **From the next update (0.7.2): 6000.0** (Unity 6.0 LTS) and later, uploaded from 6000.0.85f2, which the store then lists as the oldest (STEPS.md, step 3). Tested on 6000.0.85f2, 6000.3.27f1 and 6000.5.9f1 |
 | Render pipelines | **Built-in, URP and HDRP**: the SDK draws nothing but its optional IMGUI bug-report form |
 | Platforms | All: pure C# on Unity's own modules, with no native plugins |
-| Release notes | `0.7.1: first Asset Store release.` |
+| Release notes | `0.7.1: first Asset Store release.` The next update: `0.7.2: runs on Unity 6.0 LTS and later (it needed 6.3).` |
 | Documentation | https://github.com/glitchless-gg/glitchless/blob/main/unity/Packages/gg.glitchless.sdk/README.md (the same README is in the package) |
 
 ## Summary
@@ -64,8 +64,10 @@ This package uses no third-party components.
 
 ## Technical details
 
+The first line said Unity 6000.3 (6.3 LTS) for 0.7.1; from 0.7.2:
+
 ```text
-- Unity 6000.3 (6.3 LTS) or later. Built-in, URP and HDRP; CaptureMap (the level picture under heatmaps) renders in Built-in and URP.
+- Unity 6000.0 (6.0 LTS) or later. Built-in, URP and HDRP; CaptureMap (the level picture under heatmaps) renders in Built-in and URP.
 - Imports into Assets/Glitchless, with the Fetch! sample game in Assets/Glitchless/Samples/Fetch.
 - Dependencies: Unity's own modules only (UnityWebRequest, IMGUI, ImageConversion, ScreenCapture, UI, and Physics for the sample), which every new project has.
 - Optional, found at runtime by reflection so the package depends on none of them: Netcode for GameObjects, Mirror, Steamworks.NET or Facepunch.Steamworks. With the Input System, the bug-report key uses it.

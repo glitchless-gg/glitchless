@@ -1,6 +1,6 @@
 # Glitchless for Unity
 
-- [`Packages/gg.glitchless.sdk`](Packages/gg.glitchless.sdk): the SDK, a Unity package (Unity 6.3 LTS and later). Read its [README](Packages/gg.glitchless.sdk/README.md) and what it sends in [PRIVACY.md](Packages/gg.glitchless.sdk/PRIVACY.md). Its `Samples~/Fetch` is a small game with planted bugs.
+- [`Packages/gg.glitchless.sdk`](Packages/gg.glitchless.sdk): the SDK, a Unity package (Unity 6.0 LTS and later). Read its [README](Packages/gg.glitchless.sdk/README.md) and what it sends in [PRIVACY.md](Packages/gg.glitchless.sdk/PRIVACY.md). Its `Samples~/Fetch` is a small game with planted bugs.
 - [`test`](test):
   - `e2e.mjs` builds the sample as a macOS player, plays it against a fresh local Glitchless server and checks the results through `/v1/query`.
   - `make-fixtures.mjs` writes the fixture the EditMode tests check the C# sketch and fingerprints against.
@@ -24,6 +24,8 @@ Open this folder in Unity 6000.3.27f1 (or a later Unity 6), choose **Glitchless 
 npm run test:unity       # builds and plays the sample; UNITY=/path/to/Unity for another Editor version
 npm run test:unity:map   # level maps in each pipeline and in a WebGL build (about 4 minutes once unity/ is imported)
 ```
+
+With `UNITY=/path/to/Unity`, both run on a copy of this folder with that Editor's own packages (`test/editor-packages.mjs`), so Unity 6.0 LTS, the oldest the package supports, runs it too.
 
 EditMode and PlayMode tests run in Unity's Test Runner, or from the command line:
 

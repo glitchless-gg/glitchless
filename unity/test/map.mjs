@@ -26,11 +26,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { editorVersionOf, fitManifest } from './editor-packages.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PROJECT = path.join(ROOT, 'unity');
 const VERSION = fs.readFileSync(path.join(PROJECT, 'ProjectSettings/ProjectVersion.txt'), 'utf8').match(/m_EditorVersion: (\S+)/)[1];
 const unity = process.env.UNITY || `/Applications/Unity/Hub/Editor/${VERSION}/Unity.app/Contents/MacOS/Unity`;
+const editorVersion = unity.match(/Editor\/([^/]+)\//)?.[1] ?? 'custom';
+// Another Editor (UNITY=…) gets copies without the Library and with its own packages (editor-packages.mjs).
+const otherEditor = editorVersion !== VERSION;
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const pipelines = arg('pipelines', 'builtin,urp2d,urp3d').split(',').filter(Boolean);
 const webgl = arg('webgl', 'urp2d');
@@ -69,9 +73,9 @@ function run(label, args, env = {}) {
   });
 }
 
-// URP in a copy: the package (built into Unity 6.3, nothing to download) and a pipeline asset with the 2D or the
-// Universal renderer, made as URP's own Create menu makes them (its helpers are internal, so through reflection), in
-// linear colour space as URP projects are.
+// URP in a copy: the package (the Editor's own version; built into Unity 6.3, nothing to download) and a pipeline
+// asset with the 2D or the Universal renderer, made as URP's own Create menu makes them (its helpers are internal, so
+// through reflection), in linear colour space as URP projects are.
 const URP_SETUP = `using System;
 using System.Linq;
 using System.Reflection;
@@ -103,12 +107,15 @@ public static class MapUrpSetup
 
 async function copyProject(name, pipeline) {
   const dir = path.join(tmp, name);
-  // A clone of the folder (APFS: no space taken), Library too, so only what changes is imported again.
-  fs.cpSync(PROJECT, dir, { recursive: true, mode: fs.constants.COPYFILE_FICLONE, filter: (p) => !/[/\\](Temp|Logs|Builds|UserSettings|obj)$/.test(p) });
+  // A clone of the folder (APFS: no space taken), Library too, so only what changes is imported again. Another Editor
+  // imports everything again, with its own packages.
+  const skip = otherEditor ? /[/\\](Library|Temp|Logs|Builds|UserSettings|obj)$/ : /[/\\](Temp|Logs|Builds|UserSettings|obj)$/;
+  fs.cpSync(PROJECT, dir, { recursive: true, mode: fs.constants.COPYFILE_FICLONE, filter: (p) => !skip.test(p) });
+  if (otherEditor) for (const change of fitManifest(dir, unity)) console.log(`${name}: ${change}`);
   if (pipeline !== 'builtin') {
     const manifest = path.join(dir, 'Packages/manifest.json');
     const m = JSON.parse(fs.readFileSync(manifest, 'utf8'));
-    m.dependencies['com.unity.render-pipelines.universal'] = '17.3.0';
+    m.dependencies['com.unity.render-pipelines.universal'] = editorVersionOf(unity, 'com.unity.render-pipelines.universal') ?? '17.3.0';
     fs.writeFileSync(manifest, JSON.stringify(m, null, 2));
     fs.writeFileSync(path.join(dir, 'Assets/Editor/MapUrpSetup.cs'), URP_SETUP);
     const r = await run(`${name}-setup`, ['-batchmode', '-nographics', '-quit', '-projectPath', dir, '-executeMethod', pipeline === 'urp2d' ? 'MapUrpSetup.Use2D' : 'MapUrpSetup.Use3D']);
@@ -303,5 +310,5 @@ for (const [status, name, why] of results) {
   console.log(`${status === 'ok' ? '✓' : '✗'} ${name}${why ? `\n    ${why}` : ''}`);
   if (status !== 'ok') failed++;
 }
-console.log(`\n${results.length - failed}/${results.length} passed (Unity ${VERSION}; logs and maps in ${tmp})`);
+console.log(`\n${results.length - failed}/${results.length} passed (Unity ${editorVersion}; logs and maps in ${tmp})`);
 process.exit(failed ? 1 : 0);

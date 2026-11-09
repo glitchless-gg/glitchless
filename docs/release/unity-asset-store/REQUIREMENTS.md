@@ -9,14 +9,14 @@ means `unity/scripts/asset-store.mjs` checks or does it on every run.
 
 | rule | what it asks | Glitchless | who |
 | --- | --- | --- | --- |
-| 1.1.b | No errors or warnings from the package | Both store projects imported in 6000.3.27f1 with none (26 Oct); the classic one again at 0.7.1 (9 Nov), after 0.7.0 failed there with CS1069 because its package didn't declare the UI module `CaptureMap` uses, and the classic one's sample scene found all its scripts. The package's tests stay on GitHub: in a project without the Test Framework they don't compile. A classic package can't bring Unity's built-in modules with it: the project lists them and the Uploader's Include Package Manifest can declare them, and every new project has them | script |
+| 1.1.b | No errors or warnings from the package | Both store projects imported in 6000.3.27f1 with none (26 Oct); the classic one again at 0.7.1 (9 Nov), after 0.7.0 failed there with CS1069 because its package didn't declare the UI module `CaptureMap` uses, and the classic one's sample scene found all its scripts. The classic one at 0.7.2 imported in 6000.0.85f2, the Unity its next update goes up from, with no errors or warnings (9 Nov, a batch-mode import; the Validator not yet run there). The package's tests stay on GitHub: in a project without the Test Framework they don't compile. A classic package can't bring Unity's built-in modules with it: the project lists them and the Uploader's Include Package Manifest can declare them, and every new project has them | script |
 | 1.1.e | A classic package up to 6 GB (the draft page); a UPM product under 700 MB (550 MB on the upload page) | 460 KB at 0.7.1 | script |
 | 1.1.f | Demo scenes for 3D, 2D, VFX, animation and templates | Not required for tools; the Fetch! sample is included anyway | done |
 | 1.1.g | No unsafe code, no mishandled identifying data | Anonymous by default; PRIVACY.md lists every field of every mode | done |
 | 1.1.j–l | MCP or AI features: only the data they need, no training, no slow Editor | Nothing in the package runs in the Editor or talks to an AI; the MCP server is a separate npm package and a hosted URL | done |
 | 1.2.a | A Third-Party Notices file for third-party code | None in the package (Unity's modules only); the script refuses a ThirdParty folder without a notices file | script |
 | 1.2.c | Code under the Asset Store EULA, or open-source terms Unity agrees to in writing | The store copy has no LICENSE.md and points `licensesUrl` at the EULA; GitHub stays MIT | script |
-| 1.3.a | Unity 2022.3 or newer | 6000.3 (6.3 LTS) | done |
+| 1.3.a | Unity 2022.3 or newer | 6000.3 (6.3 LTS) for 0.7.1; 6000.0 (6.0 LTS) from 0.7.2, uploaded from 6000.0.85f2 | done |
 | 1.3.c | Submissions made with 6.5 or newer support URP or HDRP | Made with 6.3; the SDK draws nothing pipeline-specific (IMGUI form only), so all three pipelines work | done |
 | 1.4.a, 1.4.c | A service's login and usage limits disclosed | The description's first paragraph: self-hosting needs no account; Glitchless Cloud's plans and session limits | LISTING.md |
 | 1.5.a | No executables | None | script |

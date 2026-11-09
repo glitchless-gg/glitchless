@@ -5,11 +5,11 @@ intake URL and client token, privacy, bots, testers and the version), and finish
 sections: the game's own metrics and dashboard, and the report.
 
 
-The `gg.glitchless.sdk` package, for Unity 6.3 LTS and later (6.5 included).
+The `gg.glitchless.sdk` package, for Unity 6.0 LTS and later (6.3 and 6.5 included).
 
 ## 1. Read the project
 
-Note: the Unity version (`ProjectSettings/ProjectVersion.txt`; 6000.3 or later: on an older Unity, say Glitchless needs Unity 6.3 LTS or later), the first scene
+Note: the Unity version (`ProjectSettings/ProjectVersion.txt`; 6000.0 or later: on an older Unity, such as 2022.3, say Glitchless needs Unity 6.0 LTS or later), the first scene
 (`ProjectSettings/EditorBuildSettings.asset`), which scenes are levels, the scripts for player death and respawn,
 level complete and fail, pickups, and anything spawned in bulk; where the version lives (`bundleVersion` in
 `ProjectSettings/ProjectSettings.asset` is `Application.version`).
@@ -22,7 +22,7 @@ Add one line to `dependencies` in `Packages/manifest.json`:
 "gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"
 ```
 
-Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.7.1`.
+Unity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.7.2`.
 
 ## 3. Initialize, without touching a scene file
 

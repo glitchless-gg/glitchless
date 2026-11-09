@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.2
+
+- Runs on Unity 6.0 LTS (6000.0) and later: the package's `unity` is `6000.0`, down from `6000.3`, so Package Manager installs it in a Unity 6.0 project. Nothing in it needed 6.1 or later, so the code is unchanged. On Unity 6.0 LTS (6000.0.85f2), as on 6.3 LTS, the EditMode and PlayMode tests pass, the Fetch! sample runs as a macOS player against a local server, and `CaptureMap` renders in the built-in pipeline, in URP 17.0's 2D and Universal renderers and in a WebGL build in Chromium.
+
 ## 0.7.1
 
 - The package declares Unity's built-in UI module, which `CaptureMap` uses (`MapOptions.Exclude` turns off a world-space `Canvas` for its one render). Every new project has the module on, so 0.7.0 compiled there, but in a project with **Package Manager → Built-in → UI** off it failed with `CS1069: The type name 'Canvas' could not be found`. Installing 0.7.1 turns the module on. Nothing else changes.

@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Add Glitchless observability to a game (Unity 6.3+, Godot 4.5+, Unreal Engine 5.8, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
+description: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
 ---
 
 # Instrument a game with Glitchless
@@ -13,7 +13,7 @@ have a way to measure the running game before and after a change.
 
 | You find | Engine | Follow |
 | --- | --- | --- |
-| `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 6.3+ | [references/unity.md](references/unity.md) |
+| `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 6.0+ | [references/unity.md](references/unity.md) |
 | `project.godot` | Godot 4.5+ | the Godot addon's README: `godot/addons/glitchless/README.md` in the Glitchless repo (`~/.glitchless/godot/addons/glitchless/README.md` if it's cloned there), then [references/godot.md](references/godot.md) for bug reports, streams, properties and multiplayer |
 | a `*.uproject` file | Unreal Engine 5.8 (5.7 untested) | [references/unreal.md](references/unreal.md) |
 | `three` or `@react-three/fiber` in package.json | Three.js | [references/threejs.md](references/threejs.md) |
