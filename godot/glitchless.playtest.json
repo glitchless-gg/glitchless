@@ -1,0 +1,7 @@
+{
+  "command": ["godot", "--path", "."],
+  "scenarios": [
+    { "name": "seed 7", "params": { "autoplay": true, "seed": 7 }, "seconds": 10 },
+    { "name": "seed 21", "params": { "autoplay": true, "seed": 21 }, "seconds": 10 }
+  ]
+}

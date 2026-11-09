@@ -1,5 +1,5 @@
 // The jam's MCP server, with two tools. glitchless_jam is for a maker's agent: it joins a room, publishes the game's
-// build (publish.js), says how the room and the game are doing, and leaves. glitchless_jam_host is for the jam's
+// build (publish.js) or links a version played on itch.io, says how the room and the game are doing, and leaves. glitchless_jam_host is for the jam's
 // organiser (host.js): make a room, change, end and delete it, take a game out, set the survey, keep survey templates
 // and read the snapshot. The server decides who organises, so a maker's key gets "not an organiser" from the second.
 //
@@ -9,7 +9,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { VERSION, JamError, connect, request, gameFor, gameIn, remember, roomFor } from './context.js';
-import { joinRoom, publishBuild } from './publish.js';
+import { joinRoom, linkGame, publishBuild } from './publish.js';
 import * as host from './host.js';
 
 export function reply(title, data) {
@@ -30,26 +30,30 @@ const until = (t) => {
 const DESCRIPTION = [
   'Take part in a Glitchless jam room as a maker. The organiser shares a room code of 5 letters and digits, like K7Q2M.',
   'action "join": joins the room with this game (room; title and by are what the arcade shows; service is the name the game passes to Glitchless.init; with a Glitchless Cloud sign-in, game names the workspace game).',
-  'action "publish": checks the built folder (dir: what the build makes, such as dist, built with relative paths, `vite build --base ./`) and uploads it, joining the room first if needed. It answers with the game\'s link, its version and a QR code drawn in text: show the person the link and the QR code, so they can play it on their phone. Each publish needs a new version: bump the one passed to Glitchless.init before publishing a fix.',
+  'action "publish": checks the built folder (dir: what the build makes, such as dist, built with relative paths, `vite build --base ./`) and uploads it, joining the room first if needed. It answers with the game\'s link, its version and a QR code drawn in text: show the person the link and the QR code, so they can play it on their phone. Each publish needs a new version: bump the one passed to Glitchless.init before publishing a fix. A build is at most 25 MB, 400 files and 4 MB a file.',
+  'action "link": for a game played on its itch.io page (an online jam\'s games usually are), instead of publishing: registers a version, joining the room first if needed. Nothing is uploaded: the room counts that version\'s plays from now, and its arcade sends players to the page. First export the game for the web, zip the folder with index.html at the root of the zip, and have the person upload it to the game\'s itch.io page as HTML5 (kind of project: HTML, played in the browser); then link it with url, the page (https://<name>.itch.io/<game>, nothing after it: no other site, not the itch.zone frame, not a draft\'s secret link; later links reuse it), and version, the one the game passes to Glitchless.init (read from dir, the export\'s folder, when it\'s in its scripts; Godot and Unity exports need it given). Each link needs a new version. The game must send to a Glitchless address its players can reach (Glitchless Cloud, or a server on the internet), never localhost. A game either publishes its builds or links them, not both.',
+  'Publishing and linking: at most 60 versions a game in a room and 12 an hour, until the jam ends.',
   'action "status": the room\'s games and their plays, which games need players, and this game\'s plays by version with the share that hit a problem; after the jam ends, the awards and the survey link to give the person.',
   'action "leave": takes the game out of the room.',
-  'The tool remembers the room and the game after join or publish. To find what hurt players in a version, use glitchless-mcp\'s glitchless_triage and glitchless_compare_versions where they are connected.',
+  'The tool remembers the room and the game after join, publish or link. To find what hurt players in a version, use glitchless-mcp\'s glitchless_triage and glitchless_compare_versions where they are connected.',
 ].join(' ');
 
 const SCHEMA = {
-  action: z.enum(['join', 'publish', 'status', 'leave']).describe('What to do: join the room, publish a build, read the status, or leave'),
+  action: z.enum(['join', 'publish', 'link', 'status', 'leave']).describe('What to do: join the room, publish a build, link a version played on itch.io, read the status, or leave'),
   room: z.string().optional().describe('The room code the organiser shared, like K7Q2M (default: the room last joined, or GLITCHLESS_ROOM)'),
-  dir: z.string().optional().describe('publish: the built folder, such as dist, relative to the working directory'),
-  version: z.string().optional().describe('publish: the version (default: the one the build passes to Glitchless.init)'),
+  dir: z.string().optional().describe('publish: the built folder, such as dist, relative to the working directory; link: the web export\'s folder, to read the version from'),
+  url: z.string().optional().describe('link: the game\'s page on itch.io, https://<name>.itch.io/<game> (default: the page linked before)'),
+  version: z.string().optional().describe('publish, link: the version (default: the one the build passes to Glitchless.init)'),
   game: z.string().optional().describe('With a Glitchless Cloud sign-in: the workspace game, by name or id (default: the only one)'),
-  title: z.string().optional().describe('join, publish: the title the arcade shows (default: the page\'s title)'),
-  by: z.string().optional().describe('join, publish: who made it, as the arcade shows it (a name or handle, never an email)'),
-  service: z.string().optional().describe('join, publish: the service the game passes to Glitchless.init (default: the one in the build)'),
+  title: z.string().optional().describe('join, publish, link: the title the arcade shows (default: the page\'s title)'),
+  by: z.string().optional().describe('join, publish, link: who made it, as the arcade shows it (a name or handle, never an email)'),
+  service: z.string().optional().describe('join, publish, link: the service the game passes to Glitchless.init (default: the one in the build)'),
 };
 
 const HOST_DESCRIPTION = [
   "For a jam's organiser, not its makers: the server answers a maker's key with \"not an organiser\" (on Glitchless Cloud, organisers are allow-listed workspaces; on a self-hosted server, whoever holds its key).",
-  'action "create" makes a room ({title, about?, hours?, max_games?, template?}) and answers with its code, the arcade, big-screen and join links and the arcade\'s QR code as text: show the person the QR code, and open the big screen on the projector.',
+  'action "create" makes a room ({title, about?, hours?, max_games?, template?, online?}) and answers with its code, the arcade, big-screen and join links and the arcade\'s QR code as text: show the person the QR code, and open the big screen on the projector.',
+  'online: true makes an online room, for a jam over days whose games are often on itch.io (makers link each version there with glitchless_jam): it runs up to 504 hours (21 days) instead of 168 (7 days), and stays 7 days after it ends instead of 1. It can\'t change later.',
   '"list" lists the organiser\'s rooms and past jams. "update" changes a room ({room, title?, about?, hours?: it closes that many hours from now, joining?: false stops new games joining}).',
   '"end" ends the jam now: publishing and voting stop, the awards are given and the survey opens. "remove_game" takes a game out for good ({room, game: its title or the end of its link}). "delete" deletes a room with its games, votes, survey answers and snapshot.',
   '"survey" sets the survey people answer when the jam ends ({room, template} or {room, heading?, intro?, questions?}; "{room}" in the heading or intro is the room\'s title; it can change until its first answer, even after the end), and with nothing to change shows it as people will see it.',
@@ -70,7 +74,8 @@ const HOST_SCHEMA = {
   room: z.string().optional().describe('The room code, like K7Q2M (update, end, remove_game, delete, survey, report)'),
   title: z.string().optional().describe('create, update: the room\'s title, up to 80 characters'),
   about: z.string().optional().describe('create, update: a line about the jam for the arcade, up to 280 characters'),
-  hours: z.number().optional().describe('create: how long the jam is on (default 24, at most 168); update: it closes this many hours from now'),
+  hours: z.number().optional().describe('create: how long the jam is on (default 24, at most 168, or 504 for an online room); update: it closes this many hours from now, up to 7 days (21 online) after the room was made'),
+  online: z.boolean().optional().describe('create: an online jam over days, whose games may be linked on itch.io: up to 21 days, kept 7 days after the end'),
   max_games: z.number().int().optional().describe('create: the most games the room takes (default 60, up to 200)'),
   template: z.string().optional().describe('create, survey: the survey template to use, by id ("default" is the built-in one)'),
   joining: z.boolean().optional().describe('update: false stops new games joining; the games already in the room still publish'),
@@ -102,7 +107,7 @@ const HOST_ACTIONS = {
 export function createServer({ connection = null, env = process.env } = {}) {
   const server = new McpServer(
     { name: 'glitchless-jam', title: 'Glitchless jam', version: VERSION, websiteUrl: 'https://www.glitchless.gg' },
-    { instructions: "glitchless_jam joins a Glitchless jam room, publishes the game's build to it and answers with a link and a QR code to show the person, and reads how the room's games are doing. glitchless_jam_host is for the jam's organiser: making and ending rooms, the survey and the report. Players play the games from the room's arcade on their phones, and the room counts their plays." },
+    { instructions: "glitchless_jam joins a Glitchless jam room, publishes the game's build to it (or, for a game on itch.io, links each version) and answers with a link and a QR code to show the person, and reads how the room's games are doing. glitchless_jam_host is for the jam's organiser: making and ending rooms, the survey and the report. Players play the games from the room's arcade on their phones, and the room counts their plays." },
   );
   // Each call runs with a fresh connection that names the MCP client (x-glitchless-client).
   const run = (fn) => async (args = {}) => {
@@ -150,9 +155,13 @@ const ACTIONS = {
     const entry = await joinRoom(c, room, { game: args.game, title: args.title, by: args.by, service: args.service });
     const last = entry.uploads?.at(-1);
     const head = last
-      ? `In room ${room} with "${entry.title}" (${entry.slug}), published as ${last.version}: it plays at ${entry.url}. Publish again with a new version after a fix.`
-      : `Joined room ${room} with "${entry.title}" (${entry.slug}). Build the game with relative paths (\`vite build --base ./\`), then publish the build's folder: it will play at ${entry.url}.`;
-    return reply(head, { room, slug: entry.slug, title: entry.title, by: entry.by, url: entry.url, service: entry.service, published: (entry.uploads ?? []).map((u) => u.version), links: entry.links, ended: entry.ended });
+      ? entry.site
+        ? `In room ${room} with "${entry.title}" (${entry.slug}), linked as ${last.version}: it plays on ${entry.site} at ${entry.url}. Link again with a new version after a fix.`
+        : `In room ${room} with "${entry.title}" (${entry.slug}), published as ${last.version}: it plays at ${entry.url}. Publish again with a new version after a fix.`
+      : entry.online
+        ? `Joined room ${room} with "${entry.title}" (${entry.slug}), an online jam. If the game is on itch.io: export it for the web, zip the folder for the person to upload to its itch.io page as HTML5, then link that version (action "link", url: the page). Or build it with relative paths (\`vite build --base ./\`) and publish the build's folder: it will play at ${entry.url}.`
+        : `Joined room ${room} with "${entry.title}" (${entry.slug}). Build the game with relative paths (\`vite build --base ./\`), then publish the build's folder: it will play at ${entry.url}.`;
+    return reply(head, { room, slug: entry.slug, title: entry.title, by: entry.by, url: entry.url, site: entry.site ?? null, service: entry.service, published: (entry.uploads ?? []).map((u) => u.version), links: entry.links, online: entry.online === true, ended: entry.ended });
   },
 
   async publish(c, args, env) {
@@ -170,6 +179,17 @@ const ACTIONS = {
       'Before publishing a fix, bump the version passed to Glitchless.init, so the room can tell the versions apart.',
     ].join('\n');
     return reply(head, { room, slug: out.slug, title: out.title, url: out.url, version: out.version, upload: out.n, arcade: out.arcade, qr_svg: out.qr_svg, files: out.files, bytes: out.bytes, service: out.service, sourcemaps: out.sourcemaps, warnings: out.warnings });
+  },
+
+  async link(c, args, env) {
+    const room = roomFor(c, args.room, env);
+    const out = await linkGame(c, room, { url: args.url, version: args.version, dir: args.dir, service: args.service, game: args.game, title: args.title, by: args.by });
+    const head = [
+      `Linked "${out.title}" ${out.version} in room ${room}: the room counts players' plays of ${out.version} from now, and its arcade sends them to ${out.url}. Show the person the link to the arcade: ${out.arcade}`,
+      ...out.warnings.map((w) => `Warning: ${w}`),
+      'Before linking a fix, bump the version passed to Glitchless.init, export and zip it again, have the person upload it to the same itch.io page, then link the new version.',
+    ].join('\n');
+    return reply(head, { room, slug: out.slug, title: out.title, url: out.url, site: out.site, version: out.version, n: out.n, arcade: out.arcade, qr_svg: out.qr_svg, service: out.service, warnings: out.warnings });
   },
 
   async status(c, args, env) {
@@ -193,8 +213,8 @@ const ACTIONS = {
         const g = await request(c, 'GET', `/v1/rooms/${room}/games/${encodeURIComponent(mine.slug)}`, { project: ws?.id });
         const n = g.numbers;
         const versions = n.versions.map((v) => ({ version: v.version, plays: v.plays, with_problem: v.with_problem, problem_pct: v.plays ? Math.round((v.with_problem / v.plays) * 100) : null, problems: v.problems }));
-        yours = { slug: g.slug, title: g.title, url: g.url, version: g.version, uploads: g.uploads.map((u) => ({ n: u.n, version: u.version, published_at: iso(u.published_at), files: u.files, bytes: u.bytes })), plays: n.plays, players: n.players, minutes_played: n.minutes_played, phone_plays: n.phone_plays, by_version: versions };
-        if (!g.uploads.length) lines.push(`Your game "${g.title}" has joined but isn't published yet: publish its build.`);
+        yours = { slug: g.slug, title: g.title, url: g.url, site: g.site ?? null, version: g.version, uploads: g.uploads.map((u) => ({ n: u.n, version: u.version, published_at: iso(u.published_at), files: u.files, bytes: u.bytes, ...(u.link ? { link: u.link } : {}) })), plays: n.plays, players: n.players, minutes_played: n.minutes_played, phone_plays: n.phone_plays, by_version: versions };
+        if (!g.uploads.length) lines.push(`Your game "${g.title}" has joined but isn't published yet: publish its build${g.online ? ', or link its version on itch.io' : ''}.`);
         else {
           const byVersion = versions.map((v) => `${v.version}: ${plural(v.plays, 'play')}${v.plays ? `, ${v.with_problem ? `${v.with_problem} hit a problem (${v.problem_pct}%)` : 'none hit a problem'}` : ''}`).join('; ');
           lines.push(`Your game "${g.title}" (${g.url}): ${plural(n.plays, 'play')}${n.players != null ? ` by ${plural(n.players, 'player')}` : ''}, ${plural(n.minutes_played, 'minute')} played. By version: ${byVersion}.`);

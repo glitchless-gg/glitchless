@@ -183,6 +183,13 @@ hit and check that the fix worked.
    `npx -y glitchless-jam publish <folder> --room <code>` in a terminal) and show me the link and
    the QR code it gives. After every fix, bump the version passed to Glitchless.init and publish
    again.
+   If the jam's games are on itch.io instead: the game sends to a Glitchless address its players can
+   reach, never localhost. Export it for the web and zip that folder, with index.html at the root of
+   the zip, for me to upload to the game's itch.io page as an HTML5 game. Once I have, link that
+   version to the room with the glitchless_jam tool (action "link", url: the page,
+   https://<name>.itch.io/<game>, and the version), or
+   `npx -y glitchless-jam link <page> --room <code> --version <version>`. After every fix, bump the
+   version, and link it once I've uploaded the new zip.
 ```
 <!-- setup-prompt:end -->
 
@@ -315,6 +322,17 @@ For your own game, give the playtest URL parameters that start your autoplay bot
   "thresholds": { "draw_calls": { "label": "Draw calls per frame", "higher": true, "pct": 40, "abs": 100, "severity": "warn" } }
 }
 ```
+
+**Unity, Godot, Unreal and GameMaker** builds play the same way without a browser or a server: give the playtest the command that starts the build, and each scenario starts it with the game's own autoplay flags plus `--glitchless-measure`, which makes the SDK in the build measure itself, print the numbers and quit. Frame time p99, GPU time and what grew over a run (a leak) are compared too, run by run:
+
+```json
+{
+  "command": ["godot", "--path", "."],
+  "scenarios": [{ "name": "seed 7", "params": { "autoplay": true, "seed": 7 }, "seconds": 10 }]
+}
+```
+
+The Godot demo, [`godot/glitchless.playtest.json`](godot/glitchless.playtest.json), is a working example; [the playtest README](packages/playtest/README.md#engine-builds) has the rest. A **Roblox** game (`"engine": "roblox"`) plays in the open Roblox Studio over Studio's MCP server: each scenario's params become Workspace attributes for the game's bot, and the play test's sessions are read back from the Glitchless server ([Roblox](packages/playtest/README.md#roblox)).
 
 The bots run one at a time, because parallel browsers compete for the GPU and wreck frame times. Compare runs from the same machine. Coding agents get the same check as the `glitchless_playtest` MCP tool, and the triage skill uses it before reporting a fix as done. For CI, [`docs/playtest-github-action.yml`](docs/playtest-github-action.yml) plays the main branch and the pull request on one runner and posts the report on the PR.
 

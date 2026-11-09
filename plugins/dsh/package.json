@@ -1,6 +1,6 @@
 {
   "name": "glitchless-dsh",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Let your agent understand your players. Glitchless for DeepSeek Harness: game observability tools over MCP (ranked findings, frame times, errors, where players quit, each game's own dashboard) and skills that add Glitchless to a game in Unity, Godot, Unreal, Three.js and more, design its dashboard and fix what players hit.",
   "icon": "./icon.svg",
   "type": "module",

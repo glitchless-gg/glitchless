@@ -28,7 +28,11 @@ extends Node
 ## that could not be sent are kept in user://glitchless/ and sent on a later launch.
 ##
 ## Debug builds send nothing unless the game is run with --glitchless, so a
-## developer's phone does not skew the numbers. Anonymous mode, the default,
+## developer's phone does not skew the numbers. A web export sends from a debug
+## build too once its page is anywhere but the developer's own machine, where
+## ?glitchless in the page's address is --glitchless (web_page.gd). As the page
+## is hidden or goes, a web export sends by navigator.sendBeacon, since nothing
+## can wait for a request there. Anonymous mode, the default,
 ## sends nothing that can be tied to a person; install mode adds a random
 ## player ID kept on the device, so returning players can be counted (retention):
 ## PRIVACY.md beside this file lists every field each mode sends.
@@ -48,7 +52,7 @@ extends Node
 ##   --glitchless-server           report as the game's dedicated server (--server does too)
 ##   --glitchless-debug            print each batch as it is sent
 
-const SDK_VERSION := "0.6.4"
+const SDK_VERSION := "0.6.5"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -58,6 +62,7 @@ const SteamInfo := preload("steam.gd")
 const BugReport := preload("bug_report.gd")
 const Properties := preload("properties.gd")
 const NetInfo := preload("net.gd")
+const WebPage := preload("web_page.gd")
 
 const HITCH_MS := 50.0  # one frame over 50 ms is a stutter a player sees
 const JANK_MS := 33.4  # two missed 60 Hz frames
@@ -191,6 +196,10 @@ var _write_next: Variant = null  # the newest outbox text, waiting for that writ
 var _write_at_once := false  # going to the background: the OS may stop the game before a worker finishes
 var _in_flight := -1  # id of the batch _http is sending
 var _http: HTTPRequest
+# text/plain in a web export: a request with it needs no CORS preflight, so a batch is one request, as the browser
+# SDK's are. The server reads the JSON whatever it says.
+var _post_headers := PackedStringArray(["Content-Type: text/plain" if OS.has_feature("web") else "Content-Type: application/json"])
+var _page: WebPage  # a web export's page: it says when it is hidden and goes (_on_page)
 var _retry_at := 0
 var _backoff := 0.0
 var _session_start_sent := false
@@ -339,6 +348,9 @@ func _ready() -> void:
 	_http.timeout = 10.0
 	_http.request_completed.connect(_on_sent)
 	add_child(_http)
+	if WebPage.in_page():
+		_page = WebPage.new()
+		_page.listen(_on_page)
 	_check_screen()
 	_debug = _has_flag("--glitchless-debug")
 	_next_flush = Time.get_ticks_msec() + int(float(_opts.flush_interval) * 1000.0)
@@ -395,7 +407,9 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	if _opts.enabled != null:
 		_build_sends = bool(_opts.enabled)
 	else:
-		_build_sends = not OS.is_debug_build() or _has_flag("--glitchless") or flag_intake != ""
+		# A web export on a page that isn't on the developer's machine is played by players, debug build or not:
+		# Godot's export dialog exports with debug on unless it's unticked.
+		_build_sends = not OS.is_debug_build() or _has_flag("--glitchless") or flag_intake != "" or WebPage.hosted()
 	_build_sends = _build_sends and _intake != ""
 	if _choice == "" and bool(_opts.opt_in) and role != "server":
 		_player_off = true  # the game asks the player first: off until set_enabled(true). A server has no player to ask
@@ -422,7 +436,7 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_early_groups.clear()
 	if not enabled:
 		_queue.clear()
-		_log("off (the player turned it off)" if _player_off and _build_sends else "off (debug build without --glitchless, or no intake)")
+		_log("off (the player turned it off)" if _player_off and _build_sends else "off (a debug build without --glitchless, or a web one on this machine without ?glitchless; or no intake)")
 		return
 	if role == "server":
 		# Frames timed before init() are a player's numbers: a server sends its ticks instead.
@@ -1015,6 +1029,14 @@ func flush() -> void:
 		_save_outbox()
 	if not _shut:
 		_send_next()  # while closing, _send_now() sends instead: HTTPRequest has left the tree
+
+
+# flush(), without starting a request: _send_now() sends what it added (a web export's page hiding or going).
+func _flush_into_outbox() -> void:
+	var closing := _shut
+	_shut = true
+	flush()
+	_shut = closing
 
 
 # ───────────────────────────── frame timing ─────────────────────────────
@@ -1893,20 +1915,44 @@ func _notification(what: int) -> void:
 				_shutdown("close")
 
 
+# A web export's page (web_page.gd); Godot itself hears none of this. Hidden (another tab or app, the phone
+# locked): the browser may freeze the page or throw it away from here with no other word, so what is waiting goes
+# now, by beacon, and the session goes on, as the browser SDK's does. Going away (closed, another page, or into the
+# back-forward cache): the session ends as a phone's does in the background, reason "pagehide", and the last batch
+# goes by beacon. Shown again, or back from the cache: no frames were drawn meanwhile, and an ended session goes on
+# or starts anew.
+func _on_page(what: int) -> void:
+	match what:
+		WebPage.HIDDEN:
+			_last_us = 0
+			_pending_long = {}
+			if _inited and enabled:
+				_flush_into_outbox()
+				_send_now(SEND_DEADLINE_MS)
+		WebPage.LEAVING:
+			_on_background("pagehide")
+		_:
+			_on_foreground()
+
+
 # A phone app in the background is usually never seen again: iOS and Android
 # stop it without warning. So going to the background ends the session, and the
-# last batch goes out now, while the OS still allows it.
-func _on_background() -> void:
+# last batch goes out now, while the OS still allows it. A web export's page
+# going away (reason "pagehide") is the same.
+func _on_background(reason: String = "background") -> void:
 	_paused_at = Time.get_ticks_msec()
 	_last_us = 0
 	_pending_long = {}
 	if _inited and enabled and not _ended:
-		_end_level("background")
+		_end_level(reason)
 		_ended = true
-		_push({"type": "session_end", "reason": "background", "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
+		_push({"type": "session_end", "reason": reason, "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
 	if _inited and enabled:
 		_write_at_once = true
-		flush()
+		if OS.has_feature("web"):
+			_flush_into_outbox()  # a request started now would never finish: _send_now beacons it
+		else:
+			flush()
 		_send_now(SEND_DEADLINE_MS)
 		_write_at_once = false
 
@@ -2081,6 +2127,11 @@ func _session_start_event() -> Dictionary:
 		"page": null,
 		"nav_ms": null,
 	}
+	if OS.has_feature("web"):
+		# A web export's browser_version is the browser's: Godot's goes here, where the browser SDK's engine adapters
+		# put theirs. Godot draws a web export with WebGL 2 (the Compatibility renderer).
+		var v := Engine.get_version_info()
+		e.engine = {"name": "godot", "version": "%d.%d.%d" % [v.major, v.minor, v.patch], "renderer": "webgl"}
 	_props_sent = _props.duplicate()
 	if not _props.is_empty():
 		e.props = _props.duplicate()
@@ -2181,7 +2232,7 @@ func _send_report(snap: Dictionary, note: String) -> Dictionary:
 	add_child(http)
 	var code := 0
 	var epoch := _epoch
-	if http.request(_intake_url(), ["Content-Type: application/json"], HTTPClient.METHOD_POST, _body(b)) == OK:
+	if http.request(_intake_url(), _post_headers, HTTPClient.METHOD_POST, _body(b)) == OK:
 		var r: Array = await http.request_completed
 		code = r[1] if r[0] == HTTPRequest.RESULT_SUCCESS else 0
 	http.queue_free()
@@ -2372,7 +2423,7 @@ func _send_next() -> void:
 	var body := _body(b)
 	if _debug:
 		print("[glitchless] sending %d events (%d bytes)" % [b.events.size(), body.length()])
-	var err := _http.request(_intake_url(), ["Content-Type: application/json"], HTTPClient.METHOD_POST, body)
+	var err := _http.request(_intake_url(), _post_headers, HTTPClient.METHOD_POST, body)
 	if err == OK:
 		_in_flight = b.id
 	else:
@@ -2421,9 +2472,13 @@ func _outbox_index(id: int) -> int:
 
 # Sends what is waiting before the game closes or goes to the background,
 # blocking for at most budget_ms. HTTPRequest cannot: it needs frames, and
-# there are no more. Whatever is not sent stays saved for the next launch.
+# there are no more. Whatever is not sent stays saved for the next launch. A
+# web export doesn't block (_beacon).
 func _send_now(budget_ms: int) -> void:
-	if _outbox.is_empty() or not sampled or OS.has_feature("web") or not _may_send():
+	if _outbox.is_empty() or not sampled or not _may_send():
+		return
+	if OS.has_feature("web"):
+		_beacon()
 		return
 	if _in_flight >= 0:
 		_http.cancel_request()  # it needs frames to finish; send it here instead
@@ -2467,6 +2522,31 @@ func _send_now(budget_ms: int) -> void:
 			break
 	client.close()
 	_save_outbox()
+
+
+# A web export can't wait for a request: the page would stall for the whole budget and send nothing (no frames move
+# a request then, and with one thread none ever could), and the browser drops a request it started once the page goes.
+# Each batch goes by navigator.sendBeacon instead, which the browser sends after the page has gone, and nothing waits.
+# The batch on its way goes again too: its batch_id lets the server store it once, and its own answer is ignored. A
+# bug report keeps its own request (a screenshot is over a beacon's size anyway). The browser takes about 64 KB of
+# beacons at a time: a batch it turns down stays in the outbox for the next send, and on the device for the next visit.
+func _beacon() -> void:
+	var sent := 0
+	for b: Dictionary in _outbox.duplicate():
+		if b.get("direct", false) or not WebPage.beacon(_intake_url(), _body(b)):
+			continue
+		if b.id == _in_flight:
+			_http.cancel_request()
+			_in_flight = -1
+		sent += b.events.size()
+		var i := _outbox_index(b.id)
+		if i >= 0:
+			_outbox.remove_at(i)
+	if sent > 0:
+		stats.sent += sent
+		stats.last_status = "ok"
+		_save_outbox()
+	_log("sent %d events by beacon" % sent if sent > 0 else "no beacon taken: %d batches wait" % _outbox.size())
 
 
 static func _parse_url(url: String) -> Dictionary:
@@ -2559,7 +2639,19 @@ func _wait_for_write() -> void:
 
 # Writes the outbox file whole, to a temporary file first so a game stopped mid-write keeps the last one; "" removes
 # it. Static, as it runs on a worker thread.
+#
+# A web export's user:// is in memory, and Godot copies it to the browser's IndexedDB a moment after each write. A
+# write there can't be cut short, so it goes straight to the file; and "" empties the file instead of removing it,
+# since a file that disappears while that copy is under way fails the whole copy ("Failed to save IDB file system"),
+# and with it whatever else changed, the player's off switch included.
 static func _write_file(path: String, text: String) -> void:
+	if OS.has_feature("web"):
+		if text != "" or FileAccess.file_exists(path):
+			var file := FileAccess.open(path, FileAccess.WRITE)
+			if file:
+				file.store_string(text)
+				file.close()
+		return
 	if text == "":
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
@@ -2582,7 +2674,10 @@ func _outbox_path() -> String:
 func _load_outbox() -> void:
 	if not FileAccess.file_exists(_outbox_path()):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(_outbox_path()))
+	var text := FileAccess.get_file_as_string(_outbox_path())
+	if text.strip_edges() == "":
+		return  # a web export's emptied outbox (_write_file)
+	var data: Variant = JSON.parse_string(text)
 	if not data is Dictionary or not data.get("batches") is Array:
 		return
 	var oldest := _now() - MAX_OUTBOX_AGE_MS
@@ -2692,8 +2787,9 @@ func _flag_value(flag: String, fallback: String = "") -> String:
 	return fallback
 
 
+# A web export also takes a few flags from its page's address (?glitchless), having no command line of its own.
 func _args() -> PackedStringArray:
-	return OS.get_cmdline_user_args() + OS.get_cmdline_args()
+	return OS.get_cmdline_user_args() + OS.get_cmdline_args() + WebPage.flags()
 
 
 static func _now() -> int:

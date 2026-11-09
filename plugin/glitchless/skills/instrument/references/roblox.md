@@ -232,6 +232,33 @@ picture's top edge is the smallest z, its left edge the smallest x. Hand it and 
    `glitchless_triage` (game set) shows the sessions, `glitchless_servers` the server's frames, and
    `glitchless_session` one player's frame windows, level and errors.
 
+## 9. Playtests
+
+`glitchless_playtest` with `engine: "roblox"` plays the place open in Studio before and after a change and compares the
+two, over Studio's MCP server (it must be on; with several Studios open, pass `studio`, part of the place's name). The
+game needs an autoplay mode it turns on from Workspace attributes, which the playtest sets before each play test and
+puts back after (by default `autoplay = true` with `seed = 7`, then `seed = 21`):
+
+```lua
+-- In the server Script that calls Glitchless.init:
+local autoplay = workspace:GetAttribute("autoplay")
+Glitchless.init({
+	-- …the options above, and:
+	sessionType = if autoplay then "synthetic" else nil, -- a bot's sessions stay out of player numbers
+})
+if autoplay then
+	local rng = Random.new(workspace:GetAttribute("seed") or 1) -- the same seed plays the same way
+	-- drive each player's character (Humanoid:MoveTo, the game's own actions), Glitchless.levelStart as it goes,
+	-- and when the run is over:
+	workspace:SetAttribute("GlitchlessPlaytestDone", true)
+end
+```
+
+A play test ends when `GlitchlessPlaytestDone` is true, or after 90 seconds (a scenario's `max_s`). The playtest reads
+the run back from the Glitchless server the MCP server reads, so the game's intake must be that server. Without
+Allow HTTP Requests, or with Studio in a play test already, it stops and says so. `roblox/demo/server.server.luau`
+in the Glitchless repo does this.
+
 A published game's first sessions arrive once real players join a server running the new version. Each publish is a
 new place version (`game.PlaceVersion`), which the SDK sends as the game's version, so `glitchless_compare_versions`
 and Roblox's own vitals line up version by version.

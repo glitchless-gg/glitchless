@@ -1,6 +1,9 @@
 // Jam rooms (SPEC §3j): an organiser makes a room and gets a short code, makers join it with their games and publish
 // each game's built files to it, everyone plays every game from the room's arcade, and when the jam ends the room
 // hands out awards from what players did and what they voted, keeps a snapshot of it all, and asks how it went.
+// An online room (a jam over days, its games on itch.io) runs up to three weeks, and its makers may link each version
+// of a game played on its itch.io page instead of publishing the build: the room counts that version's plays all the
+// same, and its arcade sends players to the page.
 //
 // This file is the model and its rules, with no HTTP (rooms-api.js serves it) and no storage of its own. A host gives
 //   store    the rooms' records (stores/rooms-file.js on the open-source server; Glitchless Cloud keeps them in its
@@ -34,6 +37,8 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 export const LIMITS = {
   defaultHours: 24,
   maxHours: 7 * 24,
+  // An online room: a jam over days (a build week, then a round of patches), played wherever players are.
+  onlineMaxHours: 21 * 24,
   defaultGames: 60,
   maxGames: 200,
   openRooms: 3,
@@ -45,8 +50,10 @@ export const LIMITS = {
   uploadsPerGame: 60,
   roomBytes: 2_000_000_000,
   pendingMs: 30 * MINUTE,
-  // A room is deleted this long after it ends; its snapshot stays SNAPSHOT_DAYS.
+  // A room is deleted this long after it ends (an online room's players come back for the awards over a week, as long
+  // as its survey is open); its snapshot stays SNAPSHOT_DAYS.
   keepAfterEndMs: DAY,
+  onlineKeepAfterEndMs: 7 * DAY,
   surveyDays: 7,
   snapshotDays: 365,
   // A game is "new" on the arcade this long after a publish.
@@ -140,6 +147,10 @@ const refuse = (status, message) => {
   throw new RoomError(status, message);
 };
 
+// How long a room may be on, and how long it's kept after it ends: an online room's limits, or an in-person one's.
+const maxHoursOf = (r) => (r.online ? LIMITS.onlineMaxHours : LIMITS.maxHours);
+const keepAfterEndOf = (r) => (r.online ? LIMITS.onlineKeepAfterEndMs : LIMITS.keepAfterEndMs);
+
 export const isCode = (v) => CODE_RE.test(String(v ?? '').toUpperCase());
 export const normalCode = (v) => String(v ?? '').toUpperCase();
 const hash = (s) => crypto.createHash('sha256').update(String(s)).digest('base64url').slice(0, 22);
@@ -198,6 +209,28 @@ export function agentName(client) {
   if (c.includes('cursor')) return 'Cursor';
   if (c.includes('goose')) return 'goose';
   return c ? (c === 'cli' ? 'the CLI' : 'Another') : null;
+}
+
+const SITE = 'itch.io';
+
+// Where a linked game is played: its page on itch.io, https://<maker>.itch.io/<game>. → { link } in that one form
+// (https, the host in lower case, no trailing slash), or { error } with what to give instead. Nothing fetches it: the
+// arcade sends players there. Only itch.io, so a room never sends its players to just any address.
+export function checkLink(value) {
+  const want = 'give the game\'s page on itch.io, https://<name>.itch.io/<game>';
+  let u;
+  try {
+    u = new URL(String(value ?? '').trim());
+  } catch {
+    return { error: `"${String(value ?? '').slice(0, 80)}" isn't an address: ${want}` };
+  }
+  const host = u.hostname.toLowerCase();
+  if (host.endsWith('.itch.zone')) return { error: `that's the address of the game's frame, which changes with every upload: ${want}` };
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.port || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.itch\.io$/.test(host)) return { error: `only games on itch.io can be linked: ${want}` };
+  const page = u.pathname.replace(/\/+$/, '');
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(page)) return { error: `"${u.href.slice(0, 120)}" isn't a game's page: ${want}` };
+  if (u.search) return { error: `give the page's address with nothing after it (a draft's secret link stops working once the page is public): make the page public on itch.io, then link https://${host}${page}` };
+  return { link: `https://${host}${page}` };
 }
 
 // ─────────────────────────── a game's numbers ───────────────────────────
@@ -393,8 +426,10 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   async function create(owner, input = {}) {
     const title = clean(input.title, 80, 'title') ?? refuse(400, 'a room needs a title');
     const about = clean(input.about, 280, 'about');
+    if (input.online != null && typeof input.online !== 'boolean') refuse(400, 'online is true or false');
+    const online = input.online === true;
     const hours = input.hours == null ? LIMITS.defaultHours : Number(input.hours);
-    if (!(hours >= 1 && hours <= LIMITS.maxHours)) refuse(400, `a room is on for 1 to ${LIMITS.maxHours} hours`);
+    if (!(hours >= 1 && hours <= maxHoursOf({ online }))) refuse(400, online ? `an online room is on for 1 to ${LIMITS.onlineMaxHours} hours (${LIMITS.onlineMaxHours / 24} days)` : `a room is on for 1 to ${LIMITS.maxHours} hours (${LIMITS.maxHours / 24} days); an online room, up to ${LIMITS.onlineMaxHours} (${LIMITS.onlineMaxHours / 24} days)`);
     const maxGames = input.max_games == null ? LIMITS.defaultGames : Number(input.max_games);
     if (!(Number.isInteger(maxGames) && maxGames >= 2 && maxGames <= LIMITS.maxGames)) refuse(400, `a room takes 2 to ${LIMITS.maxGames} games`);
     const template = input.template == null ? null : await templateOf(owner, input.template);
@@ -404,7 +439,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     for (let tries = 0; tries < 8; tries++) {
       let code = '';
       while (code.length < 5) code += CODE_ALPHABET[crypto.randomInt(CODE_ALPHABET.length)];
-      const r = { code, title, about, owner: owner.owner, created_at: at, closes_at: at + hours * HOUR, ended_at: null, joining: true, max_games: maxGames, survey: template && !template.builtin ? { heading: template.heading, intro: template.intro, questions: template.questions } : null };
+      const r = { code, title, about, owner: owner.owner, created_at: at, closes_at: at + hours * HOUR, ended_at: null, joining: true, online, max_games: maxGames, survey: template && !template.builtin ? { heading: template.heading, intro: template.intro, questions: template.questions } : null };
       if (await store.claimRoom(r)) return publicRoom(r, []);
     }
     throw new Error('no free room code after 8 tries');
@@ -426,7 +461,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     if ('joining' in input) next.joining = input.joining === true;
     if ('closes_at' in input) {
       const t = typeof input.closes_at === 'string' ? Date.parse(input.closes_at) : Number(input.closes_at);
-      if (!Number.isFinite(t) || t <= now() || t > r.created_at + LIMITS.maxHours * HOUR) refuse(400, `closes_at is a time from now to ${LIMITS.maxHours / 24} days after the room was made`);
+      if (!Number.isFinite(t) || t <= now() || t > r.created_at + maxHoursOf(r) * HOUR) refuse(400, `closes_at is a time from now to ${maxHoursOf(r) / 24} days after the room was made`);
       next.closes_at = t;
     }
     await store.putRoom(next);
@@ -497,7 +532,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     for (const r of rooms) {
       const games = await store.games(r.code);
       // Every game that joined, published or not, for the organiser to see and take out.
-      const joined = games.filter((g) => !g.left).map((g) => ({ slug: g.slug, title: g.title, by: g.by ?? null, joined_at: g.joined_at, uploads: g.uploads.length, published: g.uploads.length > 0, removed: g.removed === true }));
+      const joined = games.filter((g) => !g.left).map((g) => ({ slug: g.slug, title: g.title, by: g.by ?? null, link: g.link ?? null, joined_at: g.joined_at, uploads: g.uploads.length, published: g.uploads.length > 0, removed: g.removed === true }));
       // The survey as set (with "{room}" as written), whether it's the default, and its answers so far (none: it can change).
       const survey = { ...surveyOf(r), default: r.survey == null, answers: (await store.answers(r.code)).length };
       out.push({ ...publicRoom(r, games), games_joined: visible(games).length, joined, survey });
@@ -603,11 +638,8 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   async function startUpload(code, slug, maker, input = {}) {
     const { r, g } = await makersGame(code, slug, maker);
     if (ended(r)) refuse(409, 'this jam has ended: publishing has stopped');
-    const version = clean(input.version, 64, 'version') ?? refuse(400, 'version is required: the version the game passes to Glitchless.init');
-    if (g.uploads.some((u) => u.version === version)) refuse(409, `${version} is already published here: bump the version passed to Glitchless.init, or both uploads' players count as one version`);
-    if (g.uploads.length >= LIMITS.uploadsPerGame) refuse(429, `a game publishes at most ${LIMITS.uploadsPerGame} times in a room`);
-    const starts = (g.starts ?? []).filter((t) => t > now() - HOUR);
-    if (starts.length >= LIMITS.uploadsPerHour) refuse(429, `a game publishes at most ${LIMITS.uploadsPerHour} times an hour`);
+    if (g.link) refuse(409, `this game is played on itch.io (${g.link}): link each new version instead of publishing it`);
+    const { version, starts } = nextVersion(g, input);
     const list = Array.isArray(input.files) ? input.files : refuse(400, 'files: [{ path, bytes, sha256 }] is required');
     if (!list.length || list.length > LIMITS.uploadFiles) refuse(413, `an upload is 1 to ${LIMITS.uploadFiles} files`);
     const manifest = {};
@@ -633,6 +665,16 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     const pending = { n, version, manifest, bytes: total, agent: clean(maker.client, 40, 'client') ?? null, expires_at: now() + LIMITS.pendingMs, started_at: now() };
     await store.putGame(r.code, { ...g, service: requireService ? g.service : (service ?? g.service), pending, starts: [...starts, now()] });
     return { n, version, send: Object.keys(manifest), expires_at: pending.expires_at, limits: { file_bytes: LIMITS.fileBytes } };
+  }
+
+  // The version a publish or a link adds: new for the game, within its limits. → { version, starts } (this hour's).
+  function nextVersion(g, input) {
+    const version = clean(input.version, 64, 'version') ?? refuse(400, 'version is required: the version the game passes to Glitchless.init');
+    if (g.uploads.some((u) => u.version === version)) refuse(409, `${version} is already in this room: bump the version passed to Glitchless.init, or both builds' players count as one version`);
+    if (g.uploads.length >= LIMITS.uploadsPerGame) refuse(429, `a game publishes at most ${LIMITS.uploadsPerGame} versions in a room`);
+    const starts = (g.starts ?? []).filter((t) => t > now() - HOUR);
+    if (starts.length >= LIMITS.uploadsPerHour) refuse(429, `a game publishes at most ${LIMITS.uploadsPerHour} versions an hour`);
+    return { version, starts };
   }
 
   async function pendingOf(code, slug, n, maker) {
@@ -671,15 +713,42 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     return { url: gameUrl(r.code, slug), version: p.version, n: p.n, arcade: links(r.code).arcade };
   }
 
+  // A version of a game played on its itch.io page, not from the room: nothing is uploaded, and from now the room counts
+  // that version's plays as it would a publish's, and its arcade sends players to the page. { version, url?, service? }:
+  // url the first time (a later one moves the game's page). A game either publishes its builds or links them.
+  async function link(code, slug, maker, input = {}) {
+    const { r, g } = await makersGame(code, slug, maker);
+    if (ended(r)) refuse(409, 'this jam has ended: linking has stopped');
+    if (g.uploads.length && !g.link) refuse(409, "this game's builds are published to the room, so it plays from there: publish each new version");
+    let url = g.link ?? null;
+    if (input.url != null) {
+      const checked = checkLink(input.url);
+      if (checked.error) refuse(400, checked.error);
+      url = checked.link;
+    }
+    if (!url) refuse(400, "url is required: the game's page on itch.io, https://<name>.itch.io/<game>");
+    const { version, starts } = nextVersion(g, input);
+    // An upload started and never published goes: this game is played on itch.io now.
+    if (g.pending) await files.remove(`${r.code}/${slug}/${g.pending.n}/`);
+    const service = clean(input.service, 128, 'service')?.toLowerCase() ?? null;
+    const upload = { n: (g.uploads.at(-1)?.n ?? 0) + 1, version, files: 0, bytes: 0, published_at: now(), agent: clean(maker.client, 40, 'client') ?? null, link: url };
+    const next = { ...g, link: url, service: requireService ? g.service : (service ?? g.service), uploads: [...g.uploads, upload], current: upload.n, pending: null, starts: [...starts, now()], people: union(g.people, maker.person) };
+    await store.putGame(r.code, next);
+    forget(r.code);
+    tell('published', { room: r, game: next, upload, person: maker.person ?? null });
+    return { url, site: SITE, version, n: upload.n, arcade: links(r.code).arcade };
+  }
+
   async function leave(code, slug, maker) {
     await makersGame(code, slug, maker, { settle: false });
     return removeGame(code, slug, 'maker');
   }
 
   // ── what anyone sees ──
+  // url: where the game plays, its folder in the room or, for a linked game, its page (site names where that is).
   function publicGame(r, g) {
     const last = g.uploads.at(-1);
-    return { slug: g.slug, title: g.title, by: g.by ?? null, url: gameUrl(r.code, g.slug), version: last?.version ?? null, published_at: last?.published_at ?? null, new: last && !ended(r) ? now() - last.published_at < LIMITS.newMs : false };
+    return { slug: g.slug, title: g.title, by: g.by ?? null, url: g.link ?? gameUrl(r.code, g.slug), site: g.link ? SITE : null, version: last?.version ?? null, published_at: last?.published_at ?? null, new: last && !ended(r) ? now() - last.published_at < LIMITS.newMs : false };
   }
 
   function publicRoom(r, games) {
@@ -693,6 +762,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
       ended: done,
       ended_at: r.ended_at ?? (done ? r.closes_at : null),
       joining: r.joining && !done,
+      online: r.online === true,
       links: links(r.code),
       ...(abuse ? { report: abuse } : {}),
       games: published(games)
@@ -703,7 +773,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   }
 
   function gameForMaker(r, g) {
-    return { room: r.code, ...publicGame(r, g), service: g.service ?? null, joined_at: g.joined_at, uploads: g.uploads, links: links(r.code), ended: ended(r) };
+    return { room: r.code, ...publicGame(r, g), service: g.service ?? null, joined_at: g.joined_at, uploads: g.uploads, links: links(r.code), online: r.online === true, ended: ended(r) };
   }
 
   async function arcade(code) {
@@ -775,7 +845,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   }
 
   function liveFromSnapshot(r, snap) {
-    const rows = snap.games.filter((g) => !g.removed && g.uploads.length).map((g) => ({ slug: g.slug, title: g.title, by: g.by, url: gameUrl(r.code, g.slug), version: g.uploads.at(-1).version, published_at: g.uploads.at(-1).published_at, new: false, ...liveNumbers(g.numbers), playing_now: 0, votes: g.votes }));
+    const rows = snap.games.filter((g) => !g.removed && g.uploads.length).map((g) => ({ slug: g.slug, title: g.title, by: g.by, url: g.link ?? gameUrl(r.code, g.slug), site: g.link ? SITE : null, version: g.uploads.at(-1).version, published_at: g.uploads.at(-1).published_at, new: false, ...liveNumbers(g.numbers), playing_now: 0, votes: g.votes }));
     return liveBody(r, [], rows, snap.awards);
   }
 
@@ -826,7 +896,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     const rows = [];
     for (const g of games.filter((x) => !x.left)) {
       const numbers = g.removed ? emptyNumbers() : await numbersOf(r, g, r.ended_at);
-      rows.push({ slug: g.slug, title: g.title, by: g.by ?? null, joined_at: g.joined_at, removed: g.removed === true, uploads: g.uploads.map(({ n, version, files: count, bytes, published_at, agent }) => ({ n, version, files: count, bytes, published_at, agent: agentName(agent) })), numbers, votes: g.removed ? 0 : (tally.get(g.slug) ?? 0) });
+      rows.push({ slug: g.slug, title: g.title, by: g.by ?? null, link: g.link ?? null, joined_at: g.joined_at, removed: g.removed === true, uploads: g.uploads.map(({ n, version, files: count, bytes, published_at, agent }) => ({ n, version, files: count, bytes, published_at, agent: agentName(agent) })), numbers, votes: g.removed ? 0 : (tally.get(g.slug) ?? 0) });
     }
     const live = rows.filter((g) => !g.removed);
     const versionsWithPlays = (g) => g.numbers.versions.filter((v) => v.plays > 0);
@@ -834,6 +904,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
       code: r.code,
       title: r.title,
       about: r.about ?? null,
+      online: r.online === true,
       owner: r.owner,
       created_at: r.created_at,
       ended_at: r.ended_at,
@@ -910,8 +981,8 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
   }
 
   // ── the sweep (hourly on the open-source server, every 15 minutes on Glitchless Cloud) ──
-  // Ends rooms past their closing time, drops uploads never published, deletes rooms a day after they end and
-  // snapshots after a year.
+  // Ends rooms past their closing time, drops uploads never published, deletes rooms a day after they end (an online
+  // room a week after) and snapshots after a year.
   async function sweep() {
     const t = now();
     const done = { ended: 0, deleted: 0, dropped: 0, snapshots: 0 };
@@ -921,7 +992,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
           r = await end(r, 'closed');
           done.ended++;
         }
-        if (r.ended_at != null && r.ended_at + LIMITS.keepAfterEndMs <= t) {
+        if (r.ended_at != null && r.ended_at + keepAfterEndOf(r) <= t) {
           await deleteRoom(r, { snapshot: false });
           done.deleted++;
           continue;
@@ -952,7 +1023,7 @@ export function createRooms({ store, files, readGame, playersNow = async () => 0
     tell('deleted', { room: r });
   }
 
-  return { create, list, update, setSurvey, templates, saveTemplate, deleteTemplate, remove, takeOut, join, editGame, gameStatus, startUpload, putFile, publish, leave, arcade, live, myVote, vote, snapshot, survey, answer, sweep, gameUrl, links, ended };
+  return { create, list, update, setSurvey, templates, saveTemplate, deleteTemplate, remove, takeOut, join, editGame, gameStatus, startUpload, putFile, publish, link, leave, arcade, live, myVote, vote, snapshot, survey, answer, sweep, gameUrl, links, ended };
 }
 
 function union(list, item) {

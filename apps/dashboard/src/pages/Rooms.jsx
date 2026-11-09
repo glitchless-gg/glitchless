@@ -69,12 +69,14 @@ export function Rooms({ base = '/' }) {
   );
 }
 
-// A new room: a title, a line about it, its survey's template, and how long until it ends by itself.
+// A new room: a title, a line about it, its survey's template, how long until it ends by itself, and whether it's an
+// online jam (over days, its games often on itch.io: up to 21 days instead of 7).
 function MakeRoom({ onMade, templates }) {
   const [title, setTitle] = useState('');
   const [about, setAbout] = useState('');
   const [template, setTemplate] = useState('default');
   const [hours, setHours] = useState('24');
+  const [online, setOnline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   async function make(e) {
@@ -83,7 +85,7 @@ function MakeRoom({ onMade, templates }) {
     setError(null);
     try {
       const picked = templates.some((t) => t.id === template) ? template : undefined;
-      await send('POST', '/v1/rooms', { title, about: about || undefined, hours: Number(hours) || undefined, template: picked });
+      await send('POST', '/v1/rooms', { title, about: about || undefined, hours: Number(hours) || undefined, template: picked, ...(online ? { online: true } : {}) });
       setTitle('');
       setAbout('');
       onMade();
@@ -119,8 +121,15 @@ function MakeRoom({ onMade, templates }) {
         <label>
           <span>Ends by itself after</span>
           <span className="room-org-hours">
-            <input className="input" type="number" min={1} max={168} value={hours} onChange={(e) => setHours(e.target.value)} />
+            <input className="input" type="number" min={1} max={online ? 504 : 168} value={hours} onChange={(e) => setHours(e.target.value)} />
             hours
+          </span>
+        </label>
+        <label>
+          <span>Online jam</span>
+          <span className="room-org-hours">
+            <input type="checkbox" checked={online} onChange={(e) => setOnline(e.target.checked)} />
+            Up to 21 days
           </span>
         </label>
         <button className="btn primary" disabled={busy || !title.trim()}>
@@ -196,6 +205,7 @@ function RoomCard({ room: r, base, onChange, templates, onTemplates }) {
       <div className="room-org-meta">
         {r.ended ? <Status kind="neutral">Ended {when(r.ended_at)}</Status> : <Status kind="ok">On until {when(r.closes_at)}</Status>}
         {!r.ended && !r.joining && <Status kind="warn">Not taking new games</Status>}
+        {r.online && <Status kind="neutral">Online</Status>}
         <span className="muted">
           {plural(r.games.length, 'game')} published{r.building && !r.ended ? `, ${fmtNum(r.building)} still being made` : ''}
           {live.data ? ` · ${plural(live.data.totals.plays, 'play')}` : ''}

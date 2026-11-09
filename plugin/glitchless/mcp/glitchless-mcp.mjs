@@ -304,10 +304,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path15) {
-  if (!path15)
+function getElementAtPath(obj, path17) {
+  if (!path17)
     return obj;
-  return path15.reduce((acc, key) => acc?.[key], obj);
+  return path17.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -566,11 +566,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path15, issues) {
+function prefixIssues(path17, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path15);
+    iss.path.unshift(path17);
     return iss;
   });
 }
@@ -1103,16 +1103,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path15 = []) => {
+  const processError = (error63, path17 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
       } else {
-        const fullpath = [...path15, ...issue2.path];
+        const fullpath = [...path17, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -1151,17 +1151,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path15 = []) => {
+  const processError = (error63, path17 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path15, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path17, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path15, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path17, ...issue2.path]);
       } else {
-        const fullpath = [...path15, ...issue2.path];
+        const fullpath = [...path17, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -1200,8 +1200,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path15 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path15) {
+  const path17 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path17) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -2263,13 +2263,13 @@ function isValidBase64URL(data) {
 function isLuhnAlgo(digits) {
   let length = digits.length;
   let bit = 1;
-  let sum = 0;
+  let sum2 = 0;
   while (length) {
     const value = digits.charCodeAt(--length) - 48;
     bit ^= 1;
-    sum += bit ? [0, 2, 4, 6, 8, 1, 3, 5, 7, 9][value] : value;
+    sum2 += bit ? [0, 2, 4, 6, 8, 1, 3, 5, 7, 9][value] : value;
   }
-  return sum % 10 === 0;
+  return sum2 % 10 === 0;
 }
 function isValidCreditCard(input2) {
   if (!creditCard.test(input2))
@@ -3605,14 +3605,14 @@ var init_schemas = __esm({
           const isOptionalOut = schema?._zod?.optout === "optional";
           doc.write(`const ${id} = ${parseStr(k)};`);
           if (isOptionalIn && isOptionalOut) {
-            const assign = optin === "optional" ? `${id}_present` : `${id}.value !== undefined || ${id}_present`;
+            const assign2 = optin === "optional" ? `${id}_present` : `${id}.value !== undefined || ${id}_present`;
             doc.write(`
         const ${id}_present = ${isPresent};
         if (!${id}.issues.length || ${id}_present) {
           if (${id}.issues.length) {${prefixStr(id, k)}
           }
 
-          if (${assign}) {
+          if (${assign2}) {
             newResult[${k}] = ${id}.value;
           }
         }
@@ -13214,9 +13214,9 @@ function codePointLengthVar(doc, ctx, accessor, inDoubt) {
   doc.write(`const ${v} = typeof ${accessor} === "string" && ${inDoubt} ? ${cpLen}(${accessor}) : ${accessor}.length;`);
   return v;
 }
-function numericOperand(value, label) {
+function numericOperand(value, label3) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ZodCompileUnsupportedError(`${label} bound of type ${typeof value}`);
+    throw new ZodCompileUnsupportedError(`${label3} bound of type ${typeof value}`);
   }
   return `${value}`;
 }
@@ -19233,13 +19233,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path15 = ref.slice(1).split("/").filter(Boolean);
-  if (path15.length === 0) {
+  const path17 = ref.slice(1).split("/").filter(Boolean);
+  if (path17.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path15[0] === defsKey) {
-    const key = path15[1] === void 0 ? void 0 : decodeJSONPointerSegment(path15[1]);
+  if (path17[0] === defsKey) {
+    const key = path17[1] === void 0 ? void 0 : decodeJSONPointerSegment(path17[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -23695,17 +23695,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path15, reachable) => {
+  const visit2 = (node2, path17, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path15.length === 0) return `${pathName(path15)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path17.length === 0) return `${pathName(path17)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path15)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path15)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path17)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path17)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path15)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path17)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -23714,14 +23714,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path15,
+        path: path17,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path15, key], reachable);
+      const fault$1 = visit2(child, [...path17, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -23729,7 +23729,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path15, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path17, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -23748,8 +23748,8 @@ function scanXMcpHeaderDeclarations(inputSchema) {
     declarations
   };
 }
-function pathName(path15) {
-  return path15.length === 0 ? "<root>" : path15.join(".");
+function pathName(path17) {
+  return path17.length === 0 ? "<root>" : path17.join(".");
 }
 function mcpParamPrimitiveToString(value) {
   if (typeof value === "string") return value;
@@ -23776,9 +23776,9 @@ function decodeMcpParamValue(value) {
     return;
   }
 }
-function valueAtPath(root, path15) {
+function valueAtPath(root, path17) {
   let node2 = root;
-  for (const key of path15) {
+  for (const key of path17) {
     if (node2 === null || typeof node2 !== "object") return void 0;
     node2 = node2[key];
   }
@@ -24168,7 +24168,7 @@ function convertStandardElicitationSchema(schema) {
 function isAnnotationOnlyJsonSchemaKeyword(key) {
   return ANNOTATION_ONLY_JSON_SCHEMA_KEYWORDS.has(key) || key.startsWith("x-");
 }
-function walkProperty(node2, path15, vendor, unsupported) {
+function walkProperty(node2, path17, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -24176,8 +24176,8 @@ function walkProperty(node2, path15, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path15}.${key}`);
-  } else unsupported.push(`${path15}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path17}.${key}`);
+  } else unsupported.push(`${path17}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -24194,11 +24194,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path15 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path15}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path17 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path17}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path15 ? `${path15}.${key}` : key;
+    const childPath = path17 ? `${path17}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -24967,9 +24967,9 @@ var init_src_DdvbAHrR = __esm({
         });
         const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta3);
         if (!parsed.success) for (const issue2 of parsed.error.issues) {
-          const path15 = issue2.path.map(String);
-          const key = path15.length > 0 ? path15.join(".") : "_meta";
-          if (path15.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+          const path17 = issue2.path.map(String);
+          const key = path17.length > 0 ? path17.join(".") : "_meta";
+          if (path17.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
           issues.push({
             key,
             problem: issue2.message
@@ -26864,9 +26864,9 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
       };
       var Label = class extends Node {
-        constructor(label) {
+        constructor(label3) {
           super();
-          this.label = label;
+          this.label = label3;
           this.names = {};
         }
         render({ _n }) {
@@ -26874,9 +26874,9 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
       };
       var Break = class extends Node {
-        constructor(label) {
+        constructor(label3) {
           super();
-          this.label = label;
+          this.label = label3;
           this.names = {};
         }
         render({ _n }) {
@@ -27241,11 +27241,11 @@ var init_ajvProvider_DyjnscPj = __esm({
         endFor() {
           return this._endBlockNode(For);
         }
-        label(label) {
-          return this._leafNode(new Label(label));
+        label(label3) {
+          return this._leafNode(new Label(label3));
         }
-        break(label) {
-          return this._leafNode(new Break(label));
+        break(label3) {
+          return this._leafNode(new Break(label3));
         }
         return(value) {
           const node2 = new Return();
@@ -27516,10 +27516,10 @@ var init_ajvProvider_DyjnscPj = __esm({
         return jsPropertySyntax ? (0, codegen_1.getProperty)(dataProp).toString() : "/" + escapeJsonPointer(dataProp);
       }
       exports.getErrorPath = getErrorPath;
-      function checkStrictMode(it, msg, mode = it.opts.strictSchema) {
-        if (!mode) return;
+      function checkStrictMode(it, msg, mode2 = it.opts.strictSchema) {
+        if (!mode2) return;
         msg = `strict mode: ${msg}`;
-        if (mode === true) throw new Error(msg);
+        if (mode2 === true) throw new Error(msg);
         it.self.logger.warn(msg);
       }
       exports.checkStrictMode = checkStrictMode;
@@ -28764,8 +28764,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         ok(cond) {
           if (!this.allErrors) this.gen.if(cond);
         }
-        setParams(obj, assign) {
-          if (assign) Object.assign(this.params, obj);
+        setParams(obj, assign2) {
+          if (assign2) Object.assign(this.params, obj);
           else this.params = obj;
         }
         block$data(valid, codeBlock, $dataValid = codegen_1.nil) {
@@ -29195,8 +29195,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         if (bestLength < 2) return hextets.join(":");
         const head = hextets.slice(0, bestStart).join(":");
-        const tail2 = hextets.slice(bestStart + bestLength).join(":");
-        return head + "::" + tail2;
+        const tail3 = hextets.slice(bestStart + bestLength).join(":");
+        return head + "::" + tail3;
       }
       function normalizeIPv6Address(input2) {
         const compression = input2.indexOf("::");
@@ -29282,8 +29282,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
         return ind;
       }
-      function removeDotSegments(path15) {
-        let input2 = path15;
+      function removeDotSegments(path17) {
+        let input2 = path17;
         const output2 = [];
         let nextSlash = -1;
         let len = 0;
@@ -29621,8 +29621,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         if (wsComponent.resourceName) {
           const queryIndex = wsComponent.resourceName.indexOf("?");
-          const path15 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-          wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
+          const path17 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+          wsComponent.path = path17 && path17 !== "/" ? path17 : void 0;
           wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
           wsComponent.resourceName = void 0;
         }
@@ -33720,16 +33720,16 @@ var init_ajvProvider_DyjnscPj = __esm({
         if (opts.keywords) (0, limit_1.default)(ajv);
         return ajv;
       };
-      formatsPlugin.get = (name, mode = "full") => {
-        const f = (mode === "fast" ? formats_1.fastFormats : formats_1.fullFormats)[name];
+      formatsPlugin.get = (name, mode2 = "full") => {
+        const f = (mode2 === "fast" ? formats_1.fastFormats : formats_1.fullFormats)[name];
         if (!f) throw new Error(`Unknown format "${name}"`);
         return f;
       };
-      function addFormats2(ajv, list, fs13, exportName) {
+      function addFormats2(ajv, list, fs14, exportName) {
         var _a3;
         var _b;
         (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 || (_b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`);
-        for (const f of list) ajv.addFormat(f, fs13[f]);
+        for (const f of list) ajv.addFormat(f, fs14[f]);
       }
       module.exports = exports = formatsPlugin;
       Object.defineProperty(exports, "__esModule", { value: true });
@@ -33870,8 +33870,8 @@ function protectedResourceMetadataPath(resourceServerUrl) {
   const rsPath = stripTrailingSlash(resourceServerUrl.pathname);
   return `/.well-known/oauth-protected-resource${rsPath === "/" ? "" : rsPath}`;
 }
-function stripTrailingSlash(path15) {
-  return path15.length > 1 && path15.endsWith("/") ? path15.slice(0, -1) : path15;
+function stripTrailingSlash(path17) {
+  return path17.length > 1 && path17.endsWith("/") ? path17.slice(0, -1) : path17;
 }
 function supportsScopeChallengeResolver(transport) {
   return typeof transport === "object" && transport !== null && "setScopeChallengeResolver" in transport && typeof transport.setScopeChallengeResolver === "function";
@@ -34271,10 +34271,10 @@ data: ${JSON.stringify(message)}
         const { maxRounds, roundTimeoutMs } = this._host;
         const outerSignal = ctx.mcpReq.signal;
         let current = firstResult;
-        let round3 = 0;
+        let round4 = 0;
         while (true) {
-          round3 += 1;
-          if (round3 > maxRounds) return legacyShimFailure(method, inputRequiredRoundsExceededMessage(method, maxRounds));
+          round4 += 1;
+          if (round4 > maxRounds) return legacyShimFailure(method, inputRequiredRoundsExceededMessage(method, maxRounds));
           const inputRequests = current.inputRequests;
           const hasInputRequests = inputRequests != null && Object.keys(inputRequests).length > 0;
           const requestState = typeof current.requestState === "string" ? current.requestState : void 0;
@@ -34880,9 +34880,9 @@ data: ${JSON.stringify(message)}
       * `acceptedContent` overload and can re-ask).
       */
       async _sendElicitationLeg(params, options, behavior) {
-        const mode = params.mode ?? "form";
+        const mode2 = params.mode ?? "form";
         const validateAcceptedContent = behavior?.validateAcceptedContent ?? true;
-        switch (mode) {
+        switch (mode2) {
           case "url": {
             const urlParams = params;
             return this.request({
@@ -37241,7 +37241,7 @@ function instructions(remote) {
     "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to. For a Roblox game connected to Roblox, it reads the Robux it earned (and what they'd be worth through DevEx), its daily active and new users and its D1, D7 and D30 retention, which the anonymous Roblox SDK can't count.",
     "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
     ...remote ? ["After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players."] : [
-      'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.',
+      `Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. It plays a web game in Chrome, runs a Unity, Godot, Unreal or GameMaker build from its command (command, e.g. ["godot", "--path", "."]) with the game's autoplay flags, or plays a Roblox game (engine "roblox") in the open Roblox Studio, which needs Studio's MCP server on. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.`,
       "If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool."
     ]
   ].join(" ");
@@ -37262,7 +37262,7 @@ var init_context = __esm({
   "src/context.js"() {
     init_dist();
     init_zod();
-    VERSION = "0.17.0";
+    VERSION = "0.18.0";
     CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "glitchless", "credentials.json");
     originOf = (u) => {
       try {
@@ -37769,10 +37769,10 @@ Headline numbers, deployments and the full findings with evidence (window ${new 
           const what = [level && `on ${level}`, types && `of ${types}`].filter(Boolean).join(" ");
           return reply(`Session ${session_id}: ${t.total} event(s)${what ? ` ${what}` : ""}${t.total > t.events.length ? `, the first ${t.events.length} (limit gives more)` : ""}`, { session: d.session, ...t, ...ticks.length && !level && !types ? { server_windows: ticks.slice(0, limit ?? 120) } : {} }, { rows: true });
         }
-        const sum = sessionSummary(answer);
-        const o = sum.outcome;
+        const sum2 = sessionSummary(answer);
+        const o = sum2.outcome;
         const how = [o.crashed && "crashed", o.rage_quit && "rage quit", o.ended === false && "still playing"].filter(Boolean).join(", ");
-        return reply(`Session ${session_id}: ${sum.levels.length} level(s), ${Math.round(sum.session.duration_s ?? 0)} s${how ? `, ${how}` : ""}${o.last_level ? `, last on ${o.last_level}` : ""}. ${sum.timeline_events} events in all: pass level or types (or view "timeline") for them.`, sum, { rows: true });
+        return reply(`Session ${session_id}: ${sum2.levels.length} level(s), ${Math.round(sum2.session.duration_s ?? 0)} s${how ? `, ${how}` : ""}${o.last_level ? `, last on ${o.last_level}` : ""}. ${sum2.timeline_events} events in all: pass level or types (or view "timeline") for them.`, sum2, { rows: true });
       }
     );
     CANT_EDIT = `If you can't edit the game's code (in claude.ai or ChatGPT, say), tell the person to open Claude Code in the game's folder and say "Set up Glitchless for <the game> in this folder", or to paste the prompt on the Get started page in Glitchless into another coding agent.`;
@@ -37823,9 +37823,9 @@ Session properties: ${props.map((p) => p.identifier_like ? `${p.key} (an ID: too
 ${m.event} ${m.rate ? `rate of ${m.rate}` : `average ${m.avg}`}${m.by ? ` by ${m.by}` : ""}: ${m.empty ? m.why : m.rows ? `${m.rows.length} rows, overall ${m.overall}${m.rate ? "%" : ""}` : `${m.value}${m.unit === "%" ? "%" : ""} of ${m.events} events`}` : "";
         const dist = d.distribution ? `
 ${d.distribution.event} ${d.distribution.of}: ${d.distribution.empty ? d.distribution.why : `p50 ${d.distribution.p50}, p90 ${d.distribution.p90} of ${d.distribution.count}`}` : "";
-        const fs13 = d.first;
-        const firstLine = fs13 ? `
-${fs13.event}, first in a session: ${fs13.empty ? fs13.why : `${fs13.median_s == null ? "no session sent it" : `median ${fs13.median_s} s after the session started, p90 ${fs13.p90_s} s (${fs13.sessions} sessions)`}; ${fs13.never_pct == null ? "no session has ended yet" : `${fs13.never_pct}% of ${fs13.ended} ended sessions never sent it`}`}` : "";
+        const fs14 = d.first;
+        const firstLine = fs14 ? `
+${fs14.event}, first in a session: ${fs14.empty ? fs14.why : `${fs14.median_s == null ? "no session sent it" : `median ${fs14.median_s} s after the session started, p90 ${fs14.p90_s} s (${fs14.sessions} sessions)`}; ${fs14.never_pct == null ? "no session has ended yet" : `${fs14.never_pct}% of ${fs14.ended} ended sessions never sent it`}`}` : "";
         return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):
 ${brief || "None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs)."}${propLine}${measured}${dist}${firstLine}${detail ? "" : "\n(Top 5 values of each attribute and property: detail: true gives them all.)"}`, {
           events: d.events.map(({ series, ...e }) => detail ? e : compactEvent(e)),
@@ -37834,7 +37834,7 @@ ${brief || "None in this window. A game sends them with track(name, attrs), and 
           ...d.funnel ? { funnel: d.funnel } : {},
           ...m ? { measure: (({ ts, series, ...x }) => x)(m) } : {},
           ...d.distribution ? { distribution: d.distribution } : {},
-          ...fs13 ? { first: fs13 } : {}
+          ...fs14 ? { first: fs14 } : {}
         }, { rows: !detail });
       }
     );
@@ -38335,7 +38335,7 @@ ${r.products.map((p) => `- ${p.name}${p.product !== "(none)" ? ` (${p.product})`
     ];
     return { text: lines2.join("\n"), data: { days: r.days, products: r.products, versions: r.versions, platforms: r.platforms ?? null, countries: r.countries ?? null, overview: r.overview?.metrics ?? null } };
   }
-  const stock = (x, label, isMoney = false) => x ? `${isMoney ? money(x.value) : n(x.value)} ${label}${x.change != null ? ` (${x.change >= 0 ? "+" : "\u2212"}${isMoney ? money(Math.abs(x.change)) : n(Math.abs(x.change))} since ${x.since})` : ""}` : null;
+  const stock = (x, label3, isMoney = false) => x ? `${isMoney ? money(x.value) : n(x.value)} ${label3}${x.change != null ? ` (${x.change >= 0 ? "+" : "\u2212"}${isMoney ? money(Math.abs(x.change)) : n(Math.abs(x.change))} since ${x.since})` : ""}` : null;
   const lines = [
     `${r.store_name} revenue of ${svc} (project ${r.app_id}), ${r.from_day} to ${r.to_day} (UTC days)${r.version ? `, version ${r.version}` : ""}: ${money(t.revenue)}${t.transactions != null ? ` from ${n(t.transactions)} transactions` : ""}${t.incomplete ? " (today so far included)" : ""}.`,
     perPlayer,
@@ -39366,81 +39366,16 @@ var init_stdio = __esm({
   }
 });
 
-// ../playtest/src/config.js
-import fs4 from "node:fs";
-import path4 from "node:path";
-function loadConfig(cwd = process.cwd(), overrides = {}) {
-  const file2 = path4.join(cwd, "glitchless.playtest.json");
-  let fromFile = {};
-  if (fs4.existsSync(file2)) {
-    try {
-      fromFile = JSON.parse(fs4.readFileSync(file2, "utf8"));
-    } catch (err) {
-      throw new Error(`glitchless.playtest.json is not valid JSON: ${err.message}`);
-    }
-  }
-  const clean = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v != null));
-  const cfg = { ...DEFAULTS, ...fromFile, ...clean };
-  cfg.thresholds = { ...DEFAULT_THRESHOLDS, ...fromFile.thresholds || {} };
-  cfg.runs_dir = path4.resolve(cwd, cfg.runs_dir);
-  return cfg;
-}
-var DEFAULT_SCENARIOS, DEFAULT_THRESHOLDS, DEFAULTS;
-var init_config = __esm({
-  "../playtest/src/config.js"() {
-    DEFAULT_SCENARIOS = [
-      { name: "expert from level 1", params: { autoplay: 1, seed: 7, skill: 0.95, level: 1 }, max_s: 90 },
-      { name: "average from level 1", params: { autoplay: 1, seed: 21, skill: 0.8, level: 1 }, max_s: 90 },
-      { name: "novice from level 2", params: { autoplay: 1, seed: 42, skill: 0.6, level: 2 }, max_s: 90 }
-    ];
-    DEFAULT_THRESHOLDS = {
-      pct_frames_over_budget: { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
-      frame_p95: { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
-      render_cpu_ms: { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
-      // The game's update code (scripts and physics), where the SDK can time it: Phaser, Babylon.js, PlayCanvas, Godot and Unity.
-      update_cpu_ms: { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
-      draw_calls: { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
-      hitches_per_min: { label: "Hitches per minute", higher: true, pct: 50, abs: 1, severity: "warn" },
-      errors_per_session: { label: "Errors per run", higher: true, pct: 50, abs: 1, severity: "warn" },
-      deaths_per_session: { label: "Deaths per run", higher: true, pct: 50, abs: 2, severity: "warn" },
-      level_completion_pct: { label: "Level completion (%)", higher: false, pct: 0, abs: 25, severity: "warn" },
-      geometries_growth_per_level_load: { label: "Geometry growth per level load", higher: true, pct: 50, abs: 200, severity: "warn" },
-      // Per-level versions of the renderer metrics catch a regression the whole-run average dilutes.
-      "level.pct_frames_over_budget": { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
-      "level.frame_p95": { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
-      "level.render_cpu_ms": { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
-      "level.update_cpu_ms": { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
-      "level.draw_calls": { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
-      new_errors: { label: "New error types", severity: "fail" },
-      new_crashes: { label: "Crashed runs", severity: "fail" }
-    };
-    DEFAULTS = {
-      game: "http://localhost:5173/",
-      server: process.env.GLITCHLESS_URL || "http://localhost:7777",
-      service: process.env.GLITCHLESS_SERVICE || null,
-      api_key: process.env.GLITCHLESS_API_KEY || null,
-      channel: "chrome",
-      env: "playtest",
-      // JS expression evaluated in the page; the run ends early once it is truthy.
-      done_when: "window.__GLITCHLESS_PLAYTEST_DONE__ || window.zoomies?.halted || window.zoomies?.won || window.zoomies?.quit",
-      viewport: { width: 1280, height: 720 },
-      runs_dir: ".glitchless/playtest",
-      scenarios: DEFAULT_SCENARIOS,
-      thresholds: DEFAULT_THRESHOLDS
-    };
-  }
-});
-
 // ../playtest/src/run.js
 import os3 from "node:os";
-import path5 from "node:path";
+import path4 from "node:path";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 async function loadPlaywright(cwd = process.cwd()) {
   const unwrap = (mod) => mod?.chromium ? mod : mod?.default;
   try {
-    const req = createRequire(path5.join(cwd, "noop.js"));
+    const req = createRequire(path4.join(cwd, "noop.js"));
     const pw = unwrap(await import(pathToFileURL(req.resolve("playwright")).href));
     if (pw?.chromium) return pw;
   } catch {
@@ -39567,6 +39502,753 @@ var init_run = __esm({
   }
 });
 
+// ../playtest/src/roblox.js
+import os4 from "node:os";
+import path5 from "node:path";
+import { spawn as spawn2 } from "node:child_process";
+function studioMcpCommand(cfg) {
+  if (cfg.studio_mcp) return [].concat(cfg.studio_mcp).map(String);
+  if (process.platform === "win32") return ["cmd.exe", "/c", path5.join(process.env.LOCALAPPDATA || "", "Roblox", "mcp.bat")];
+  return ["/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP"];
+}
+function connectStudio(argv) {
+  const child = spawn2(argv[0], argv.slice(1), { stdio: ["pipe", "pipe", "ignore"] });
+  const pending = /* @__PURE__ */ new Map();
+  let buf = "";
+  let seq = 0;
+  let failed = null;
+  const fail2 = (err) => {
+    failed = err;
+    for (const done of pending.values()) done({ error: { message: err.message } });
+  };
+  child.on("error", (err) => fail2(err.code === "ENOENT" ? new Error(`Roblox Studio's MCP server isn't at ${argv[0]}. ${NEEDS_STUDIO} Or set "studio_mcp" in glitchless.playtest.json to its command.`) : err));
+  child.on("exit", () => fail2(new Error(`Roblox Studio's MCP server (${argv.join(" ")}) stopped. ${NEEDS_STUDIO}`)));
+  child.stdout.on("data", (d) => {
+    buf += d;
+    for (let i; (i = buf.indexOf("\n")) >= 0; ) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line.startsWith("{")) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.id != null && pending.has(msg.id)) pending.get(msg.id)(msg);
+      } catch {
+      }
+    }
+  });
+  child.stdin.on("error", () => {
+  });
+  const request = (method, params, timeoutMs = 12e4) => new Promise((resolve, reject) => {
+    if (failed) return reject(failed);
+    const id = ++seq;
+    const timer = setTimeout(() => (pending.delete(id), reject(new Error(`Roblox Studio's MCP server didn't answer ${method} in ${timeoutMs / 1e3} s`))), timeoutMs);
+    pending.set(id, (msg) => {
+      clearTimeout(timer);
+      pending.delete(id);
+      if (failed && !msg.result) reject(failed);
+      else resolve(msg);
+    });
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+  });
+  const tool2 = async (name, args = {}) => {
+    const msg = await request("tools/call", { name, arguments: args });
+    const text = (msg.result?.content || []).map((c) => c.text ?? "").join("\n");
+    if (msg.error || msg.result?.isError) throw new Error(`Studio ${name}: ${msg.error?.message || text}`);
+    return text;
+  };
+  return {
+    tool: tool2,
+    async init() {
+      await request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "glitchless-playtest", version: "0" } }, 3e4);
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+    },
+    close: () => child.kill()
+  };
+}
+function unmark(text) {
+  const m = String(text).match(/GLP<([\s\S]*?)>GLP/);
+  if (!m) return void 0;
+  try {
+    return JSON.parse(m[1]);
+  } catch {
+    return JSON.parse(JSON.parse(`"${m[1]}"`));
+  }
+}
+function longString(text) {
+  let eq = "=";
+  while (text.includes(`]${eq}]`)) eq += "=";
+  return `[${eq}[${text}]${eq}]`;
+}
+async function pickStudio(mcp, want, waitS = 10) {
+  let studios = [];
+  for (let i = 0; i < waitS && !studios.length; i++) {
+    studios = JSON.parse(await mcp.tool("list_roblox_studios") || "{}").studios || [];
+    if (!studios.length) await sleep2(1e3);
+  }
+  if (!studios.length) throw new Error(`No Roblox Studio answered. ${NEEDS_STUDIO}`);
+  const names = studios.map((s) => `"${s.name}"`).join(", ");
+  const match = want ? studios.filter((s) => s.id === want || String(s.name).toLowerCase().includes(String(want).toLowerCase())) : studios;
+  if (!match.length) throw new Error(`No open Roblox Studio is "${want}". Open: ${names}.`);
+  if (match.length > 1) throw new Error(`${match.length} Roblox Studios are open (${names}): set "studio" in glitchless.playtest.json to part of the game's place name, so the playtest never plays another place.`);
+  return match[0];
+}
+function checkParams(sc) {
+  for (const [k, v] of Object.entries(sc.params || {})) {
+    if (!ATTRIBUTE.test(k) || k.startsWith("RBX")) throw new Error(`Scenario "${sc.name || k}": "${k}" can't be a Roblox attribute name (letters, digits and _, at most 100).`);
+    if (!["boolean", "number", "string"].includes(typeof v)) throw new Error(`Scenario "${sc.name || k}": "${k}" must be true or false, a number or a string to be a Workspace attribute.`);
+  }
+}
+async function playOnce(mcp, studio, sc, cfg, log) {
+  const params = sc.params || {};
+  const before = unmark(await luau(mcp, studio.id, attributes(params, ["GlitchlessPlaytestDone"]))) || {};
+  const restore = () => luau(mcp, studio.id, attributes(before, [...Object.keys(params), "GlitchlessPlaytestDone"].filter((k) => !(k in before)))).catch(() => {
+  });
+  const started = Date.now();
+  let finished = false;
+  try {
+    if (sc.luau || cfg.luau) await luau(mcp, studio.id, sc.luau || cfg.luau);
+    await mcp.tool("start_stop_play", { studio_id: studio.id, is_start: true });
+    const maxMs = (sc.max_s || 90) * 1e3;
+    const done = `-- glitchless-playtest: done_when
+return if (${sc.done_when || cfg.done_when || ROBLOX_DONE_WHEN}) then ${MARK("true")} else ${MARK("false")}`;
+    while (Date.now() - started < maxMs) {
+      await sleep2(1e3);
+      finished = await luau(mcp, studio.id, done, "Server").then(unmark).catch(() => false) === true;
+      if (finished) break;
+    }
+  } finally {
+    await mcp.tool("start_stop_play", { studio_id: studio.id, is_start: false }).catch(() => {
+    });
+    for (let i = 0; i < 30 && await mode(mcp, studio.id).catch(() => "Edit") !== "Edit"; i++) await sleep2(1e3);
+    await restore();
+  }
+  const output2 = await mcp.tool("get_console_output", { studio_id: studio.id }).catch(() => "");
+  const glitchless = output2.split("\n").filter((l) => l.includes("[glitchless]")).slice(0, 12);
+  const seconds = Math.round((Date.now() - started) / 1e3);
+  log(`  \u2192 ${seconds}s${finished ? "" : " (hit the time cap)"}`);
+  return { scenario: sc.name || null, params, started, ended: Date.now(), seconds, finished, glitchless };
+}
+async function sessionsOf(cfg, service, from, to) {
+  const base2 = cfg.server.replace(/\/$/, "");
+  const qs = new URLSearchParams({ service, from: String(from - 6e4), to: String(to + 6e4) });
+  const headers2 = { "x-glitchless-client": "playtest", ...cfg.api_key ? { "x-glitchless-api-key": cfg.api_key } : {} };
+  const res = await fetch(`${base2}/v1/query/sessions?${qs}`, { headers: headers2 });
+  if (!res.ok) throw new Error(`Glitchless server ${base2} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = await res.json();
+  return (body.sessions || []).filter((s) => (s.session_type === "synthetic" || s.session_type === "tester") && s.start >= from && s.start <= to);
+}
+function assign(results, sessions, key) {
+  for (const r of results) r[key] = [];
+  for (const s of sessions) {
+    const lasted = (x) => s.start + (s.duration_s ?? 0) * 1e3 >= x.started;
+    const within = (slack) => results.filter((x) => x.started - slack <= s.start && s.start <= x.ended && (!slack || lasted(x))).at(-1);
+    within(0)?.[key].push(s.session_id) ?? within(SLACK_MS)?.[key].push(s.session_id);
+  }
+}
+async function robloxSummary(cfg, service, players, servers, since, log) {
+  const summary = await fetchSummary(cfg, service, players, since, { log });
+  if (!servers.length || !summary) return summary;
+  const server = await fetchSummary(cfg, `${service}.server`, servers, since, { log, timeoutMs: 1e4 }).catch(() => null);
+  if (!server) return summary;
+  const errors = [...summary.errors || []];
+  for (const e of server.errors || []) if (!errors.some((x) => x.fingerprint === e.fingerprint)) errors.push({ ...e, server: true });
+  return { ...summary, errors, crashes: (summary.crashes || 0) + (server.crashes || 0), server_errors_per_session: server.errors_per_session ?? null };
+}
+async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {
+} } = {}) {
+  for (const sc of scenarios) checkParams(sc);
+  const mcp = connectStudio(studioMcpCommand(cfg));
+  let studio;
+  let service = cfg.service;
+  const results = [];
+  try {
+    await mcp.init();
+    studio = await pickStudio(mcp, cfg.studio, cfg.studio_wait_s);
+    log(`Roblox Studio: ${studio.name}`);
+    const state = await mode(mcp, studio.id);
+    if (state && state !== "Edit") throw new Error(`Roblox Studio ("${studio.name}") is in a play test (${state}): stop it, and run the playtest again.`);
+    const place2 = unmark(await luau(mcp, studio.id, PROBE)) || {};
+    if (!place2.module) throw new Error(`"${studio.name}" has no Glitchless module in ReplicatedStorage: add Glitchless to the game first (the instrument skill's Roblox steps).`);
+    if (!place2.http) throw new Error(`"${studio.name}" has Allow HTTP Requests off, so Glitchless can't send anything: turn it on in Game Settings \u2192 Security.`);
+    service ||= place2.service;
+    if (!service) throw new Error('Could not tell which game this is from its Glitchless.init: set "service" in glitchless.playtest.json (or pass --service) to the service name it sends as.');
+    for (const [i, sc] of scenarios.entries()) {
+      log(`run ${i + 1}/${scenarios.length}: ${label(sc)} \u2026`);
+      results.push(await playOnce(mcp, studio, sc, cfg, log));
+    }
+  } finally {
+    mcp.close();
+  }
+  log(`collecting the play tests' sessions from ${cfg.server} \u2026`);
+  const from = results[0].started - SLACK_MS;
+  const to = results.at(-1).ended;
+  for (let i = 0; i < (cfg.sessions_wait_s ?? 30); i++) {
+    assign(results, await sessionsOf(cfg, service, from, to), "session_ids");
+    if (results.every((r) => r.session_ids.length)) break;
+    await sleep2(1e3);
+  }
+  assign(results, await sessionsOf(cfg, `${service}.server`, from, to), "server_session_ids");
+  for (const r of results) r.session_id = r.session_ids[0] || null;
+  const players = results.flatMap((r) => r.session_ids);
+  if (!players.length) {
+    const said = [...new Set(results.flatMap((r) => r.glitchless))];
+    throw new Error(`No session from "${service}" reached ${cfg.server} during the play tests. The game sends where its Glitchless.init intake says: read from that server (--server, or GLITCHLESS_URL), and check the service name.${said.length ? `
+Studio's Output said:
+${said.join("\n")}` : ""}`);
+  }
+  const servers = results.flatMap((r) => r.server_session_ids);
+  const started = Math.min(...results.map((r) => r.started));
+  const summary = await robloxSummary(cfg, service, players, servers, started, log);
+  const notes = [];
+  const noLevel = !Object.keys(summary?.levels || {}).length && !summary?.level_attempts;
+  if (noLevel && cfg.default_scenarios) throw new Error(`The play tests ran with the default scenarios (Workspace attributes autoplay = true, seed = 7) but no player started a level, so the game probably has no autoplay mode. ${ROBLOX_AUTOPLAY} Then list the runs in glitchless.playtest.json under "scenarios".`);
+  if (noLevel) notes.push(`No player started a level (Glitchless.levelStart), so the bot may not have played. If the game has no autoplay mode yet: ${ROBLOX_AUTOPLAY}`);
+  if (summary?.sessions && summary.frame_p95 == null) notes.push("No frames came from the players: Studio's window was probably hidden or minimized, so the play test's client drew nothing, and frame times can't be compared. Keep the place's Studio window in view while it plays.");
+  const many = results.filter((r) => r.server_session_ids.length > 1).length;
+  if (many) notes.push(`${many} play test window(s) held more than one Studio server session of "${service}": someone else's play test may be mixed in.`);
+  return {
+    created: (/* @__PURE__ */ new Date()).toISOString(),
+    kind: "roblox",
+    game: studio.name,
+    server: cfg.server,
+    service,
+    git: gitInfo(cfg.root),
+    machine: { ...machineInfo(summary, "Roblox Studio"), browser: "Roblox Studio", cpu: os4.cpus()[0]?.model || null },
+    scenarios: results,
+    summary,
+    notes
+  };
+}
+async function matchingRobloxBaseline(cfg, baseline, candidate, log) {
+  if (baseline.kind !== "roblox") return baseline;
+  const key = (s) => JSON.stringify([s.scenario, s.params]);
+  const wanted = new Set((candidate.scenarios || []).map(key));
+  const have = baseline.scenarios || [];
+  const subset = have.filter((s) => wanted.has(key(s)) && s.session_ids?.length);
+  if (subset.length === have.length || subset.length !== wanted.size) return baseline;
+  try {
+    const since = Math.min(...subset.map((s) => s.started)) - 2 * 36e5;
+    const summary = await robloxSummary(cfg, baseline.service, subset.flatMap((s) => s.session_ids), subset.flatMap((s) => s.server_session_ids || []), since, log);
+    return summary?.sessions ? { ...baseline, scenarios: subset, summary, name: `${baseline.name} (matching runs)` } : baseline;
+  } catch {
+    return baseline;
+  }
+}
+var DEFAULT_ROBLOX_SCENARIOS, ROBLOX_DONE_WHEN, ROBLOX_AUTOPLAY, NEEDS_STUDIO, MARK, sleep2, luau, mode, PROBE, attributes, ATTRIBUTE, label, SLACK_MS;
+var init_roblox = __esm({
+  "../playtest/src/roblox.js"() {
+    init_run();
+    DEFAULT_ROBLOX_SCENARIOS = [
+      { name: "autoplay, seed 7", params: { autoplay: true, seed: 7 }, max_s: 90 },
+      { name: "autoplay, seed 21", params: { autoplay: true, seed: 21 }, max_s: 90 }
+    ];
+    ROBLOX_DONE_WHEN = 'workspace:GetAttribute("GlitchlessPlaytestDone") == true';
+    ROBLOX_AUTOPLAY = `On Roblox, read workspace:GetAttribute("autoplay") and workspace:GetAttribute("seed") in a server Script: when autoplay is set, let a bot play each player's character (Humanoid:MoveTo, the game's own actions, with Random.new(seed) so the same seed plays the same way), call Glitchless.levelStart(player, \u2026) as it goes, set workspace:SetAttribute("GlitchlessPlaytestDone", true) when the run is over, and pass sessionType = if workspace:GetAttribute("autoplay") then "synthetic" else nil to Glitchless.init so its sessions stay out of player numbers.`;
+    NEEDS_STUDIO = "Roblox playtests run in Roblox Studio: open the game's place in Studio and turn on Assistant \u2192 \u2026 \u2192 Manage MCP Servers \u2192 Enable Studio as MCP server.";
+    MARK = (expr) => `"GLP<" .. game:GetService("HttpService"):JSONEncode(${expr}) .. ">GLP"`;
+    sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+    luau = (mcp, id, code, type = "Edit") => mcp.tool("execute_luau", { studio_id: id, datamodel_type: type, code });
+    mode = async (mcp, id) => (await mcp.tool("get_studio_state", { studio_id: id })).match(/Mode:\s*(\w+)/i)?.[1] || null;
+    PROBE = `-- glitchless-playtest: probe
+local HttpService = game:GetService("HttpService")
+local module = game:GetService("ReplicatedStorage"):FindFirstChild("Glitchless", true)
+local service
+for _, root in { game:GetService("ServerScriptService"), game:GetService("ServerStorage"), game:GetService("ReplicatedStorage"), game:GetService("ReplicatedFirst") } do
+	for _, d in root:GetDescendants() do
+		if not service and d:IsA("LuaSourceContainer") and not (module and (d == module or d:IsDescendantOf(module))) then
+			local ok, src = pcall(function() return d.Source end)
+			if ok and type(src) == "string" and string.find(src, "Glitchless.init", 1, true) then
+				service = string.match(src, "Glitchless%.init%s*%(%s*{.-service%s*=%s*[\\"']([^\\"']+)[\\"']")
+			end
+		end
+	end
+end
+return ${MARK("{ module = module ~= nil, http = HttpService.HttpEnabled, service = service }")}`;
+    attributes = (set2, clear) => `-- glitchless-playtest: attributes
+local HttpService = game:GetService("HttpService")
+local set = HttpService:JSONDecode(${longString(JSON.stringify(set2))})
+local clear = HttpService:JSONDecode(${longString(JSON.stringify(clear))})
+local before = {}
+for k, v in set do
+	before[k] = workspace:GetAttribute(k)
+	workspace:SetAttribute(k, v)
+end
+for _, k in clear do
+	before[k] = workspace:GetAttribute(k)
+	workspace:SetAttribute(k, nil)
+end
+return ${MARK("before")}`;
+    ATTRIBUTE = /^[A-Za-z0-9_]{1,100}$/;
+    label = (sc) => sc.name || JSON.stringify(sc.params || {});
+    SLACK_MS = 1500;
+  }
+});
+
+// ../playtest/src/config.js
+import fs4 from "node:fs";
+import path6 from "node:path";
+function loadConfig(cwd = process.cwd(), overrides = {}) {
+  const file2 = path6.join(cwd, "glitchless.playtest.json");
+  let fromFile = {};
+  if (fs4.existsSync(file2)) {
+    try {
+      fromFile = JSON.parse(fs4.readFileSync(file2, "utf8"));
+    } catch (err) {
+      throw new Error(`glitchless.playtest.json is not valid JSON: ${err.message}`);
+    }
+  }
+  const clean = Object.fromEntries(Object.entries(overrides).filter(([, v]) => v != null));
+  const cfg = { ...DEFAULTS, ...fromFile, ...clean };
+  cfg.thresholds = { ...DEFAULT_THRESHOLDS, ...fromFile.thresholds || {} };
+  cfg.runs_dir = path6.resolve(cwd, cfg.runs_dir);
+  cfg.root = cwd;
+  if (cfg.engine) cfg.engine = String(cfg.engine).toLowerCase().replace(/\s+/g, "");
+  const roblox = cfg.engine === "roblox";
+  if (!fromFile.scenarios && !clean.scenarios) {
+    cfg.scenarios = roblox ? DEFAULT_ROBLOX_SCENARIOS : cfg.command ? DEFAULT_ENGINE_SCENARIOS : DEFAULT_SCENARIOS;
+    cfg.default_scenarios = true;
+  }
+  if (roblox && !fromFile.done_when && !clean.done_when) cfg.done_when = ROBLOX_DONE_WHEN;
+  return cfg;
+}
+var DEFAULT_SCENARIOS, DEFAULT_ENGINE_SCENARIOS, DEFAULT_THRESHOLDS, DEFAULTS;
+var init_config = __esm({
+  "../playtest/src/config.js"() {
+    init_roblox();
+    DEFAULT_SCENARIOS = [
+      { name: "expert from level 1", params: { autoplay: 1, seed: 7, skill: 0.95, level: 1 }, max_s: 90 },
+      { name: "average from level 1", params: { autoplay: 1, seed: 21, skill: 0.8, level: 1 }, max_s: 90 },
+      { name: "novice from level 2", params: { autoplay: 1, seed: 42, skill: 0.6, level: 2 }, max_s: 90 }
+    ];
+    DEFAULT_ENGINE_SCENARIOS = [
+      { name: "autoplay, seed 7", params: { autoplay: true, seed: 7 }, seconds: 10 },
+      { name: "autoplay, seed 21", params: { autoplay: true, seed: 21 }, seconds: 10 }
+    ];
+    DEFAULT_THRESHOLDS = {
+      pct_frames_over_budget: { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
+      frame_p95: { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
+      frame_p99: { label: "Frame time p99 (ms)", higher: true, pct: 20, abs: 4, severity: "warn" },
+      render_cpu_ms: { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      // The game's update code (scripts and physics), where the SDK can time it: Phaser, Babylon.js, PlayCanvas, Godot and Unity.
+      update_cpu_ms: { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      draw_calls: { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
+      // What engine builds measure beyond that, where the engine reports it: the GPU's time (Unity, Unreal; Godot
+      // off Metal), Unreal's RHI thread, Unity's physics, garbage collection, and growth over a run (a leak).
+      gpu_ms: { label: "GPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      rhi_cpu_ms: { label: "RHI thread per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      physics_ms: { label: "Physics per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      gc_ms: { label: "Garbage collection per run (ms)", higher: true, pct: 50, abs: 20, severity: "warn" },
+      gc_collections: { label: "Garbage collections per run", higher: true, pct: 50, abs: 3, severity: "warn" },
+      // Counts (objects, nodes, instances) by abs; sizes in MB by abs_mb.
+      memory_growth: { label: "Growth over a run", higher: true, pct: 50, abs: 100, abs_mb: 16, severity: "warn" },
+      hitches_per_min: { label: "Hitches per minute", higher: true, pct: 50, abs: 1, severity: "warn" },
+      errors_per_session: { label: "Errors per run", higher: true, pct: 50, abs: 1, severity: "warn" },
+      deaths_per_session: { label: "Deaths per run", higher: true, pct: 50, abs: 2, severity: "warn" },
+      level_completion_pct: { label: "Level completion (%)", higher: false, pct: 0, abs: 25, severity: "warn" },
+      geometries_growth_per_level_load: { label: "Geometry growth per level load", higher: true, pct: 50, abs: 200, severity: "warn" },
+      // Per-level versions of the renderer metrics catch a regression the whole-run average dilutes. An engine build's
+      // runs are compared one by one with the same margins.
+      "level.pct_frames_over_budget": { label: "Slow frames (% over budget)", higher: true, pct: 50, abs: 2, severity: "fail" },
+      "level.frame_p95": { label: "Frame time p95 (ms)", higher: true, pct: 15, abs: 2, severity: "warn" },
+      "level.frame_p99": { label: "Frame time p99 (ms)", higher: true, pct: 20, abs: 4, severity: "warn" },
+      "level.render_cpu_ms": { label: "Render CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      "level.update_cpu_ms": { label: "Update CPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      "level.draw_calls": { label: "Draw calls per frame", higher: true, pct: 25, abs: 50, severity: "fail" },
+      "level.gpu_ms": { label: "GPU per frame (ms)", higher: true, pct: 30, abs: 1, severity: "fail" },
+      new_errors: { label: "New error types", severity: "fail" },
+      new_crashes: { label: "Crashed runs", severity: "fail" }
+    };
+    DEFAULTS = {
+      game: "http://localhost:5173/",
+      server: process.env.GLITCHLESS_URL || "http://localhost:7777",
+      service: process.env.GLITCHLESS_SERVICE || null,
+      api_key: process.env.GLITCHLESS_API_KEY || null,
+      channel: "chrome",
+      env: "playtest",
+      // JS expression evaluated in the page; the run ends early once it is truthy.
+      done_when: "window.__GLITCHLESS_PLAYTEST_DONE__ || window.zoomies?.halted || window.zoomies?.won || window.zoomies?.quit",
+      viewport: { width: 1280, height: 720 },
+      runs_dir: ".glitchless/playtest",
+      scenarios: DEFAULT_SCENARIOS,
+      thresholds: DEFAULT_THRESHOLDS,
+      // Engine builds: the command that starts one ("godot --path ." or an exported build; a path is relative to the
+      // project), which engine it is when its name doesn't say, how long each run measures and waits first, and where
+      // the build writes its measurement when it prints nothing (GameMaker's save area, say).
+      command: null,
+      engine: null,
+      seconds: null,
+      warmup: null,
+      measure_file: null,
+      // Roblox: which open Studio to play in (part of its place's name; needed when several are open), Luau to run in
+      // Edit before each play test, and StudioMCP's command when Studio isn't where it installs by default.
+      studio: null,
+      luau: null,
+      studio_mcp: null
+    };
+  }
+});
+
+// ../playtest/src/engine.js
+import fs5 from "node:fs";
+import os5 from "node:os";
+import path7 from "node:path";
+import { spawn as spawn3 } from "node:child_process";
+function parseMeasure(text) {
+  const lines = String(text || "").split(/\r?\n/).reverse();
+  for (const line of lines) {
+    const at = line.search(MEASURE_LINE);
+    if (at < 0) continue;
+    try {
+      const m = JSON.parse(line.slice(at).trim()).glitchless_measure;
+      if (m && typeof m === "object") return m;
+    } catch {
+    }
+  }
+  return null;
+}
+function splitCommand(command) {
+  if (Array.isArray(command)) return command.map(String);
+  const out = [];
+  let cur = "";
+  let quote = null;
+  let any2 = false;
+  for (const ch of String(command || "")) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else cur += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      any2 = true;
+    } else if (/\s/.test(ch)) {
+      if (cur || any2) out.push(cur);
+      cur = "";
+      any2 = false;
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur || any2) out.push(cur);
+  return out;
+}
+function resolveCommand(command, cwd) {
+  const argv = splitCommand(command);
+  if (!argv.length) throw new Error(`"command" in glitchless.playtest.json is empty. Set it to the exported build, or the engine's command line with the project path (for Godot: ["godot", "--path", "."]).`);
+  let bin = home(argv[0]);
+  const local2 = path7.resolve(cwd, bin);
+  if (bin.includes("/") || bin.includes("\\") || /\.app\/?$/.test(bin) || fs5.existsSync(local2) && fs5.statSync(local2).isFile()) bin = local2;
+  if (/\.app\/?$/.test(bin) && fs5.existsSync(path7.join(bin, "Contents/MacOS"))) {
+    const name = path7.basename(bin).replace(/\.app\/?$/, "");
+    const inside = fs5.readdirSync(path7.join(bin, "Contents/MacOS"));
+    bin = path7.join(bin, "Contents/MacOS", inside.includes(name) ? name : inside[0]);
+  }
+  return [bin, ...argv.slice(1)];
+}
+function detectEngine(argv) {
+  const [bin, ...rest] = argv;
+  const name = path7.basename(bin || "");
+  const all = argv.join(" ");
+  if (/godot/i.test(name) || rest.some((a) => /\.pck$/.test(a) || a === "--main-pack")) return "godot";
+  if (/UnrealEditor|UE4Editor/i.test(name) || rest.some((a) => /\.uproject$/i.test(a))) return "unreal";
+  if (/YoYo Runner|Runner\.exe$/i.test(all) || rest.some((a) => /(^|[/\\])(game\.ios|data\.win|game\.unx)$/.test(a))) return "gamemaker";
+  if (/^Unity(\.exe)?$/i.test(name)) return "unity";
+  const dir = path7.dirname(bin || "");
+  const near = [dir, path7.join(dir, "../Resources"), path7.join(dir, "../Frameworks"), path7.join(dir, "../UE")];
+  const has = (test) => near.some((d) => {
+    try {
+      return fs5.readdirSync(d).some(test);
+    } catch {
+      return false;
+    }
+  });
+  if (has((f) => /^UnityPlayer\.(dylib|dll|so)$/.test(f) || /_Data$/.test(f))) return "unity";
+  if (has((f) => /\.pck$/.test(f))) return "godot";
+  if (has((f) => /^(game\.ios|data\.win|game\.unx)$/.test(f))) return "gamemaker";
+  if (has((f) => f === "Engine" || /\.uproject$/.test(f))) return "unreal";
+  return null;
+}
+function paramFlags(params = {}, dash = "--") {
+  const out = [];
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v == null || v === false) continue;
+    out.push(v === true ? `${dash}${k}` : `${dash}${k}=${v}`);
+  }
+  return out;
+}
+function scenarioArgs(engine, base2, sc, { out } = {}) {
+  const dash = ENGINES[engine]?.dash || "--";
+  const game = [...paramFlags(sc.params, dash), ...(sc.args || []).map(String)];
+  const measure2 = [`${dash}glitchless-measure=${sc.seconds}`, `${dash}glitchless-warmup=${sc.warmup}`, ...out ? [`${dash}glitchless-out=${out}`] : []];
+  const separate = engine === "godot" && ![...base2, ...game].some((a) => a === "--" || a === "++");
+  return [...separate ? ["--"] : [], ...game, ...measure2];
+}
+function engineScenario(sc, engine, cfg) {
+  const warmup = sc.warmup ?? cfg.warmup ?? ENGINES[engine]?.warmup ?? 1;
+  const seconds = sc.seconds ?? cfg.seconds ?? 10;
+  return { ...sc, seconds, warmup, max_s: sc.max_s ?? warmup + seconds + 120 };
+}
+function runBuild(argv, { cwd, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const t0 = Date.now();
+    let output2 = "";
+    let timedOut = false;
+    const child = spawn3(argv[0], argv.slice(1), { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const keep = (d) => {
+      output2 += d;
+      if (output2.length > 4e6) output2 = output2.slice(-2e6);
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      setTimeout(() => child.kill("SIGKILL"), 5e3).unref();
+    }, timeoutMs);
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err.code === "ENOENT" ? new Error(`Could not start ${argv[0]}: no such program. Set "command" in glitchless.playtest.json to the exported build, or to the engine's command line with the project path (for Godot: ["godot", "--path", "."]).`) : err);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, output: output2, timedOut, seconds: Math.round((Date.now() - t0) / 1e3) });
+    });
+  });
+}
+function readIfNew(file2, since) {
+  try {
+    if (fs5.statSync(file2).mtimeMs < since - 1e3) return null;
+    return parseMeasure(fs5.readFileSync(file2, "utf8"));
+  } catch {
+    return null;
+  }
+}
+async function runEngineScenarios(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {
+} } = {}) {
+  const root = cfg.root || process.cwd();
+  const base2 = resolveCommand(command, root);
+  const engine = cfg.engine || detectEngine(base2);
+  const tmp = fs5.mkdtempSync(path7.join(os5.tmpdir(), "glitchless-playtest-"));
+  for (const sc of scenarios) {
+    if (!paramFlags(sc.params).length && !(sc.args || []).length) throw new Error(`Scenario "${label2(sc)}" passes nothing to the game, so nothing starts its autoplay bot. Give it "params" (such as { "autoplay": true, "seed": 7 }) or "args". ${ENGINES[engine]?.autoplay || GENERIC_AUTOPLAY}`);
+  }
+  const results = [];
+  try {
+    for (const [i, raw] of scenarios.entries()) {
+      const sc = engineScenario(raw, engine, cfg);
+      const out = path7.join(tmp, `run-${i + 1}.json`);
+      const argv = [...base2, ...scenarioArgs(engine, base2, sc, { out })];
+      log(`run ${i + 1}/${scenarios.length}: ${label2(sc)} \u2026`);
+      const t0 = Date.now();
+      const r = await runBuild(argv, { cwd: root, timeoutMs: sc.max_s * 1e3 });
+      const measure2 = parseMeasure(r.output) || readIfNew(out, t0) || (cfg.measure_file ? readIfNew(path7.resolve(root, home(cfg.measure_file)), t0) : null);
+      const shown = argv.filter((a) => !a.includes("glitchless-out="));
+      const result = { scenario: sc.name || null, params: sc.params, args: sc.args, seconds: sc.seconds, warmup: sc.warmup, command: shown, session_id: measure2?.session_id || null, elapsed_s: r.seconds, finished: !!measure2 && !measure2.error, crashed: false, exit_code: r.code, measure: measure2 && !measure2.error ? measure2 : null };
+      if (measure2?.error) throw new Error(`${label2(sc)}: the build measured nothing: ${measure2.error}${/off/i.test(measure2.error) ? ' A playtest needs it on: leave out --glitchless-off, and turn the in-game "share data" setting back on for this device.' : ` The game has to keep drawing frames for warmup + seconds (${sc.warmup} + ${sc.seconds} s): if its autoplay run is shorter, lower "seconds" or let the bot keep playing.`}`);
+      if (!measure2) {
+        if (r.timedOut) {
+          Object.assign(result, { crashed: true, reason: `froze or never quit within ${sc.max_s} s`, output_tail: tail(r.output) });
+        } else if (r.code === 0 && !r.signal) {
+          throw new Error(
+            `${label2(sc)}: the build quit after ${r.seconds} s without printing its measurement ({"glitchless_measure": \u2026}). Either it quit before the measure ended, because its autoplay run is shorter than warmup + seconds (${sc.warmup} + ${sc.seconds} s): lower "seconds" or let the bot keep playing; or the build doesn't have the Glitchless SDK (Unity, Godot, Unreal and GameMaker builds with it print that line when started with --glitchless-measure=SECONDS)${engine === "unity" || engine === "gamemaker" ? `; or the game's file sandbox kept it from writing the measurement where this run could read it: set "measure_file" in glitchless.playtest.json to where it writes glitchless/measure.json` : ""}.
+Last lines it printed:
+${tail(r.output)}`
+          );
+        } else {
+          Object.assign(result, { crashed: true, reason: r.signal ? `killed by ${r.signal}` : `exit code ${r.code}`, output_tail: tail(r.output) });
+        }
+      }
+      results.push(result);
+      const m = result.measure;
+      log(m ? `  \u2192 ${m.frames} frames \xB7 p95 ${m.frame_ms?.p95} ms \xB7 ${m.hitch_count} hitch(es)${m.new_errors ? ` \xB7 ${m.new_errors} error(s)` : ""} \xB7 ${r.seconds}s` : `  \u2192 crashed (${result.reason}) after ${r.seconds}s`);
+    }
+  } finally {
+    fs5.rmSync(tmp, { recursive: true, force: true });
+  }
+  if (!results.some((r) => r.measure)) {
+    const first = results[0];
+    throw new Error(`The build crashed in every run before it finished measuring (${first.reason}). Last lines it printed:
+${first.output_tail}`);
+  }
+  return { engine, command: base2, results };
+}
+function mostFrames(pairs) {
+  const by = /* @__PURE__ */ new Map();
+  for (const [v, n] of pairs) if (v != null) by.set(v, (by.get(v) || 0) + n);
+  return [...by.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+}
+function runMetrics(m) {
+  return {
+    frames: m.frames ?? null,
+    seconds: m.seconds ?? null,
+    frame_budget_ms: m.frame_budget_ms ?? null,
+    pct_frames_over_budget: m.pct_frames_over_budget ?? null,
+    frame_p50: m.frame_ms?.p50 ?? null,
+    frame_p95: m.frame_ms?.p95 ?? null,
+    frame_p99: m.frame_ms?.p99 ?? null,
+    frame_worst: m.frame_ms?.worst ?? null,
+    render_cpu_ms: p50(m.render_cpu_ms),
+    update_cpu_ms: p50(m.update_cpu_ms ?? m.process_ms),
+    gpu_ms: p50(m.gpu_ms),
+    rhi_cpu_ms: p50(m.rhi_cpu_ms),
+    physics_ms: p50(m.physics_ms),
+    draw_calls: m.draw_calls && typeof m.draw_calls === "object" ? m.draw_calls.avg ?? null : m.draw_calls ?? null,
+    hitches: m.hitch_count ?? null,
+    hitches_per_min: m.seconds ? round2((m.hitch_count || 0) / (m.seconds / 60)) : null,
+    errors: m.new_errors ?? null,
+    gc_ms: m.gc_ms ?? null,
+    gc_collections: m.gc_collections ?? null,
+    level_start: m.level_start ?? null,
+    level_end: m.level_end ?? null
+  };
+}
+function measureSummary(results) {
+  const measured = results.filter((r) => r.measure);
+  const runs2 = measured.map((r) => ({ r, x: runMetrics(r.measure) }));
+  const weighted = (key, d = 2) => {
+    let total = 0;
+    let weight = 0;
+    for (const { x } of runs2) {
+      if (x[key] == null) continue;
+      const w = x.frames || x.seconds || 1;
+      total += x[key] * w;
+      weight += w;
+    }
+    return weight ? round2(total / weight, d) : null;
+  };
+  const measuredSeconds = sum(runs2.map(({ x }) => x.seconds || 0));
+  const errors = /* @__PURE__ */ new Map();
+  for (const { r } of runs2) {
+    for (const e of r.measure.errors || []) {
+      const fp = errorType(e);
+      const have = errors.get(fp) || { fingerprint: fp, kind: e.kind, message: e.message, location: e.location, count: 0, sessions: 0 };
+      have.count += e.count || 1;
+      have.sessions += 1;
+      errors.set(fp, have);
+    }
+  }
+  const growth = {};
+  const growthRuns = {};
+  for (const { r } of runs2) {
+    for (const [k, v] of Object.entries(r.measure.memory_delta || {})) {
+      if (typeof v !== "number") continue;
+      growth[k] = (growth[k] || 0) + v;
+      growthRuns[k] = (growthRuns[k] || 0) + 1;
+    }
+  }
+  const byScenario = {};
+  for (const [i, r] of results.entries()) {
+    const key = r.scenario || `run ${i + 1}`;
+    byScenario[key] = r.measure ? runMetrics(r.measure) : { crashed: true, reason: r.reason };
+  }
+  const gc = runs2.filter(({ x }) => x.gc_ms != null);
+  const gcCount = runs2.filter(({ x }) => x.gc_collections != null);
+  return {
+    sessions: results.length,
+    frames: sum(runs2.map(({ x }) => x.frames || 0)),
+    seconds_measured: measuredSeconds,
+    // The budget most frames ran against; a run that detected another one shows it in by_scenario.
+    frame_budget_ms: mostFrames(runs2.map(({ x }) => [x.frame_budget_ms, x.frames || 1])),
+    pct_frames_over_budget: weighted("pct_frames_over_budget", 1),
+    frame_p50: weighted("frame_p50"),
+    frame_p95: weighted("frame_p95"),
+    frame_p99: weighted("frame_p99"),
+    frame_worst: runs2.length ? Math.max(...runs2.map(({ x }) => x.frame_worst ?? 0)) : null,
+    render_cpu_ms: weighted("render_cpu_ms"),
+    update_cpu_ms: weighted("update_cpu_ms"),
+    gpu_ms: weighted("gpu_ms"),
+    rhi_cpu_ms: weighted("rhi_cpu_ms"),
+    physics_ms: weighted("physics_ms"),
+    draw_calls: weighted("draw_calls", 0),
+    hitch_count: sum(runs2.map(({ x }) => x.hitches || 0)),
+    hitches_per_min: measuredSeconds ? round2(sum(runs2.map(({ x }) => x.hitches || 0)) / (measuredSeconds / 60)) : null,
+    errors_per_session: runs2.length ? round2(sum(runs2.map(({ x }) => x.errors || 0)) / runs2.length) : null,
+    gc_ms: gc.length ? round2(sum(gc.map(({ x }) => x.gc_ms)) / gc.length, 1) : null,
+    gc_collections: gcCount.length ? round2(sum(gcCount.map(({ x }) => x.gc_collections)) / gcCount.length, 1) : null,
+    memory_growth: Object.fromEntries(Object.entries(growth).map(([k, v]) => [k, round2(v / growthRuns[k], 1)])),
+    crashes: results.filter((r) => r.crashed).length,
+    errors: [...errors.values()],
+    levels: {},
+    by_scenario: byScenario,
+    headless: runs2.some(({ r }) => r.measure.headless === true)
+  };
+}
+async function engineRun(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {
+} } = {}) {
+  const { engine, command: argv, results } = await runEngineScenarios(cfg, { command, scenarios, log });
+  const summary = measureSummary(results);
+  const measured = results.filter((r) => r.measure);
+  const noLevel = measured.every((r) => r.measure.level_start == null && r.measure.level_end == null);
+  const howTo = ENGINES[engine]?.autoplay || GENERIC_AUTOPLAY;
+  if (noLevel && cfg.default_scenarios) {
+    throw new Error(`The build ran with the default scenarios (${paramFlags(scenarios[0].params, ENGINES[engine]?.dash).join(" ")}) but no run started a level, so it probably has no autoplay mode and measured its menu. ${howTo} Then list the runs in glitchless.playtest.json under "scenarios" (each with the "params" or "args" that start the bot).`);
+  }
+  const notes = [];
+  if (noLevel) notes.push(`No run started a level (Glitchless level_start), so the bot may not have played. If the game has no autoplay mode yet: ${howTo}`);
+  if (summary.headless) notes.push("The build ran headless: nothing was drawn and frames ran uncapped, so frame times mean little and only warn in a comparison. Run it with a window to gate a change on them.");
+  const sdk = measured[0]?.measure.sdk || null;
+  return {
+    created: (/* @__PURE__ */ new Date()).toISOString(),
+    kind: "engine",
+    engine,
+    command: argv,
+    service: cfg.service || path7.basename(cfg.root || process.cwd()),
+    git: gitInfo(cfg.root),
+    machine: { os: `${os5.type()} ${os5.release()}`, cpu: os5.cpus()[0]?.model || null, gpu: null, browser: [ENGINES[engine]?.label, sdk].filter(Boolean).join(" \xB7 ") || "engine build" },
+    scenarios: results,
+    summary,
+    notes
+  };
+}
+function matchingEngineRuns(baseline, candidate) {
+  if (baseline.kind !== "engine") return baseline;
+  const key = (s) => JSON.stringify([s.scenario, s.params, s.args]);
+  const wanted = new Set((candidate.scenarios || []).map(key));
+  const have = baseline.scenarios || [];
+  const subset = have.filter((s) => wanted.has(key(s)));
+  if (subset.length === have.length || subset.length !== wanted.size) return baseline;
+  return { ...baseline, scenarios: subset, summary: measureSummary(subset), name: `${baseline.name} (matching runs)` };
+}
+var ENGINES, GENERIC_AUTOPLAY, MEASURE_LINE, home, label2, tail, round2, p50, sum, errorType;
+var init_engine = __esm({
+  "../playtest/src/engine.js"() {
+    init_run();
+    ENGINES = {
+      godot: {
+        label: "Godot",
+        dash: "--",
+        warmup: 0,
+        autoplay: `In Godot, read the flags from OS.get_cmdline_user_args() in the main scene's _ready(): with "--autoplay", let a bot play (pick inputs from a RandomNumberGenerator seeded with the --seed=N value, so the same seed plays the same way on both builds), call Glitchless.level_start() as it goes, and keep playing for as long as the scenario measures. The demo in the Glitchless repo, godot/demo/demo.gd, does this.`
+      },
+      unity: {
+        label: "Unity",
+        dash: "--",
+        warmup: 1,
+        autoplay: `In Unity, read the flags from System.Environment.GetCommandLineArgs() in a startup script: with "--autoplay", let a bot play (a System.Random seeded with the --seed=N value, so the same seed plays the same way on both builds), call Glitchless.LevelStart() as it goes, and keep playing for as long as the scenario measures. The SDK's Fetch! sample (Package Manager \u2192 Glitchless \u2192 Samples) has such a bot.`
+      },
+      unreal: {
+        label: "Unreal",
+        dash: "-",
+        warmup: 0,
+        autoplay: `In Unreal, check FParse::Param(FCommandLine::Get(), TEXT("autoplay")) in the game mode's BeginPlay: with -autoplay, let a bot drive the pawn (an FRandomStream seeded from -seed=N, read with FParse::Value, so the same seed plays the same way on both builds), call Level Start as it goes, and keep playing for as long as the scenario measures.`
+      },
+      gamemaker: {
+        label: "GameMaker",
+        dash: "-",
+        warmup: 0,
+        autoplay: 'In GameMaker, check glitchless_has_flag("autoplay") in the first room: with -autoplay, let a bot play (random_set_seed(real(glitchless_flag_value("seed", "1"))), so the same seed plays the same way on both builds), call glitchless_level_start() as it goes, and keep playing for as long as the scenario measures.'
+      }
+    };
+    GENERIC_AUTOPLAY = "Give the game an autoplay mode: a flag such as --autoplay that lets a bot play by itself, with --seed=N so the same seed plays the same way on both builds. Have it start levels as it goes (Glitchless level_start) and keep playing for as long as the scenario measures.";
+    MEASURE_LINE = /\{\s*"glitchless_measure"\s*:/;
+    home = (p) => p === "~" || p.startsWith("~/") ? path7.join(os5.homedir(), p.slice(1)) : p;
+    label2 = (sc) => sc.name || [...paramFlags(sc.params), ...sc.args || []].join(" ") || "run";
+    tail = (text, n = 15) => String(text || "").trimEnd().split(/\r?\n/).slice(-n).join("\n");
+    round2 = (n, d = 2) => n == null || !Number.isFinite(n) ? null : Math.round(n * 10 ** d) / 10 ** d;
+    p50 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
+    sum = (xs) => xs.reduce((a, b) => a + b, 0);
+    errorType = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
+  }
+});
+
 // ../playtest/src/compare.js
 function judge(before, after, t) {
   if (before == null || after == null || !t) return null;
@@ -39600,6 +40282,30 @@ function compareRuns(baseline, candidate, thresholds = DEFAULT_THRESHOLDS) {
       if (r) checks.push({ id: `level.${key}.${level}`, label: t[`level.${key}`].label, scope: level, ...r });
     }
   }
+  const mg = t.memory_growth;
+  for (const key of Object.keys(c.memory_growth || {})) {
+    const r = mg && judge(b.memory_growth?.[key], c.memory_growth[key], { ...mg, abs: /_mb$/.test(key) ? mg.abs_mb ?? mg.abs : mg.abs });
+    if (r) checks.push({ id: `memory_growth.${key}`, label: `${mg.label} (${key.replace(/_mb$/, " MB").replace(/_/g, " ")})`, scope: "all levels", ...r });
+  }
+  const bs = b.by_scenario || {};
+  const cs = c.by_scenario || {};
+  if (Object.keys(bs).length > 1 && Object.keys(cs).length > 1) {
+    for (const name of Object.keys(cs)) {
+      const br = bs[name];
+      const cr = cs[name];
+      if (!br || br.crashed || cr.crashed) continue;
+      const scope = `run "${name}"`;
+      for (const key of PER_LEVEL) {
+        const r = judge(br[key], cr[key], t[`level.${key}`]);
+        if (r) checks.push({ id: `run.${key}.${name}`, label: t[`level.${key}`].label, scope, ...r });
+      }
+    }
+  }
+  for (const name of Object.keys(cs)) {
+    const before = bs[name]?.level_end;
+    const after = cs[name]?.level_end;
+    if (before != null && after != null && before !== after) checks.push({ id: `run.level_end.${name}`, label: "Level at the end of the run", scope: `run "${name}"`, before, after, change_pct: null, status: "warning" });
+  }
   const baseErrors = new Map((b.errors || []).map((e) => [e.fingerprint, e]));
   const candErrors = new Map((c.errors || []).map((e) => [e.fingerprint, e]));
   const newErrors = [...candErrors.values()].filter((e) => !baseErrors.has(e.fingerprint));
@@ -39610,11 +40316,34 @@ function compareRuns(baseline, candidate, thresholds = DEFAULT_THRESHOLDS) {
   const cc = c.crashes || 0;
   if (cc !== bc) checks.push({ id: "crashes", label: t.new_crashes.label, scope: "all levels", before: bc, after: cc, change_pct: null, status: cc > bc ? t.new_crashes.severity === "fail" ? "regression" : "warning" : "improvement" });
   const notes = [];
-  const sig = (run2) => JSON.stringify((run2.scenarios || []).map((s) => s.params));
+  const sig = (run2) => JSON.stringify((run2.scenarios || []).map((s) => ({ params: s.params, args: s.args, seconds: s.seconds, warmup: s.warmup })));
   if (sig(baseline) !== sig(candidate)) notes.push("The two runs used different scenarios, so differences may come from the bots rather than the code.");
+  if ((baseline.kind || "web") !== (candidate.kind || "web")) notes.push("One run played a web game in a browser and the other an engine build: their numbers are not comparable.");
   if (baseline.machine?.gpu && candidate.machine?.gpu && baseline.machine.gpu !== candidate.machine.gpu) notes.push(`Different GPUs (${baseline.machine.gpu} vs ${candidate.machine.gpu}): frame times are not comparable across machines.`);
-  const capped = (candidate.scenarios || []).filter((s) => !s.finished).length;
+  else if (!baseline.machine?.gpu && baseline.machine?.cpu && candidate.machine?.cpu && baseline.machine.cpu !== candidate.machine.cpu) notes.push(`Different machines (${baseline.machine.cpu} vs ${candidate.machine.cpu}): frame times are not comparable across machines.`);
+  const capped = (candidate.scenarios || []).filter((s) => !s.finished && !s.crashed).length;
   if (capped) notes.push(`${capped} candidate run(s) hit the time cap before finishing.`);
+  notes.push(...candidate.notes || []);
+  const headless = !!(b.headless || c.headless);
+  const budgetOf = (s, name) => name ? s.by_scenario?.[name]?.frame_budget_ms : s.frame_budget_ms;
+  const differs = (name) => {
+    const x = budgetOf(b, name);
+    const y = budgetOf(c, name);
+    return x != null && y != null && Math.abs(x - y) > 0.05;
+  };
+  const budgetDiffers = (name) => name ? differs(name) : differs(null) || Object.keys(c.by_scenario || {}).some(differs);
+  const scenarioOf = (id) => id.startsWith("run.") ? id.split(".").slice(2).join(".") : null;
+  const softened = /* @__PURE__ */ new Set();
+  for (const x of checks) {
+    if (x.status !== "regression") continue;
+    const metric = x.id.replace(/^(level|run)\./, "").split(".")[0];
+    const why = headless && FRAME_TIME.has(metric) ? "headless" : metric === "pct_frames_over_budget" && budgetDiffers(scenarioOf(x.id)) ? "budget" : null;
+    if (!why) continue;
+    x.status = "warning";
+    softened.add(why);
+  }
+  if (softened.has("headless") && !c.headless) notes.push("A run was headless, where frames run uncapped: frame times only warn here. Measure with a window to gate on them.");
+  if (softened.has("budget")) notes.push(`The runs measured slow frames against different frame budgets (${[b.frame_budget_ms, c.frame_budget_ms].filter((v) => v != null).join(" vs ")} ms overall, or a run's own), so slow frames only warn here.`);
   const regressions = checks.filter((x) => x.status === "regression");
   return {
     verdict: regressions.length ? "fail" : "pass",
@@ -39627,12 +40356,13 @@ function compareRuns(baseline, candidate, thresholds = DEFAULT_THRESHOLDS) {
     notes
   };
 }
-var OVERALL, PER_LEVEL;
+var OVERALL, PER_LEVEL, FRAME_TIME;
 var init_compare = __esm({
   "../playtest/src/compare.js"() {
     init_config();
-    OVERALL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "update_cpu_ms", "draw_calls", "hitches_per_min", "errors_per_session", "deaths_per_session", "level_completion_pct", "geometries_growth_per_level_load"];
-    PER_LEVEL = ["pct_frames_over_budget", "frame_p95", "render_cpu_ms", "update_cpu_ms", "draw_calls"];
+    OVERALL = ["pct_frames_over_budget", "frame_p95", "frame_p99", "render_cpu_ms", "update_cpu_ms", "gpu_ms", "rhi_cpu_ms", "physics_ms", "draw_calls", "hitches_per_min", "errors_per_session", "deaths_per_session", "level_completion_pct", "geometries_growth_per_level_load", "gc_ms", "gc_collections"];
+    PER_LEVEL = ["pct_frames_over_budget", "frame_p95", "frame_p99", "render_cpu_ms", "update_cpu_ms", "gpu_ms", "draw_calls"];
+    FRAME_TIME = /* @__PURE__ */ new Set(["pct_frames_over_budget", "frame_p95", "frame_p99", "hitches_per_min"]);
   }
 });
 
@@ -39666,28 +40396,52 @@ function comparisonReport(baseline, candidate, cmp) {
     out.push("", "### Errors that no longer happen", "");
     for (const e of cmp.fixed_errors) out.push(`- \`${e.message}\` at ${e.location || "unknown location"}`);
   }
+  out.push(...crashedRuns(candidate));
   const same = cmp.checks.filter((c) => c.status === "same");
   if (same.length) out.push("", "<details><summary>Unchanged metrics</summary>", "", table(same), "", "</details>");
   return out.join("\n");
 }
+function crashedRuns(run2) {
+  const crashed = (run2.scenarios || []).filter((r) => r.crashed);
+  if (!crashed.length) return [];
+  const out = ["", "### Crashed runs", ""];
+  for (const r of crashed) out.push(`- ${r.scenario || "run"}: ${r.reason}, after ${r.elapsed_s} s. Last lines it printed:`, "", "```", r.output_tail || "(nothing)", "```", "");
+  return out;
+}
 function runReport(run2) {
   const s = run2.summary || {};
+  const engine = run2.kind === "engine";
   const out = [`## Glitchless playtest run ${describeRun(run2)}`, ""];
   out.push(`${runs((run2.scenarios || []).length)} \xB7 ${run2.service} \xB7 ${[run2.machine?.browser, run2.machine?.gpu].filter(Boolean).join(" \xB7 ")}`, "");
   out.push("| Metric | Value |", "| --- | ---: |");
   const rows = [
-    ["Slow frames (% over budget)", s.pct_frames_over_budget],
-    ["Frame time p95 (ms)", s.frame_p95],
-    ["Render CPU per frame (ms)", s.render_cpu_ms],
-    ...s.update_cpu_ms != null ? [["Update CPU per frame (ms)", s.update_cpu_ms]] : [],
-    ["Draw calls per frame", s.draw_calls],
-    ["Hitches per minute", s.hitches_per_min],
-    ["Errors per run", s.errors_per_session],
-    ["Crashed runs", s.crashes],
-    ["Deaths per run", s.deaths_per_session],
-    ["Level completion (%)", s.level_completion_pct]
+    ["Slow frames (% over budget)", s.pct_frames_over_budget, true],
+    ["Frame time p95 (ms)", s.frame_p95, true],
+    ["Frame time p99 (ms)", s.frame_p99],
+    ["Render CPU per frame (ms)", s.render_cpu_ms, true],
+    ["Update CPU per frame (ms)", s.update_cpu_ms],
+    ["GPU per frame (ms)", s.gpu_ms],
+    ["RHI thread per frame (ms)", s.rhi_cpu_ms],
+    ["Physics per frame (ms)", s.physics_ms],
+    ["Draw calls per frame", s.draw_calls, true],
+    ["Hitches per minute", s.hitches_per_min, true],
+    ["Errors per run", s.errors_per_session, true],
+    ["Crashed runs", s.crashes, true],
+    ["Deaths per run", s.deaths_per_session, !engine],
+    ["Level completion (%)", s.level_completion_pct, !engine],
+    ["Garbage collection per run (ms)", s.gc_ms],
+    ["Garbage collections per run", s.gc_collections]
   ];
-  for (const [k, v] of rows) out.push(`| ${k} | ${fmt(v)} |`);
+  for (const [k, v, always] of rows) if (v != null || always && !engine) out.push(`| ${k} | ${fmt(v)} |`);
+  const growth = Object.entries(s.memory_growth || {}).filter(([, v]) => v);
+  if (growth.length) out.push("", `Growth over a run: ${growth.map(([k, v]) => `${growthKey(k)} ${v > 0 ? "+" : ""}${fmt(v)}`).join(", ")}.`);
+  if (engine && s.by_scenario) {
+    out.push("", "| Run | Frames | Slow frames (%) | Frame p95 (ms) | Frame p99 (ms) | Hitches | Errors | Levels |", "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |");
+    for (const [name, r] of Object.entries(s.by_scenario)) {
+      if (r.crashed) out.push(`| ${name} | crashed (${r.reason}) | | | | | | |`);
+      else out.push(`| ${name} | ${fmt(r.frames)} | ${fmt(r.pct_frames_over_budget)} | ${fmt(r.frame_p95)} | ${fmt(r.frame_p99)} | ${fmt(r.hitches)} | ${fmt(r.errors)} | ${r.level_start == null && r.level_end == null ? "\u2013" : r.level_start === r.level_end ? r.level_end : `${r.level_start ?? "\u2013"} \u2192 ${r.level_end ?? "\u2013"}`} |`);
+    }
+  }
   const levels = Object.entries(s.levels || {});
   if (levels.length) {
     const update = levels.some(([, v]) => v.update_cpu_ms != null);
@@ -39698,39 +40452,42 @@ function runReport(run2) {
     out.push("", "Errors:");
     for (const e of s.errors) out.push(`- \`${e.message}\` at ${e.location || "unknown location"}: ${e.count}\xD7`);
   }
+  out.push(...crashedRuns(run2));
+  for (const note of run2.notes || []) out.push("", `> ${note}`);
   return out.join("\n");
 }
-var fmt, change, runs, where;
+var fmt, change, runs, growthKey, where;
 var init_report = __esm({
   "../playtest/src/report.js"() {
     fmt = (v) => v == null ? "\u2013" : typeof v === "number" ? Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : String(v);
     change = (c) => c.change_pct == null ? "" : `${c.change_pct > 0 ? "+" : ""}${c.change_pct}%`;
     runs = (n) => `${n} autoplay run${n === 1 ? "" : "s"}`;
+    growthKey = (k) => k.replace(/_mb$/, " MB").replace(/_/g, " ");
     where = (c) => c.scope === "all levels" ? c.label : `${c.label}, ${c.scope}`;
   }
 });
 
 // ../playtest/src/runs.js
-import fs5 from "node:fs";
-import path6 from "node:path";
+import fs6 from "node:fs";
+import path8 from "node:path";
 function runPath(dir, name) {
   if (!NAME.test(name)) throw new Error(`Run name "${name}" must be 1\u201364 letters, digits, dots, dashes or underscores.`);
-  return path6.join(dir, `${name}.json`);
+  return path8.join(dir, `${name}.json`);
 }
 function saveRun(dir, name, run2) {
-  fs5.mkdirSync(dir, { recursive: true });
+  fs6.mkdirSync(dir, { recursive: true });
   const file2 = runPath(dir, name);
-  fs5.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
+  fs6.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun(dir, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path6.resolve(nameOrFile) : runPath(dir, nameOrFile);
-  if (!fs5.existsSync(file2)) return null;
-  return JSON.parse(fs5.readFileSync(file2, "utf8"));
+  const file2 = nameOrFile.endsWith(".json") ? path8.resolve(nameOrFile) : runPath(dir, nameOrFile);
+  if (!fs6.existsSync(file2)) return null;
+  return JSON.parse(fs6.readFileSync(file2, "utf8"));
 }
 function listRuns(dir) {
-  if (!fs5.existsSync(dir)) return [];
-  return fs5.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+  if (!fs6.existsSync(dir)) return [];
+  return fs6.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
 }
 var NAME;
 var init_runs = __esm({
@@ -39740,15 +40497,24 @@ var init_runs = __esm({
 });
 
 // ../playtest/src/index.js
-async function playtest({ saveAs, compareTo, baselineUrl, quick = false, maxSeconds, config: config2 = {}, cwd = process.cwd(), log = () => {
+async function playtest({ saveAs, compareTo, baselineUrl, baselineCommand, quick = false, maxSeconds, config: config2 = {}, cwd = process.cwd(), log = () => {
 } } = {}) {
   const cfg = loadConfig(cwd, config2);
+  const roblox = cfg.engine === "roblox";
+  const engine = !roblox && !!cfg.command;
+  if (roblox && (baselineUrl || baselineCommand)) throw new Error("A Roblox game plays in the open Roblox Studio: save a baseline with --save baseline before the change instead of playing another build.");
+  if (engine && baselineUrl) throw new Error('This project runs an engine build ("command"), not a web game: give the baseline build with --baseline-command instead of --baseline-url.');
+  if (!engine && baselineCommand) throw new Error('--baseline-command runs an engine build: set "command" in glitchless.playtest.json (or pass --command) to the build being tested too.');
+  const play = (opts) => roblox ? robloxRun(cfg, opts) : engine ? engineRun(cfg, opts) : playtestRun(cfg, opts);
   let scenarios = quick ? cfg.scenarios.slice(0, 1) : cfg.scenarios;
-  if (maxSeconds) scenarios = scenarios.map((s) => ({ ...s, max_s: maxSeconds }));
+  if (maxSeconds) scenarios = scenarios.map((s) => engine ? { ...s, seconds: Math.min(s.seconds ?? cfg.seconds ?? maxSeconds, maxSeconds) } : { ...s, max_s: maxSeconds });
   let baseline = null;
   if (baselineUrl) {
     log(`Baseline: playing ${baselineUrl}`);
     baseline = { ...await playtestRun(cfg, { game: baselineUrl, scenarios, log }), name: "baseline-url" };
+  } else if (baselineCommand) {
+    log(`Baseline: running ${[].concat(baselineCommand).join(" ")}`);
+    baseline = { ...await engineRun(cfg, { command: baselineCommand, scenarios, log }), name: "baseline-command" };
   } else {
     const target = compareTo ?? (saveAs === "baseline" ? null : "baseline");
     if (target) {
@@ -39759,8 +40525,8 @@ async function playtest({ saveAs, compareTo, baselineUrl, quick = false, maxSeco
       }
     }
   }
-  log(`Candidate: playing ${cfg.game}`);
-  const candidate = await playtestRun(cfg, { scenarios, log });
+  log(`Candidate: ${roblox ? "playing in Roblox Studio" : engine ? `running ${[].concat(cfg.command).join(" ")}` : `playing ${cfg.game}`}`);
+  const candidate = await play({ scenarios, log });
   const files2 = { latest: saveRun(cfg.runs_dir, "latest", candidate) };
   if (saveAs) files2[saveAs] = saveRun(cfg.runs_dir, saveAs, candidate);
   candidate.name = saveAs || "latest";
@@ -39770,7 +40536,7 @@ async function playtest({ saveAs, compareTo, baselineUrl, quick = false, maxSeco
 ${saveAs ? `Saved as \`${saveAs}\`.` : "No baseline to compare with. Save one before changing the code with `--save baseline`."}`;
     return { verdict: "none", report, candidate, files: files2 };
   }
-  baseline = await matchingBaseline(cfg, baseline, candidate, log);
+  baseline = candidate.kind === "engine" ? matchingEngineRuns(baseline, candidate) : candidate.kind === "roblox" ? await matchingRobloxBaseline(cfg, baseline, candidate, log) : await matchingBaseline(cfg, baseline, candidate, log);
   const comparison = compareRuns(baseline, candidate, cfg.thresholds);
   return { verdict: comparison.verdict, report: comparisonReport(baseline, candidate, comparison), comparison, baseline, candidate, files: files2 };
 }
@@ -39794,6 +40560,8 @@ var init_src = __esm({
   "../playtest/src/index.js"() {
     init_config();
     init_run();
+    init_engine();
+    init_roblox();
     init_compare();
     init_report();
     init_runs();
@@ -39802,6 +40570,8 @@ var init_src = __esm({
     init_report();
     init_runs();
     init_run();
+    init_engine();
+    init_roblox();
   }
 });
 
@@ -39815,17 +40585,20 @@ var init_playtest = __esm({
     define(
       "glitchless_playtest",
       {
-        description: 'Playtest the game with its autoplay bots and compare against a saved baseline. Bots play fixed-seed scenarios in real Chrome, one at a time, against the running game; Glitchless then compares frame time (overall and per level), render CPU, draw calls, errors, crashes, completion and deaths with the baseline. Regressions fail; warnings and improvements are listed. Call with save_as "baseline" BEFORE changing code, then without arguments AFTER the change. Takes 1\u20135 minutes (quick: about 1). Needs the game and the Glitchless server running and Playwright installed in the project.',
+        description: `Playtest the game with its autoplay bot and compare against a saved baseline. Call with save_as "baseline" BEFORE changing code, then without arguments AFTER the change; a FAIL lists the regressions, warnings and improvements are listed too. Web games (Three.js, Phaser, Babylon.js, PlayCanvas): bots play fixed-seed scenarios in real Chrome, one at a time, against the running game (game_url); this needs the Glitchless server running and Playwright installed in the project, and takes 1\u20135 minutes (quick: about 1). Unity, Godot, Unreal and GameMaker: give command (or "command" in glitchless.playtest.json), what starts the build, such as ["godot", "--path", "."] or an exported build; each scenario starts it with the game's own autoplay flags (by default two runs: --autoplay --seed=7, then --seed=21) plus --glitchless-measure, and the Glitchless SDK in the build measures 10 seconds per run (a scenario's "seconds") and quits; no server or browser is needed. The game needs an autoplay mode that reads those flags and keeps playing for the whole measure: if it quits sooner, or never starts a level with the default scenarios, the error says how to fix it. Roblox: give engine "roblox" (or "engine": "roblox" in glitchless.playtest.json); it plays the place open in Roblox Studio, which needs Studio open with its MCP server on (Assistant \u2192 \u2026 \u2192 Manage MCP Servers \u2192 Enable Studio as MCP server) and Allow HTTP Requests on, and studio (part of the place's name) when several Studios are open. Each scenario sets its params as Workspace attributes (by default autoplay = true, seed = 7, then seed = 21) for the game's bot to read, plays until workspace:GetAttribute("GlitchlessPlaytestDone") is true or 90 seconds pass, stops, and puts the attributes back; the play test's sessions are read back from the Glitchless server this tool reads, so the game's Glitchless.init has to send there. All compare slow frames, frame time p95 and p99, render and update CPU, draw calls, hitches, errors and crashes, overall and per level (an engine build also GPU time and what grew over a run, run by run). A headless build, or runs on different frame budgets, only warn on frame times. Runs are saved in .glitchless/playtest/ in the project.`,
         inputSchema: {
           save_as: external_exports.string().optional().describe('Save this run under a name, e.g. "baseline" before a change'),
           compare_to: external_exports.string().optional().describe('Saved run to compare with (default "baseline" when saved)'),
           quick: external_exports.boolean().optional().describe("Play only the first scenario (about a minute)"),
-          game_url: external_exports.string().optional().describe("Game URL to play (default http://localhost:5173/ or glitchless.playtest.json)"),
-          max_seconds: external_exports.number().min(10).max(600).optional().describe("Cap each run at this many seconds")
+          game_url: external_exports.string().optional().describe("Web games: the URL to play (default http://localhost:5173/ or glitchless.playtest.json)"),
+          engine: external_exports.enum(["roblox", "unity", "godot", "unreal", "gamemaker"]).optional().describe(`"roblox" plays the place open in Roblox Studio; the others are told from command, so only needed when its name doesn't say (default: "engine" in glitchless.playtest.json)`),
+          studio: external_exports.string().optional().describe("Roblox: which open Studio to play in, part of its place's name (needed when several are open)"),
+          command: external_exports.array(external_exports.string()).optional().describe('Unity, Godot, Unreal or GameMaker: the command that starts the build, e.g. ["godot", "--path", "."], ["./build/MyGame.x86_64"] or ["builds/MyGame.app"]; paths are from the project folder (default: "command" in glitchless.playtest.json)'),
+          max_seconds: external_exports.number().min(10).max(600).optional().describe("Cap each run at this many seconds (an engine build: the seconds it measures)")
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       },
-      async ({ save_as, compare_to, quick, game_url, max_seconds } = {}, ctx) => {
+      async ({ save_as, compare_to, quick, game_url, engine, studio, command, max_seconds } = {}, ctx) => {
         const token = ctx?.mcpReq._meta?.progressToken;
         let step = 0;
         const log = (message) => {
@@ -39838,7 +40611,7 @@ var init_playtest = __esm({
             compareTo: compare_to,
             quick,
             maxSeconds: max_seconds,
-            config: { server: base(), api_key: apiKey() || void 0, service: defaultService() || void 0, game: game_url },
+            config: { server: base(), api_key: apiKey() || void 0, service: defaultService() || void 0, game: game_url, command: command?.length ? command : void 0, engine, studio },
             log
           });
           const files2 = Object.entries(r.files || {}).map(([k, f]) => `${k}: ${f}`).join("\n");
@@ -39851,24 +40624,24 @@ ${files2}` }] };
           return fail(err);
         }
       },
-      // It plays the game in Chrome on this computer, so it is not served over HTTP.
+      // It plays the game in Chrome, runs its build or drives Roblox Studio on this computer, so it is not served over HTTP.
       { local: true }
     );
   }
 });
 
 // ../../node_modules/glitchless-deck/src/util.js
-import fs6 from "node:fs";
-import path7 from "node:path";
-import { spawn as spawn2 } from "node:child_process";
+import fs7 from "node:fs";
+import path9 from "node:path";
+import { spawn as spawn4 } from "node:child_process";
 function which(name, { platform = process.platform, env = process.env } = {}) {
   const exts = platform === "win32" ? ["", ...(env.PATHEXT || ".EXE;.CMD;.BAT").split(";").map((e) => e.toLowerCase())] : [""];
-  for (const dir of (env.PATH || env.Path || "").split(path7.delimiter)) {
+  for (const dir of (env.PATH || env.Path || "").split(path9.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
-      const file2 = path7.join(dir, name + ext);
+      const file2 = path9.join(dir, name + ext);
       try {
-        if (fs6.statSync(file2).isFile()) return file2;
+        if (fs7.statSync(file2).isFile()) return file2;
       } catch {
       }
     }
@@ -39883,7 +40656,7 @@ function run(cmd, args, { input: input2, cwd, env, timeout = 0, onLine, shell = 
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn2(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env, shell, windowsHide: true });
+      child = spawn4(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env, shell, windowsHide: true });
     } catch (err2) {
       reject(err2);
       return;
@@ -39932,15 +40705,15 @@ var init_util2 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/checks.js
-import fs7 from "node:fs";
-import path8 from "node:path";
+import fs8 from "node:fs";
+import path10 from "node:path";
 function inspectBinary(file2) {
   let head;
   try {
-    const fd = fs7.openSync(file2, "r");
+    const fd = fs8.openSync(file2, "r");
     head = Buffer.alloc(512);
-    const n = fs7.readSync(fd, head, 0, 512, 0);
-    fs7.closeSync(fd);
+    const n = fs8.readSync(fd, head, 0, 512, 0);
+    fs8.closeSync(fd);
     head = head.subarray(0, n);
   } catch {
     return { kind: "missing" };
@@ -39958,9 +40731,9 @@ function inspectBinary(file2) {
     let arch = "unknown";
     try {
       const buf = Buffer.alloc(6);
-      const fd = fs7.openSync(file2, "r");
-      fs7.readSync(fd, buf, 0, 6, pe);
-      fs7.closeSync(fd);
+      const fd = fs8.openSync(file2, "r");
+      fs8.readSync(fd, buf, 0, 6, pe);
+      fs8.closeSync(fd);
       if (buf.readUInt32BE(0) === 1346699264) arch = { 34404: "x86_64", 332: "x86", 43620: "arm64" }[buf.readUInt16LE(4)] || "unknown";
     } catch {
     }
@@ -39974,25 +40747,25 @@ function inspectBinary(file2) {
 }
 function checkFolder(game) {
   const folder = game._folder;
-  const rel = path8.relative(folder, game._root);
-  if (!rel || !rel.startsWith("..") && !path8.isAbsolute(rel)) {
+  const rel = path10.relative(folder, game._root);
+  if (!rel || !rel.startsWith("..") && !path10.isAbsolute(rel)) {
     throw new Problem(`${game.id}'s folder is the project itself (${folder}). Send only the build: set "folder" to where the build goes, such as build/deck.`);
   }
-  if (!fs7.existsSync(folder) || !fs7.statSync(folder).isDirectory() || !fs7.readdirSync(folder).length) {
+  if (!fs8.existsSync(folder) || !fs8.statSync(folder).isDirectory() || !fs8.readdirSync(folder).length) {
     throw new Problem(`Nothing to send: ${folder} is missing or empty. Build it first.`);
   }
-  const entries = fs7.readdirSync(folder);
+  const entries = fs8.readdirSync(folder);
   const marker = entries.find((f) => PROJECT_MARKERS.includes(f) || f.endsWith(".uproject") || f === "node_modules" && entries.includes("package.json"));
   if (marker) throw new Problem(`${folder} holds ${marker}, so it looks like a project, not a build. Send only the build folder.`);
 }
 function checkStart(game, argv, { kiosk = false } = {}) {
   if (kiosk) {
-    if (!fs7.existsSync(path8.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
+    if (!fs8.existsSync(path10.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
     return { kind: "web" };
   }
-  const start = path8.resolve(game._folder, argv[0]);
-  const rel = path8.relative(game._folder, start);
-  if (rel.startsWith("..") || path8.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
+  const start = path10.resolve(game._folder, argv[0]);
+  const rel = path10.relative(game._folder, start);
+  if (rel.startsWith("..") || path10.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
   const what = inspectBinary(start);
   const where2 = `${argv[0]} (in ${game._folder})`;
   if (what.kind === "missing") throw new Problem(`${argv[0]} is not in ${game._folder}; check the game's "run" in ${game._file}.`);
@@ -40019,21 +40792,21 @@ var init_checks3 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/engines.js
-import fs8 from "node:fs";
-import os4 from "node:os";
-import path9 from "node:path";
+import fs9 from "node:fs";
+import os6 from "node:os";
+import path11 from "node:path";
 function readPackage(root) {
   try {
-    return JSON.parse(fs8.readFileSync(path9.join(root, "package.json"), "utf8"));
+    return JSON.parse(fs9.readFileSync(path11.join(root, "package.json"), "utf8"));
   } catch {
     return null;
   }
 }
 function uprojectIn(game, root) {
-  if (game.unreal?.project) return path9.resolve(root, game.unreal.project);
+  if (game.unreal?.project) return path11.resolve(root, game.unreal.project);
   try {
-    const found = fs8.readdirSync(root).find((f) => f.endsWith(".uproject"));
-    return found ? path9.join(root, found) : null;
+    const found = fs9.readdirSync(root).find((f) => f.endsWith(".uproject"));
+    return found ? path11.join(root, found) : null;
   } catch {
     return null;
   }
@@ -40045,7 +40818,7 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
       return { folder: "build/deck", run: `./${game.id}.x86_64` };
     case "unreal": {
       const uproject = uprojectIn(game, root);
-      const name = uproject ? path9.basename(uproject, ".uproject") : game.id;
+      const name = uproject ? path11.basename(uproject, ".uproject") : game.id;
       return unrealTarget(game, platform) === "win64" ? { folder: "build/deck", run: `./Windows/${name}.exe`, proton: true } : { folder: "build/deck", run: `./Linux/${name}.sh` };
     }
     case "web": {
@@ -40060,14 +40833,14 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
 }
 function resolveArgv(game) {
   const argv = [...game._argv];
-  const there = (rel) => fs8.existsSync(path9.resolve(game._folder, rel));
+  const there = (rel) => fs9.existsSync(path11.resolve(game._folder, rel));
   if (there(argv[0]) || game.run !== engineDefaults(game, { root: game._root }).run) return argv;
   if (game.engine === "unreal") {
     const alt = argv[0].replace(/^\.\/(Windows|Linux)\//, (_, p) => `./${p}NoEditor/`);
     if (there(alt)) argv[0] = alt;
-  } else if (game.engine === "web" && webMode(game) === "electron" && fs8.existsSync(game._folder)) {
+  } else if (game.engine === "web" && webMode(game) === "electron" && fs9.existsSync(game._folder)) {
     const skip = /^(chrome-sandbox|chrome_crashpad_handler)$|\.so(\.|$)/;
-    const bins = fs8.readdirSync(game._folder).filter((f) => !skip.test(f) && fs8.statSync(path9.join(game._folder, f)).isFile() && inspectBinary(path9.join(game._folder, f)).kind === "elf");
+    const bins = fs9.readdirSync(game._folder).filter((f) => !skip.test(f) && fs9.statSync(path11.join(game._folder, f)).isFile() && inspectBinary(path11.join(game._folder, f)).kind === "elf");
     if (bins.length === 1) argv[0] = `./${bins[0]}`;
   }
   return argv;
@@ -40097,9 +40870,9 @@ async function shellBuild(game, command, log) {
   const r = await run(command, [], { cwd: game._root, shell: true, onLine: log });
   if (r.code !== 0) throw new Problem(`The build failed (exit ${r.code}); nothing was sent.`);
 }
-function tail(file2, lines = 15) {
+function tail2(file2, lines = 15) {
   try {
-    return fs8.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
+    return fs9.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
   } catch {
     return "";
   }
@@ -40107,7 +40880,7 @@ function tail(file2, lines = 15) {
 function godotPresets(root) {
   let text;
   try {
-    text = fs8.readFileSync(path9.join(root, "export_presets.cfg"), "utf8");
+    text = fs9.readFileSync(path11.join(root, "export_presets.cfg"), "utf8");
   } catch {
     return [];
   }
@@ -40134,9 +40907,9 @@ function godotBinary(game, platform) {
   if (given) return given;
   const found = which("godot", { platform }) || which("godot4", { platform });
   if (found) return found;
-  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path9.join(os4.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
+  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path11.join(os6.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
   if (platform === "darwin") {
-    for (const p of mac3) if (fs8.existsSync(p)) return p;
+    for (const p of mac3) if (fs9.existsSync(p)) return p;
   }
   throw new Problem('Godot was not found. Put it on the PATH as godot, or set GODOT=/path/to/godot (or "godot": { "binary": ... } in the game entry).');
 }
@@ -40149,8 +40922,8 @@ async function buildGodot(game, log, platform) {
   }
   if (preset.arch && preset.arch !== "x86_64") throw new Problem(`The "${preset.name}" preset builds for ${preset.arch}; the Deck needs x86_64 (Export > Linux > Binary Format > Architecture).`);
   const bin = godotBinary(game, platform);
-  const out = path9.resolve(game._folder, game._argv[0]);
-  fs8.mkdirSync(path9.dirname(out), { recursive: true });
+  const out = path11.resolve(game._folder, game._argv[0]);
+  fs9.mkdirSync(path11.dirname(out), { recursive: true });
   const logFile = logFileFor(game);
   const started = Date.now();
   log(`Godot: importing, then exporting with the "${preset.name}" preset`);
@@ -40160,16 +40933,16 @@ async function buildGodot(game, log, platform) {
     const r = await run(bin, args, { cwd: game._root });
     text += r.stdout + r.stderr;
   }
-  fs8.writeFileSync(logFile, text);
+  fs9.writeFileSync(logFile, text);
   let made = null;
   try {
-    made = fs8.statSync(out);
+    made = fs9.statSync(out);
   } catch {
   }
   if (!made || !made.size || made.mtimeMs < started - 2e3) {
     const hint = /export template/i.test(text) ? "\nInstall the export templates: Editor > Manage Export Templates > Download and Install." : "";
-    throw new Problem(`The Godot export did not make ${path9.basename(out)} (log: ${logFile}).${hint}
-${tail(logFile)}`);
+    throw new Problem(`The Godot export did not make ${path11.basename(out)} (log: ${logFile}).${hint}
+${tail2(logFile)}`);
   }
 }
 function unityEditor(game, root, platform) {
@@ -40177,35 +40950,35 @@ function unityEditor(game, root, platform) {
   if (given) return { editor: given };
   let version2;
   try {
-    version2 = fs8.readFileSync(path9.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
+    version2 = fs9.readFileSync(path11.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
   } catch {
     throw new Problem(`${root} doesn't look like a Unity project (no ProjectSettings/ProjectVersion.txt).`);
   }
   const hub = {
     darwin: [`/Applications/Unity/Hub/Editor/${version2}/Unity.app/Contents/MacOS/Unity`, `/Applications/Unity/Hub/Editor/${version2}/PlaybackEngines/LinuxStandaloneSupport`],
     win32: [`C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Unity.exe`, `C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Data\\PlaybackEngines\\LinuxStandaloneSupport`],
-    linux: [path9.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path9.join(os4.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
+    linux: [path11.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path11.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
   }[platform] || [];
-  if (!hub[0] || !fs8.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
-  if (platform !== "linux" && !fs8.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
+  if (!hub[0] || !fs9.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
+  if (platform !== "linux" && !fs9.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
   return { editor: hub[0], version: version2 };
 }
 async function buildUnity(game, log, platform) {
   const { editor } = unityEditor(game, game._root, platform);
-  const out = path9.resolve(game._folder, game._argv[0]);
+  const out = path11.resolve(game._folder, game._argv[0]);
   const logFile = logFileFor(game);
-  fs8.rmSync(game._folder, { recursive: true, force: true });
-  fs8.mkdirSync(game._folder, { recursive: true });
+  fs9.rmSync(game._folder, { recursive: true, force: true });
+  fs9.mkdirSync(game._folder, { recursive: true });
   log("Unity: Linux64 build in batch mode (the Editor must be closed on this project)");
   const r = await run(editor, ["-batchmode", "-quit", "-nographics", "-projectPath", game._root, "-buildTarget", "Linux64", "-buildLinux64Player", out, "-logFile", logFile], { cwd: game._root });
-  if (r.code !== 0 || !fs8.existsSync(out)) {
-    const text = tail(logFile, 400);
+  if (r.code !== 0 || !fs9.existsSync(out)) {
+    const text = tail2(logFile, 400);
     const hint = /another Unity instance is running/i.test(text) ? "\nClose the Unity Editor on this project first: batch mode cannot open a project that is already open." : "";
     throw new Problem(`The Unity build failed (log: ${logFile}).${hint}
-${tail(logFile)}`);
+${tail2(logFile)}`);
   }
-  for (const f of fs8.readdirSync(game._folder)) {
-    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs8.rmSync(path9.join(game._folder, f), { recursive: true, force: true });
+  for (const f of fs9.readdirSync(game._folder)) {
+    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs9.rmSync(path11.join(game._folder, f), { recursive: true, force: true });
   }
 }
 function unrealEngine(game) {
@@ -40213,8 +40986,8 @@ function unrealEngine(game) {
   if (given) return given;
   const base2 = "C:\\Program Files\\Epic Games";
   try {
-    const versions = fs8.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
-    if (versions.length) return path9.join(base2, versions.at(-1));
+    const versions = fs9.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
+    if (versions.length) return path11.join(base2, versions.at(-1));
   } catch {
   }
   throw new Problem('Unreal Engine was not found. Set UE_ROOT to the engine folder (the one with Engine/ in it), or "unreal": { "engine": ... } in the game entry.');
@@ -40230,9 +41003,9 @@ async function buildUnreal(game, log, platform) {
   const uproject = uprojectIn(game, game._root);
   if (!uproject) throw new Problem(`No .uproject in ${game._root} (or set "unreal": { "project": ... }).`);
   const engine = unrealEngine(game);
-  const uat = path9.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
-  if (!fs8.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
-  fs8.rmSync(game._folder, { recursive: true, force: true });
+  const uat = path11.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
+  if (!fs9.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
+  fs9.rmSync(game._folder, { recursive: true, force: true });
   const args = ["BuildCookRun", `-project=${uproject}`, "-noP4", `-platform=${target === "win64" ? "Win64" : "Linux"}`, `-clientconfig=${game.unreal?.config || "Development"}`, "-build", "-cook", "-stage", "-pak", "-archive", `-archivedirectory=${game._folder}`, "-utf8output", "-unattended"];
   log(`Unreal: BuildCookRun for ${target === "win64" ? "Win64" : "Linux"} (this takes a while the first time)`);
   const q = (a) => platform === "win32" && /\s/.test(a) ? `"${a}"` : a;
@@ -40245,37 +41018,37 @@ async function buildElectron(game, pkg, log) {
   if (!command) throw new Problem('Neither electron-builder nor Electron Forge is in package.json. Set "build" to the command that packages the app for Linux x64, and "folder" to where it lands.');
   await shellBuild(game, command, log);
 }
-var ENGINES, KIOSK_RUN, webMode, unrealTarget, logFileFor;
+var ENGINES2, KIOSK_RUN, webMode, unrealTarget, logFileFor;
 var init_engines = __esm({
   "../../node_modules/glitchless-deck/src/engines.js"() {
     init_util2();
     init_checks3();
-    ENGINES = ["godot", "unity", "unreal", "web"];
+    ENGINES2 = ["godot", "unity", "unreal", "web"];
     KIOSK_RUN = "./.glitchless-kiosk.sh";
     webMode = (game) => game.web?.mode === "electron" ? "electron" : "kiosk";
     unrealTarget = (game, platform = process.platform) => (game.unreal?.target || (platform === "win32" ? "win64" : "linux")).toLowerCase();
-    logFileFor = (game) => path9.join(path9.dirname(game._folder), `${path9.basename(game._folder)}-build.log`);
+    logFileFor = (game) => path11.join(path11.dirname(game._folder), `${path11.basename(game._folder)}-build.log`);
   }
 });
 
 // ../../node_modules/glitchless-deck/src/config.js
-import fs9 from "node:fs";
-import os5 from "node:os";
-import path10 from "node:path";
+import fs10 from "node:fs";
+import os7 from "node:os";
+import path12 from "node:path";
 function configDir() {
-  return process.env.GLITCHLESS_DECK_HOME || path10.join(os5.homedir(), ".config", "glitchless-deck");
+  return process.env.GLITCHLESS_DECK_HOME || path12.join(os7.homedir(), ".config", "glitchless-deck");
 }
 function readJson(file2, fallback) {
   try {
-    return JSON.parse(fs9.readFileSync(file2, "utf8"));
+    return JSON.parse(fs10.readFileSync(file2, "utf8"));
   } catch (err) {
     if (err.code === "ENOENT") return fallback;
     throw new Problem(`${file2} is not valid JSON: ${err.message}`);
   }
 }
 function writeJson(file2, value) {
-  fs9.mkdirSync(path10.dirname(file2), { recursive: true });
-  fs9.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
+  fs10.mkdirSync(path12.dirname(file2), { recursive: true });
+  fs10.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
 `);
 }
 function loadDecks() {
@@ -40293,7 +41066,7 @@ function saveDeck(deck, { makeCurrent = true } = {}) {
 }
 function pairedDeck(which2) {
   const { current, decks } = loadDecks();
-  if (!decks.length || !fs9.existsSync(files().key)) {
+  if (!decks.length || !fs10.existsSync(files().key)) {
     throw new Problem("Not paired with a Deck yet. On the Deck: Settings > Developer > Pair new host. Then run: glitchless-deck pair");
   }
   if (which2) {
@@ -40306,17 +41079,17 @@ function pairedDeck(which2) {
 }
 function projectFileIn(dir) {
   for (const name of PROJECT_FILES) {
-    const file2 = path10.join(dir, name);
-    if (fs9.existsSync(file2)) return file2;
+    const file2 = path12.join(dir, name);
+    if (fs10.existsSync(file2)) return file2;
   }
   return null;
 }
 function listedProjects() {
-  return readJson(files().projects, []).filter((f) => fs9.existsSync(f));
+  return readJson(files().projects, []).filter((f) => fs10.existsSync(f));
 }
 function projectFiles(cwd = process.cwd()) {
   const here = projectFileIn(cwd);
-  const out = here ? [path10.resolve(here)] : [];
+  const out = here ? [path12.resolve(here)] : [];
   for (const f of listedProjects()) if (!out.includes(f)) out.push(f);
   return out;
 }
@@ -40356,13 +41129,13 @@ function normalizeGame(raw, file2) {
     throw new Problem(`${file2}: a game's id is its name on the Deck: letters, digits, _ and ., starting with a letter (got ${JSON.stringify(raw?.id)}).`);
   }
   if (id.endsWith(MEASURE_SUFFIX)) throw new Problem(`${file2}: ids ending in ${MEASURE_SUFFIX} are kept for measuring (${id}).`);
-  if (raw.engine && !ENGINES.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES.join(", ")}.`);
-  const root = path10.resolve(path10.dirname(file2), raw.root || ".");
+  if (raw.engine && !ENGINES2.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES2.join(", ")}.`);
+  const root = path12.resolve(path12.dirname(file2), raw.root || ".");
   const game = { ...engineDefaults({ ...raw, id }, { root }), ...raw, id, _file: file2, _root: root };
   for (const key of ["folder", "run"]) {
     if (!game[key]) throw new Problem(`${file2}: ${id} needs a "${key}"${raw.engine ? "" : ' (or an "engine" that fills it in)'}.`);
   }
-  game._folder = path10.resolve(root, game.folder);
+  game._folder = path12.resolve(root, game.folder);
   game._argv = Array.isArray(game.run) ? game.run.map(String) : shellWords(String(game.run));
   if (!game._argv.length) throw new Problem(`${file2}: ${id} has an empty "run".`);
   return game;
@@ -40371,7 +41144,7 @@ function readProject(file2) {
   const data = readJson(file2, null);
   if (!data) throw new Problem(`${file2} does not exist.`);
   const games = Array.isArray(data.games) ? data.games : [];
-  return games.map((g) => normalizeGame(g, path10.resolve(file2)));
+  return games.map((g) => normalizeGame(g, path12.resolve(file2)));
 }
 function loadGames({ cwd = process.cwd() } = {}) {
   const games = [];
@@ -40410,11 +41183,11 @@ var init_config2 = __esm({
       const dir = configDir();
       return {
         dir,
-        key: path10.join(dir, "devkit_rsa"),
-        decks: path10.join(dir, "decks.json"),
-        projects: path10.join(dir, "projects.json"),
-        knownHosts: path10.join(dir, "known_hosts"),
-        hashes: path10.join(dir, "hashes")
+        key: path12.join(dir, "devkit_rsa"),
+        decks: path12.join(dir, "decks.json"),
+        projects: path12.join(dir, "projects.json"),
+        knownHosts: path12.join(dir, "known_hosts"),
+        hashes: path12.join(dir, "hashes")
       };
     };
   }
@@ -40422,11 +41195,11 @@ var init_config2 = __esm({
 
 // ../../node_modules/glitchless-deck/src/mdns.js
 import dgram from "node:dgram";
-import os6 from "node:os";
+import os8 from "node:os";
 function encodeName(name) {
   const parts = [];
-  for (const label of name.replace(/\.$/, "").split(".")) {
-    const b = Buffer.from(label, "utf8");
+  for (const label3 of name.replace(/\.$/, "").split(".")) {
+    const b = Buffer.from(label3, "utf8");
     parts.push(Buffer.from([b.length]), b);
   }
   parts.push(Buffer.from([0]));
@@ -40444,10 +41217,10 @@ function header(id, flags, qd, an, ar = 0) {
 function encodeQuery(questions, id = 0) {
   const parts = [header(id, 0, questions.length, 0)];
   for (const q of questions) {
-    const tail2 = Buffer.alloc(4);
-    tail2.writeUInt16BE(q.type, 0);
-    tail2.writeUInt16BE(32769, 2);
-    parts.push(encodeName(q.name), tail2);
+    const tail3 = Buffer.alloc(4);
+    tail3.writeUInt16BE(q.type, 0);
+    tail3.writeUInt16BE(32769, 2);
+    parts.push(encodeName(q.name), tail3);
   }
   return Buffer.concat(parts);
 }
@@ -40508,7 +41281,7 @@ function decodeMessage(buf) {
 }
 function localAddresses() {
   const out = [];
-  for (const list of Object.values(os6.networkInterfaces())) {
+  for (const list of Object.values(os8.networkInterfaces())) {
     for (const a of list || []) if ((a.family === "IPv4" || a.family === 4) && !a.internal) out.push(a);
   }
   return out;
@@ -41327,9 +42100,9 @@ var init_glitchless = __esm({
 
 // ../../node_modules/glitchless-deck/src/transfer.js
 import crypto3 from "node:crypto";
-import fs10 from "node:fs";
-import path11 from "node:path";
-import { spawn as spawn3 } from "node:child_process";
+import fs11 from "node:fs";
+import path13 from "node:path";
+import { spawn as spawn5 } from "node:child_process";
 function transferMode(given, { platform = process.platform } = {}) {
   if (given === "tar" || given === "rsync") return given;
   if (given) throw new Problem(`--transfer is rsync or tar (got ${given}).`);
@@ -41338,15 +42111,15 @@ function transferMode(given, { platform = process.platform } = {}) {
 function walk(root) {
   const out = { files: [], links: [], dirs: [] };
   const visit2 = (dir) => {
-    for (const entry of fs10.readdirSync(dir, { withFileTypes: true })) {
-      const full = path11.join(dir, entry.name);
-      const rel = path11.relative(root, full).split(path11.sep).join("/");
-      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs10.readlinkSync(full) });
+    for (const entry of fs11.readdirSync(dir, { withFileTypes: true })) {
+      const full = path13.join(dir, entry.name);
+      const rel = path13.relative(root, full).split(path13.sep).join("/");
+      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs11.readlinkSync(full) });
       else if (entry.isDirectory()) {
-        out.dirs.push({ rel, full, mtime: fs10.statSync(full).mtimeMs });
+        out.dirs.push({ rel, full, mtime: fs11.statSync(full).mtimeMs });
         visit2(full);
       } else if (entry.isFile()) {
-        const st = fs10.statSync(full);
+        const st = fs11.statSync(full);
         out.files.push({ rel, full, size: st.size, mtime: st.mtimeMs, mode: st.mode & 511 });
       }
     }
@@ -41357,14 +42130,14 @@ function walk(root) {
 function sha1File(file2) {
   return new Promise((resolve, reject) => {
     const h = crypto3.createHash("sha1");
-    fs10.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve(h.digest("hex")));
+    fs11.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve(h.digest("hex")));
   });
 }
 async function hashFiles(id, list) {
-  const cacheFile = path11.join(files().hashes, `${id}.json`);
+  const cacheFile = path13.join(files().hashes, `${id}.json`);
   let cache = {};
   try {
-    cache = JSON.parse(fs10.readFileSync(cacheFile, "utf8"));
+    cache = JSON.parse(fs11.readFileSync(cacheFile, "utf8"));
   } catch {
   }
   const fresh = {};
@@ -41402,10 +42175,10 @@ function plan(local2, remote) {
 function octal(n, width) {
   return `${Math.floor(n).toString(8).padStart(width - 1, "0")}\0`;
 }
-function rawHeader({ name, size = 0, mode = 420, mtime = Date.now() / 1e3, type = "0", linkname = "" }) {
+function rawHeader({ name, size = 0, mode: mode2 = 420, mtime = Date.now() / 1e3, type = "0", linkname = "" }) {
   const h = Buffer.alloc(512);
   h.write(name, 0, 100, "utf8");
-  h.write(octal(mode, 8), 100, "ascii");
+  h.write(octal(mode2, 8), 100, "ascii");
   h.write(octal(0, 8), 108, "ascii");
   h.write(octal(0, 8), 116, "ascii");
   h.write(octal(size, 12), 124, "ascii");
@@ -41415,9 +42188,9 @@ function rawHeader({ name, size = 0, mode = 420, mtime = Date.now() / 1e3, type 
   h.write(linkname, 157, 100, "utf8");
   h.write("ustar\0", 257, "ascii");
   h.write("00", 263, "ascii");
-  let sum = 0;
-  for (const b of h) sum += b;
-  h.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
+  let sum2 = 0;
+  for (const b of h) sum2 += b;
+  h.write(`${sum2.toString(8).padStart(6, "0")}\0 `, 148, "ascii");
   return h;
 }
 function paxRecord(key, value) {
@@ -41449,7 +42222,7 @@ async function writeTar(out, { send: sendFiles = [], links = [], dirs = [] }, { 
   for (const f of sendFiles) {
     await write2(tarHeader({ name: f.rel, size: f.size, mode: modeFor(f, platform), mtime: f.mtime / 1e3 }));
     let sent = 0;
-    for await (const chunk of fs10.createReadStream(f.full)) {
+    for await (const chunk of fs11.createReadStream(f.full)) {
       const piece = sent + chunk.length > f.size ? chunk.subarray(0, f.size - sent) : chunk;
       await write2(piece);
       sent += piece.length;
@@ -41462,21 +42235,21 @@ async function writeTar(out, { send: sendFiles = [], links = [], dirs = [] }, { 
   for (const l of links) await write2(tarHeader({ name: l.rel, type: "2", linkname: l.target, mode: 511 }));
   await write2(Buffer.alloc(1024));
 }
-async function transfer(deck, game, { mode, log = () => {
+async function transfer(deck, game, { mode: mode2, log = () => {
 }, platform = process.platform } = {}) {
   const remote = `devkit-game/${game.id}`;
   const prepared = await helper(deck, { do: "prepare", gameid: game.id });
   if (prepared.error) throw new Problem(`Could not make the game's folder on the Deck: ${prepared.error}`);
   const local2 = walk(game._folder);
   const total = local2.files.reduce((n, f) => n + f.size, 0);
-  mode = transferMode(mode, { platform });
-  if (mode === "rsync") {
+  mode2 = transferMode(mode2, { platform });
+  if (mode2 === "rsync") {
     log(`Sending ${game.id} (${formatBytes(total)} on disk; rsync sends only what changed).`);
     const args = ["-a", "--delete", ...PROTECTED.map((p2) => `--exclude=/${p2}`), "-e", rsyncShell(), `${game._folder}/`, `${destination(deck)}:${remote}/`];
     const r = await run("rsync", args, { onLine: log });
     if (r.code !== 0) throw new Problem(`The transfer failed (rsync exit ${r.code}). The Deck's copy may be part updated; send again.${r.stderr.trim() ? `
 ${r.stderr.trim().split("\n").slice(-3).join("\n")}` : ""}`);
-    return { mode, total, sent: null };
+    return { mode: mode2, total, sent: null };
   }
   log(`Comparing ${game.id} with the Deck's copy (${local2.files.length} files, ${formatBytes(total)})...`);
   const [remoteList] = await Promise.all([helper(deck, { do: "manifest", gameid: game.id }, { timeout: 6e5 }), hashFiles(game.id, local2.files)]);
@@ -41495,12 +42268,12 @@ ${r.stderr.trim().split("\n").slice(-3).join("\n")}` : ""}`);
   }
   const done = await helper(deck, { do: "prune", gameid: game.id, remove: p.send.length ? [] : p.remove, keep_dirs: p.keepDirs, sent: Object.fromEntries(p.send.map((f) => [f.rel, f.hash])) });
   if (done.error) throw new Problem(`The files are on the Deck, but tidying up failed: ${done.error}`);
-  return { mode, total, sent: bytes, files: p.send.length, removed: p.remove.length };
+  return { mode: mode2, total, sent: bytes, files: p.send.length, removed: p.remove.length };
 }
 function sendTar(deck, remote, p, { log, bytes, platform }) {
   return new Promise((resolve, reject) => {
     const [cmd, ...pre] = sshProgram();
-    const child = spawn3(cmd, [...pre, ...sshOptions(), destination(deck), `mkdir -p ${shq(remote)} && tar -xf - -C ${shq(remote)}`], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const child = spawn5(cmd, [...pre, ...sshOptions(), destination(deck), `mkdir -p ${shq(remote)} && tar -xf - -C ${shq(remote)}`], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
     let err = "";
     child.stderr.on("data", (c) => err += c);
     child.stdout.on("data", () => {
@@ -41543,8 +42316,8 @@ var init_transfer = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/send.js
-import fs11 from "node:fs";
-import path12 from "node:path";
+import fs12 from "node:fs";
+import path14 from "node:path";
 async function install(deck, game, { gameid = game.id, argv, extra = [], linkTo } = {}) {
   const kiosk = isKiosk(game);
   const files2 = {};
@@ -41570,12 +42343,12 @@ function readArtwork(game) {
   for (const [key, rel] of Object.entries(game.artwork || {})) {
     const kind = ART_KINDS[key];
     if (!kind) throw new Problem(`${game._file}: unknown artwork "${key}". Use capsule (600x900), wide (920x430), hero (3840x1240), logo or icon.`);
-    const file2 = path12.resolve(game._root, rel);
-    const ext = path12.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
+    const file2 = path14.resolve(game._root, rel);
+    const ext = path14.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
     if (!["png", "jpg"].includes(ext)) throw new Problem(`${rel}: artwork has to be a .png or .jpg.`);
-    if (!fs11.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
-    if (fs11.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
-    images[kind] = { ext, b64: fs11.readFileSync(file2).toString("base64") };
+    if (!fs12.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
+    if (fs12.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
+    images[kind] = { ext, b64: fs12.readFileSync(file2).toString("base64") };
   }
   return images;
 }
@@ -41593,7 +42366,7 @@ async function setArtwork(deck, game, { gameid = game.id, log = () => {
   log(`Artwork: ${answer.written.join(", ") || "cleared"}.`);
   return answer;
 }
-async function send2(game, { which: which2, build: build2 = true, transfer: mode, glitchless = false, intake, log = console.log, platform = process.platform } = {}) {
+async function send2(game, { which: which2, build: build2 = true, transfer: mode2, glitchless = false, intake, log = console.log, platform = process.platform } = {}) {
   const started = Date.now();
   pairedDeck(which2);
   const step = build2 ? buildStep(game, { platform }) : null;
@@ -41607,7 +42380,7 @@ async function send2(game, { which: which2, build: build2 = true, transfer: mode
   readArtwork(game);
   const deck = await reach(which2, { log });
   const glitch = glitchless || intake ? await intakeFlags(deck, { intake, log }) : null;
-  const moved = await transfer(deck, game, { mode, log, platform });
+  const moved = await transfer(deck, game, { mode: mode2, log, platform });
   const installed = await install(deck, game, { argv, extra: glitch?.flags || [] });
   let artwork = null;
   if (game.artwork) {
@@ -41671,23 +42444,23 @@ var init_play = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/measure.js
-import fs12 from "node:fs";
-import path13 from "node:path";
+import fs13 from "node:fs";
+import path15 from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 function saveRun2(game, name, run2) {
   if (!NAME2.test(name)) throw new Problem(`Run name "${name}" must be 1-64 letters, digits, dots, dashes or underscores.`);
-  fs12.mkdirSync(runsDir(game), { recursive: true });
-  const file2 = path13.join(runsDir(game), `${name}.json`);
-  fs12.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
+  fs13.mkdirSync(runsDir(game), { recursive: true });
+  const file2 = path15.join(runsDir(game), `${name}.json`);
+  fs13.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun2(game, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path13.resolve(nameOrFile) : path13.join(runsDir(game), `${nameOrFile}.json`);
-  return fs12.existsSync(file2) ? JSON.parse(fs12.readFileSync(file2, "utf8")) : null;
+  const file2 = nameOrFile.endsWith(".json") ? path15.resolve(nameOrFile) : path15.join(runsDir(game), `${nameOrFile}.json`);
+  return fs13.existsSync(file2) ? JSON.parse(fs13.readFileSync(file2, "utf8")) : null;
 }
 function listRuns2(game) {
   try {
-    return fs12.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+    return fs13.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
   } catch {
     return [];
   }
@@ -41713,13 +42486,13 @@ function toRun(saved) {
     summary: {
       pct_frames_over_budget: m.pct_frames_over_budget ?? null,
       frame_p95: m.frame_ms?.p95 ?? null,
-      render_cpu_ms: p50(m.render_cpu_ms),
-      update_cpu_ms: p50(m.update_cpu_ms ?? m.process_ms),
+      render_cpu_ms: p502(m.render_cpu_ms),
+      update_cpu_ms: p502(m.update_cpu_ms ?? m.process_ms),
       draw_calls: m.draw_calls && typeof m.draw_calls === "object" ? m.draw_calls.avg : m.draw_calls ?? null,
-      hitches_per_min: m.seconds ? round2((m.hitch_count || 0) / (m.seconds / 60)) : null,
+      hitches_per_min: m.seconds ? round3((m.hitch_count || 0) / (m.seconds / 60)) : null,
       errors_per_session: m.new_errors ?? null,
       crashes: 0,
-      errors: (m.errors || []).map((e) => ({ fingerprint: errorType(e), message: e.message, location: e.location, count: e.count, sessions: 1 })),
+      errors: (m.errors || []).map((e) => ({ fingerprint: errorType2(e), message: e.message, location: e.location, count: e.count, sessions: 1 })),
       levels: {}
     }
   };
@@ -41736,9 +42509,9 @@ function measureReport(saved, comparison, baseline) {
     ["Frame budget (ms)", m.frame_budget_ms],
     ["Slow frames (% over budget)", m.pct_frames_over_budget],
     ["Hitches", m.hitch_count],
-    ["Render CPU p50 (ms)", p50(m.render_cpu_ms)],
-    ["Update CPU p50 (ms)", p50(m.update_cpu_ms ?? m.process_ms)],
-    ["GPU p50 (ms)", p50(m.gpu_ms)],
+    ["Render CPU p50 (ms)", p502(m.render_cpu_ms)],
+    ["Update CPU p50 (ms)", p502(m.update_cpu_ms ?? m.process_ms)],
+    ["GPU p50 (ms)", p502(m.gpu_ms)],
     ["Draw calls per frame", m.draw_calls?.avg ?? m.draw_calls],
     ["New errors", m.new_errors]
   ];
@@ -41801,7 +42574,7 @@ ${saveAs ? `Saved as \`${saveAs}\`.` : "Nothing to compare with yet: save one wi
   const comparison = compareRuns(toRun(baseline), toRun(saved));
   return { verdict: comparison.verdict, report: measureReport(saved, comparison, baseline), comparison, run: saved, baseline, files: files2 };
 }
-var NAME2, runsDir, p50, round2, errorType, fmt2;
+var NAME2, runsDir, p502, round3, errorType2, fmt2;
 var init_measure = __esm({
   "../../node_modules/glitchless-deck/src/measure.js"() {
     init_src();
@@ -41813,11 +42586,11 @@ var init_measure = __esm({
     init_ssh();
     init_util2();
     NAME2 = /^[A-Za-z0-9._-]{1,64}$/;
-    runsDir = (game) => path13.join(game._root, ".glitchless", "deck", game.id);
-    p50 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
-    round2 = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
-    errorType = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
-    fmt2 = (v) => v == null ? "\u2013" : typeof v === "number" ? String(round2(v, 2)) : String(v);
+    runsDir = (game) => path15.join(game._root, ".glitchless", "deck", game.id);
+    p502 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
+    round3 = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
+    errorType2 = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
+    fmt2 = (v) => v == null ? "\u2013" : typeof v === "number" ? String(round3(v, 2)) : String(v);
   }
 });
 
@@ -41847,7 +42620,7 @@ var init_src2 = __esm({
 
 // src/tools/deck.js
 var deck_exports = {};
-import path14 from "node:path";
+import path16 from "node:path";
 function progress(ctx) {
   const token = ctx?.mcpReq._meta?.progressToken;
   let step = 0;
@@ -41860,7 +42633,7 @@ function progress(ctx) {
   return { log, lines };
 }
 function find(game, project) {
-  return gameNamed(game, { cwd: path14.resolve(project || process.cwd()) });
+  return gameNamed(game, { cwd: path16.resolve(project || process.cwd()) });
 }
 var common2, problem;
 var init_deck2 = __esm({

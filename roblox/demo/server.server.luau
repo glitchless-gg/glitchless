@@ -4,7 +4,7 @@
 -- joinedWithFriend, friendsInServer), sits each player on the bench, and sends a map of the track.
 -- Build and open it: rojo build roblox/place.project.json -o roblox/.build/GlitchlessTest.rbxl, then Play in Studio.
 -- roblox/test/studio.mjs plays it through Studio's MCP server, pointing it at a server of its own with the Intake
--- attribute on this script.
+-- attribute on this script, then has glitchless-playtest play it twice (the autoplay attribute) and compare.
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -74,6 +74,8 @@ Glitchless.init({
 	seats = true,
 	joinedWithFriend = true,
 	friendsInServer = true,
+	-- A playtest (glitchless-playtest) sets the autoplay attribute: its sessions are a bot's, out of player numbers.
+	sessionType = if workspace:GetAttribute("autoplay") then "synthetic" else nil,
 })
 
 -- The track's map, under the race's level: a heatmap of where players drove draws on it.
@@ -133,6 +135,10 @@ local function race(player: Player)
 	task.spawn(function()
 		error(player.Name .. "'s trophy is missing")
 	end)
+	-- The race plays itself, so it is this place's autoplay: tell a playtest the run is over.
+	if workspace:GetAttribute("autoplay") then
+		workspace:SetAttribute("GlitchlessPlaytestDone", true)
+	end
 end
 
 Players.PlayerAdded:Connect(function(player)

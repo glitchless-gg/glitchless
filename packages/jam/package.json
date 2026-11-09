@@ -1,6 +1,6 @@
 {
   "name": "glitchless-jam",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Glitchless jam rooms for coding agents: join a jam room, publish your game's build in one command and get a link and a QR code to play it on a phone, and see the room's plays and awards. An MCP tool for makers, another for the jam's organiser, and a CLI for both.",
   "keywords": [
     "mcp",

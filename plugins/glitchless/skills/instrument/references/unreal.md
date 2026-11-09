@@ -155,6 +155,13 @@ an autoplay or test mode, start it with `-autoplay`; that and `-glitchless-synth
 `~/Library/Containers/<bundle id>/Data` (its `tmp` is a good place), and stdout works anywhere. Don't start a build
 or cook while another Unreal build, cook or shader compile is running on the machine.
 
+`glitchless_playtest` does the before-and-after for you: give it the packaged build (under `Saved/StagedBuilds/`), as
+the tool's `command` or in `glitchless.playtest.json` (`{"command": ["Saved/StagedBuilds/Mac/<Game>.app"]}`). Each run
+starts it with `-autoplay -seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure flags, and
+the run is compared with the saved baseline, including the RHI thread and GPU time. The game's autoplay mode
+(`FParse::Param(FCommandLine::Get(), TEXT("autoplay"))`, the seed from `FParse::Value`) has to keep playing for the
+whole measure (10 seconds by default). Package again before each playtest.
+
 ## 6. Agents in the editor: Unreal MCP
 
 UE 5.8 ships Unreal MCP (Experimental), Epic's MCP server inside the editor: with it you can open maps, look inside

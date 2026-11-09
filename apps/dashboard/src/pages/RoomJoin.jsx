@@ -35,8 +35,13 @@ export function RoomJoin({ code, base }) {
 
 1. Make a small game that runs in a browser (plain HTML and JavaScript, or Vite). Build it with relative paths so it works from any folder: with Vite, vite build --base ./
 2. Add Glitchless to it by following ${SETUP_PROMPT} with the intake URL ${url} and the client token gl_pub_dev. Give Glitchless.init a service name for this game and a version.
-3. Ask me for the game's title and the name to show as its maker, then publish the built folder to room ${r.code} with the glitchless_jam tool, and show me the link and the QR code it answers with.
-4. Before you publish a fix, bump the version you pass to Glitchless.init.`;
+${
+    r.online
+      ? `3. Zip the built folder, with index.html at the root of the zip, for me to upload to the game's itch.io page as an HTML5 game (kind of project: HTML, played in the browser). Once I have, ask me for the page's address, the game's title and the name to show as its maker, then link that version to room ${r.code} with the glitchless_jam tool (action "link").
+4. Before you link a fix, bump the version you pass to Glitchless.init, build and zip it again, and link the new version once I've uploaded it.`
+      : `3. Ask me for the game's title and the name to show as its maker, then publish the built folder to room ${r.code} with the glitchless_jam tool, and show me the link and the QR code it answers with.
+4. Before you publish a fix, bump the version you pass to Glitchless.init.`
+  }`;
 
   return (
     <div className="room room-join">
@@ -81,7 +86,7 @@ export function RoomJoin({ code, base }) {
             <li>
               <h2>Play everyone's games</h2>
               <p>
-                Your game shows up on <a href={links.arcade}>the arcade</a> the moment it's published, next to everyone else's. Scan the codes with your phone, play, and vote for your favourite.
+                Your game shows up on <a href={links.arcade}>the arcade</a> the moment it's {r.online ? 'linked' : 'published'}, next to everyone else's. Scan the codes with your phone, play, and vote for your favourite.
               </p>
             </li>
           </ol>

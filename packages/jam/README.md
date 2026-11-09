@@ -4,7 +4,8 @@ Jam rooms for [Glitchless](https://github.com/glitchless-gg/glitchless). At a ga
 shares its code (like `K7Q2M`). Each maker's coding agent joins the room and publishes the game's build in one call,
 then shows the maker a link and a QR code to play it on a phone. Everyone plays everyone's games from the room's
 arcade, a big screen shows which games need players, and when the jam ends the room hands out awards and asks how it
-went.
+went. An online jam's room runs up to 21 days, and its games can stay on itch.io: the maker links each version there
+instead of publishing it, and the room counts its plays all the same.
 
 It's a package of its own, apart from [`glitchless-mcp`](https://www.npmjs.com/package/glitchless-mcp) (the MCP server for the games you ship), and it runs
 on your computer, since publishing reads your game's build folder there.
@@ -12,6 +13,7 @@ on your computer, since publishing reads your game's build folder there.
 ```bash
 claude mcp add glitchless-jam -- npx -y glitchless-jam        # the MCP server, for your agent
 npx -y glitchless-jam publish dist --room K7Q2M               # the same publish, from a terminal
+npx -y glitchless-jam link https://you.itch.io/game --room K7Q2M --version 1.0.1   # a version on itch.io
 ```
 
 ## Signing in
@@ -30,10 +32,28 @@ The maker's tool, with an `action`:
 | --- | --- | --- |
 | `join` | `room`, `game?`, `title?`, `by?`, `service?` | joins the room with this game (with a Glitchless Cloud sign-in, `game` names the workspace game; the only one by default) |
 | `publish` | `dir`, `room?`, `version?`, `game?`, `title?`, `by?`, `service?` | checks the built folder and uploads it, joining first if needed; answers with the game's link, its version and a QR code drawn in text, for the agent to show you |
+| `link` | `url?`, `version?`, `dir?`, `room?`, `game?`, `title?`, `by?`, `service?` | for a game played on itch.io: registers a version, joining first if needed. Nothing is uploaded; the room counts that version's plays and the arcade sends players to the page. `url` the first time; `version` read from `dir` (the web export) when its scripts have it |
 | `status` | `room?` | the room's games and their plays, which need players most, and your game's plays by version with the share that hit a problem; after the end, the awards and the survey link |
 | `leave` | `room?` | takes your game out of the room |
 
-It remembers the room and your game after `join` or `publish`.
+It remembers the room and your game after `join`, `publish` or `link`. A room takes at most 60 versions a game and 12
+an hour, published or linked, each version once, until the jam ends.
+
+## A game on itch.io
+
+For an online jam whose games are on itch.io: export the game for the web, zip the folder with `index.html` at the
+root of the zip, and upload it to the game's itch.io page as an HTML5 game (kind of project: HTML, played in the
+browser). Then link the version:
+
+```bash
+npx -y glitchless-jam link https://you.itch.io/your-game --room K7Q2M --dir dist   # or --version 1.0.0
+```
+
+The page is `https://<name>.itch.io/<game>`, nothing after it: no other site, not the `itch.zone` frame itch.io plays
+the game in, and not a draft's secret link (make the page public first). Later links reuse it. The game must send to a
+Glitchless address its players reach (Glitchless Cloud, or a server on the internet), not `localhost`. Before linking a
+fix, bump the version passed to `Glitchless.init`, upload the new build to the same page, then link it: the "biggest
+improvement" award compares the first version with the last. A game links or publishes, not both.
 
 ## What publish checks first
 
@@ -56,7 +76,7 @@ service lets make rooms; on a self-hosted server, whoever holds its key. A maker
 
 | Action | Takes | Does |
 | --- | --- | --- |
-| `create` | `title`, `about?`, `hours?`, `max_games?`, `template?` | makes a room: its code, the arcade, big-screen and join links, and the arcade's QR code as text. Put the big screen on the projector |
+| `create` | `title`, `about?`, `hours?`, `max_games?`, `template?`, `online?` | makes a room: its code, the arcade, big-screen and join links, and the arcade's QR code as text. Put the big screen on the projector. `online: true`: a jam over days, up to 504 hours (21 days) instead of 168, kept 7 days after it ends |
 | `list` | | your rooms, and past jams whose snapshots stay |
 | `update` | `room`, `title?`, `about?`, `hours?`, `joining?` | changes a room: `hours` closes it that many hours from now, `joining: false` stops new games joining |
 | `end` | `room` | ends the jam now: publishing and voting stop, the awards are given and the survey opens |
@@ -76,7 +96,7 @@ tool and the commands give each room's links as the server answers them.
 agent to ask first. The same, from a terminal:
 
 ```bash
-npx -y glitchless-jam host create "GenAI DC mini jam" [--hours 24] [--about "…"] [--max-games 60] [--template meetup]
+npx -y glitchless-jam host create "GenAI DC mini jam" [--hours 24] [--online] [--about "…"] [--max-games 60] [--template meetup]
 npx -y glitchless-jam host list
 npx -y glitchless-jam host update K7Q2M [--title "…"] [--about "…"] [--hours 2] [--joining off]
 npx -y glitchless-jam host end K7Q2M

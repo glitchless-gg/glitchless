@@ -1,6 +1,6 @@
 # What Glitchless for Godot sends
 
-This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd`, `steam.gd`, `bug_report.gd`, `properties.gd` and `net.gd` and checked against what reached a local server (and, for the multiplayer additions, a test intake) in `npm run test:godot`. Keep it in step with those files.
+This file lists every field the Godot SDK sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `glitchless.gd`, `device.gd`, `web_page.gd`, `steam.gd`, `bug_report.gd`, `properties.gd` and `net.gd` and checked against what reached a local server (and, for the multiplayer additions, a test intake; for web exports, Chromium) in `npm run test:godot`. Keep it in step with those files.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's and Google's categories; check them against the forms as they are when you submit.
 
@@ -12,7 +12,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
 | Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `user://glitchless/player_id`. Not tied to any account, device ID or advertising ID | the same ID as install mode |
-| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, whether it is a Steam Deck, and on iOS and Android where it was installed from (the App Store or TestFlight; Google Play, another store or outside a store) | the same as anonymous | adds model, OS version, GPU name, core count, memory |
+| Device | OS name, a low/mid/high tier, renderer, screen size, refresh rate, whether it is a Steam Deck, on iOS and Android where it was installed from (the App Store or TestFlight; Google Play, another store or outside a store), and in a web export the browser's name and major version | the same as anonymous | adds model, OS version, GPU name, core count, memory |
 | Positions | **not sent**: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples, in game-world units |
 | Saved on the device | unsent batches, without the session or player ID; the game version that last ran; the player's on/off choice, once the game asks | unsent batches with their IDs, the player ID, the game version that last ran, and the on/off choice | the same as install mode |
 
@@ -25,6 +25,8 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 On Android, every mode reads two things that tell Google Play's pre-launch test phones: the system setting `firebase.test.lab`, which Firebase Test Lab sets to `true`, and the GPU's name, which on those phones is a software renderer (SwiftShader); no phone a player holds draws in software. A session there is marked `synthetic` (a bot's) so it stays out of the players' numbers. Neither is sent: the setting never, the GPU's name only in full mode, as `gpu`.
 
 On iOS, every mode looks for three files to tell a TestFlight install from an App Store one: the App Store receipt (`StoreKit/receipt` in the app's own data container, which Apple writes with every App Store install), the sandbox receipt (`StoreKit/sandboxReceipt`, written by a purchase in a TestFlight or development build) and the provisioning profile a development build carries in its bundle (`embedded.mobileprovision`). It only checks whether they are there and never reads them, so nothing about the Apple account, the purchase or the device is taken. The answer is sent as `distribution` (`app_store`, `testflight` or `development`); a TestFlight or development session is marked `tester` so it stays out of the players' numbers, and a purchase made there says `sandbox: true`, as Apple charged nothing for it.
+
+In a web export, every mode reads what the page says about the browser (`web_page.gd`): its user agent and `userAgentData.mobile`, `devicePixelRatio`, the screen, `hardwareConcurrency`, `deviceMemory` and the GPU's name from a WebGL context, as the browser SDK reads them. Sent from them: the browser's name and major version, the OS, whether it is a phone, the screen, the pixel ratio and the tiers below; the GPU's name, cores and memory only in full mode; the user agent itself never. It also reads the page's address, which is never sent: a page on the developer's own machine follows the debug-build rule, and `?glitchless` there turns sending on.
 
 On Android, every mode reads two things to tell a player's install from a developer's or a tester's: whether the build is a debug build, and which app installed it, from the phone's package manager (Google Play, another store, adb when a developer installs it from a computer, as Godot's one-click deploy does, or the phone's own installer when someone opens an APK file). The installer's name is never sent; only the answer is, as `distribution` (`google_play`, `store`, `sideloaded` or `development`). A debug or sideloaded session is marked `tester` so it stays out of the players' numbers, and a purchase in a debug build says `sandbox: true`. A build from Google Play or any other store stays a player's.
 
@@ -39,7 +41,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-godot/0.6.4`) and `batch_id` (random, made for each batch and sent again with its retries).
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, the saved player ID in install and full mode), `sdk` (`glitchless-godot/0.6.5`) and `batch_id` (random, made for each batch and sent again with its retries).
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game has set them, every event and window also carries `zone` (where the player is in an open world, in the game's words) and `match`, `party` or `run` (the [group](#groups) IDs).
 
@@ -69,16 +71,16 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | field | example | mode |
 | --- | --- | --- |
-| `browser`, `browser_version` | `Godot`, `4.7.2`: the engine, the same for every player of a build | all |
-| `os` | `iOS`; `SteamOS` on a Steam Deck running it (or one Steam started a Windows build on) | all |
+| `browser`, `browser_version` | `Godot`, `4.7.2`: the engine, the same for every player of a build. A web export: the browser and its major version, `Chrome`, `156` (`Safari`, `Firefox`, `Edge`, `Opera` or `Other`), with Godot's version in `session_start.engine` | all |
+| `os` | `iOS`; `SteamOS` on a Steam Deck running it (or one Steam started a Windows build on). A web export: the OS the browser runs on (`macOS`, `Windows`, `Android`…) | all |
 | `mobile` | `true` | all |
-| `device_tier` | `low` / `mid` / `high`, from core count and memory | all |
-| `gpu_tier` | the same as `device_tier` on phones; `low` on a Steam Deck; on other desktops, from the GPU name | all |
+| `device_tier` | `low` / `mid` / `high`, from core count and memory (a web export: the browser's, `unknown` where it doesn't give the memory) | all |
+| `gpu_tier` | the same as `device_tier` on phones; `low` on a Steam Deck; on other desktops and in a web export, from the GPU name | all |
 | `renderer`, `driver` | `mobile`, `metal` | all |
-| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120`: `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (that is each frame window's `hz`) | all |
+| `screen`, `dpr`, `refresh_hz` | `[1290, 2796]`, `3`, `120`: `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (that is each frame window's `hz`). A web export: the page's screen in CSS pixels and `devicePixelRatio`; `refresh_hz` is null | all |
 | `steam_deck` | `true` on a Steam Deck, `false` elsewhere: Steam's `SteamDeck=1`, Valve's Jupiter or Galileo board, or SteamOS (read from `/sys/class/dmi/id/` and `/etc/os-release` on Linux, and through Proton's `Z:` drive on Windows; read on the device and not sent) | all |
 | `distribution` | iOS: `app_store`, `testflight` (TestFlight, and App Review) or `development` (Xcode, ad hoc, the Simulator), from whether the receipts and profile above are there. Android: `google_play`, `store` (another app store), `sideloaded` (adb, an APK file, Firebase App Distribution) or `development` (a debug build), from whether it's a debug build and which app installed it (read on the device and not sent). Left out when it can't tell, and on other systems | all |
-| `model`, `os_version` | `iPhone16,1`, `27.1` | **full** |
+| `model`, `os_version` | `iPhone16,1`, `27.1` (null in a web export) | **full** |
 | `gpu`, `gpu_vendor` | `Apple A17 Pro GPU`, `Apple` | **full** |
 | `cores`, `memory_gb` | `6`, `8` | **full** |
 
@@ -146,7 +148,7 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | `user://glitchless/launched` | the game's version string, the last one that ran, so the next launch can tell whether it is a version's first (`first_launch`). The same on every player's device of that version, so it ties nothing to anyone | all |
 | `user://glitchless/enabled` | `on` or `off`: the player's choice from the game's "Share performance data" setting (`Glitchless.set_enabled`), so a player who turned it off has nothing measured or sent from the first frame of every later launch. The same on every device that made the same choice, so it ties nothing to anyone. Written only once the game calls `set_enabled` | all, and a dedicated server |
 
-Deleting the app deletes them all. While the choice is `off`, nothing else is written: the outbox is deleted, unread, and no new one is kept.
+In a web export these live in the browser's storage for the game's site (IndexedDB), with the same contents. Deleting the app, or clearing the site's data in a web export, deletes them all. While the choice is `off`, nothing else is written: the outbox is deleted, unread, and no new one is kept.
 
 ## Kept on the server
 

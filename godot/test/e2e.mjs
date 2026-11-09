@@ -42,38 +42,13 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { fingerprint } from '../../packages/sdk/src/fingerprint.js';
+import { findGodot } from './godot-bin.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PROJECT = path.join(ROOT, 'godot');
 const SERVICE = 'glitchless-godot-demo';
 const godot = findGodot();
 const results = [];
-
-function findGodot() {
-  const candidates = [
-    process.env.GODOT,
-    'godot',
-    path.join(os.homedir(), 'Applications/Godot.app/Contents/MacOS/Godot'),
-    '/Applications/Godot.app/Contents/MacOS/Godot',
-    ...listGodotApps(path.join(os.homedir(), 'Applications')),
-    ...listGodotApps('/Applications'),
-  ].filter(Boolean);
-  for (const bin of candidates) {
-    const r = spawnSync(bin, ['--version'], { encoding: 'utf8' });
-    const m = r.stdout?.match(/^(\d+)\.(\d+)/);
-    if (m && (Number(m[1]) > 4 || (Number(m[1]) === 4 && Number(m[2]) >= 5))) return bin;
-  }
-  console.error('Godot 4.5 or later not found. Set GODOT=/path/to/Godot.');
-  process.exit(2);
-}
-
-function listGodotApps(dir) {
-  try {
-    return fs.readdirSync(dir).filter((f) => /^Godot.*\.app$/.test(f)).sort().reverse().map((f) => path.join(dir, f, 'Contents/MacOS/Godot'));
-  } catch {
-    return [];
-  }
-}
 
 function freePort() {
   return new Promise((resolve) => {
@@ -324,7 +299,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.6.4'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.6.5'));
   });
   check('load: stamped when the first frame was drawn, not when the first batch went', () => {
     for (const s of sessions) {
@@ -462,7 +437,7 @@ try {
     assert.ok(opened, 'no report from code');
     assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
     assert.ok(opened.screenshot.length <= 200_000);
-    assert.equal(opened.sdk, 'glitchless-godot/0.6.4');
+    assert.equal(opened.sdk, 'glitchless-godot/0.6.5');
     assert.equal(opened.level, 'level_1');
     assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
     assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');

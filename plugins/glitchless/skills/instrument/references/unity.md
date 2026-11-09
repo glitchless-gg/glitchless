@@ -151,6 +151,13 @@ those sessions synthetic. To measure a build before and after a change, run the 
 screen); it writes frame stats as JSON and quits. In a live Editor you can drive, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))`
 does the same.
 
+`glitchless_playtest` does the before-and-after for you: build the player, then give the playtest the build, as the
+tool's `command` or in `glitchless.playtest.json` (`{"command": ["Builds/Game.app"]}`, `Builds/Game.exe` on Windows).
+Each run starts it with `--autoplay --seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure
+flags, and the run is compared with the saved baseline, including GPU time, physics and what grew over the run. The
+game's autoplay mode has to read those flags and keep playing for the whole measure (10 seconds by default).
+Rebuild before each playtest: it runs the build, not the Editor.
+
 ## 6. Verify
 
 Press Play in the Editor, play a level and die once, then call `glitchless_list_games` or open the dashboard.

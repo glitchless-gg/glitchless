@@ -904,8 +904,12 @@ function sendFile(res, file) {
   fs.createReadStream(file).pipe(res);
 }
 
+// Cross-Origin-Resource-Policy lets a cross-origin-isolated page (COEP require-corp: a Godot web export with threads,
+// itch.io's SharedArrayBuffer option) read the answer to a no-cors request such as navigator.sendBeacon's. Without it
+// the batch still arrives, but the page logs an error for every beacon.
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-glitchless-api-key, x-glitchless-client, x-glitchless-voter');
 }

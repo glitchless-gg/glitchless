@@ -12,7 +12,8 @@
 // and one player), waits for the demo's race to end, stops it (which closes the server: BindToClose sends everything),
 // and checks what the Glitchless server received and what Studio's Output said: the race, the extras the demo turns
 // on (a ProximityPrompt, a seat, joined_with_friend, friends_in_server), calls made before Glitchless started, and
-// the map the server drew of the track (decoded with macOS's sips).
+// the map the server drew of the track (decoded with macOS's sips). Last, glitchless-playtest plays the place twice
+// itself, over its own connection to Studio, and compares the runs it reads back from the server.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
@@ -21,6 +22,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { playtest } from '../../packages/playtest/src/index.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const STUDIO_MCP = '/Applications/RobloxStudio.app/Contents/MacOS/StudioMCP';
@@ -33,6 +35,7 @@ let server;
 let mcp;
 let port;
 let run; // what the run saw: { player, console, events }
+let studioId; // the Studio with the test place open
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -195,6 +198,7 @@ before(async () => {
   }
   assert.ok(ids.length, 'no Studio with the Glitchless test place answered over MCP: turn on Assistant → … → Manage MCP Servers → Enable Studio as MCP server');
   const studio = ids[0];
+  studioId = studio;
   if ((await studioMode(studio)) !== 'Edit') {
     await mcp.tool('start_stop_play', { studio_id: studio, is_start: false });
     for (let i = 0; i < 30 && (await studioMode(studio)) !== 'Edit'; i++) await sleep(1000);
@@ -309,4 +313,40 @@ test("the server drew the track's map and sent it under the race's level: a JPEG
   assert.match(info, new RegExp(`pixelWidth: ${map.size[0]}`), info);
   assert.match(info, new RegExp(`pixelHeight: ${map.size[1]}`), info);
   if (process.env.GLITCHLESS_MAP_OUT) fs.copyFileSync(jpg, process.env.GLITCHLESS_MAP_OUT);
+});
+
+test('glitchless-playtest plays the place in Studio twice: the run comes back from the server, and the same build has no new error', { timeout: 300_000 }, async () => {
+  const cwd = fs.mkdtempSync(path.join(tmp, 'playtest-'));
+  fs.writeFileSync(
+    path.join(cwd, 'glitchless.playtest.json'),
+    JSON.stringify({ engine: 'roblox', studio: studioId, server: `http://127.0.0.1:${port}`, scenarios: [{ name: 'race', params: { autoplay: true, seed: 7 }, max_s: 60 }] }),
+  );
+  const lines = [];
+  const baseline = await playtest({ cwd, saveAs: 'baseline', log: (l) => lines.push(l) });
+  const r = baseline.candidate;
+  assert.equal(r.kind, 'roblox');
+  assert.equal(r.service, SERVICE, "read from the demo's Glitchless.init");
+  const [sc] = r.scenarios;
+  assert.equal(sc.finished, true, `the demo said the race was over\n${lines.join('\n')}`);
+  assert.equal(sc.session_ids.length, 1, JSON.stringify(sc));
+  assert.equal(sc.server_session_ids.length, 1, JSON.stringify(sc));
+  const start = events().find((e) => e.type === 'session_start' && e.session_id === sc.session_ids[0]);
+  assert.equal(start?.session_type, 'synthetic', 'the autoplay attribute reached the play test');
+  assert.equal(r.summary.level_attempts, 1, JSON.stringify(r.summary));
+  const messages = r.summary.errors.map((e) => e.message);
+  assert.ok(messages.includes("<player>'s trophy is missing"), `the server's error is the game's: ${JSON.stringify(messages)}`);
+  // A Studio window that isn't drawing (hidden or minimized) runs the client with no frames, and the player's-session
+  // test above fails on the camera's size: the playtest then says why in a note.
+  if (r.summary.frame_p95 == null) assert.ok(r.notes.some((n) => /No frames came from the players/.test(n)), JSON.stringify(r.notes));
+  else {
+    assert.ok(r.summary.levels.desert_loop, JSON.stringify(r.summary.levels));
+    assert.ok(messages.includes("attempt to index nil with 'Text'"), JSON.stringify(messages));
+  }
+  const left = await mcp.tool('execute_luau', { studio_id: studioId, datamodel_type: 'Edit', code: 'return tostring(workspace:GetAttribute("autoplay")) .. "|" .. tostring(workspace:GetAttribute("seed")) .. "|" .. tostring(workspace:GetAttribute("GlitchlessPlaytestDone"))' });
+  assert.match(left, /nil\|nil\|nil/, 'the attributes are put back');
+
+  const again = await playtest({ cwd });
+  assert.equal(again.comparison.new_errors.length, 0, again.report);
+  assert.ok(!again.comparison.regressions.some((c) => c.id === 'crashes'), again.report);
+  console.log(`playtest verdict on the same build: ${again.verdict}${again.comparison.regressions.length ? ` (${again.comparison.regressions.map((c) => c.id).join(', ')})` : ''}`);
 });

@@ -229,6 +229,12 @@ stutter*, *is the desert map's server lagging*, *where do players die*, *did ver
 `glitchless_triage`, `glitchless_performance`, `glitchless_servers`, `glitchless_match`, `glitchless_network` and
 `glitchless_player_funnel` read what this SDK sends.
 
+`glitchless_playtest` plays the place open in Studio before and after a change and compares the two, over Studio's MCP
+server: give the game an autoplay mode that starts when `workspace:GetAttribute("autoplay")` is set, plays the same
+way for the same `seed` attribute, marks its sessions `sessionType = "synthetic"` and sets the
+`GlitchlessPlaytestDone` attribute when it's over. The demo place does
+([`demo/server.server.luau`](demo/server.server.luau)).
+
 ## How it sends
 
 - One request is one session's batch (`POST /v1/intake?token=…`, gzipped over 1 KB), each with its own `batch_id`

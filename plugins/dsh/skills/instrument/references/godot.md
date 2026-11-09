@@ -37,6 +37,43 @@ If the game has no players yet, or the user asks for their own runs or playtests
 them to every run). Tell the user it's there, that it counts their runs as a player's, and to take it out once the game
 has players. Don't pass `"enabled": true` to `init` instead: that turns on every debug build for good.
 
+## Playtests
+
+`glitchless_playtest` runs the game with its autoplay bot before and after a change and compares the two. If the game
+has no autoplay mode, add one: in the main scene's `_ready()`, read `--autoplay` and `--seed=N` from
+`OS.get_cmdline_user_args()`, let a bot play with a `RandomNumberGenerator` seeded from N, call `level_start` as it
+goes, and keep playing for at least 10 seconds (`godot/demo/demo.gd` in the Glitchless repo does this). Then add
+`glitchless.playtest.json` beside `project.godot`:
+
+```json
+{
+  "command": ["godot", "--path", "."],
+  "scenarios": [
+    { "name": "seed 7", "params": { "autoplay": true, "seed": 7 }, "seconds": 10 },
+    { "name": "seed 21", "params": { "autoplay": true, "seed": 21 }, "seconds": 10 }
+  ]
+}
+```
+
+`godot` is Godot 4.5 or later on the PATH, or its full path; an exported build works too (`["build/Game.x86_64"]`).
+Call `glitchless_playtest` with `save_as: "baseline"` before changing code and with no arguments after. Each run opens
+the game's window for about 10 seconds; with `--headless`, frame times only warn.
+
+## Web exports
+
+A Godot web export (a game jam's entry on itch.io, say) needs nothing more: the addon works there with Thread Support
+off (the default) or on, and sends what a desktop build does (README, "Web exports"). What differs:
+
+- **Debug builds.** Godot's export dialog exports with debug on unless it's unticked, so a web export sends, debug or
+  not, once its page is anywhere but the developer's own machine. On their machine (the editor's Run in Browser, a local
+  server) a debug build sends only with `?glitchless` in the page's address: `main_run_args` doesn't reach a browser.
+  Tell the user to open `http://localhost:8060/tmp_js_export.html?glitchless` to see their own runs.
+- **Sessions name the browser** (Chrome, Safari, Firefox, Edge) and its OS, as the browser SDK's do, so a board splits a
+  web game by `$browser` and `$platform` like a Three.js one; Godot's version is in `session_start.engine`.
+- **Closing the tab** ends the session (`session_end` and `level_abandon`, reason `pagehide`), sent by beacon.
+- **Measuring:** `--glitchless-measure` needs a command line, so measure a desktop export of the same game (or the
+  game run from the editor); there are no WebMCP tools for a Godot web export.
+
 ## Streams, properties, matches and zones
 
 - **Count a stream, track a moment.** Shots, hits, kills, loot and gold go through

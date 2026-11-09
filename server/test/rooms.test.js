@@ -1,7 +1,8 @@
 // Jam rooms (rooms.js, rooms-api.js, play.js; SPEC §3j): a room and its code, games joining and publishing their built
 // files, the arcade and big screen counting players' plays (never bots), votes that can't go to your own game and show
-// no counts until the end, the end's awards, snapshot and survey, every upload limit, and the sweep that deletes a
-// room a day after it ends. Every events store runs the numbers.
+// no counts until the end, the end's awards, snapshot and survey, every upload limit, the sweep that deletes a room a
+// day after it ends, and an online room whose games are played on itch.io and linked by version. Every events store
+// runs the numbers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -417,6 +418,127 @@ test('the sweep: a room ends at its closing time, an upload never published is d
   clock += 365 * DAY;
   assert.equal((await s.app.rooms.sweep()).snapshots, 1);
   assert.equal((await call('GET', `/v1/rooms/${code}/snapshot`, { organiser: 'org' })).status, 404);
+});
+
+test('an online room: up to 21 days, games played on itch.io link each version, the arcade sends players there, and the awards come from their plays', async (t) => {
+  // The jam started an hour ago, so its plays are over by the time the big screen counts them.
+  let clock = Date.now() - HOUR;
+  const s = await setup({ clock: () => clock });
+  t.after(s.close);
+  const { call } = s;
+  const org = { organiser: 'org' };
+  const ana = { reader: 'ana', client: 'claude-code' };
+  const bo = { reader: 'bo', client: 'codex' };
+
+  // An in-person room is on for 7 days at most; an online one for 21.
+  assert.match((await call('POST', '/v1/rooms', org, { title: 'Long', hours: 169 })).json.error, /1 to 168 hours \(7 days\); an online room, up to 504 \(21 days\)/);
+  assert.equal((await call('POST', '/v1/rooms', org, { title: 'Long', online: 'yes' })).status, 400);
+  assert.match((await call('POST', '/v1/rooms', org, { title: 'Long', hours: 505, online: true })).json.error, /an online room is on for 1 to 504 hours \(21 days\)/);
+  const made = await call('POST', '/v1/rooms', org, { title: 'Day One Patch Jam', hours: 11 * 24, online: true });
+  assert.equal(made.status, 201, made.text);
+  const code = made.json.code;
+  assert.equal(made.json.online, true);
+  assert.equal(made.json.closes_at - made.json.created_at, 11 * DAY);
+  assert.equal((await call('PATCH', `/v1/rooms/${code}`, org, { closes_at: made.json.created_at + 20 * DAY })).status, 200);
+  assert.match((await call('PATCH', `/v1/rooms/${code}`, org, { closes_at: made.json.created_at + 22 * DAY })).json.error, /from now to 21 days after the room was made/);
+
+  // Ana's game is on itch.io. Only its page there links: not another site, not the frame itch.io plays it in, not a
+  // draft's secret link.
+  assert.equal((await call('POST', `/v1/rooms/${code}/games`, ana, { title: 'Neon Dash', by: 'Ana', service: 'neon-dash' })).status, 201);
+  const link = (who, slug, body) => call('POST', `/v1/rooms/${code}/games/${slug}/links`, who, body);
+  for (const [url, why] of [
+    ['https://example.com/neon-dash', /only games on itch\.io/],
+    ['https://html-classic.itch.zone/html/12345/index.html', /the address of the game's frame/],
+    ['https://ana.itch.io/', /isn't a game's page/],
+    ['https://itch.io/jam/day-one-patch-jam', /only games on itch\.io/],
+    ['https://ana.itch.io/neon-dash?secret=abc123', /make the page public on itch\.io, then link https:\/\/ana\.itch\.io\/neon-dash/],
+    ['javascript:alert(1)', /only games on itch\.io/],
+    ['not a link', /isn't an address/],
+  ]) {
+    const r = await link(ana, 'neon-dash', { url, version: '1.0.0' });
+    assert.equal(r.status, 400, url);
+    assert.match(r.json.error, why, url);
+  }
+  assert.match((await link(ana, 'neon-dash', { version: '1.0.0' })).json.error, /url is required/);
+  assert.equal((await link(bo, 'neon-dash', { url: 'https://bo.itch.io/neon-dash', version: '1.0.0' })).status, 404, "another maker's game");
+
+  const v1 = await link(ana, 'neon-dash', { url: 'HTTPS://Ana.itch.io/neon-dash/', version: '1.0.0' });
+  assert.equal(v1.status, 200, v1.text);
+  assert.deepEqual([v1.json.url, v1.json.site, v1.json.version, v1.json.n], ['https://ana.itch.io/neon-dash', 'itch.io', '1.0.0', 1]);
+  assert.match(v1.json.qr_text, /█/);
+  assert.equal(v1.json.qr_svg, `https://app.example/v1/rooms/${code}/qr.svg?game=neon-dash`);
+  assert.equal((await link(ana, 'neon-dash', { version: '1.0.0' })).status, 409, 'a version links once: bump it first');
+  assert.match((await call('POST', `/v1/rooms/${code}/games/neon-dash/uploads`, ana, { version: '1.0.1', files: [{ path: 'index.html', bytes: 1, sha256: sha('x') }] })).json.error, /played on itch\.io \(https:\/\/ana\.itch\.io\/neon-dash\): link each new version/);
+
+  // Bo publishes Tap Tower's build to the room as before; a game is published or linked, not both.
+  assert.equal((await call('POST', `/v1/rooms/${code}/games`, bo, { title: 'Tap Tower', service: 'tap-tower' })).status, 201);
+  assert.equal((await publish(call, code, 'tap-tower', bo, '0.1.0')).status, 200);
+  assert.match((await link(bo, 'tap-tower', { url: 'https://bo.itch.io/tap-tower', version: '0.2.0' })).json.error, /builds are published to the room/);
+
+  // The arcade sends players to itch.io for Neon Dash, and plays Tap Tower from the room.
+  const arcade = (await call('GET', `/v1/rooms/${code}`)).json;
+  assert.equal(arcade.online, true);
+  assert.deepEqual(arcade.games.map((g) => [g.slug, g.url, g.site, g.version]), [
+    ['neon-dash', 'https://ana.itch.io/neon-dash', 'itch.io', '1.0.0'],
+    ['tap-tower', `https://play.example/r/${code}/tap-tower/`, null, '0.1.0'],
+  ]);
+  assert.match((await call('GET', `/v1/rooms/${code}/qr.svg?game=neon-dash`)).text, /^<svg /);
+  const status = (await call('GET', `/v1/rooms/${code}/games/neon-dash`, ana)).json;
+  assert.deepEqual(status.uploads.map((u) => [u.version, u.files, u.link]), [['1.0.0', 0, 'https://ana.itch.io/neon-dash']]);
+
+  // Players on itch.io: Neon Dash 1.0.0 gets 4 plays (3 on phones: 2 stutter, 1 errors) and one from before it was
+  // linked, which doesn't count; 1.0.1, linked half an hour later without its page again, 3 clean plays on phones.
+  // Tap Tower gets 3 plays on laptops. All are sent before the big screen first reads (see the jam above).
+  const t0 = clock + MINUTE;
+  await s.intake('gl_pub_a', playOf('neon-dash', '1.0.0', 0, clock - 10 * MINUTE, { phone: true }));
+  await s.intake('gl_pub_a', playOf('neon-dash', '1.0.0', 1, t0, { phone: true, stutter: true }));
+  await s.intake('gl_pub_a', playOf('neon-dash', '1.0.0', 2, t0 + 1000, { phone: true, stutter: true }));
+  await s.intake('gl_pub_a', playOf('neon-dash', '1.0.0', 3, t0 + 2000, { phone: true, error: true }));
+  await s.intake('gl_pub_a', playOf('neon-dash', '1.0.0', 4, t0 + 3000));
+  for (let i = 0; i < 3; i++) await s.intake('gl_pub_a', playOf('neon-dash', '1.0.1', 10 + i, t0 + 30 * MINUTE + i * 1000, { phone: true }));
+  for (let i = 0; i < 3; i++) await s.intake('gl_pub_b', playOf('tap-tower', '0.1.0', 20 + i, t0 + i * 1000));
+  await s.settle();
+  clock = Date.now() - 30 * MINUTE;
+  const v2 = await link(ana, 'neon-dash', { version: '1.0.1' });
+  assert.equal(v2.status, 200, v2.text);
+  assert.equal(v2.json.url, 'https://ana.itch.io/neon-dash', 'the page linked before');
+  clock = Date.now();
+
+  let live = (await call('GET', `/v1/rooms/${code}/live`)).json;
+  const row = (slug) => live.games.find((g) => g.slug === slug);
+  assert.deepEqual([row('neon-dash').plays, row('neon-dash').phone_plays, row('neon-dash').url], [7, 6, 'https://ana.itch.io/neon-dash']);
+  assert.equal(row('tap-tower').plays, 3);
+  assert.equal((await call('PUT', `/v1/rooms/${code}/vote`, { voter: 'cy' }, { slug: 'neon-dash' })).status, 200, 'a linked game takes votes');
+
+  // The end: the awards come from the plays on itch.io, by version.
+  assert.equal((await call('PATCH', `/v1/rooms/${code}`, org, { end: true })).json.ended, true);
+  assert.equal((await link(ana, 'neon-dash', { version: '1.0.2' })).status, 409, 'linking stops at the end');
+  live = (await call('GET', `/v1/rooms/${code}/live`)).json;
+  const awards = Object.fromEntries(live.awards.map((a) => [a.id, a]));
+  assert.deepEqual(awards.most_played.games, ['neon-dash']);
+  assert.equal(awards.biggest_improvement.text, 'Neon Dash: before the fix, 3 of 4 plays hit a problem; after it, 0 of 3');
+  assert.deepEqual(awards.smoothest_on_phones.games, ['neon-dash']);
+  assert.match(awards.smoothest_on_phones.text, /over 6 plays on phones$/);
+  assert.deepEqual([row('neon-dash').url, row('neon-dash').site], ['https://ana.itch.io/neon-dash', 'itch.io'], 'the big screen, frozen from the snapshot, still links it');
+  const snap = (await call('GET', `/v1/rooms/${code}/snapshot`, org)).json;
+  assert.equal(snap.online, true);
+  assert.deepEqual(snap.games.map((g) => [g.slug, g.link, g.uploads.map((u) => u.version).join(' ')]), [['neon-dash', 'https://ana.itch.io/neon-dash', '1.0.0 1.0.1'], ['tap-tower', null, '0.1.0']]);
+  assert.deepEqual(snap.funnel, { joined: 2, published: 2, sending: 2, improved: 1, fixed: 1 });
+  const csv = (await call('GET', `/v1/rooms/${code}/snapshot?format=csv`, org)).text.split('\n');
+  assert.match(csv[0], /,awards,link$/);
+  assert.match(csv[1], /^neon-dash,Neon Dash,Ana,.*,https:\/\/ana\.itch\.io\/neon-dash$/);
+  const linked = s.told.filter((x) => x.type === 'published' && x.upload.link);
+  assert.deepEqual(linked.map((x) => [x.upload.version, x.person]), [['1.0.0', 'u_ana'], ['1.0.1', 'u_ana']], 'the host hears of a link as of a publish');
+
+  // An online room stays a week after its end, as long as its survey is open, for the players who come back for the
+  // awards; then it goes, and its snapshot stays.
+  clock += 2 * DAY;
+  assert.equal((await s.app.rooms.sweep()).deleted, 0);
+  assert.equal((await call('GET', `/v1/rooms/${code}`)).json.games.find((g) => g.slug === 'neon-dash').url, 'https://ana.itch.io/neon-dash');
+  clock += 5 * DAY + MINUTE;
+  assert.equal((await s.app.rooms.sweep()).deleted, 1);
+  assert.equal((await call('GET', `/v1/rooms/${code}`)).status, 404);
+  assert.equal((await call('GET', `/v1/rooms/${code}/snapshot`, org)).json.games.find((g) => g.slug === 'neon-dash').link, 'https://ana.itch.io/neon-dash');
 });
 
 test('taking a game out: the organiser removes one for good, a maker can leave, and both disappear from the arcade', async (t) => {

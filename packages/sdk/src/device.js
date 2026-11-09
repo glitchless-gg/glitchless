@@ -52,7 +52,8 @@ const BROWSERS = [
 ];
 
 // The browser, its major version, the OS and whether it is a phone. Exported for the Unity SDK's parity fixture
-// (unity/test/make-fixtures.mjs): a Unity web build reads its page the same way.
+// (unity/test/make-fixtures.mjs) and the Godot SDK's parity test (godot/test/web.mjs): their web builds read their
+// page the same way.
 export function parseUserAgent(nav) {
   const ua = nav.userAgent || '';
   const uad = nav.userAgentData;
@@ -107,8 +108,9 @@ function probeGpu() {
   }
 }
 
-// "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)" → "Apple M3 Pro"
-function cleanGpu(s) {
+// "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)" → "Apple M3 Pro". Exported, with
+// cleanVendor, for the Godot SDK's parity test (godot/test/web.mjs): a Godot web export reads its page the same way.
+export function cleanGpu(s) {
   if (!s) return 'unknown';
   const angle = s.match(/ANGLE \((.+)\)/);
   if (angle) {
@@ -122,7 +124,7 @@ function cleanGpu(s) {
   return s.trim();
 }
 
-function cleanVendor(vendor, renderer) {
+export function cleanVendor(vendor, renderer) {
   const s = `${vendor} ${renderer}`.toLowerCase();
   if (s.includes('apple')) return 'Apple';
   if (s.includes('nvidia') || s.includes('geforce')) return 'NVIDIA';

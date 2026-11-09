@@ -9,7 +9,7 @@ It reports:
 - **Engine counts.** Draw calls, primitives, objects, nodes, orphan nodes, video memory, and static memory (debug builds only). They're the leak watch.
 - **Errors** through Godot 4.5's custom loggers, with script backtraces and the last game events as breadcrumbs.
 - **Play events:** the level funnel, deaths, game events and gauges.
-- **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed.
+- **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed. A [web export](#web-exports) names the player's browser and its OS, as the browser SDK does.
 - **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 - **Multiplayer:** ping, packet loss and disconnects from Godot's own MultiplayerAPI (ENet, and WebSocket for web exports), which match and party each event belongs to, and a dedicated server's tick time and players, kept apart from players' sessions.
 - **Genre numbers:** counters for streams of events (shots, kills, gold), properties that hold for a session (mode, rank tier, class, region), level attributes (difficulty, party size) and zones in an open world.
@@ -123,6 +123,8 @@ run/main_run_args="--glitchless"
 ```
 
 Those runs count as a player's sessions, so take it out once the game has players, or your own playtests mix with theirs.
+
+**Web exports** have no command line, and Godot's export dialog exports with debug on unless *Export With Debug* is unticked, so a game jam's entries are often debug builds. A web export therefore goes by where its page is. Played from anywhere but your own machine (itch.io, your site), it sends, debug build or not: players are playing it. On your own machine (the editor's *Run in Browser*, a local server, or another device on your network) a debug build follows the rule above, and `?glitchless` in the page's address stands in for `--glitchless`: `http://localhost:8060/tmp_js_export.html?glitchless`.
 
 ### The player's off switch
 
@@ -266,7 +268,7 @@ Glitchless asks the server what it takes when `init()` runs (`GET /v1/health`). 
 
 ### Flags
 
-These go after `--` on the command line, like the games' own debug flags.
+These go after `--` on the command line, like the games' own debug flags. A web export takes `--glitchless`, `--glitchless-debug` and `--glitchless-synthetic` from its page's address too (`?glitchless`), and only those: a link can't point a player's data at another server.
 
 | flag | |
 | --- | --- |
@@ -362,6 +364,18 @@ So run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to cat
 - **Closing** (the window's close button, Android's back button, or `get_tree().quit()`) sends `session_end` the same way.
 - **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session's batches go out under a new random ID. Each batch keeps its own `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back.
 
+## Web exports
+
+A web export (Godot 4.5 or later, the Compatibility renderer) sends everything a desktop build does: sessions, frame windows, hitches, errors, the level funnel, bug reports with their screenshot, counters and properties (not `--glitchless-measure`: a page has no command line, so measure a desktop export). It works with *Thread Support* off, the default since Godot 4.3, and on (which needs a cross-origin-isolated page). Nothing to set up beyond the [Install](#install) steps; the differences:
+
+- **The device is the browser.** `session_start` names the player's browser and its major version (`Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`), the OS it runs on, whether it is a phone, the page's screen and pixel ratio, and the GPU tier from the GPU the page names, read by the browser SDK's own rules, so a Godot web game splits by browser and OS like a Three.js one. Godot's version goes in `session_start.engine` (`{"name": "godot", "version": "4.7.2", "renderer": "webgl"}`).
+- **Hidden and closed.** Godot hears nothing as a tab is hidden or closed, and a web page can't wait for a request then. So Glitchless listens to the page itself: when it is hidden (another tab, the phone locked) what is waiting goes by `navigator.sendBeacon` and the session goes on; when it goes (closed, another page) the session ends with `session_end` and, with a level going, `level_abandon`, both `reason: "pagehide"`, sent by beacon too. `get_tree().quit()` sends its end the same way. A page back from the browser's back-forward cache carries on as a phone back from the background.
+- **Requests are `text/plain`**, as the browser SDK's are, so a batch needs no CORS preflight. The server reads the JSON whatever the type says.
+- **`user://` is the browser's IndexedDB.** The outbox, the player ID (install and full mode) and the player's off switch are kept there per site, so a player who turned Glitchless off stays off on their next visit, and batches a visit couldn't send go on the next.
+- **Debug builds** send from a page anywhere but your own machine; see [Off in debug builds](#off-in-debug-builds).
+
+`npm run test:godot:web` plays the demo as a web export in Chromium, with thread support off and on, and checks the above; [Limits](#limits) lists what it doesn't.
+
 ## What it costs
 
 It isn't a profiler: it hooks no functions and runs no engine profiler. Each frame it reads the frame's wall-clock time and a few counters Godot already keeps (draw calls, primitives, nodes, pipeline compiles, the renderer's time), and adds them to a fixed-size summary. Measured with [test/overhead.gd](../../test/overhead.gd) on Godot 4.7.2, a debug build on an Apple M3 Max:
@@ -373,13 +387,13 @@ It isn't a profiler: it hooks no functions and runs no engine profiler. Each fra
 | A flush: the window and events become a batch | every 15 seconds | about 70 µs (0.5 ms the first time) |
 | Saving the outbox with 3,900 events waiting, offline | every 15 seconds while offline | about 0.4 ms |
 
-- **The outbox file is written on a worker thread**, so no frame waits on the disk, and each batch is turned into JSON once, however many times the outbox is saved or the batch is sent. Closing and going to the background write it at once instead, since the OS may stop the game before a worker finishes.
+- **The outbox file is written on a worker thread**, so no frame waits on the disk, and each batch is turned into JSON once, however many times the outbox is saved or the batch is sent. Closing and going to the background write it at once instead, since the OS may stop the game before a worker finishes. A web export writes it at once too: its `user://` is in memory, copied to IndexedDB after the frame.
 - **A phone is slower**, often several times per operation. Run the script on your own hardware: `godot --headless --path godot --script res://test/overhead.gd`.
 - `measure_render_time: false` turns off the renderer timing (Godot's own `viewport_set_measure_render_time`).
 
 ## What goes on the wire
 
-`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.4"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
+`POST {intake}/v1/intake?token=…` with the browser SDK's envelope and `sdk: "glitchless-godot/0.6.5"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can't fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.
 
 ## Limits
 
@@ -389,14 +403,16 @@ It isn't a profiler: it hooks no functions and runs no engine profiler. Each fra
   - Deaths sent without a place, as anonymous mode sends them, are left off heatmaps and hotspot findings.
   - The memory-leak finding still reads three.js geometry counts. Godot leaks show through the `orphan_nodes` and `nodes` gauges instead.
   - Fix suggestions in findings are written for three.js.
-- **Web exports** are untested. A web game is better served by the browser SDK. WebSocket disconnects and their close codes were checked in desktop builds, not in a browser.
+- **Web exports** are checked in Chromium on macOS (Godot 4.7.2, thread support off and on, `npm run test:godot:web`), with the page hidden by its `visibilitychange` event and left by navigating away. Not checked: Safari, Firefox, browsers on phones, closing a real tab, a page back from the back-forward cache, and itch.io's frame. WebSocket disconnects and their close codes were checked in desktop builds, not in a browser.
+- **A cross-origin-isolated page** (thread support on) logs a blocked answer for each beacon to a Glitchless server older than November 2026, which doesn't send `Cross-Origin-Resource-Policy`. The batch still arrives.
 - **Network:** Godot can't tell Wi-Fi from mobile data, so `net.link` is null. Only ENet gives a round trip; WebRTC and WebSocket need `net_sample()`.
 - **Dedicated servers:** a server's memory and CPU come from `/proc/self` on Linux; elsewhere memory is the engine's static memory (debug builds only) and CPU is null. `net_objects` is null: Godot doesn't count replicated objects.
-- Sending uses `HTTPRequest` while the game runs and a blocking `HTTPClient` for the last batch, which has no frames left to finish an `HTTPRequest`. A batch the server received just before a close can arrive twice.
+- Sending uses `HTTPRequest` while the game runs and a blocking `HTTPClient` for the last batch, which has no frames left to finish an `HTTPRequest` (a web export beacons it). A batch the server received just before a close can arrive twice.
 
 ## Tests
 
 From the repo root:
 
 - `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows) and `test/off_switch_test.gd` (the player's off switch). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does. Last, it plays the demo with the off switch (`--off-at`, `--on-at`, `--opt-in`) against a fake intake that keeps every request: off and back on mid-run, off while offline, a launch with the choice saved as off, `opt_in`, and a debug build.
+- `npm run test:godot` then runs `test/web.mjs` (`npm run test:godot:web` on its own; it needs Godot's Web export templates and Playwright's Chromium). It first checks that `web_page.gd` reads user agents, GPUs and Steam Decks as the browser SDK's `device.js` does (`test/web_page_test.gd`). Then it exports the demo for the web, debug, with thread support off and on, plays both in Chromium against a fresh local server and checks what arrives: the session as Chrome on its OS, frame windows, errors, a bug report, `text/plain` with no preflight, the beacon as the page is hidden and the session's end as it goes, `get_tree().quit()`, the debug rule on this machine and on a page elsewhere, and the off switch and the outbox kept in IndexedDB from one visit to the next.
 - `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.

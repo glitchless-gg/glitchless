@@ -5,7 +5,7 @@
 //   organisers   auth.resolveOrganiser(req) → { owner, limits? }: make rooms, change, end and delete their own, remove a
 //                game, set the survey and keep survey templates, read the snapshot. Without the hook, whoever passes
 //                resolveReader
-//   makers       resolveReader with the dashboard scope on the game's project: join, publish, leave
+//   makers       resolveReader with the dashboard scope on the game's project: join, publish or link, leave
 //   voters       auth.resolveVoter(req) → { voter, owns(projectId), person?, email? }: vote, and answer the survey.
 //                Without the hook, a browser's own random x-glitchless-voter token: one vote a browser, and no way to
 //                tell a maker's own game
@@ -147,14 +147,19 @@ export function createRoomsApi({ rooms, auth, clientAddress = (req) => req.socke
       }
       return json(res, 405, { error: 'GET, PATCH or DELETE' });
     }
+    // A version of a game played on its itch.io page: { version, url?, service? } (rooms.js link).
+    if (kind === 'links') {
+      if (n) return json(res, 404, { error: 'not found' });
+      if (m !== 'POST') return json(res, 405, { error: 'POST' });
+      return json(res, 200, withQr(await rooms.link(code, slug, await maker(req), await body(req)), code, slug));
+    }
     if (kind !== 'uploads') return json(res, 404, { error: 'not found' });
     if (!n) {
       if (m === 'POST') return json(res, 201, await rooms.startUpload(code, slug, await maker(req), await body(req)));
       return json(res, 405, { error: 'POST' });
     }
     if (verb === 'publish' && parts.length === 6 && m === 'POST') {
-      const done = await rooms.publish(code, slug, n, await maker(req));
-      return json(res, 200, { ...done, qr_text: qrText(done.url), qr_svg: `${new URL(done.arcade).origin}/v1/rooms/${code.toUpperCase()}/qr.svg?game=${slug}` });
+      return json(res, 200, withQr(await rooms.publish(code, slug, n, await maker(req)), code, slug));
     }
     if (verb === 'files' && parts.length > 6 && m === 'PUT') {
       const who = await maker(req);
@@ -174,9 +179,12 @@ export function createRoomsApi({ rooms, auth, clientAddress = (req) => req.socke
   return route;
 }
 
+// A publish's or a link's answer with the game's QR code, as text for a terminal and as the SVG's address.
+const withQr = (done, code, slug) => ({ ...done, qr_text: qrText(done.url), qr_svg: `${new URL(done.arcade).origin}/v1/rooms/${code.toUpperCase()}/qr.svg?game=${slug}` });
+
 // One row a game: what the CSV download of a snapshot holds.
 export function snapshotCsv(snap) {
-  const cols = ['slug', 'title', 'by', 'joined_at', 'removed', 'uploads', 'versions', 'agents', 'plays', 'players', 'minutes_played', 'phone_plays', 'phone_frames_on_time_pct', 'most_at_once', 'first_version_problem_pct', 'last_version_problem_pct', 'votes', 'awards'];
+  const cols = ['slug', 'title', 'by', 'joined_at', 'removed', 'uploads', 'versions', 'agents', 'plays', 'players', 'minutes_played', 'phone_plays', 'phone_frames_on_time_pct', 'most_at_once', 'first_version_problem_pct', 'last_version_problem_pct', 'votes', 'awards', 'link'];
   const pct = (v) => (v?.plays ? Math.round((v.with_problem / v.plays) * 100) : '');
   const rows = snap.games.map((g) => {
     const vs = g.numbers.versions.filter((v) => v.plays > 0);
@@ -199,6 +207,7 @@ export function snapshotCsv(snap) {
       last_version_problem_pct: vs.length > 1 ? pct(vs.at(-1)) : '',
       votes: g.votes,
       awards: snap.awards.filter((a) => a.games.includes(g.slug)).map((a) => a.title).join(' '),
+      link: g.link ?? '',
     };
   });
   const cell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));

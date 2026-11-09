@@ -21,7 +21,7 @@ delete process.env.GLITCHLESS_ROOM;
 
 const { cli } = await import('../src/cli.js');
 const { connect, credentialsFile } = await import('../src/context.js');
-const { findInit, readBuild } = await import('../src/publish.js');
+const { findInit, readBuild, itchPage, readInit } = await import('../src/publish.js');
 const { createServer } = await import('../src/tool.js');
 const { Client } = await import('@modelcontextprotocol/client');
 const { InMemoryTransport } = await import('@modelcontextprotocol/server');
@@ -159,7 +159,7 @@ test('the tool: join, publish, status with the plays by version, through an MCP 
 
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((x) => x.name), ['glitchless_jam', 'glitchless_jam_host'], "the maker's tool and the organiser's");
-  assert.deepEqual(tools[0].inputSchema.properties.action.enum, ['join', 'publish', 'status', 'leave'], "no organiser's actions in the maker's tool");
+  assert.deepEqual(tools[0].inputSchema.properties.action.enum, ['join', 'publish', 'link', 'status', 'leave'], "no organiser's actions in the maker's tool");
 
   assert.match((await call({ action: 'status', room: 'K7Q2' })).text, /Glitchless error: "K7Q2" isn't a room code/);
   const joined = await call({ action: 'join', room: code, title: 'Tap Tower', by: 'Bo', service: 'tap-tower' });
@@ -219,6 +219,66 @@ test('the tool: join, publish, status with the plays by version, through an MCP 
   assert.match((await call({ action: 'leave' })).text, /Took "tap-tower" out of room .{5}: it's off the arcade/);
   assert.match((await call({ action: 'status' })).text, /This computer hasn't joined room/);
   assert.match((await call({ action: 'leave' })).text, /Glitchless error: This computer has no game in room/);
+});
+
+test('an online jam: a room for 11 days, and games played on itch.io link each version from the CLI and the tool, which the room counts', async (t) => {
+  // The page on itch.io is checked on this computer, before anything is sent.
+  assert.equal(itchPage('HTTPS://Ana.itch.io/neon-dash/'), 'https://ana.itch.io/neon-dash');
+  assert.throws(() => itchPage('https://example.com/neon-dash'), /A room links games on itch\.io only/);
+  assert.throws(() => itchPage('https://html-classic.itch.zone/html/123/index.html'), /the frame itch\.io plays the game in/);
+  assert.throws(() => itchPage('https://ana.itch.io/neon-dash?secret=abc'), /Make the page public on itch\.io, then link https:\/\/ana\.itch\.io\/neon-dash/);
+  // A web export that's too big for a room is fine for itch.io: its version and service are read all the same.
+  const big = build({ ...NEON, 'assets/music.ogg': Buffer.alloc(5_000_000) });
+  assert.deepEqual(readInit(big), { service: 'neon-dash', version: '1.0.0', title: 'Neon Dash' });
+
+  assert.match((await run(['host', 'create', 'Too long', '--hours', '300'], env)).err, /1 to 168 hours \(7 days\); an online room, up to 504/);
+  const made = await run(['host', 'create', 'Day One Patch Jam', '--online', '--hours', '264'], env);
+  assert.equal(made.code, 0, made.err);
+  assert.match(made.out, /an online jam, on until .*Put the arcade's link on the jam's page/s);
+  const room = /Made room ([A-Z0-9]{5})/.exec(made.out)[1];
+  assert.match((await run(['host', 'list'], env)).out, new RegExp(`  ${room}  "Day One Patch Jam" \\(online\\): on until`));
+  const arcade = async () => (await (await fetch(`${s.base}/v1/rooms/${room}`)).json());
+
+  // From the CLI: the export's folder gives the version, the service and the title; later links reuse the page.
+  assert.match((await run(['link', 'https://example.com/neon', '--room', room, '--version', '1.0.0'], env)).err, /on itch\.io only/);
+  assert.equal((await arcade()).building, 0, 'nothing joined the room');
+  const linked = await run(['link', 'https://ana.itch.io/neon-dash', '--room', room, '--dir', big, '--by', 'Ana'], env);
+  assert.equal(linked.code, 0, linked.err);
+  assert.match(linked.out, /^Linked "Neon Dash" 1\.0\.0 in room .{5}\. Players' plays of 1\.0\.0 count from now; the arcade sends them to\n\n  https:\/\/ana\.itch\.io\/neon-dash/);
+  assert.match((await run(['link', '--room', room, '--dir', big], env)).err, /1\.0\.0 is already linked in room .{5}: bump the version/);
+  assert.equal((await run(['link', '--room', room, '--version', '1.0.1'], env)).code, 0, 'the page and the service linked before');
+  assert.deepEqual((await arcade()).games.map((g) => [g.slug, g.title, g.by, g.url, g.site, g.version]), [['neon-dash', 'Neon Dash', 'Ana', 'https://ana.itch.io/neon-dash', 'itch.io', '1.0.1']]);
+  assert.equal(await s.files.stat(`${room}/neon-dash/1/index.html`), null, 'nothing is uploaded');
+  // A Godot or Unity export keeps its version inside the build, so it's given.
+  assert.match((await run(['link', 'https://bo.itch.io/sky-hop', '--room', room, '--dir', build({ 'index.html': page('Sky Hop', './sky-hop.js'), 'sky-hop.js': 'var Engine={}', 'sky-hop.pck': 'GDPC' }), '--service', 'sky-hop'], env)).err, /Give version: .*as in a Godot or Unity export/);
+
+  // From the tool, through an MCP client.
+  const [a, b] = InMemoryTransport.createLinkedPair();
+  await createServer({ env }).connect(a);
+  const client = new Client({ name: 'codex', version: '0' });
+  await client.connect(b);
+  t.after(() => client.close());
+  const call = async (args) => (await client.callTool({ name: 'glitchless_jam', arguments: args })).content[0].text;
+  assert.match(await call({ action: 'join', room, title: 'Star Hop', by: 'Bo', service: 'star-hop' }), /an online jam\. If the game is on itch\.io: export it for the web, zip the folder/);
+  assert.match(await call({ action: 'link', url: 'https://bo.itch.io/star-hop', version: '0.1.0' }), /^Linked "Star Hop" 0\.1\.0 in room .{5}: the room counts players' plays of 0\.1\.0 from now, and its arcade sends them to https:\/\/bo\.itch\.io\/star-hop\./);
+  assert.match(await call({ action: 'publish', dir: build(NEON), service: 'star-hop', version: '0.2.0' }), /Glitchless error: this game is played on itch\.io \(https:\/\/bo\.itch\.io\/star-hop\): link each new version/);
+
+  // A player on itch.io plays Star Hop 0.1.0 on a phone; status counts it.
+  const ts = Date.now();
+  const res = await fetch(`${s.base}/v1/intake?token=gl_pub_dev`, {
+    method: 'POST',
+    body: JSON.stringify({ service: 'star-hop', env: 'prod', version: '0.1.0', session_id: 's_star_1', events: [{ type: 'session_start', ts, session_type: 'user', device: { browser: 'Safari', os: 'iOS', mobile: true } }, { type: 'session_end', ts: ts + 10, reason: 'quit', duration_s: 1 }] }),
+  });
+  assert.equal(res.status, 202);
+  await new Promise((r) => setTimeout(r, 20));
+  const status = await call({ action: 'status' });
+  assert.match(status, /Your game "Star Hop" \(https:\/\/bo\.itch\.io\/star-hop\): 1 play, 0 minutes played\. By version: 0\.1\.0: 1 play, none hit a problem\./);
+
+  const ended = await run(['host', 'end', room], env);
+  assert.match(ended.out, /The room and its games are deleted 7 days after the end/);
+  const report = JSON.parse((await run(['host', 'report', room], env)).out);
+  assert.equal(report.online, true);
+  assert.deepEqual(report.games.map((g) => [g.slug, g.link, g.numbers.plays]), [['neon-dash', 'https://ana.itch.io/neon-dash', 0], ['star-hop', 'https://bo.itch.io/star-hop', 1]]);
 });
 
 test('a workspace key: signed in like glitchless-mcp, organiser calls name no game, and a maker\'s calls name theirs in x-glitchless-project', async (t) => {

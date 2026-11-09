@@ -2,7 +2,8 @@
 // host). They open without signing in, at
 //   <base><CODE>          the arcade (here): every published game with a Play button, its QR code and a Vote button
 //                         while the jam is on; the survey and the awards once it has ended. Phone first; a grid of large
-//                         QR codes at projector width. It asks again every 20 seconds.
+//                         QR codes at projector width. It asks again every 20 seconds. A game linked from itch.io (an
+//                         online room's) plays there: its Play button and QR code open its page in a new tab.
 //   <base><CODE>/live     the big screen (RoomLive.jsx)
 //   <base><CODE>/survey   the survey (RoomSurvey.jsx)
 //   <base><CODE>/join     how a maker's agent joins (RoomJoin.jsx)
@@ -154,7 +155,8 @@ function Arcade({ code, base, voter, signInUrl }) {
             {r.joining ? (
               <>
                 <p>
-                  <b>Making a game?</b> Tell your agent to join room <span className="room-code">{r.code}</span>.
+                  <b>Making a game?</b> Tell your agent to join room <span className="room-code">{r.code}</span>
+                  {r.online ? ', then link each version of your game on itch.io.' : '.'}
                 </p>
                 <a className="room-btn ghost" href={links.join}>
                   How to join →
@@ -190,13 +192,15 @@ function TellUs({ survey, href }) {
 }
 
 // One game on the arcade: its QR code (to show a friend), title, maker, version ("New" for a publish in the last 10
-// minutes, while the jam is on), Play, the vote, and Report.
+// minutes, while the jam is on), Play, the vote, and Report. A linked game (g.site, itch.io) plays on its page there,
+// in a new tab, so the arcade stays open for the next game and the vote.
 function GameCard({ g, i, code, report, vote, fresh }) {
   const subject = `Report: ${g.title} in jam room ${code}`;
   const body = `Game: ${g.url}\n\nWhat's wrong with it:\n`;
+  const away = g.site ? { target: '_blank', rel: 'noopener' } : {};
   return (
     <article className="room-game" style={{ '--i': Math.min(i, 12) }}>
-      <a className="room-game-qr" href={g.url} tabIndex={-1} aria-hidden="true">
+      <a className="room-game-qr" href={g.url} tabIndex={-1} aria-hidden="true" {...away}>
         <Qr text={g.url} label="" />
       </a>
       <div className="room-game-body">
@@ -207,11 +211,11 @@ function GameCard({ g, i, code, report, vote, fresh }) {
         <h2 className="room-game-title">{g.title}</h2>
         {g.by && <div className="room-by">by {g.by}</div>}
         <div className="room-game-actions">
-          <a className="room-btn play" href={g.url}>
+          <a className="room-btn play" href={g.url} {...away}>
             <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
               <path d="M6 4l14 8-14 8z" fill="currentColor" />
             </svg>
-            Play
+            {g.site ? `Play on ${g.site}` : 'Play'}
           </a>
           {vote}
         </div>

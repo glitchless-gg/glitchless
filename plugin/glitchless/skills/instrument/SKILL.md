@@ -58,7 +58,10 @@ Settings, for every engine:
   agree before anything is collected, set the opt-in option (`optIn: true`; Godot and GameMaker `opt_in`; Unity
   `OptIn`; Unreal `bOptIn` or Project Settings > Opt In) and call the switch with `true` when the player says yes.
   Each SDK's reference below has the code.
-- **Bots.** Sessions from autoplay bots and tests must be marked synthetic, so they stay out of player numbers.
+- **Bots.** Sessions from autoplay bots and tests must be marked synthetic, so they stay out of player numbers. An
+  autoplay bot (`--autoplay --seed=N` in an engine game, `?autoplay=1&seed=N` on the web) also lets `glitchless_playtest`
+  compare builds before and after a change; the Unity, Godot, Unreal, GameMaker and Phaser references show its
+  `glitchless.playtest.json`.
 - **Testers.** On iOS the Godot, Unity and Unreal SDKs tell a TestFlight install from an App Store one themselves
   (`distribution` in the device fields) and mark its sessions `tester`, out of player numbers, even though a
   TestFlight build is a release build that reports `prod`. Don't pass a session type that would undo this. On
@@ -184,6 +187,12 @@ goes to the room's arcade, where everyone plays everyone's game on their phones:
   version from `Glitchless.init`, and answers with the game's link and a QR code: show both to the user.
 - Before publishing a fix, bump the version passed to `Glitchless.init`: a room takes each version once, and its
   "biggest improvement" award compares the first version with the last.
+- An online jam's games are often on itch.io instead. Then the game sends to a Glitchless address its players reach
+  (Glitchless Cloud, never `localhost`); export it for the web and zip the folder, `index.html` at the root of the
+  zip, for the user to upload to the game's itch.io page as HTML5; then link that version with `glitchless_jam`
+  (`action: "link"`, `url: "https://<name>.itch.io/<game>"`, `version`), or
+  `npx -y glitchless-jam link <page> --room <code> --version <v>`. Nothing is uploaded to the room: it counts the
+  version's plays, and its arcade sends players to the page. Bump the version and link again after each fix.
 
 ## Report
 

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.1.1';
+export const VERSION = '0.2.0';
 export const DEFAULT_URL = 'http://localhost:7777';
 
 const configDir = () => path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless');
@@ -171,8 +171,9 @@ export function roomFor(c, room, env = process.env) {
   return normalRoom(room || env.GLITCHLESS_ROOM || remembered(c)?.room);
 }
 
-// The game this computer has in `room`: { slug, project } (project: the workspace game's id, or null), or null.
+// The game this computer has in `room`: { slug, project, service } (project: the workspace game's id, or null; service:
+// the name it joined with, for a link that has no build to read it from), or null.
 export function gameIn(c, room) {
   const r = remembered(c);
-  return r?.room === room && r.slug ? { slug: r.slug, project: r.project ?? null } : null;
+  return r?.room === room && r.slug ? { slug: r.slug, project: r.project ?? null, service: r.service ?? null } : null;
 }

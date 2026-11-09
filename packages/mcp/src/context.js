@@ -9,7 +9,7 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
-export const VERSION = '0.17.0';
+export const VERSION = '0.18.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
@@ -309,7 +309,7 @@ function instructions(remote) {
     ...(remote
       ? ['After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.']
       : [
-          'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.',
+          'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. It plays a web game in Chrome, runs a Unity, Godot, Unreal or GameMaker build from its command (command, e.g. ["godot", "--path", "."]) with the game\'s autoplay flags, or plays a Roblox game (engine "roblox") in the open Roblox Studio, which needs Studio\'s MCP server on. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.',
           'If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.',
         ]),
   ].join(' ');

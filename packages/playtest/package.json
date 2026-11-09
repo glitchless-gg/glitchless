@@ -1,7 +1,7 @@
 {
   "name": "glitchless-playtest",
-  "version": "0.2.0",
-  "description": "Playtest bots for game observability: autoplay bots play your web game (Three.js, Phaser, Babylon.js, PlayCanvas) on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
+  "version": "0.3.0",
+  "description": "Playtest bots for game observability: your game's autoplay bot plays a Unity, Godot, Unreal or GameMaker build, a Roblox game in Roblox Studio, or a web game (Three.js, Phaser, Babylon.js, PlayCanvas) in Chrome, on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
   "keywords": [
     "playtesting",
     "playtest",
@@ -13,6 +13,11 @@
     "performance",
     "regression-testing",
     "playwright",
+    "unity",
+    "godot",
+    "unreal-engine",
+    "gamemaker",
+    "roblox",
     "threejs",
     "phaser",
     "web-games",

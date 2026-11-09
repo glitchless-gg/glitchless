@@ -18,10 +18,25 @@ export const templateId = (name) =>
     .slice(0, 32)
     .replace(/-+$/, '');
 
-export async function createRoom(c, { title, about, hours, max_games, template } = {}) {
+// { title, about?, hours?, max_games?, template?, online? (a jam over days, its games often on itch.io: up to 21 days) }
+export async function createRoom(c, { title, about, hours, max_games, template, online } = {}) {
   if (!title) throw new Error('a room needs a title, such as "GenAI DC mini jam"');
-  const body = { title, ...(about ? { about } : {}), ...(hours != null ? { hours: Number(hours) } : {}), ...(max_games != null ? { max_games: Number(max_games) } : {}), ...(template ? { template } : {}) };
+  const body = { title, ...(about ? { about } : {}), ...(hours != null ? { hours: Number(hours) } : {}), ...(max_games != null ? { max_games: Number(max_games) } : {}), ...(template ? { template } : {}), ...(online ? { online: true } : {}) };
   const r = await request(c, 'POST', '/v1/rooms', { body });
+  if (r.online) {
+    const text = `Made room ${r.code}: "${r.title}", an online jam, on until ${when(r.closes_at)}. Put the arcade's link on the jam's page: everyone plays the games from there, and it sends players to the games' itch.io pages.
+
+  Arcade, where everyone plays:  ${r.links.arcade}
+  Join page, for makers:         ${r.links.join}
+  Big screen, for a stream:      ${r.links.live}
+
+The arcade's QR code, for a stream or a poster:
+
+${r.qr_text}
+
+Makers add glitchless-jam to their agent (claude mcp add glitchless-jam -- npx -y glitchless-jam) and tell it to join room ${r.code}. A game on itch.io links each version with it (action "link") after its build is uploaded there; the room counts each version's plays, and the awards compare the first with the last. The room stays 7 days after it ends. The survey people answer when the jam ends is ${template && template !== 'default' ? `from the template ${template}` : 'the default one'}.`;
+    return { text, data: r };
+  }
   const text = `Made room ${r.code}: "${r.title}", on until ${when(r.closes_at)}. Open the big screen on the projector: ${r.links.live}
 
   Big screen, for the projector: ${r.links.live}
@@ -41,7 +56,7 @@ export async function listRooms(c) {
   const lines = [];
   if (!rooms.length && !past.length) lines.push('No jam rooms yet: create makes one.');
   if (rooms.length) lines.push('Your jam rooms:');
-  for (const r of rooms) lines.push(`  ${r.code}  "${r.title}": ${r.ended ? `ended ${when(r.ended_at)}` : `on until ${when(r.closes_at)}`}, ${plural(r.games.length, 'game')} published, ${r.games_joined} joined. Arcade: ${r.links.arcade}`);
+  for (const r of rooms) lines.push(`  ${r.code}  "${r.title}"${r.online ? ' (online)' : ''}: ${r.ended ? `ended ${when(r.ended_at)}` : `on until ${when(r.closes_at)}`}, ${plural(r.games.length, 'game')} published, ${r.games_joined} joined. Arcade: ${r.links.arcade}`);
   if (past.length) lines.push('Past jams, whose snapshots stay (report reads one):');
   for (const s of past) lines.push(`  ${s.code}  "${s.title}": ended ${when(s.ended_at)}, ${plural(s.games, 'game')}`);
   return { text: lines.join('\n'), data: { rooms, past } };
@@ -62,7 +77,7 @@ export async function endRoom(c, room) {
   const live = await request(c, 'GET', `/v1/rooms/${code}/live`, { anon: true });
   const lines = [`Ended "${r.title}" (${code}): publishing and voting have stopped. The big screen shows the awards and the survey's QR code now: ${r.links.live}`];
   for (const a of live.awards ?? []) lines.push(`  ${a.title}: ${a.text}`);
-  lines.push(`The survey is open for 7 days at ${r.links.survey}. The room and its games are deleted 24 hours after the end; its snapshot (report) stays.`);
+  lines.push(`The survey is open for 7 days at ${r.links.survey}. The room and its games are deleted ${r.online ? '7 days' : '24 hours'} after the end; its snapshot (report) stays.`);
   return { text: lines.join('\n'), data: { room: r, awards: live.awards ?? [] } };
 }
 

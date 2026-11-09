@@ -5,9 +5,14 @@ extends RefCounted
 ## the OS name, a low / mid / high tier, the renderer, the screen size and
 ## refresh rate. Full mode adds the model, OS version, GPU name, core count and
 ## memory. PRIVACY.md beside this file lists every field; keep the two in step.
+## A web export describes the device as the browser SDK does (web_info).
+
+const WebPage := preload("web_page.gd")
 
 
 static func info(full: bool) -> Dictionary:
+	if WebPage.in_page():
+		return web_info(full, WebPage.facts())
 	var os_name := OS.get_name()
 	var mobile := OS.has_feature("mobile")
 	var cores := OS.get_processor_count()
@@ -42,6 +47,40 @@ static func info(full: bool) -> Dictionary:
 		d["gpu_vendor"] = RenderingServer.get_video_adapter_vendor()
 		d["cores"] = cores
 		d["memory_gb"] = roundi(mem_gb) if mem_gb > 0 else null
+	return d
+
+
+## A web export's device, from its page (web_page.gd), in the browser SDK's
+## words: the browser and its major version, the OS and whether it is a phone
+## from the user agent, the page's pixel ratio and screen in CSS pixels, and the
+## GPU tier from the GPU the page names (Godot's own name for it is "WebKit
+## WebGL"). The tier comes from the cores and the memory the browser gives
+## (Chromium only: elsewhere it is unknown), not Godot's core count, which stops
+## at 2 on the web. Godot's renderer and driver stay.
+static func web_info(full: bool, page: Dictionary) -> Dictionary:
+	var p := WebPage.device(page)
+	var cores: int = p.cores if p.cores != null else OS.get_processor_count()
+	var d := {
+		"browser": p.browser,
+		"browser_version": p.browser_version,
+		"os": p.os,
+		"mobile": p.mobile,
+		"device_tier": device_tier(cores, float(p.memory_gb) if p.memory_gb != null else -1.0),
+		"gpu_tier": "low" if p.steam_deck else gpu_tier(p.gpu),
+		"renderer": RenderingServer.get_current_rendering_method(),
+		"driver": RenderingServer.get_current_rendering_driver_name(),
+		"screen": p.screen,
+		"dpr": p.dpr,
+		"refresh_hz": refresh_rate(),
+		"steam_deck": p.steam_deck,
+	}
+	if full:
+		d["model"] = null  # the browser doesn't say
+		d["os_version"] = null
+		d["gpu"] = p.gpu
+		d["gpu_vendor"] = p.gpu_vendor
+		d["cores"] = cores
+		d["memory_gb"] = p.memory_gb
 	return d
 
 

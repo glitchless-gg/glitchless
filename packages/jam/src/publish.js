@@ -7,6 +7,10 @@
 // reads the service and version the build passes to Glitchless.init. publishBuild() then joins the room (joining again
 // answers the same game), starts an upload with the list of files, sends each file, sends source maps to
 // /v1/sourcemaps instead of the room, and publishes. The server checks every limit again on its own.
+//
+// linkGame() is for a game played on its itch.io page (an online jam): nothing is uploaded. It joins the room and
+// registers the version, read from the web export's folder when there is one, so the room counts that version's plays
+// and its arcade sends players to the page.
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -179,6 +183,43 @@ async function pool(items, n, fn) {
   }));
 }
 
+// The game's page on itch.io, as the room takes it (checkLink in server/src/rooms.js, which checks it again): https,
+// <name>.itch.io/<game>, nothing after it. → the page in that form, or throws what to give instead, before anything
+// is sent.
+export function itchPage(url) {
+  const want = "give the game's page on itch.io, https://<name>.itch.io/<game>";
+  let u;
+  try {
+    u = new URL(String(url).trim());
+  } catch {
+    throw new JamError(`"${url}" isn't an address: ${want}.`);
+  }
+  const host = u.hostname.toLowerCase();
+  if (host.endsWith('.itch.zone')) throw new JamError(`${url} is the address of the frame itch.io plays the game in, which changes with every upload: ${want}.`);
+  if (!/^https?:$/.test(u.protocol) || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.itch\.io$/.test(host)) throw new JamError(`A room links games on itch.io only: ${want}.`);
+  const page = u.pathname.replace(/\/+$/, '');
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(page)) throw new JamError(`${url} isn't a game's page: ${want}.`);
+  if (u.search) throw new JamError(`Give the page's address with nothing after it: a draft's secret link stops working once the page is public. Make the page public on itch.io, then link https://${host}${page}.`);
+  return `https://${host}${page}`;
+}
+
+// What a web export says about itself without the room's limits (itch.io takes bigger builds): the service and version
+// its JS passes to Glitchless.init, and its page's title. Godot's and Unity's exports keep theirs inside the build, so
+// those come back null. → { service, version, title }
+export function readInit(dir) {
+  const root = path.resolve(dir);
+  if (!fs.statSync(root, { throwIfNoEntry: false })?.isDirectory()) throw new JamError(`There's no folder at ${root}: give the folder the web export made (the one you zipped for itch.io).`);
+  let found = { service: null, version: null };
+  let title = null;
+  for (const f of walk(root)) {
+    const ext = f.path.split('.').pop().toLowerCase();
+    if (f.bytes > LIMITS.uploadBytes || !['html', 'js', 'mjs'].includes(ext)) continue;
+    if (f.path === 'index.html') title = /<title[^>]*>([^<]{1,200})<\/title>/i.exec(fs.readFileSync(f.abs, 'utf8'))?.[1].trim().slice(0, 60) || null;
+    else if (ext !== 'html' && !found.service) found = findInit(fs.readFileSync(f.abs, 'utf8'));
+  }
+  return { ...found, title };
+}
+
 const roomPath = (room, slug = null) => `/v1/rooms/${room}/games${slug ? `/${encodeURIComponent(slug)}` : ''}`;
 
 // Joins `room` with the game (joining again answers the same game). opts: { game, title, by, service }. → the entry
@@ -187,8 +228,37 @@ export async function joinRoom(c, room, { game = null, title = null, by, service
   const ws = await gameFor(c, game || gameIn(c, room)?.project);
   const body = { service: service || ws?.service || undefined, ...(title ? { title } : !service && !ws?.service && ws ? { title: ws.name } : {}), ...(by !== undefined ? { by } : {}) };
   const entry = await request(c, 'POST', roomPath(room), { body, project: ws?.id });
-  remember(c, { room, slug: entry.slug, project: ws?.id ?? null });
-  return { ...entry, project: ws?.id ?? null, service: body.service ?? null };
+  const svc = body.service ?? entry.service ?? null;
+  remember(c, { room, slug: entry.slug, project: ws?.id ?? null, service: svc });
+  return { ...entry, project: ws?.id ?? null, service: svc };
+}
+
+// Links a version of the game played on its itch.io page to `room`, joining it first if need be. opts: { url (the page;
+// default: the one linked before), version, dir (the web export's folder, to read the version and service from),
+// service, game, title, by }. → { url, site, version, n, qr_text, qr_svg, arcade, room, slug, title, service, warnings }.
+export async function linkGame(c, room, { url = null, version = null, dir = null, service = null, game = null, title = null, by } = {}) {
+  const page = url ? itchPage(url) : null;
+  const build = dir ? readInit(dir) : { service: null, version: null, title: null };
+  const warnings = [];
+  version ||= build.version;
+  if (!version) throw new JamError(`Give version: the one the game passes to Glitchless.init${dir ? ` (it isn't in ${dir}'s scripts, as in a Godot or Unity export)` : ', or dir, the web export\'s folder, to read it from'}. Each link needs a new one, so the room tells the versions' players apart.`);
+  const mine = gameIn(c, room);
+  game ||= mine?.project;
+  const ws = await gameFor(c, game);
+  const svc = service || build.service || ws?.service || mine?.service || null;
+  const entry = await joinRoom(c, room, { game, title, by, service: svc });
+  if (!page && entry.site == null) throw new JamError(`Give url: the game's page on itch.io (https://<name>.itch.io/<game>), where its build is uploaded as HTML5.`);
+  if (entry.uploads?.length && entry.site == null) throw new JamError(`"${entry.title}" publishes its builds to room ${room}, so it plays from there: publish each new version instead.`, 409);
+  if (entry.uploads?.some((u) => u.version === version)) throw new JamError(`${version} is already linked in room ${room}: bump the version passed to Glitchless.init, upload that build to itch.io, then link it. Otherwise both builds' players count as one version.`, 409);
+  if (!svc && !entry.service) warnings.push(`No service is known for this game, so its plays won't count in the room: link again with service, the name the game passes to Glitchless.init.`);
+  // A first join without a title takes the service as its title; the export's page title or the game's name reads better.
+  const nicer = build.title || ws?.name;
+  if (!title && !entry.uploads?.length && nicer && entry.title === svc && nicer !== svc) {
+    Object.assign(entry, await request(c, 'PATCH', roomPath(room, entry.slug), { body: { title: nicer }, project: entry.project }));
+  }
+  const done = await request(c, 'POST', `${roomPath(room, entry.slug)}/links`, { body: { version, ...(page ? { url: page } : {}), ...(svc ? { service: svc } : {}) }, project: entry.project });
+  remember(c, { room, slug: entry.slug, project: entry.project, service: svc ?? entry.service ?? null });
+  return { ...done, room, slug: entry.slug, title: entry.title, service: svc ?? entry.service ?? null, warnings };
 }
 
 // Publishes the build in `dir` to `room`. opts: { version, service, game, title, by, log }. → { url, version, n,
@@ -240,6 +310,6 @@ export async function publishBuild(c, room, dir, { version = null, service = nul
     await request(c, 'PUT', at, { raw: await fs.promises.readFile(f.abs), project: entry.project });
   });
   const done = await request(c, 'POST', `${roomPath(room, entry.slug)}/uploads/${started.n}/publish`, { project: entry.project });
-  remember(c, { room, slug: entry.slug, project: entry.project });
+  remember(c, { room, slug: entry.slug, project: entry.project, service: svc });
   return { ...done, room, slug: entry.slug, title: entry.title, service: svc, files: list.length, bytes: build.total, sourcemaps, warnings };
 }

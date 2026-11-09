@@ -49,6 +49,18 @@ test('gzip and plain JSON bodies are both accepted', async () => {
   }
 });
 
+test('a beacon from a cross-origin-isolated page (a Godot web export with threads) may read the answer', async () => {
+  const app = await serve();
+  try {
+    const res = await fetch(`${app.base}/v1/intake?token=gl_pub_dev`, { method: 'POST', body: batch(1), headers: { 'Content-Type': 'text/plain;charset=UTF-8' } });
+    assert.equal(res.status, 202);
+    assert.equal(res.headers.get('cross-origin-resource-policy'), 'cross-origin');
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+  } finally {
+    await app.close();
+  }
+});
+
 test('a broken gzip body is a 400, a gzip bomb is a 413', async () => {
   const app = await serve();
   try {

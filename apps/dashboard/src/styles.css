@@ -779,11 +779,12 @@ html.drawer-open { overflow: hidden; }
 .room-home-dash:hover { border-color: var(--mint); color: #fff; text-decoration: none; }
 
 /* The organiser's Jam rooms page (Rooms.jsx). */
-.room-org-make { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(200px, 1.7fr) repeat(3, auto); gap: 10px; align-items: end; }
+.room-org-make { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(200px, 1.7fr) repeat(4, auto); gap: 10px; align-items: end; }
 .room-org-make select.input { min-width: 150px; max-width: 220px; }
 .room-org-make label { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 500; }
 .room-org-hours { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12.5px; }
 .room-org-hours .input { width: 72px; }
+.room-org-hours input[type='checkbox'] { width: 16px; height: 16px; margin: 0; accent-color: var(--link); }
 @media (max-width: 900px) { .room-org-make { grid-template-columns: minmax(0, 1fr); } .room-org-make .btn { justify-self: start; } }
 .room-org-card .wa { flex-wrap: wrap; justify-content: flex-end; }
 .room-org-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 15px; }

@@ -119,8 +119,8 @@ that collection is optional, and the privacy page gets a sentence about it (`gam
 
 ## 5. Bots and measuring
 
-Give the game an `-autoplay` flag (read it with `glitchless_has_flag("autoplay")`) that plays a few levels and
-calls `glitchless_quit()`. Sessions run with `-autoplay` are synthetic. GameMaker must be set up once by a person
+Give the game an `-autoplay` flag (read it with `glitchless_has_flag("autoplay")`, and seed its randomness from
+`glitchless_flag_value("seed", "1")`) that plays a few levels, for longer than you measure, and calls `glitchless_quit()`. Sessions run with `-autoplay` are synthetic. GameMaker must be set up once by a person
 (`gamemaker/README.md`, "Setting up GameMaker for the end-to-end test"). Igor's `Run` (the IDE's, and `gm-cli run`)
 starts the game with macOS's `open`, which passes no command line or environment on, so for a run from the IDE or
 Igor put the flags in `glitchless/args.txt` in the runner's save area:
@@ -134,6 +134,20 @@ npx @gamemaker/gm-cli@2.4.1 run Game.yyp --target=mac --runtime=vm   # or Run in
 Or compile once and start the runner with the flags on its command line, as `gamemaker/test/e2e.mjs` does. The run
 prints the stats as one line of JSON and where it saved them (`glitchless/measure.json` in the save area). Delete
 `args.txt` afterwards. Measure before and after a change.
+
+`glitchless_playtest` does the before-and-after for you with a compiled game started with flags on its command line:
+an executable, or the runner as `gamemaker/test/e2e.mjs` starts it. In `glitchless.playtest.json`:
+
+```json
+{
+  "command": ["open", "-n", "-W", "-a", "<runtime>/mac/YoYo Runner.app", "--args", "-game", "<absolute path>/build/game.ios"],
+  "measure_file": "~/Library/Application Support/com.yoyogames.macyoyorunner/glitchless/measure.json"
+}
+```
+
+`open` keeps the runner's output from the playtest, so it reads `measure_file` (an executable's is
+`glitchless/measure.json` in the game's own save area). Each run adds `-autoplay -seed=N` (seeds 7 and 21 by default)
+and the measure flags, and the run is compared with the saved baseline.
 
 ## 6. Verify
 

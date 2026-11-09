@@ -86,7 +86,7 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 
 An app sees only the tools its scopes allow. Every tool takes `game` (a name or id). Not served by URL, because they
 act on the computer the server runs on: `glitchless_sign_in` (OAuth replaces it), `glitchless_playtest` (plays the game
-in Chrome on that computer) and `glitchless_deck` (a Steam Deck on that network).
+in Chrome, or runs its build, on that computer) and `glitchless_deck` (a Steam Deck on that network).
 
 **Pictures by upload link.** The server can't read files on the agent's computer, and an app connected over OAuth
 holds no key to upload with. So `glitchless_set_dashboard` answers a `logo`, `banner` or heatmap `background` given as

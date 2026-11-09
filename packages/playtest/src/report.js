@@ -3,6 +3,8 @@
 const fmt = (v) => (v == null ? '–' : typeof v === 'number' ? (Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { maximumFractionDigits: 2 })) : String(v));
 const change = (c) => (c.change_pct == null ? '' : `${c.change_pct > 0 ? '+' : ''}${c.change_pct}%`);
 const runs = (n) => `${n} autoplay run${n === 1 ? '' : 's'}`;
+// memory_growth keys as words: orphan_nodes → orphan nodes, static_mb → static MB.
+export const growthKey = (k) => k.replace(/_mb$/, ' MB').replace(/_/g, ' ');
 const where = (c) => (c.scope === 'all levels' ? c.label : `${c.label}, ${c.scope}`);
 
 function describeRun(run) {
@@ -35,29 +37,56 @@ export function comparisonReport(baseline, candidate, cmp) {
     out.push('', '### Errors that no longer happen', '');
     for (const e of cmp.fixed_errors) out.push(`- \`${e.message}\` at ${e.location || 'unknown location'}`);
   }
+  out.push(...crashedRuns(candidate));
   const same = cmp.checks.filter((c) => c.status === 'same');
   if (same.length) out.push('', '<details><summary>Unchanged metrics</summary>', '', table(same), '', '</details>');
   return out.join('\n');
 }
 
+// An engine build's crashed or frozen runs, with the last lines each printed: what an agent needs to fix it.
+function crashedRuns(run) {
+  const crashed = (run.scenarios || []).filter((r) => r.crashed);
+  if (!crashed.length) return [];
+  const out = ['', '### Crashed runs', ''];
+  for (const r of crashed) out.push(`- ${r.scenario || 'run'}: ${r.reason}, after ${r.elapsed_s} s. Last lines it printed:`, '', '```', r.output_tail || '(nothing)', '```', '');
+  return out;
+}
+
 export function runReport(run) {
   const s = run.summary || {};
+  const engine = run.kind === 'engine';
   const out = [`## Glitchless playtest run ${describeRun(run)}`, ''];
   out.push(`${runs((run.scenarios || []).length)} · ${run.service} · ${[run.machine?.browser, run.machine?.gpu].filter(Boolean).join(' · ')}`, '');
   out.push('| Metric | Value |', '| --- | ---: |');
+  // A web run always shows the browser's metrics; an engine build only what its engine reports.
   const rows = [
-    ['Slow frames (% over budget)', s.pct_frames_over_budget],
-    ['Frame time p95 (ms)', s.frame_p95],
-    ['Render CPU per frame (ms)', s.render_cpu_ms],
-    ...(s.update_cpu_ms != null ? [['Update CPU per frame (ms)', s.update_cpu_ms]] : []),
-    ['Draw calls per frame', s.draw_calls],
-    ['Hitches per minute', s.hitches_per_min],
-    ['Errors per run', s.errors_per_session],
-    ['Crashed runs', s.crashes],
-    ['Deaths per run', s.deaths_per_session],
-    ['Level completion (%)', s.level_completion_pct],
+    ['Slow frames (% over budget)', s.pct_frames_over_budget, true],
+    ['Frame time p95 (ms)', s.frame_p95, true],
+    ['Frame time p99 (ms)', s.frame_p99],
+    ['Render CPU per frame (ms)', s.render_cpu_ms, true],
+    ['Update CPU per frame (ms)', s.update_cpu_ms],
+    ['GPU per frame (ms)', s.gpu_ms],
+    ['RHI thread per frame (ms)', s.rhi_cpu_ms],
+    ['Physics per frame (ms)', s.physics_ms],
+    ['Draw calls per frame', s.draw_calls, true],
+    ['Hitches per minute', s.hitches_per_min, true],
+    ['Errors per run', s.errors_per_session, true],
+    ['Crashed runs', s.crashes, true],
+    ['Deaths per run', s.deaths_per_session, !engine],
+    ['Level completion (%)', s.level_completion_pct, !engine],
+    ['Garbage collection per run (ms)', s.gc_ms],
+    ['Garbage collections per run', s.gc_collections],
   ];
-  for (const [k, v] of rows) out.push(`| ${k} | ${fmt(v)} |`);
+  for (const [k, v, always] of rows) if (v != null || (always && !engine)) out.push(`| ${k} | ${fmt(v)} |`);
+  const growth = Object.entries(s.memory_growth || {}).filter(([, v]) => v);
+  if (growth.length) out.push('', `Growth over a run: ${growth.map(([k, v]) => `${growthKey(k)} ${v > 0 ? '+' : ''}${fmt(v)}`).join(', ')}.`);
+  if (engine && s.by_scenario) {
+    out.push('', '| Run | Frames | Slow frames (%) | Frame p95 (ms) | Frame p99 (ms) | Hitches | Errors | Levels |', '| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |');
+    for (const [name, r] of Object.entries(s.by_scenario)) {
+      if (r.crashed) out.push(`| ${name} | crashed (${r.reason}) | | | | | | |`);
+      else out.push(`| ${name} | ${fmt(r.frames)} | ${fmt(r.pct_frames_over_budget)} | ${fmt(r.frame_p95)} | ${fmt(r.frame_p99)} | ${fmt(r.hitches)} | ${fmt(r.errors)} | ${r.level_start == null && r.level_end == null ? '–' : r.level_start === r.level_end ? r.level_end : `${r.level_start ?? '–'} → ${r.level_end ?? '–'}`} |`);
+    }
+  }
   const levels = Object.entries(s.levels || {});
   if (levels.length) {
     const update = levels.some(([, v]) => v.update_cpu_ms != null);
@@ -68,5 +97,7 @@ export function runReport(run) {
     out.push('', 'Errors:');
     for (const e of s.errors) out.push(`- \`${e.message}\` at ${e.location || 'unknown location'}: ${e.count}×`);
   }
+  out.push(...crashedRuns(run));
+  for (const note of run.notes || []) out.push('', `> ${note}`);
   return out.join('\n');
 }

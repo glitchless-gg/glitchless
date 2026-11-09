@@ -683,7 +683,7 @@ the sessions, so over 31 days or less, as the platform split does.
 | `by` | each session's | values |
 | --- | --- | --- |
 | `$platform` | platform, as the Performance view's (`platformOf`) | Valve's hardware whatever the OS (`Steam Deck`, `Steam Machine`, `Steam Frame`), a console that says which one it is (`Xbox`, `PlayStation`: the Roblox SDK's `device.console`), else the OS as the SDKs name it: `Windows`, `macOS`, `Linux`, `iOS`, `Android`, `SteamOS`, `ChromeOS`, `Web` (an engine's web build)…; other spellings of these (`Mac`, `OSX`, `X11`, `HTML5`) read as them; `unknown` without one |
-| `$browser` | browser (`device.browser`, the Performance view's `by_browser`) | the browser SDK's `Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`, `Other`, which a Unity web build sends too (§5b). Each is read from the browser's own name in the user agent, not the first name there (Edge and Opera also say `Chrome/`, and every iOS browser `Safari/`), with that browser's major version: Edge on Android and iOS is `Edge`, Firefox on iOS `Firefox`, Chrome on iOS `Chrome`, and other Chromium browsers (Samsung Internet, Brave, Vivaldi, Android's web view) are `Chrome` with Chromium's version (`parseUserAgent` in `packages/sdk/src/device.js`). The browser SDK up to 0.7.0 read the first name instead (0.7.1 reads each browser's own), so its sessions name desktop Edge and Opera `Chrome`, and Firefox on iOS `Safari` (with WebKit's version). The engine SDKs send their engine there otherwise, so their sessions are `Godot app`, `Unity app`, `Unreal app`, `GameMaker app`, or `<engine> web build` when the OS is the web (its browser unknown) |
+| `$browser` | browser (`device.browser`, the Performance view's `by_browser`) | the browser SDK's `Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`, `Other`, which a Unity web build (§5b) and a Godot web export (§5) send too. Each is read from the browser's own name in the user agent, not the first name there (Edge and Opera also say `Chrome/`, and every iOS browser `Safari/`), with that browser's major version: Edge on Android and iOS is `Edge`, Firefox on iOS `Firefox`, Chrome on iOS `Chrome`, and other Chromium browsers (Samsung Internet, Brave, Vivaldi, Android's web view) are `Chrome` with Chromium's version (`parseUserAgent` in `packages/sdk/src/device.js`). The browser SDK up to 0.7.0 read the first name instead (0.7.1 reads each browser's own), so its sessions name desktop Edge and Opera `Chrome`, and Firefox on iOS `Safari` (with WebKit's version). The engine SDKs send their engine there otherwise, so their sessions are `Godot app`, `Unity app`, `Unreal app`, `GameMaker app`, or `<engine> web build` when the OS is the web (its browser unknown) |
 | `$device_tier` | GPU tier (`device.gpu_tier`, the Performance view's tiers) | `High-end GPU`, `Mid-range GPU`, `Low-end GPU`, `Software rendering (no GPU)`, `Unknown GPU`, in that order (other splits: most first) |
 | `$graphics` | graphics setting (`graphicsOf`, the Performance view's `by_graphics`) | the session's `graphics` property when the game sets one, in its own words (any engine: `low`, `high`, `ultra`), else what the SDK read itself: Roblox's Graphics Quality (`device.quality`, §5), `Automatic` or `1` to `10`; `(none)` without either. In order: `Automatic`, then numbers low to high, then the usual preset words low to high (`lowest`, `very low`, `low`, `medium`, `normal`, `high`, `very high`, `ultra`, `epic`, `cinematic`, `max`), then other words (most first), then `(none)`. The property comes first so a game that names its presets keeps them; `prop.graphics=` filters read the property only |
 
@@ -1964,25 +1964,27 @@ every path under the jam's address with `jam.html`, with a `<base>` at the jam's
 relative files load under a strict CSP. A room's `links` are on this address.
 
 **A room**: `code` (5 of `23456789ABCDEFGHJKMNPQRSTVWXYZ`, read in any case), `title` (≤ 80), `about` (≤ 280),
-`owner` (the organiser's host id), `created_at`, `closes_at` (default 24 h after it's made, at most 7 days),
-`ended_at`, `joining`, `max_games` (default 60, up to 200), `survey` (`{heading, intro, questions}`, or null for the
+`owner` (the organiser's host id), `created_at`, `closes_at` (default 24 h after it's made, at most 7 days; 21 for an
+online room), `ended_at`, `joining`, `online` (a jam over days whose games are often on itch.io; set when it's made),
+`max_games` (default 60, up to 200), `survey` (`{heading, intro, questions}`, or null for the
 default). **A game
 in it**: `slug` (2 to 32 of `[a-z0-9-]`, from the title, unique in the room), `title` (≤ 60), `by` (≤ 40, optional
 free text), `project` and `service` (which game; never in a public answer), `joined_at`, `uploads: [{n, version,
-files, bytes, published_at, agent}]` (`agent`: the `x-glitchless-client` that published it), `current`, `pending` (an
-upload in progress), `removed` (the organiser took it out; it can't rejoin).
+files, bytes, published_at, agent, link?}]` (`agent`: the `x-glitchless-client` that published it; `link`: a linked
+version's page), `link` (a linked game's page), `current`, `pending` (an upload in progress), `removed` (the organiser
+took it out; it can't rejoin).
 
 **Routes** (public ones are cached 10 to 15 s, `Cache-Control: public`; reads are limited loosely per address, since a
 room's phones share the venue's; votes and answers per person):
 
 | route | who | does |
 | --- | --- | --- |
-| `GET /v1/rooms/{code}` | anyone | the arcade: `{code, title, about, created_at, closes_at, ended, ended_at, joining, links: {arcade, live, join, survey}, report?, games: [{slug, title, by, url, version, published_at, new}], building}`; `new` for a publish in the last 10 minutes while the jam is on, `building` the games joined but not published |
+| `GET /v1/rooms/{code}` | anyone | the arcade: `{code, title, about, created_at, closes_at, ended, ended_at, joining, online, links: {arcade, live, join, survey}, report?, games: [{slug, title, by, url, site, version, published_at, new}], building}`; `url` where it plays (a linked game's page, `site` `itch.io`; else null), `new` for a publish in the last 10 minutes while the jam is on, `building` the games joined but not published |
 | `GET /v1/rooms/{code}/live` | anyone | the big screen: `{room, totals: {games, building, plays, minutes_played, phone_pct, playing_now}, games: [{…a game, plays, players, minutes_played, phone_plays, playing_now, votes?}], needs_players: [slug] (fewest plays first), most_played: [slug] (3), awards (null until the end), updated_at}`; after the end, frozen from the snapshot, with each game's `votes` |
 | `GET /v1/rooms/{code}/qr.svg?game={slug}` | anyone | the QR code of the arcade, or of a game's URL |
 | `GET`, `PUT /v1/rooms/{code}/vote` | a voter | `{vote, own: [slug], open}` (own: the voter's own games); `PUT {slug}` (null takes it back) until the end. One vote a person; 403 for an own game |
 | `GET`, `PUT /v1/rooms/{code}/survey` | anyone; once each | `{open, closes_at, title (the room's), heading, intro, questions, answers, suggested?}` (`heading` and `intro` with `{room}` filled in); `PUT {answers: {id: answer}}` from the end until 7 days after; answering again replaces |
-| `POST`, `GET /v1/rooms` | an organiser | `{title, about?, hours?, max_games?, template?}` → the room, with `qr_text` (the arcade's QR code as text); `GET` → `{rooms, past}`: each room as the arcade has it plus `joined: [{slug, title, by, joined_at, uploads, published, removed}]` (every game, published or not) and `survey: {heading, intro, questions, default, answers}` (as set, `{room}` unfilled, with its answers so far), and `past`, ended jams kept as snapshots. At most 3 rooms on at once |
+| `POST`, `GET /v1/rooms` | an organiser | `{title, about?, hours?, max_games?, template?, online?}` → the room, with `qr_text` (the arcade's QR code as text); `GET` → `{rooms, past}`: each room as the arcade has it plus `joined: [{slug, title, by, joined_at, uploads, published, removed}]` (every game, published or not) and `survey: {heading, intro, questions, default, answers}` (as set, `{room}` unfilled, with its answers so far), and `past`, ended jams kept as snapshots. At most 3 rooms on at once |
 | `PATCH`, `DELETE /v1/rooms/{code}` | its organiser | `{title?, about?, closes_at?, joining?, end: true}` (`end`: the jam ends now); `DELETE`: the room, its games, files, votes and snapshot, or a past jam's snapshot once its room is gone |
 | `PATCH /v1/rooms/{code}/survey` | its organiser | `{heading?, intro?, questions?, template?}` (`questions`: `[{id, kind: scale\|choice\|text, text, options?}]`, 1 to 10, or null for the default ones; `template`: one of the organiser's, or `default`) → `{heading, intro, questions, filled}`; until the survey's first answer, after the end too (the snapshot's survey changes with it) |
 | `GET /v1/rooms/templates` | an organiser | `{templates: [{id, name, heading, intro, questions, builtin?, updated_at?}]}`: `default` (built in, read only), then theirs |
@@ -1993,6 +1995,7 @@ room's phones share the venue's; votes and answers per person):
 | `POST /v1/rooms/{code}/games/{slug}/uploads` | its maker | `{version, service?, files: [{path, bytes, sha256}]}` → `{n, send, expires_at}`; every limit below is checked here |
 | `PUT …/uploads/{n}/files/{path}` | its maker | one file (each path segment URI-encoded); its size and SHA-256 must match the list |
 | `POST …/uploads/{n}/publish` | its maker | every file in: the game plays this upload → `{url, version, n, arcade, qr_text, qr_svg}` |
+| `POST /v1/rooms/{code}/games/{slug}/links` | its maker | a linked version: `{version, url?, service?}` (`url` the first time) → `{url, site, version, n, arcade, qr_text, qr_svg}` |
 
 **Who.** Makers are readers (§6) with the `dashboard` scope on the game's project; a reader may name its `person`.
 Organisers come from `auth.resolveOrganiser(req) → {owner, limits?}` (default: whoever passes `resolveReader`, as
@@ -2006,6 +2009,13 @@ audio, video, font and game data files), served with the type the server picks; 
 with a password field or a `<base>` is refused. 12 uploads a game an hour, 60 a game in a room, 2 GB a room. A version
 publishes once a game (bump it first). An upload not published within 30 minutes is dropped.
 
+**Linked games.** A game played on its itch.io page links each version instead of publishing it: nothing is
+uploaded, the version counts as a publish does (once each, the same limits a game, an hour and until the end), and the
+arcade, the big screen and their QR codes send players to the page. The page is `https://<name>.itch.io/<game>`
+(stored in that form; another site, the `itch.zone` frame or anything after the path is refused); a later link may
+move it. A game publishes or links, never both. itch.io serves HTML5 games with no CSP and the intake takes any
+origin, so an instrumented game there reports as it would from the room.
+
 **Files** are laid out for any static host: `<CODE>/<slug>/<n>/…` as uploaded, never changed (cached for a year), and
 `<CODE>/<slug>/index.html`, the current upload's `index.html` with `<base href="{play path}<CODE>/<slug>/<n>/">`
 (`no-cache`), so games must use relative paths (`vite build --base ./`). `files`: `put(key, bytes, {type, cache})`,
@@ -2017,8 +2027,8 @@ Content-Security-Policy with scripts, styles, fonts and network calls only from 
 camera, microphone, location, payments, USB, serial, Bluetooth or screen capture; `Cross-Origin-Opener-Policy:
 same-origin`; `nosniff`; `X-Robots-Tag: noindex`.
 
-**Plays.** A game's numbers count its players' sessions (`session_type` user) on the versions it published to the
-room, from its first publish to the end: `plays`, `players` (only when it sends player IDs; jam games in anonymous mode
+**Plays.** A game's numbers count its players' sessions (`session_type` user) on the versions it published or linked
+to the room, from its first one to the end: `plays`, `players` (only when it sends player IDs; jam games in anonymous mode
 count plays), `minutes_played` (frames on screen), `phone_plays` (iOS and Android), `phone_frames_on_time_pct` (frames
 within 1.15× their screen's budget), `most_at_once`, and per version `{plays, with_problem, problems: {errors,
 crashes, stutter, rage_quits}}`. A play hits a problem when it had an error, crashed, had more than 1 in 10 frames late,
@@ -2046,8 +2056,9 @@ an intro and questions), picks one when making a room, and sets a room's survey 
 answer. One set of answers a respondent (`{respondent: a hash, at, made: [slug], answers, email?}`;
 `email` only with `follow_up` Yes), text at most 1,000 characters.
 
-**Keeping.** A day after the end the sweep deletes the room, its games' files and every vote; the snapshot and the
-survey's answers stay a year. A code is never given to another room while its snapshot is kept. The open-source server
+**Keeping.** A day after the end (7 days for an online room, as long as its survey is open) the sweep deletes the
+room, its games' files and every vote; the snapshot (with each game's `link`, and `online`) and the survey's answers
+stay a year. A code is never given to another room while its snapshot is kept. The open-source server
 sweeps hourly; Glitchless Cloud every 15 minutes (the alerts function).
 
 **notify(type, data)**, for a host's own counting: `joined`, `published` (`{room, game, upload, person}`),
@@ -2069,10 +2080,12 @@ game of a workspace they're in. `jam_joined`, `jam_published`, `jam_voted` and `
 multiple-choice answers only) go to Glitchless's own analytics.
 
 **`glitchless-jam`** (`packages/jam`, on npm) is the jam's own tool, kept apart from `glitchless-mcp`. Its stdio MCP
-server has `glitchless_jam` for makers (`action`: `join`, `publish`, `status`, `leave`) and `glitchless_jam_host` for
-the organiser's agent (`create`, `list`, `update`, `end`, `remove_game`, `delete`, `survey`, `templates`,
-`save_template`, `delete_template`, `report`; a maker's key is refused). Its CLI publishes
-(`npx -y glitchless-jam publish dist --room K7Q2M`) and has the same organiser's commands under `host`. It uses `glitchless-mcp`'s saved sign-in, or `GLITCHLESS_URL` and `GLITCHLESS_API_KEY`.
+server has `glitchless_jam` for makers (`action`: `join`, `publish`, `link`, `status`, `leave`) and
+`glitchless_jam_host` for the organiser's agent (`create`, `list`, `update`, `end`, `remove_game`, `delete`, `survey`,
+`templates`, `save_template`, `delete_template`, `report`; a maker's key is refused). Its CLI publishes
+(`npx -y glitchless-jam publish dist --room K7Q2M`), links (`npx -y glitchless-jam link https://you.itch.io/game
+--room K7Q2M --version 1.0.1`, the version read from `--dir` when its scripts have it) and has the same organiser's
+commands under `host` (`host create … --online`). It uses `glitchless-mcp`'s saved sign-in, or `GLITCHLESS_URL` and `GLITCHLESS_API_KEY`.
 With a workspace key a maker's game is the one named, else the workspace's only game, never its demo game (sample
 play every new workspace starts with): with only the demo, it says to make the game first.
 Before sending anything it checks the folder against the limits above, that `index.html` loads nothing from `/`, and
@@ -2555,21 +2568,22 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.4"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.5"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
 | envelope | `player_id` is null in anonymous mode (the default), and the server files the session under `session_id`; install and full mode send the stored `p_…` player ID (`user://glitchless/player_id`, §4b) |
-| off switch | `Glitchless.set_enabled(on)`, `is_enabled()` and the `opt_in` option (§4d). The choice is saved in `user://glitchless/enabled` (a dedicated server reads the same file: the role is known only at `init`, and the choice is read before the first frame) and read by the autoload before it measures anything, so a player who turned it off has no early frames kept; with `opt_in` and no saved choice, `init` drops what was kept before it. `enabled`, the build's own switch (`init`'s `enabled` option, off in debug builds unless `--glitchless`), is false while the player has it off |
-| `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure`, headless (except a dedicated server's, below), or on Google Play's pre-launch report phones (the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton, or the GPU is a software renderer such as SwiftShader; neither is sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game passes `session_type`. `props`: the properties set before the first batch, when there are any. `continued: true` on the one sent again before an earlier session's saved batches in anonymous mode (§2) |
-| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `OS.get_executable_path()`'s folder; Android, §4b: a debug build, and the installer package); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz` |
+| off switch | `Glitchless.set_enabled(on)`, `is_enabled()` and the `opt_in` option (§4d). The choice is saved in `user://glitchless/enabled` (a dedicated server reads the same file: the role is known only at `init`, and the choice is read before the first frame) and read by the autoload before it measures anything, so a player who turned it off has no early frames kept; with `opt_in` and no saved choice, `init` drops what was kept before it. `enabled`, the build's own switch (`init`'s `enabled` option, off in debug builds unless `--glitchless`; a web export's debug build is on when its page isn't on the developer's own machine, below), is false while the player has it off |
+| `session_start` | `session_type` is `synthetic` with `--autoplay`, `--glitchless-synthetic` (a web export: `?glitchless-synthetic`), `--glitchless-measure`, headless (except a dedicated server's, below), or on Google Play's pre-launch report phones (the Android system setting `firebase.test.lab` is `true`, read through the AndroidRuntime singleton, or the GPU is a software renderer such as SwiftShader; neither is sent), else `tester` on a TestFlight or development install on iOS (§4b), unless the game passes `session_type`. `props`: the properties set before the first batch, when there are any. `continued: true` on the one sent again before an earlier session's saved batches in anonymous mode (§2) |
+| `session_start.device` | `browser: "Godot"`, `browser_version` (engine), `os`, `mobile`, `device_tier`, `gpu_tier`, `renderer`, `driver`, `screen`, `dpr`, `refresh_hz`, `steam_deck` (§4b: `os` is `SteamOS` on a Deck running it), `distribution` (iOS, §4b: the files are looked for from `$HOME` and `OS.get_executable_path()`'s folder; Android, §4b: a debug build, and the installer package); full mode adds `model`, `os_version`, `gpu`, `gpu_vendor`, `cores`, `memory_gb`. With GodotSteam, the Steam facts (§4c). `page` and `nav_ms` are null. `refresh_hz` is the screen's rate as the OS reports it, its highest, not the rate the game ran at (some 60 Hz iPhones report 120; a ProMotion iPhone in Low Power Mode runs at 60): that is each `frame_window`'s `hz`. A web export asks its page (`web_page.gd`, through `JavaScriptBridge`) and sends what the browser SDK would: `browser`, `browser_version` (major), `os` and `mobile` from `navigator.userAgent` and `userAgentData.mobile`, read by the same rules as `device.js` (`godot/test/web.mjs` holds the two to the same answers), `dpr` (`devicePixelRatio`, 2 places), `screen` (`screen.width`/`height`, CSS pixels), `steam_deck` (a user agent or GPU that names the Deck), and `gpu_tier` from the GPU a WebGL context of its own names (the unmasked renderer, cleaned as `device.js` cleans it); `device_tier` from `hardwareConcurrency` and `deviceMemory` (`unknown` where the browser doesn't give the memory; Godot's own core count stops at 2 on the web); `refresh_hz` null; full mode's `gpu`, `gpu_vendor`, `cores`, `memory_gb` from the page, `model` and `os_version` null. session_start adds `engine: {name: "godot", version, renderer: "webgl"}`, as the browser SDK's engine adapters send theirs |
 | `frame_window` | adds `gpu_ms` (Vulkan and Direct3D 12 only: Godot doesn't time the GPU on Metal or OpenGL), `process_ms`, `physics_ms`, `objects`, `nodes`, `orphan_nodes`, `resources`, `video_mb`, `texture_mb`, `screen`, `window`; `heap_mb` is static memory (debug builds only, else null); `geometries`, `textures`, `programs` are null; `ctx` also holds `nodes`, `orphan_nodes`, `objects`. The top-level counts are the values when the window closed; `ctx` holds each gauge's highest value in the window, so a leak check compares like with like (the top-level counts, or ctx's maxima). `hz` and `budget_ms` are measured from the frames: the 20th percentile of frame times under 100 ms (a frame can take longer than the screen's interval, never less), a first guess after 30 frames, the answer at 120, a look every 480 frames that only ever goes faster, and lowered when the OS says the screen slowed down (Low Power Mode). A window never spans two levels |
 | `hitch` | `causes` from `shader_compile`, `scene_change`, `node_spawn`, `script`, `physics`, `render`, `gpu_or_os`, `frozen`; adds `process_ms`, `physics_ms`, `render_ms`, `gpu_ms`, `pipeline_compiles`, `nodes_added`; `loaf` is empty |
 | `load` | `ts` is the first frame; `ttff_ms` counts from the engine's start; `first_launch` from `user://glitchless/launched` (the version that last ran) |
 | `error` | `kind`: `script` (GDScript runtime error; unhandled, like `js`), `engine`, `push_error`, `shader`, `manual`, `warning`; adds `recent` (last 6 game events). Not sent: errors raised inside the addon, and the engine's "Connection to remote host failed!" (`stream_peer_tcp.cpp`), logged for each address of a host tried before one connects (an IPv6 address on a network with no IPv6 route, then IPv4), whoever's request it was; intake drops that one from older SDKs too (§2) |
 | `death` | `x`, `y`, `z` only when positions are on (full mode or `positions: true`); the server leaves unplaced deaths off heatmaps and hotspots |
-| `session_end` | `reason`: `background`, `close`, `quit`, `measure` |
-| `level_abandon` | `level_abandon()`; sent by itself, with `reason` `background`, `close` or `quit`, before `session_end` when a level is open (§2) |
+| `session_end` | `reason`: `background`, `pagehide` (a web export's page went away), `close`, `quit`, `measure` |
+| `level_abandon` | `level_abandon()`; sent by itself, with `reason` `background`, `pagehide`, `close` or `quit`, before `session_end` when a level is open (§2) |
+| web export | Batches go as `text/plain` (no CORS preflight; the server reads the JSON whatever it says). Godot hears nothing as a page hides or goes, so `web_page.gd` listens to it: hidden (`visibilitychange`), what is waiting goes by `navigator.sendBeacon` and the session goes on; `pagehide` ends the session (`session_end` and `level_abandon`, reason `pagehide`) and beacons the rest; `get_tree().quit()` beacons its end too; `pageshow` from the back-forward cache goes on as a phone back from the background. The batch on its way goes again by beacon under its `batch_id`; a bug report keeps its own request; one the browser turns down (about 64 KB at a time) waits for the next send. `user://` is IndexedDB: the outbox, player ID and off switch are kept per site across visits. The outbox is written in place, and emptied rather than removed, since a file that disappears during Godot's copy to IndexedDB fails the whole copy. The page's address (never sent) stands in for the command line: on the developer's machine (`file:`, `localhost`, `*.localhost`, `*.local`, loopback and private addresses) a debug build sends only with `?glitchless`; on any other page it sends (Godot's export dialog exports with debug on unless it's unticked). `?glitchless-debug` and `?glitchless-synthetic` work there too, and no other flag. Works with thread support off and on; the intake answers with `Cross-Origin-Resource-Policy: cross-origin`, so a cross-origin-isolated page (threads) may read a beacon's answer |
 | `custom` | also `screen_change`, `app_resume`. `track()` adds `sandbox: true` to a purchase in a TestFlight or development install (§3b) |
 | `bug_report` | `bug_reports` in init options adds the F8 form: a `CanvasLayer` that pauses the tree while open, with `bug_report_opened` and `bug_report_closed` signals. `report_bug(note)` sends one from the game's own UI. `screenshot` is the root viewport's last frame with its longer side at most 960 px (the browser caps the width), none in headless runs |
 | `counts` | `count(name, what = null, n = 1)`: `what` is a dictionary or one word (`what`). Each window (the `flush_interval` window, and up to each `level_start`) keeps an entry per name and group (its string and boolean attributes, the first 4), sums its numbers (the first 4) as passed, and adds `n` (at most 1,000,000 a call). 64 entries a window; past that a known name's new group goes under its attributes as `(other)`, and a new name's `n` goes to `dropped`. One `counts` event per window that counted anything: `ts` and `duration_s` are the window's, each entry `{name, attrs, n, sums?, first_ts}`. A debug build warns once when one name is tracked over 20 times a second. Not sent, with one warning, to a server whose `features` lack `counts` |
@@ -2707,6 +2721,61 @@ players now and thumbs up, and with an Open Cloud key Roblox's daily active and 
 version this SDK sends.
 
 On the server, findings for a `roblox` game name Roblox's fixes (StreamingEnabled and preloading for the loading screen and assets, pooling instead of Clone and Destroy, anchoring and collision fidelity for physics, draw calls and shadows for rendering, the MicroProfiler and the Developer Console), and its error advice reads Luau's messages (`attempt to index nil`, `is not a valid member`). A `script` error the player leaves right after is a crash, as Godot's is; a `server_script` error never is.
+
+## 5f. Measuring a build, and playtests
+
+A Unity, Godot, Unreal or GameMaker build started with `--glitchless-measure=SECONDS` (`-glitchless-measure` in Unreal
+and GameMaker; their SDKs take either) waits `--glitchless-warmup` seconds (Unreal: after its first map), measures for
+SECONDS, prints one line `{"glitchless_measure": {…}}` (Unreal after its log category; a Unity player on macOS only to
+its log), writes the line to `--glitchless-out=PATH` when given, and quits. The fields every engine sends: `seconds`,
+`frames`, `fps`, `frame_budget_ms`, `frame_ms` (`p50`, `p95`, `p99`, `worst`), `pct_frames_over_budget`,
+`render_cpu_ms` (`p50`, `p95`, `share_of_budget_pct`), `gpu_ms`, `hitches` (the first 10), `hitch_count`, `draw_calls`
+(`avg`, `max`), `triangles_avg`, `peak_context`, `memory`, `memory_delta`, `new_errors`, `errors` (the first 5:
+`message`, `kind`, `location`, `count`), `level_start`, `level_end`, `sdk`; null where the engine doesn't report one.
+The game's update time is `update_cpu_ms` in Unity and Unreal, `process_ms` in Godot and GameMaker. Unity adds
+`physics_ms` and `gc_collections`; Unreal `rhi_cpu_ms`, `gc_collections` and `session_id`; Godot `refresh_hz`,
+`renderer` and `headless`; GameMaker `refresh_hz`, `gc_ms`, `renderer`, `headless` and `session_id`. With Glitchless
+off, or no frames drawn, the object is `{"error": "…"}` alone; Unreal also answers with an `error` when the game stops
+first, and Godot, Unity and GameMaker print nothing then.
+
+**Playtests.** `glitchless-playtest` (and the MCP tool `glitchless_playtest`) runs a build instead of a web game when
+`glitchless.playtest.json` (or `--command`, or the tool's `command`) gives the `command` that starts it: an exported
+build (a macOS `.app` runs its executable) or the engine with the project path. The engine is told from the command
+and the files beside an export (`.pck`, `UnityPlayer`, `game.ios`, a `.uproject`), or `engine`. Each scenario, one at
+a time, starts it with its `params` as the game's own flags (`true` a bare flag, `false` and null left out; `--` in
+Godot and Unity, `-` in Unreal and GameMaker; in Godot after a `--`), its `args`, and `--glitchless-measure=seconds`
+(default 10), `--glitchless-warmup=warmup` (default 0, Unity 1, whose memory counters read nothing on the first frames)
+and a `--glitchless-out` file. The default scenarios are `--autoplay --seed=7` and `--autoplay --seed=21`. The line
+comes from the output, the out file, or `measure_file` (a build whose file sandbox keeps it from writing elsewhere).
+A run killed at `max_s` (default warmup + seconds + 120) or ending with a signal or a non-zero exit code without a
+line is a crashed run, kept with its last 15 lines of output; a build that quits cleanly without one, or answers an
+`error`, stops the playtest with what to change; so does a build that starts no level in any run with the default
+scenarios (no autoplay mode).
+
+The run's summary has the shape `GET /v1/query/playtest` answers for a web run's sessions, made from the lines instead: per-frame numbers averaged
+over the runs by frames, `hitches_per_min` over the seconds measured, `errors_per_session`, `crashes`, `errors`
+matched across builds by kind, message with digits as `#` and location without line numbers, `memory_growth` (each
+`memory_delta` key averaged over the runs), `headless`, and `by_scenario` (each run's numbers and `level_end`). The
+comparison adds `frame_p99` (warn), `gpu_ms`, `rhi_cpu_ms` and `physics_ms` (fail, as render CPU), `gc_ms` and
+`gc_collections` (warn), each `memory_growth` key (warn, by 100 for a count, 16 for MB) and, with two or more runs, the
+per-level checks run by run; a run that ends on another level warns. When either run was headless, frame-time checks
+(slow frames, p95, p99, hitches) warn instead of failing, and so do slow frames when the runs had different frame
+budgets.
+
+**Roblox playtests.** With `engine` `roblox`, a scenario is a play test in the open Roblox Studio, driven over Studio's
+MCP server (StudioMCP: `list_roblox_studios`, `execute_luau`, `start_stop_play`, `get_studio_state`,
+`get_console_output`). The Studio is the one whose name holds `studio` (its ID also works), or the only one open; it
+must be in Edit, and the place must have a `Glitchless` ModuleScript in ReplicatedStorage and HttpService.HttpEnabled.
+The service is `service`, else the `service` in the first `Glitchless.init({…})` found in ServerScriptService,
+ServerStorage, ReplicatedStorage or ReplicatedFirst outside the module. Each scenario sets its `params` (booleans,
+numbers or strings; names of letters, digits and `_`) as Workspace attributes and clears `GlitchlessPlaytestDone`,
+runs `luau` in Edit, starts the play test, evaluates `done_when` on the Server data model each second until it is
+true (default `workspace:GetAttribute("GlitchlessPlaytestDone") == true`) or `max_s` (default 90) passes, stops it, and
+sets the attributes back. The run is then read from the server: `GET /v1/query/sessions` of the service and of
+`<service>.server`, the `synthetic` and `tester` sessions that started during a play test (a second and a half early
+counts if the session lasted into it), then `GET /v1/query/playtest` for the players' sessions, with the server
+sessions' `errors` (marked `server`) and `crashes` added. With the default scenarios, no level started in any play test
+is an error (no autoplay mode); more than one server session in a play test is a note.
 
 ## 6. Projects, keys and storage
 

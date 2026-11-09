@@ -3,7 +3,8 @@
 //
 //   npx -y glitchless-jam login | whoami | logout
 //   npx -y glitchless-jam publish <dir> --room K7Q2M [--game <name>] [--version v] [--title t] [--by name] [--service s]
-//   npx -y glitchless-jam host create "Title" [--hours 24] [--about …] [--max-games 60] [--template id]
+//   npx -y glitchless-jam link <itch.io page> --room K7Q2M [--version v] [--dir <export>] [--game <name>] [--title t] [--by name] [--service s]
+//   npx -y glitchless-jam host create "Title" [--hours 24] [--online] [--about …] [--max-games 60] [--template id]
 //   npx -y glitchless-jam host list | update CODE … | end CODE | remove CODE GAME | delete CODE | report CODE [--csv]
 //   npx -y glitchless-jam host survey CODE [--template id] [--heading …] [--intro …] [--file questions.json]
 //   npx -y glitchless-jam host template list | save <id> --name … [--file …] [--heading …] [--intro …] [--from-room CODE] | delete <id>
@@ -12,7 +13,7 @@ import fs from 'node:fs';
 import { connect, normalRoom, request, roomFor } from './context.js';
 import * as host from './host.js';
 import { signInCli } from './login.js';
-import { publishBuild } from './publish.js';
+import { linkGame, publishBuild } from './publish.js';
 
 const USAGE = `glitchless-jam: Glitchless jam rooms, for makers' agents and organisers.
 
@@ -22,9 +23,14 @@ const USAGE = `glitchless-jam: Glitchless jam rooms, for makers' agents and orga
                                                sign in to Glitchless Cloud (the same sign-in as glitchless-mcp)
   npx -y glitchless-jam publish <dir> --room K7Q2M [--game name] [--version v] [--title t] [--by name] [--service s]
                                                publish a built game to a room
+  npx -y glitchless-jam link https://you.itch.io/game --room K7Q2M [--version v] [--dir export] [--game name]
+                             [--title t] [--by name] [--service s]
+                                               link a version of a game played on itch.io (upload its web
+                                               build there as HTML5 first); later links reuse the page
 
 Organisers:
-  npx -y glitchless-jam host create "Title" [--hours 24] [--about text] [--max-games 60] [--template id]
+  npx -y glitchless-jam host create "Title" [--hours 24] [--online] [--about text] [--max-games 60] [--template id]
+                                               --online: a jam over days, up to 504 hours (21 days)
   npx -y glitchless-jam host list
   npx -y glitchless-jam host update K7Q2M [--title t] [--about text] [--hours h] [--joining on|off]
   npx -y glitchless-jam host end K7Q2M
@@ -38,7 +44,7 @@ Organisers:
 
 GLITCHLESS_URL and GLITCHLESS_API_KEY name a self-hosted server and its key; GLITCHLESS_ROOM a default room.`;
 
-const BOOLEAN = new Set(['csv', 'no-browser', 'help']);
+const BOOLEAN = new Set(['csv', 'no-browser', 'help', 'online']);
 
 // "--name value" flags and the words around them.
 function parse(argv) {
@@ -65,6 +71,7 @@ export async function cli(argv, { out = console.log, err = console.error, env = 
   const c = connect(env);
   try {
     if (command === 'publish') return await publish(c, args, flags, { out, err, env });
+    if (command === 'link') return await link(c, args, flags, { out, err, env });
     if (command === 'host') return await hostCommand(c, args, flags, { out });
     err(`glitchless-jam: no command "${command}".\n\n${USAGE}`);
     return 1;
@@ -81,6 +88,14 @@ async function publish(c, args, flags, { out, err, env }) {
   const done = await publishBuild(c, room, dir, { version: flags.version, service: flags.service, game: flags.game, title: flags.title, by: flags.by, log: out });
   out(`\nPublished "${done.title}" ${done.version} to room ${room}:\n\n  ${done.url}\n\n${done.qr_text}\n\nScan it to play on a phone. Everyone plays the room's games at ${done.arcade}`);
   if (done.sourcemaps.sent.length) out(`Source maps sent to Glitchless (not to the room): ${done.sourcemaps.sent.join(', ')}`);
+  for (const w of done.warnings) err(`Warning: ${w}`);
+  return 0;
+}
+
+async function link(c, args, flags, { out, err, env }) {
+  const room = roomFor(c, flags.room, env);
+  const done = await linkGame(c, room, { url: args[0], version: flags.version, dir: flags.dir, service: flags.service, game: flags.game, title: flags.title, by: flags.by });
+  out(`Linked "${done.title}" ${done.version} in room ${room}. Players' plays of ${done.version} count from now; the arcade sends them to\n\n  ${done.url}\n\nEveryone finds the room's games at ${done.arcade}`);
   for (const w of done.warnings) err(`Warning: ${w}`);
   return 0;
 }
@@ -109,7 +124,7 @@ async function hostCommand(c, [sub, ...args], flags, { out }) {
   const print = ({ text }) => (out(text), 0);
   if (sub === 'create') {
     if (!args[0]) throw new Error('give the room a title: glitchless-jam host create "GenAI DC mini jam"');
-    return print(await host.createRoom(c, { title: args[0], about: flags.about, hours: flags.hours, max_games: flags['max-games'], template: flags.template }));
+    return print(await host.createRoom(c, { title: args[0], about: flags.about, hours: flags.hours, max_games: flags['max-games'], template: flags.template, online: flags.online }));
   }
   if (sub === 'list') return print(await host.listRooms(c));
   if (sub === 'template') {
