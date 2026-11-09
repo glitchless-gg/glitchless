@@ -28,7 +28,7 @@ const MCP_GROUPS = [
     ['glitchless_dashboard', 'the game\'s pages, and one board\'s panels with their numbers'],
     ['glitchless_set_dashboard', 'design and save the game\'s own dashboard'],
     ['glitchless_list_games', 'the games reporting, with their versions'],
-    ['glitchless_create_game', 'a new game and its client token', { hosted: true }],
+    ['glitchless_create_game', 'a new game and its client token, with the steps that add Glitchless to its code', { hosted: true }],
     ['glitchless_share_links', 'a read-only link to a board, and listing and revoking them', { hosted: true }],
   ]],
   ['Testing', [

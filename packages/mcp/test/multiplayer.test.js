@@ -183,4 +183,7 @@ test('the dashboard leaves out a net or servers panel\'s numbers over time; the 
   for (const view of ['servers', 'matches']) assert.ok(page.properties.view.enum.includes(view), view);
   assert.ok(page.properties.where, 'a page takes where');
   assert.match(panel.properties.metric.description, /ping_p95.*disconnect_pct.*servers_now.*server_tick_p95/s);
+  // One zone field, read by a stat and by a positions panel: its description says both (it was written twice, and
+  // the stat's half was lost).
+  assert.match(panel.properties.zone.description, /stat with metric zone_time_pct or zone_median_s.*positions: the zone instead of a level/s);
 });
