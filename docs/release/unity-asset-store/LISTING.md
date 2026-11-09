@@ -1,6 +1,6 @@
 # Unity Asset Store listing: Glitchless for Unity
 
-Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.6.1. Rule numbers are the
+Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.7.1. Rule numbers are the
 [Asset Store Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines), read 26 October
 2026. The description's first paragraph is required there (1.4.a, 1.4.c, 1.5.c): it must come first.
 
@@ -25,7 +25,7 @@ Every field the Publisher Portal asks for, filled in for `gg.glitchless.sdk` 0.6
 | Unity versions | **6000.3** (Unity 6.3 LTS) and later. Uploaded from and tested on 6000.3.27f1 |
 | Render pipelines | **Built-in, URP and HDRP**: the SDK draws nothing but its optional IMGUI bug-report form |
 | Platforms | All: pure C# on Unity's own modules, with no native plugins |
-| Release notes | `0.6.1: first Asset Store release.` |
+| Release notes | `0.7.1: first Asset Store release.` |
 | Documentation | https://github.com/glitchless-gg/glitchless/blob/main/unity/Packages/gg.glitchless.sdk/README.md (the same README is in the package) |
 
 ## Summary
@@ -43,9 +43,10 @@ Glitchless records how your game runs for real players and gives your coding age
 
 - Stutter. Every frame is timed. Each hitch comes with its likely cause: a garbage collection, a shader compile, a scene load, a burst of new objects, or long script, physics or render work.
 - Errors. Uncaught exceptions, Debug.LogError, assertions and engine errors, grouped into issues, with what the player did just before each one.
-- Levels and players. Scenes are levels on their own. Deaths, fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection.
+- Levels and players. Scenes are levels on their own. Deaths, fails, levels left part-way and quits feed the level funnel, death heatmaps and rage-quit detection. Glitchless.CaptureMap takes a picture of each level, so heatmaps show where players died on the level itself.
 - Multiplayer. Ping, jitter and disconnects from Netcode for GameObjects or Mirror, with nothing to set up, and a server mode for dedicated servers.
 - Bug reports from players, when you turn them on: F8 (or your own button) opens a short form, and the report carries the note, a screenshot and what had just happened.
+- WebGL builds name the player's browser and OS, and send their last batch as the page closes.
 - Your game's own numbers: track events, count streams, set session properties, and design a dashboard for your game from your coding agent.
 
 Setup without code: add the Glitchless Bootstrap component to your first scene and fill in the server, the game's name and its client token. Or call Glitchless.Init() from a script.
@@ -64,15 +65,15 @@ This package uses no third-party components.
 ## Technical details
 
 ```text
-- Unity 6000.3 (6.3 LTS) or later. Built-in, URP and HDRP.
+- Unity 6000.3 (6.3 LTS) or later. Built-in, URP and HDRP; CaptureMap (the level picture under heatmaps) renders in Built-in and URP.
 - Imports into Assets/Glitchless, with the Fetch! sample game in Assets/Glitchless/Samples/Fetch.
-- Dependencies: Unity's own modules only (UnityWebRequest, IMGUI, ImageConversion, ScreenCapture, and Physics for the sample), which every new project has.
+- Dependencies: Unity's own modules only (UnityWebRequest, IMGUI, ImageConversion, ScreenCapture, UI, and Physics for the sample), which every new project has.
 - Optional, found at runtime by reflection so the package depends on none of them: Netcode for GameObjects, Mirror, Steamworks.NET or Facepunch.Steamworks. With the Input System, the bug-report key uses it.
 - Sends JSON (gzipped, except in WebGL) to the server you choose, every 15 seconds; batches wait on the device while offline and go on a later launch.
 - Anonymous, install-ID and full privacy modes; PRIVACY.md lists every field each one sends.
 - Starts itself before the first scene so the first frames are kept, but sends nothing until Glitchless.Init(). Define GLITCHLESS_DISABLE to turn the automatic start off.
 - A player's off switch: Glitchless.SetEnabled(on) for a settings toggle, saved on the device and read before anything else; OptIn for a game that asks first.
-- Code in the GlitchlessSdk namespace, in one assembly (GlitchlessSdk.asmdef). No Editor code, no native plugins, no executables.
+- Code in the GlitchlessSdk namespace, in one assembly (GlitchlessSdk.asmdef). No Editor code, no native plugins, no executables; WebGL builds use one small .jslib that reads the browser and sends the last batch.
 - Documentation: README.md, PRIVACY.md and CHANGELOG.md in Assets/Glitchless.
 ```
 

@@ -13,6 +13,7 @@ Everything for listing the Godot addon (`godot/addons/glitchless`) in Godot's tw
 | [STEPS.md](STEPS.md) | the owner's steps: the Asset Store the first time, and both catalogues at each release |
 | [LISTING.md](LISTING.md) | every field's text: summary, description, tags, AI disclosure, version and changelog, and the images' links |
 | `media/thumbnail.png` | the 16:9 thumbnail the store requires, 1920 × 1080 |
+| `media/featured.jpg` | the optional featured image for the home page's carousel, 1920 × 1080, a JPEG under the store's 600 KB limit |
 | `media/screenshot-0*.png` | four screenshots at 1920 × 1080: findings, performance, errors from the Godot demo's bot runs, and Starlift's board |
 
 ## The zip and the library's fields

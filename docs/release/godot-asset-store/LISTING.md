@@ -18,10 +18,11 @@ text; the store doesn't copy it over.
 | field | value |
 | --- | --- |
 | Asset Name | **Glitchless: game observability for coding agents** (as on the Asset Library) |
+| Asset URL Slug | **glitchless**, the addon's folder name: the page is `store.godotengine.org/asset/glitchless/glitchless/` |
 | Asset type | **Addon** |
 | License | **MIT**. The zip carries `addons/glitchless/LICENSE` ("Copyright (c) 2026 The Glitchless authors"), and the source repo's root `LICENSE` is the same file, as the guidelines ask |
 | Link to source code | https://github.com/glitchless-gg/glitchless-godot (the addon alone, copied from the main repo at each release) |
-| Tags | `analytics`, `performance`, `profiling`, `telemetry`, `crash-reporting`, `debugging`, `multiplayer`, `mcp`. Tags can't be the asset's name, and where the store already has a tag's singular or plural, use that one |
+| Tags | In this order, since browsing shows only the first 5 (up to 10 allowed): `analytics`, `performance`, `debugging`, `crash-reporting`, `ai`, then `profiling`, `telemetry`, `multiplayer`, `bug-reports`, `mcp`. Tags can't be the asset's name, and where the store suggests an existing spelling or its singular or plural, use that one |
 | AI usage disclosure | Mandatory when AI was used, which it was. See below |
 
 ### Asset Summary
@@ -78,6 +79,7 @@ on `raw.githubusercontent.com`, which the store asks for when an image is given 
 | Screenshot 2 | `media/screenshot-02-performance.png` | https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/release/godot-asset-store/media/screenshot-02-performance.png |
 | Screenshot 3 | `media/screenshot-03-errors.png` | https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/release/godot-asset-store/media/screenshot-03-errors.png |
 | Screenshot 4 | `media/screenshot-04-starlift.png` | https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/release/godot-asset-store/media/screenshot-04-starlift.png |
+| Featured image (optional) | `media/featured.jpg`, 1920 × 1080, 211 KB (a JPEG: the store caps it at 600 KB): the home page carousel shows it at 16:9 beside a panel with the name and description, so it has no headline | https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/release/godot-asset-store/media/featured.jpg |
 | YouTube video | Leave empty | |
 
 The guidelines reject thumbnails dominated by text or showing what the asset can't produce. This one has the name, "for

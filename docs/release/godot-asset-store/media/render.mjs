@@ -21,7 +21,10 @@ for (const name of pages) {
   await page.goto(`file://${path.join(here, 'src', `${name}.html`)}`);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => [...document.images].every((i) => i.complete && i.naturalWidth > 0));
-  await page.screenshot({ path: path.join(here, `${name}.png`) });
-  console.log('wrote', path.relative(process.cwd(), path.join(here, `${name}.png`)));
+  // A page with <meta name="format" content="jpeg"> is saved as a JPEG: the store caps the featured image at 600 KB.
+  const jpeg = /<meta name="format" content="jpeg">/.test(html);
+  const file = path.join(here, `${name}.${jpeg ? 'jpg' : 'png'}`);
+  await page.screenshot(jpeg ? { path: file, type: 'jpeg', quality: 90 } : { path: file });
+  console.log('wrote', path.relative(process.cwd(), file), `${Math.round(fs.statSync(file).size / 1024)} KB`);
 }
 await browser.close();

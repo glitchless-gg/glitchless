@@ -6,7 +6,7 @@ package comes from `node unity/scripts/asset-store.mjs`, never by hand.
 It goes up as a **classic package**: a `.unitypackage` that imports into `Assets/Glitchless`, with the Fetch! sample
 in `Assets/Glitchless/Samples/Fetch`. That needs only a publisher account, no UPM enrollment. The draft is
 **Glitchless Game Observability** (package 1534106, made 26 October 2026), and it takes uploads from Unity 2022.3 or
-newer, up to 6 GB. The store copy is 370 KB.
+newer, up to 6 GB. The store copy is 460 KB (0.7.1).
 
 Allow an hour for the upload and the listing, then Unity's review: "at least five business days" by Unity's docs,
 but publishers on Unity's forum reported queues of a month and more in October 2026. GitHub stays the install route
@@ -16,16 +16,17 @@ until it's live.
 
 1. **The package passes.** `node unity/scripts/asset-store.mjs --classic` must print no rule failures, and the
    project it writes (`dist/unity-asset-store/GlitchlessClassic`) must import in Unity 6000.3.27f1 with no errors or
-   warnings, with the sample scene's scripts found (it did on 27 October 2026, for 0.6.0).
+   warnings, with the sample scene's scripts found (it did on 27 October 2026, for 0.6.0, and imported with no
+   errors or warnings on 9 November 2026, for 0.7.1, after 0.7.1 declared the UI module 0.7.0 missed).
 2. **The release has the player's off switch.** Rule 1.5.e says analytics must be opt-in, and "customers must be
    permitted to opt out at any time": `Glitchless.SetEnabled` (a "Share performance data" setting) and `OptIn` answer
-   it. Upload 0.6.0 or later, which has them. See REQUIREMENTS.md.
+   it. Upload 0.7.1, the current release, which has them. See REQUIREMENTS.md.
 
 ## Upload the package
 
 3. **The store project.** Ask the parent session to run `node unity/scripts/asset-store.mjs --classic` on the
    commit you release, then open `dist/unity-asset-store/GlitchlessClassic` in Unity Hub (**Add → Add project from
-   disk**) with **6000.3.27f1**. Its `Packages/manifest.json` lists the five built-in modules the package uses, as
+   disk**) with **6000.3.27f1**. Its `Packages/manifest.json` lists the six built-in modules the package uses, as
    every new project does.
 4. **Asset Store Publishing Tools.** The draft page links them (or https://assetstore.unity.com/packages/package/5368745):
    **Add to My Assets**, then in the project **Window → Package Manager → My Assets → Asset Store Publishing Tools →
@@ -34,8 +35,8 @@ until it's live.
    **Validate**. Anything it flags goes to the parent session, which fixes the source and makes the project again.
 6. **Upload.** **Window → Tools → Asset Store → Uploader**, sign in, and open **Glitchless Game Observability** under
    the drafts. Upload type **From Assets Folder**, folder **`Assets/Glitchless`**. If it offers **Include Package
-   Manifest**, turn it on and tick the five built-in modules (Unity Web Request, IMGUI, Image Conversion, Screen
-   Capture, Physics) so a buyer's import turns them on. Then **Export and Upload**. The draft page then shows the
+   Manifest**, turn it on and tick the six built-in modules (Unity Web Request, IMGUI, Image Conversion, Screen
+   Capture, UI, Physics) so a buyer's import turns them on. Then **Export and Upload**. The draft page then shows the
    package and the Unity version it came from (6000.3.27f1).
 
 ## Fill in the listing

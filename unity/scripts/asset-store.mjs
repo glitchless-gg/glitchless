@@ -87,7 +87,7 @@ const edit = (from, to) => {
   if (!from.test(text)) fail(`README.md no longer has ${from}: update the store edits in this script`);
   text = text.replace(from, to);
 };
-const moduleNames = { unitywebrequest: 'Unity Web Request', imgui: 'IMGUI', imageconversion: 'Image Conversion', screencapture: 'Screen Capture', physics: 'Physics' };
+const moduleNames = { unitywebrequest: 'Unity Web Request', imgui: 'IMGUI', imageconversion: 'Image Conversion', screencapture: 'Screen Capture', ui: 'UI', physics: 'Physics' };
 const named = Object.keys(manifest.dependencies || {}).map((m) => moduleNames[m.replace('com.unity.modules.', '')] || m).join(', ').replace(/, ([^,]*)$/, ' and $1');
 edit(
   /## Install\n[\s\S]*?(?=\n## )/,

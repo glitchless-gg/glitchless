@@ -1,6 +1,6 @@
 # The Unity package against the Asset Store's rules
 
-`gg.glitchless.sdk` 0.6.0 checked against the [Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines),
+`gg.glitchless.sdk` 0.6.0 (and again at 0.7.1, 9 November 2026) checked against the [Submission Guidelines](https://assetstore.unity.com/publishing/submission-guidelines),
 for the classic package that goes up first and the UPM product that may follow, and the UPM publishing pages ([enroll](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/apply),
 [draft](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/create-draft),
 [validate and upload](https://docs.unity.com/en-us/asset-store/publishing/upm-packages/validate),
@@ -9,8 +9,8 @@ means `unity/scripts/asset-store.mjs` checks or does it on every run.
 
 | rule | what it asks | Glitchless | who |
 | --- | --- | --- | --- |
-| 1.1.b | No errors or warnings from the package | Both store projects imported in 6000.3.27f1 with none (26 Oct), and the classic one's sample scene found all its scripts. The package's tests stay on GitHub: in a project without the Test Framework they don't compile. A classic package can't bring Unity's built-in modules with it: the project lists them and the Uploader's Include Package Manifest can declare them, and every new project has them | script |
-| 1.1.e | A classic package up to 6 GB (the draft page); a UPM product under 700 MB (550 MB on the upload page) | 370 KB | script |
+| 1.1.b | No errors or warnings from the package | Both store projects imported in 6000.3.27f1 with none (26 Oct); the classic one again at 0.7.1 (9 Nov), after 0.7.0 failed there with CS1069 because its package didn't declare the UI module `CaptureMap` uses, and the classic one's sample scene found all its scripts. The package's tests stay on GitHub: in a project without the Test Framework they don't compile. A classic package can't bring Unity's built-in modules with it: the project lists them and the Uploader's Include Package Manifest can declare them, and every new project has them | script |
+| 1.1.e | A classic package up to 6 GB (the draft page); a UPM product under 700 MB (550 MB on the upload page) | 460 KB at 0.7.1 | script |
 | 1.1.f | Demo scenes for 3D, 2D, VFX, animation and templates | Not required for tools; the Fetch! sample is included anyway | done |
 | 1.1.g | No unsafe code, no mishandled identifying data | Anonymous by default; PRIVACY.md lists every field of every mode | done |
 | 1.1.j–l | MCP or AI features: only the data they need, no training, no slow Editor | Nothing in the package runs in the Editor or talks to an AI; the MCP server is a separate npm package and a hosted URL | done |

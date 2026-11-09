@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+
+- The package declares Unity's built-in UI module, which `CaptureMap` uses (`MapOptions.Exclude` turns off a world-space `Canvas` for its one render). Every new project has the module on, so 0.7.0 compiled there, but in a project with **Package Manager → Built-in → UI** off it failed with `CS1069: The type name 'Canvas' could not be found`. Installing 0.7.1 turns the module on. Nothing else changes.
+
 ## 0.7.0
 
 - Heatmaps get a picture of the level under them. `Glitchless.CaptureMap(level, new Rect(0, 0, width, height))` for a 2D game or a side view, or `CaptureMap(level, bounds)` for a 3D level seen from above, takes the level's map as the browser SDK's `captureMap` does: an orthographic camera of its own renders exactly that area, and it goes as the same `map` event (`axis`, `bounds`, `size`, a JPEG of up to 60,000 characters), so the dashboard draws deaths and paths where they were. The work is spread over frames (the render, reading it back the next frame, then the JPEG), so no frame stalls, in WebGL builds too, and those frames stay out of the frame stats. Built-in pipeline and URP (2D and Universal renderers). `MapOptions.Exclude` leaves the player or a backdrop out. A level's map goes once per version from a device, only with positions on.
