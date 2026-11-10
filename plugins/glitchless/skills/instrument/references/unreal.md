@@ -15,7 +15,8 @@ too: the plugin sends by the page's own fetch, and a web player is their browser
 from source (Epic's Mac launcher install can't make one) and BuildCookRun's `-package` step. On the developer's own
 machine the page's address stands in for the command line: `?glitchless` sends from a Development build there. Every
 5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts; it is Epic's, so mark it known
-(`glitchless_mark_known`) rather than chase it.
+(`glitchless_mark_known`) rather than chase it. On 5.8, which has no web platform, the build warns "Unknown platform
+Wasm" about the plugin's descriptor: leave it, and don't edit the `.uplugin`.
 
 ## 1. Read the project
 
@@ -187,7 +188,7 @@ To set it up, copy `GlitchlessToolset` next to `Glitchless` in `Plugins/`, enabl
 Start Server), and run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex…) for the client
 config. Start Play In Editor before calling `Measure`. Numbers from the editor run slower than a packaged build
 (shaders compile on first use there): confirm a fix with a packaged Development build and `-glitchless-measure`.
-On 5.9 use a toolset newer than 0.5.3 (the one in this repo): 5.9 renamed the async tool result `Measure` returns,
+On 5.9 use the toolset of 0.5.4 or later: 5.9 renamed the async tool result `Measure` returns,
 and older copies don't compile there.
 
 ## 7. Verify

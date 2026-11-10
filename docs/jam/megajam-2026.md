@@ -57,7 +57,7 @@ throwaway Unreal project, and on Nov 12 copy two things into your jam project.
 
 ## Install the Unreal plugin
 
-1. Download `glitchless-unreal-0.5.3.zip` from the [glitchless-unreal 0.5.3 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.3) and unzip
+1. Download `glitchless-unreal-0.5.4.zip` from the [glitchless-unreal 0.5.4 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.4) and unzip
    it so the folder is `<YourProject>/Plugins/Glitchless`.
 2. **Edit → Plugins**, find Glitchless under Analytics, enable it, restart the editor.
 3. The plugin is C++ source. A Blueprint-only project has to become a C++ project once: **Tools → New C++
@@ -135,7 +135,7 @@ settings.
   https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor
 - Glitchless reads what happened when the game ran, on anyone's machine: hitches and their causes, errors,
   crashes, bug reports. Its secret key belongs in your own MCP settings, not in that `.mcp.json`.
-- Optional: the **Glitchless Toolset** plugin (`glitchless-unreal-toolset-0.5.3.zip` from the same [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.3), unzipped to `<YourProject>/Plugins/GlitchlessToolset`)
+- Optional: the **Glitchless Toolset** plugin (`glitchless-unreal-toolset-0.5.4.zip` from the same [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.4), unzipped to `<YourProject>/Plugins/GlitchlessToolset`)
   adds two tools to Unreal MCP while you Play In Editor: `Status` (what Glitchless sees right now) and
   `Measure` (frame stats over the next few seconds). Enable it next to Unreal MCP and All Toolsets.
 

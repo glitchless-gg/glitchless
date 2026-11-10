@@ -59,7 +59,7 @@ namespace
 		Event.Set("ts", static_cast<long long>(NowMs()));
 		Event.Set("name", Name);
 		FValue B = FValue::Object();
-		B.Set("sdk", "glitchless-unreal/0.5.3");
+		B.Set("sdk", "glitchless-unreal/0.5.4");
 		B.Set("service", "glitchless-unreal-webtest");
 		B.Set("version", "1");
 		B.Set("env", "dev");
