@@ -17,7 +17,7 @@
 			"Name": "Glitchless",
 			"Type": "Runtime",
 			"LoadingPhase": "Default",
-			"PlatformAllowList": [ "Win64", "Mac", "Linux", "IOS", "Android" ]
+			"PlatformAllowList": [ "Win64", "Mac", "Linux", "IOS", "Android", "Wasm" ]
 		}
 	]
 }

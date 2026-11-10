@@ -1,6 +1,6 @@
 # What Glitchless for Unreal sends
 
-This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `Core/GlitchlessRules.cpp`, `GlitchlessDevice.cpp`, `Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp` and `GlitchlessRuntime.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs` and `node unreal/test/mp.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
+This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `Core/GlitchlessRules.cpp`, `GlitchlessDevice.cpp`, `Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp` and `GlitchlessRuntime.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs`, `node unreal/test/mp.mjs` and, for a web build, `node unreal/test/web-game.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's, Google's and Valve's categories; check them against the forms as they are when you submit.
 
@@ -60,7 +60,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | field | example | mode |
 | --- | --- | --- |
-| `browser`, `browser_version` | `Unreal`, `5.8.4`: the engine, the same for every player of a build | all |
+| `browser`, `browser_version` | `Unreal`, `5.8.4`: the engine, the same for every player of a build; in a web build, the browser and its major version (`Chrome`, `141`) | all |
 | `os` | `Windows`, `macOS`, `SteamOS` | all |
 | `mobile` | `false` | all |
 | `device_tier` | `low` / `mid` / `high`, from core count and memory | all |
@@ -73,6 +73,8 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `model`, `os_version` | `Steam Deck OLED`, `Windows 11 (24H2)` | **full** |
 | `gpu`, `gpu_vendor` | `NVIDIA GeForce RTX 4070`, `NVIDIA` | **full** |
 | `cores`, `memory_gb` | `16`, `32` | **full** |
+
+In a web build these come from the page as the browser SDK reads them (the user agent, the screen, a WebGL context's GPU name, the core count and memory the browser gives). The page's address is read only to tell the developer's own machine from a player's and for `?glitchless` flags; it is never sent.
 
 **Error text.** Unreal's messages come from the engine and the game's code, not from the player. Paths on the device are cut down before sending, in every mode: the project's Saved folder, the project, the engine, the user's settings folder and documents become `saved:`, `project:`, `engine:`, `settings:` and `documents:`, and on a phone the app's data folder and the app itself become `home:` and `app:`; `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` lose the name; iOS container IDs (made per install) become `<id>`. If the game puts anything of the player's into a `UE_LOG` error, an ensure message or `Error()` attributes, it is sent. Don't.
 

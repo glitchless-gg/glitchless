@@ -106,10 +106,17 @@ function packagePlugin({ plugin, zip }) {
       const plain = text.replace(/^(\/\/ Copyright \(c\) [^\n]*?authors\.) MIT License: see LICENSE\./m, '$1');
       if (plain !== text) fs.writeFileSync(f, plain);
     }
-    // Fab wants the EngineVersion right after VersionName, and FabURL once the draft listing exists.
+    // Fab wants the EngineVersion right after VersionName, and FabURL once the draft listing exists. An engine
+    // before 5.9 has no Wasm (web) platform and warns about one it doesn't know, so its zip lists none.
+    const [major, minor] = args.engine.split('.').map(Number);
+    const knowsWasm = major > 5 || (major === 5 && minor >= 9);
     const stamped = {};
     for (const [k, v] of Object.entries(descriptor)) {
       if (k === 'EngineVersion' || k === 'FabURL') continue;
+      if (k === 'Modules' && !knowsWasm) {
+        stamped[k] = v.map((m) => (m.PlatformAllowList ? { ...m, PlatformAllowList: m.PlatformAllowList.filter((p) => p !== 'Wasm') } : m));
+        continue;
+      }
       stamped[k] = v;
       if (k === 'VersionName') stamped.EngineVersion = `${args.engine}.0`;
       if (k === 'DocsURL' && args['fab-url']) stamped.FabURL = fabUrl(args['fab-url']);

@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
+description: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8 or 5.9, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
 ---
 
 # Instrument a game with Glitchless
@@ -15,7 +15,7 @@ have a way to measure the running game before and after a change.
 | --- | --- | --- |
 | `ProjectSettings/ProjectVersion.txt` and `Packages/manifest.json` | Unity 6.0+ | [references/unity.md](references/unity.md) |
 | `project.godot` | Godot 4.5+ | the Godot addon's README: `godot/addons/glitchless/README.md` in the Glitchless repo (`~/.glitchless/godot/addons/glitchless/README.md` if it's cloned there), then [references/godot.md](references/godot.md) for bug reports, streams, properties and multiplayer |
-| a `*.uproject` file | Unreal Engine 5.8 (5.7 untested) | [references/unreal.md](references/unreal.md) |
+| a `*.uproject` file | Unreal Engine 5.8, or the 5.9 MegaJam Preview (not its web target; 5.7 untested) | [references/unreal.md](references/unreal.md) |
 | `three` or `@react-three/fiber` in package.json | Three.js | [references/threejs.md](references/threejs.md) |
 | a Rojo `default.project.json` (or `*.project.json`), `wally.toml`, `*.rbxl` / `*.rbxlx`, or `.luau` scripts that call `game:GetService` | Roblox | [references/roblox.md](references/roblox.md) |
 | `phaser` in package.json, or a `<script>` that loads Phaser | Phaser 3.60+ or 4 | [references/phaser.md](references/phaser.md) |

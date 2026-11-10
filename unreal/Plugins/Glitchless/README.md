@@ -1,6 +1,6 @@
 # Glitchless for Unreal
 
-Game observability for Unreal Engine 5.8 (and 5.7). Glitchless records how your game runs for real players and gives your coding agent the same data, over MCP, so it can fix what they hit.
+Game observability for Unreal Engine 5.8 and the 5.9 MegaJam Preview (and 5.7). Glitchless records how your game runs for real players and gives your coding agent the same data, over MCP, so it can fix what they hit.
 
 - **Stutter.** Every frame is timed, and each 5-second frame window carries a mergeable frame-time sketch and where the time went: the game thread, the render and RHI threads, the GPU. Each hitch (a frame over 50 ms and twice the recent median) comes with the thread that held it up and its likely causes: pipeline states compiled on the spot, shaders compiled (in the editor), garbage collection, a map load, a streamed level, assets loaded, long game, render or frozen frames, or time spent where nothing measures it (presenting the frame, the OS).
 - **Errors and crashes.** `UE_LOG` errors, ensures with their callstacks, Blueprint runtime errors (Accessed None and the rest), and crashes, written to disk as the game dies and sent on the next launch. Grouped by the same fingerprint every Glitchless SDK uses, with the game events just before each one.
@@ -180,9 +180,36 @@ Testers are not players either. A TestFlight build is a Shipping build like the 
   - send to the computer's address on the network, not `localhost`, with the phone on the same network;
   - say why the game wants the local network, in Additional Plist Data: `<key>NSLocalNetworkUsageDescription</key><string>…</string>`. iOS asks the player once, at the first send, and nothing gets through until they allow it. The test game's `Config/DefaultEngine.ini` does all three.
 
+## Unreal Engine 5.9 MegaJam Preview
+
+Nothing the plugin calls changed in Epic's 5.9 MegaJam Preview (November 2026, for the Epic AI MegaJam), so it builds
+there for Windows, Mac, Linux and phones as it does on 5.8. On 5.9.0 on a Mac and on Windows (a 5.9 source build),
+the editor, a packaged game, and dedicated and listen servers run from the editor all report as they do on 5.8
+(`unreal/test/e2e.mjs` and `mp.mjs`). Copy your project rather than converting it, as Epic advises. Two things are
+new:
+
+- **The Glitchless Toolset** needs this version or later on 5.9. 5.9 moved Unreal MCP's async tool results into an
+  engine module of their own and renamed them, so the toolset of 0.5.3 and earlier doesn't compile there. The Glitchless
+  plugin itself is unaffected.
+- **Web builds (WebAssembly and WebGPU) report too.** Unreal's HTTP is switched off on the web (`bUseNullHttp` in the
+  engine's `BaseWasmEngine.ini`), so the plugin sends by the page's own `fetch`. A web player is their browser, as in
+  a Three.js, Unity or Godot web game (`Chrome` on `macOS`, its screen and GPU tier), and the page sends the session's
+  end as the tab closes. Checked with a 5.9 source build's web package of the test game in Chromium on WebGPU
+  (`unreal/test/web-game.mjs`). What to know:
+  - Epic's launcher install of 5.9 for the Mac can't make a web build ("The Wasm platform is not supported from this
+    engine distribution"); an engine built from source can.
+  - Package with BuildCookRun's `-package` step: it writes the `wasm-manifest.json` the page loads first.
+  - The page's address stands in for the command line: on your own machine (`localhost`, a private address) a
+    Development build follows the debug rule; add `?glitchless` to send from it, as `-glitchless` does elsewhere.
+  - Every 5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts (Epic's web HTTP
+    settings), so it shows under Errors once a session. Mark it known (`glitchless_mark_known`).
+  - Blueprints that call the Glitchless nodes haven't been tried in a web build; the test game's C++ has.
+  - On 5.8, which has no web platform, Unreal warns once a build about the plugin's "Wasm" platform. The Fab zip for
+    5.8 leaves it out.
+
 ## Agents in the editor: Unreal MCP
 
-Unreal 5.8 ships Unreal MCP (Experimental), an MCP server inside the editor. The optional **Glitchless Toolset** plugin (`unreal/Plugins/GlitchlessToolset`, beside this one) gives it two tools, so an agent can measure the game itself while it plays in the editor, as WebMCP's `glitchless_measure` lets it in a browser game:
+Unreal 5.8 and 5.9 ship Unreal MCP (Experimental), an MCP server inside the editor. The optional **Glitchless Toolset** plugin (`unreal/Plugins/GlitchlessToolset`, beside this one) gives it two tools, so an agent can measure the game itself while it plays in the editor, as WebMCP's `glitchless_measure` lets it in a browser game:
 
 | tool | |
 | --- | --- |

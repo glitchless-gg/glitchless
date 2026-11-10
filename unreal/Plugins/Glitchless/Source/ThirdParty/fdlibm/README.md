@@ -17,4 +17,5 @@ buckets match JavaScript's on every platform and compiler (`unreal/test/core.mjs
 
 **Changes from the original:** written as one C++ function with Unreal's naming (`GlitchlessFdlibm::Log`), the high and
 low words read through `memcpy` rather than pointer casts, and pragmas that turn off floating-point contraction and
-fast-math, so the compiler can't change the result. The arithmetic is unchanged.
+fast-math, so the compiler can't change the result (not on WebAssembly, which has no fused multiply-add to contract
+into, and where clang has no such pragma). The arithmetic is unchanged.

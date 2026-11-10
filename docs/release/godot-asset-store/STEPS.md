@@ -19,7 +19,7 @@ never by hand. The parent session runs it, commits, tags and pushes the mirror, 
    with the forum and the development fund. If you have none, make one on the sign-in page.
 2. **Make the publisher.** Click **Upload Asset**. It first asks for a publisher: **Publisher Name** `Glitchless`,
    **Publisher URL Slug** `glitchless`.
-3. **The asset.** Name it `Glitchless: game observability for coding agents`. In **Settings**:
+3. **The asset.** Name it `Glitchless: Game Observability for Coding Agents` (title case). In **Settings**:
    - Asset Summary and Detailed description: paste them from LISTING.md.
    - Asset type: **Addon**.
    - License: **MIT**.

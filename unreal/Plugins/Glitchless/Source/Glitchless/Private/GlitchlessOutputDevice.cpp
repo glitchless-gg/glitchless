@@ -68,6 +68,17 @@ void FGlitchlessOutputDevice::Serialize(const TCHAR* V, ELogVerbosity::Type Verb
 	{
 		return;
 	}
+	// A line with no words says nothing a developer can act on. UE 5.9 logs three such LogHAL errors as every editor
+	// process starts, which its own log file leaves out.
+	const TCHAR* Text = V;
+	while (FChar::IsWhitespace(*Text))
+	{
+		++Text;
+	}
+	if (!*Text)
+	{
+		return;
+	}
 	// Every platform's error device says this as an assert or a fatal error takes the game down.
 	if (Level == ELogVerbosity::Error && FCString::Strncmp(V, TEXT("appError called:"), 16) == 0)
 	{

@@ -50,7 +50,10 @@ void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 	bSwitchCrash = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-switch-crash"));
 	FParse::Value(FCommandLine::Get(), TEXT("glitchless-test-quit="), QuitAfter);
 	bSolo = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-solo"));
-	StartedAt = FPlatformTime::Seconds();
+	if (bMultiplayer)
+	{
+		StartedAt = FPlatformTime::Seconds(); // a server is in its match from its first tick, as a real one is
+	}
 	Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateUObject(this, &UGlitchlessTestScript::Step));
 	FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UGlitchlessTestScript::OnMapLoaded);
 }
@@ -77,15 +80,22 @@ void UGlitchlessTestScript::PlantedScript()
 
 bool UGlitchlessTestScript::Step(float DeltaTime)
 {
-	const double T = FPlatformTime::Seconds() - StartedAt;
 	UWorld* World = GetGameInstance()->GetWorld();
-	// One step a second, each once.
-	const int32 Due = static_cast<int32>(T);
+	// A scripted run takes one step a second from its first tick: an editor that runs start-up scripts (a 5.9 source
+	// build) first ticks about 8 s after the game instance starts. A multiplayer part counts from the start.
+	if (StartedAt <= 0)
+	{
+		StartedAt = FPlatformTime::Seconds();
+	}
+	const int32 Due = static_cast<int32>(FPlatformTime::Seconds() - StartedAt);
 	if (Due <= Done)
 	{
 		return true;
 	}
-	Done = Due;
+	// A multiplayer part counts seconds. A scripted run takes each step once, in order and in a frame of its own: a
+	// tick that comes late (an ensure's stack walk over a source build's symbols takes over 2 s) runs the next step,
+	// and the ones it missed follow tick by tick.
+	Done = bMultiplayer ? Due : Done + 1;
 	if (bMultiplayer)
 	{
 		return StepMultiplayer(World);
@@ -372,7 +382,7 @@ bool UGlitchlessTestScript::StepMultiplayer(UWorld* World)
 	{
 		FGlitchless::Count(TEXT("replicated_hit"), FGlitchlessAttributes().Add(TEXT("weapon"), TEXT("ar")).Add(TEXT("damage"), 23.0), 4);
 	}
-	if (bServer && bCrash && Done == 6)
+	if (bServer && bCrash && Done >= 6) // the first step from six seconds on, should a hitch skip that second
 	{
 		UE_LOG(LogGlitchlessTest, Display, TEXT("Planted server crash"));
 		volatile int32* Nowhere = nullptr;

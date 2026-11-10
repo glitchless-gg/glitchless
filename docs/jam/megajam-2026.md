@@ -4,8 +4,10 @@ Glitchless records how your Unreal game runs: stutters and what caused them, err
 and bug reports with screenshots from your teammates and playtesters. Its MCP server lets your coding
 agent read all of it and fix what people hit. Jam teams get a free jam tier on Glitchless Cloud.
 
-This guide gets a team from nothing to telemetry before the jam starts, for Unreal Engine 5.8 with
-Claude Code or another coding agent, with or without Epic's Unreal MCP.
+This guide gets a team from nothing to telemetry before the jam starts, for Unreal Engine 5.8 or
+Epic's 5.9 MegaJam Preview, with Claude Code or another coding agent, with or without Epic's Unreal MCP.
+On 5.9, Glitchless reports from Windows, Mac and Linux builds and from web (WebAssembly and WebGPU) builds, which only
+an engine built from source can make; the plugin README's "Unreal Engine 5.9 MegaJam Preview" section has the details.
 
 - Jam announcement: https://www.unrealengine.com/news/2026-epic-ai-megajam
 - Jam page, rules summary and submission: https://itch.io/jam/2026-epic-ai-megajam
@@ -203,7 +205,7 @@ Glitchless already treats as a bot's, so a measure run plays the same way before
 
 ## Your first hour of the jam
 
-- [ ] Make the jam project in UE 5.8 (a C++ project, or add one C++ class).
+- [ ] Make the jam project in UE 5.8 or 5.9 (a C++ project, or add one C++ class).
 - [ ] Copy `Plugins/Glitchless` from your rehearsal project, and the `[/Script/Glitchless.GlitchlessSettings]`
       block into `Config/DefaultGame.ini`. Check Service, Intake, Client Token, Send In Development Builds
       and Bug Report Key in Project Settings.

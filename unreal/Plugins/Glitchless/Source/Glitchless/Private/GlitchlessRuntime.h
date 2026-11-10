@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "Core/GlitchlessCore.h"
+#include "GlitchlessWeb.h"
 #include "HAL/CriticalSection.h"
 #include "Templates/UniquePtr.h"
 // FWeakObjectPtr itself, for the TWeakObjectPtr member: CoreMinimal has only the template, and a build
@@ -128,6 +129,10 @@ private:
 	void OnEnterBackground();
 	void OnEnterForeground();
 	void OnEnginePreExit();
+#if GLITCHLESS_WEB
+	void TickWeb(double Now);
+	void StageParting(double Now);
+#endif
 	void RegisterInput();
 	void DrainErrors();
 	void CheckMeasure(double Now);
@@ -177,6 +182,12 @@ private:
 	int32 NextMapHandle = 1;
 	bool bInitialized = false;
 	bool bShutDown = false;
+
+#if GLITCHLESS_WEB
+	// The page a web build runs in (GlitchlessWeb.h): out of view, and when its parting batch was last handed over.
+	bool bPageHidden = false;
+	double PartingAt = 0;
+#endif
 
 	// -glitchless-measure
 	double MeasureSeconds = 0;

@@ -5,14 +5,21 @@ intake URL and client token, privacy, bots, testers and the version), and finish
 sections: the game's own metrics and dashboard, and the report.
 
 
-The Glitchless plugin (`unreal/Plugins/Glitchless` in the Glitchless repo), for Unreal Engine 5.8. It is C++
-source: it times every frame on the game, render and RHI threads and the GPU, names each hitch's likely causes
-(pipeline states created on the spot, garbage collection, map loads, streamed levels, asset loads), and reports
-`UE_LOG` errors, ensures, Blueprint runtime errors and crashes. Maps are levels on their own.
+The Glitchless plugin (`unreal/Plugins/Glitchless` in the Glitchless repo), for Unreal Engine 5.8 and the 5.9
+MegaJam Preview. It is C++ source: it times every frame on the game, render and RHI threads and the GPU, names each
+hitch's likely causes (pipeline states created on the spot, garbage collection, map loads, streamed levels, asset
+loads), and reports `UE_LOG` errors, ensures, Blueprint runtime errors and crashes. Maps are levels on their own.
+
+On 5.9 everything below is the same (the engine is at `UE_5.9`), and its web target (WebAssembly and WebGPU) reports
+too: the plugin sends by the page's own fetch, and a web player is their browser. A web build needs an engine built
+from source (Epic's Mac launcher install can't make one) and BuildCookRun's `-package` step. On the developer's own
+machine the page's address stands in for the command line: `?glitchless` sends from a Development build there. Every
+5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts; it is Epic's, so mark it known
+(`glitchless_mark_known`) rather than chase it.
 
 ## 1. Read the project
 
-Note: `EngineAssociation` in the `.uproject` (5.8), whether there is a `Source/` folder (a C++ project) or not
+Note: `EngineAssociation` in the `.uproject` (5.8, or 5.9 for the MegaJam Preview), whether there is a `Source/` folder (a C++ project) or not
 (Blueprint only), `GameDefaultMap` in `Config/DefaultEngine.ini` and which maps are levels, the classes for player
 death and respawn, level complete and fail, pickups, and anything spawned in bulk (projectiles, enemies, effects);
 where the version lives (`ProjectVersion` under `[/Script/EngineSettings.GeneralProjectSettings]` in
@@ -164,7 +171,7 @@ whole measure (10 seconds by default). Package again before each playtest.
 
 ## 6. Agents in the editor: Unreal MCP
 
-UE 5.8 ships Unreal MCP (Experimental), Epic's MCP server inside the editor: with it you can open maps, look inside
+UE 5.8 and 5.9 ship Unreal MCP (Experimental), Epic's MCP server inside the editor: with it you can open maps, look inside
 Blueprints and actors, edit them and run Play In Editor. Glitchless doesn't replace it; the two split the work:
 
 - **Unreal MCP** is your hands in the editor: find where deaths and level ends happen in Blueprints, add the
@@ -180,6 +187,8 @@ To set it up, copy `GlitchlessToolset` next to `Glitchless` in `Plugins/`, enabl
 Start Server), and run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex…) for the client
 config. Start Play In Editor before calling `Measure`. Numbers from the editor run slower than a packaged build
 (shaders compile on first use there): confirm a fix with a packaged Development build and `-glitchless-measure`.
+On 5.9 use a toolset newer than 0.5.3 (the one in this repo): 5.9 renamed the async tool result `Measure` returns,
+and older copies don't compile there.
 
 ## 7. Verify
 

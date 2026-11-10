@@ -14,12 +14,12 @@
 //
 //   node unreal/test/mp.mjs               build the editor target, then play
 //   node unreal/test/mp.mjs --no-build    play with the last build
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { PROJECT, ROOT, SDK, SERVICE, UE_ROOT, WINDOWS, checker, events, freePort, hashed, requireEngine, startRecorder, startServer } from './harness.mjs';
+import { PROJECT, ROOT, SDK, SERVICE, UE_ROOT, WINDOWS, buildEditor, checker, events, freePort, hashed, requireEngine, startRecorder, startServer } from './harness.mjs';
 
 const EDITOR = path.join(UE_ROOT, WINDOWS ? 'Engine/Binaries/Win64/UnrealEditor-Cmd.exe' : 'Engine/Binaries/Mac/UnrealEditor-Cmd');
 const SAVED = path.join(ROOT, 'unreal/test/GlitchlessTest/Saved/Glitchless');
@@ -30,19 +30,6 @@ const { check, finish, results } = checker();
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'glitchless-unreal-mp-'));
 
 requireEngine();
-
-function buildEditor() {
-  const script = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'Build.bat' : 'Mac/Build.sh');
-  const log = path.join(tmp, 'build.log');
-  console.log(`building the editor target (log: ${log})…`);
-  const args = ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex'];
-  // Windows runs a .bat only through cmd, as one command line with its paths quoted (C:\Program Files\…).
-  const opts = { encoding: 'utf8', maxBuffer: 1 << 28 };
-  const q = (a) => (/\s/.test(a) ? `"${a}"` : a);
-  const r = WINDOWS ? spawnSync([script, ...args].map(q).join(' '), { ...opts, shell: true }) : spawnSync(script, args, opts);
-  fs.writeFileSync(log, `${r.stdout}\n${r.stderr}`);
-  if (r.status !== 0) throw new Error(`the editor target didn't build (log: ${log})`);
-}
 
 // One side of a match. Crash reports stay on this machine: a dedicated server is unattended, and Unreal sends an
 // unattended crash to Epic unless told not to.
@@ -90,7 +77,7 @@ const batches = [];
 let server;
 let recorder;
 try {
-  if (build) buildEditor();
+  if (build) buildEditor(path.join(tmp, 'build.log'));
   fs.rmSync(SAVED, { recursive: true, force: true });
   server = await startServer(port, path.join(tmp, 'data'));
   recorder = await startRecorder(recorderPort, port, batches);
@@ -132,11 +119,13 @@ try {
       assert.ok(w.tick_p50 < 8, `tick_p50 ${w.tick_p50}: the sleep that holds the server to 30 Hz counted as work`);
       assert.equal(w.level, 'Template_Default');
     }
-    const busy = windows.find((w) => w.players >= 1);
-    assert.ok(busy, `no window with a player: ${JSON.stringify(windows.map((w) => w.players))}`);
-    assert.equal(typeof busy.rtt_p95, 'number');
+    // A connection's round trip and traffic come once a second, so the window a player joins in may end before them.
+    const withPlayers = windows.filter((w) => w.players >= 1);
+    assert.ok(withPlayers.length, `no window with a player: ${JSON.stringify(windows.map((w) => w.players))}`);
+    for (const w of withPlayers) assert.equal(w.match, MATCH);
+    const busy = withPlayers.find((w) => typeof w.rtt_p95 === 'number');
+    assert.ok(busy, `no window with a player's round trip: ${JSON.stringify(withPlayers.map((w) => w.rtt_p95))}`);
     assert.ok(busy.in_kbps > 0 && busy.out_kbps > 0, `traffic ${busy.in_kbps} in, ${busy.out_kbps} out`);
-    assert.equal(busy.match, MATCH);
     assert.ok(windows.some((w) => typeof w.net_objects === 'number' && w.net_objects > 0), 'no replicated objects counted');
   });
   check('dedicated: the server\'s match, counts and events are its own', () => {
@@ -224,7 +213,17 @@ try {
     const sent = batches.slice(beforeNext).filter((b) => b.json?.role === 'server');
     const crash = events(sent).find((e) => e.type === 'error' && e.kind === 'crash');
     assert.ok(crash, 'no crash arrived');
-    assert.match(crash.fn || crash.stack || '', /StepMultiplayer|GlitchlessTestScript/);
+    // The plugin reports the stack Unreal's crash handler walked, which is held to Unreal's own crash log. On a Mac
+    // that has sometimes left out every frame of the game's module when the editor binary crashes (9 Nov 2026, on 5.8
+    // and 5.9; a packaged game, e2e.mjs, still names them), leaving the ticker that ran the step.
+    const log = fs.readFileSync(path.join(tmp, 'server-crash.log'), 'utf8');
+    const unreal = log.slice(log.indexOf('=== Critical error'));
+    if (/StepMultiplayer|GlitchlessTestScript/.test(unreal)) assert.match(crash.fn || crash.stack || '', /StepMultiplayer|GlitchlessTestScript/);
+    else assert.match(crash.stack || '', /\n {4}at FTSTicker::Tick\n/, `Unreal's log: ${unreal.slice(0, 600)}`);
+  });
+  check('no side reports a log line with no words as an error', () => {
+    const blank = events(batches).filter((e) => e.type === 'error' && e.message === 'Unknown error');
+    assert.deepEqual(blank.map((e) => e.fn), []);
   });
 } catch (err) {
   results.push(['FAIL', 'run', err.message]);

@@ -306,6 +306,36 @@ TEST(ALongFrameIsAFreezeButARunOfThemIsThrottling)
 	EXPECT_EQ(Frames, 51.0);
 }
 
+TEST(IdleTicksRunTheTimersButAreNoFrames)
+{
+	// A web page that isn't showing: its engine ticks on, often under a millisecond, and none of it is a frame.
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	H.Frames(*Core, 10);
+	Core->Track("while_hidden");
+	for (int I = 0; I < 12000; I++)
+	{
+		H.Now += 1;
+		Core->Idle();
+	}
+	bool Went = false; // what the game tracked went without a frame
+	for (const FValue& E : OfType(H.AllEvents(), "custom"))
+	{
+		Went = Went || E.Find("name")->AsString() == "while_hidden";
+	}
+	EXPECT(Went);
+	H.Frames(*Core, 300);
+	Core->Flush();
+	double Frames = 0;
+	for (const FValue& E : OfType(H.Transport->Events(), "frame_window"))
+	{
+		Frames += E.Find("frames")->AsNumber();
+		EXPECT_EQ(E.Find("hz")->AsNumber(), 60.0);
+	}
+	EXPECT_EQ(Frames, 310.0);
+}
+
 TEST(ErrorsAreGroupedScrubbedAndCapped)
 {
 	FHarness H;
@@ -545,6 +575,128 @@ TEST(GoingToTheBackgroundEndsTheSessionAndSendsAtOnce)
 	H.Now += 400000;
 	Core->OnForeground();
 	EXPECT(Core->GetSessionId() != First); // a long one starts a new session
+}
+
+TEST(AWebPageOutOfViewSendsWhatWaitsAndPlaysOn)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	H.Frames(*Core, 30);
+	const std::string First = Core->GetSessionId();
+	Core->LevelStart("Gallery");
+	H.Transport->Status = 503; // the timer's send fails, so what waits is still there when the page hides
+	Core->Flush();
+	H.Transport->Status = 202;
+	const size_t Before = H.Transport->SentNow.size();
+	Core->SendWaiting();
+	EXPECT(H.Transport->SentNow.size() > Before);
+	for (const FValue& E : H.Transport->Events(&H.Transport->SentNow))
+	{
+		EXPECT(Type(E) != "session_end" && Type(E) != "level_abandon");
+	}
+	H.Frames(*Core, 30);
+	EXPECT_EQ(Core->GetSessionId(), First);
+
+	// The page goes: the session and the level end with reason pagehide, sent at once.
+	Core->OnBackground("pagehide");
+	std::string EndReason, AbandonReason;
+	for (const FValue& E : H.Transport->Events(&H.Transport->SentNow))
+	{
+		if (Type(E) == "session_end")
+		{
+			EndReason = E.Find("reason")->AsString();
+		}
+		if (Type(E) == "level_abandon")
+		{
+			AbandonReason = E.Find("reason")->AsString();
+		}
+	}
+	EXPECT_EQ(EndReason, "pagehide");
+	EXPECT_EQ(AbandonReason, "pagehide");
+	// Back from the back-forward cache soon after: the same session, as a phone back from the background.
+	H.Now += 5000;
+	Core->OnForeground();
+	EXPECT_EQ(Core->GetSessionId(), First);
+}
+
+TEST(AWebPagesPartingBatchIsMadeAheadAndEndsNothing)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	Core->Init(FHarness::Options());
+	H.Frames(*Core, 30);
+	const std::string First = Core->GetSessionId();
+	Core->LevelStart("Gallery");
+	H.Frames(*Core, 30);
+	const FCore::FParting P = Core->Parting("pagehide");
+	EXPECT(P.Url.find("/v1/intake?token=") != std::string::npos);
+	FValue Batch;
+	EXPECT(FValue::Parse(std::string(P.Body.begin(), P.Body.end()), Batch));
+	EXPECT_EQ(Batch.Find("session_id")->AsString(), First);
+	EXPECT(Batch.Find("batch_id")->AsString().rfind("b_", 0) == 0);
+	const std::vector<FValue>& Events = Batch.Find("events")->GetItems();
+	EXPECT_EQ(Events.size(), static_cast<size_t>(2));
+	if (Events.size() == 2)
+	{
+		EXPECT_EQ(Type(Events[0]), "level_abandon");
+		EXPECT_EQ(Events[0].Find("level")->AsString(), "Gallery");
+		EXPECT_EQ(Events[0].Find("reason")->AsString(), "pagehide");
+		EXPECT_EQ(Type(Events[1]), "session_end");
+		EXPECT_EQ(Events[1].Find("reason")->AsString(), "pagehide");
+	}
+	// Made, not sent: the session and the level go on, and nothing ended went out.
+	Core->Flush();
+	for (const FValue& E : H.Transport->Events())
+	{
+		EXPECT(Type(E) != "session_end" && Type(E) != "level_abandon");
+	}
+	Core->LevelComplete("Gallery", 10, std::nullopt);
+	Core->Flush();
+	EXPECT_EQ(OfType(H.Transport->Events(), "level_complete").size(), static_cast<size_t>(1));
+
+	// The page went with its parting batch: the core ends there too and sends nothing more; the back-forward cache
+	// brings the same session back.
+	Core->LevelStart("Garden");
+	Core->Flush();
+	const size_t Sent = H.Transport->Sent.size() + H.Transport->SentNow.size();
+	Core->OnPageGone();
+	Core->Flush();
+	EXPECT_EQ(H.Transport->Sent.size() + H.Transport->SentNow.size(), Sent);
+	EXPECT(OfType(H.Transport->Events(), "session_end").empty());
+	EXPECT(OfType(H.Transport->Events(), "level_abandon").empty());
+	EXPECT(Core->Parting("pagehide").Body.empty());
+	H.Now += 5000;
+	Core->OnForeground();
+	EXPECT_EQ(Core->GetSessionId(), First);
+	EXPECT(!Core->Parting("pagehide").Body.empty());
+}
+
+TEST(AWebBuildsSessionStartNamesItsEngine)
+{
+	FHarness H;
+	auto Core = H.NewCore();
+	FValue Engine = FValue::Object();
+	Engine.Set("name", "unreal");
+	Engine.Set("version", "5.9.0");
+	Engine.Set("renderer", "webgpu");
+	Core->EngineInfo = Engine;
+	Core->Init(FHarness::Options());
+	H.Frames(*Core, 30);
+	Core->Flush();
+	const std::vector<FValue> Starts = OfType(H.Transport->Events(), "session_start");
+	EXPECT_EQ(Starts.size(), static_cast<size_t>(1));
+	if (!Starts.empty())
+	{
+		EXPECT_EQ(Starts[0].Find("engine")->Serialize(), R"({"name":"unreal","version":"5.9.0","renderer":"webgpu"})");
+	}
+
+	FHarness Native;
+	auto Plain = Native.NewCore();
+	Plain->Init(FHarness::Options());
+	Native.Frames(*Plain, 30);
+	Plain->Flush();
+	EXPECT(!OfType(Native.Transport->Events(), "session_start").at(0).Has("engine"));
 }
 
 TEST(AQuitWithABatchOnItsWaySendsEachEventOnce)

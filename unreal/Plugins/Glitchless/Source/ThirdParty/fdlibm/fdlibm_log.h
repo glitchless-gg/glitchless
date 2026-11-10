@@ -16,7 +16,8 @@
 // The result has to come out the same on every compiler: no fused multiply-adds, no dividing by a
 // reciprocal, no reassociating. Unreal builds MSVC with /fp:fast, and clang contracts a * b + c on
 // ARM unless told not to.
-#if defined(_MSC_VER) || defined(__clang__)
+// WebAssembly has no fused multiply-add to contract into, and clang has no float_control there (it warns).
+#if (defined(_MSC_VER) || defined(__clang__)) && !defined(__wasm__)
 #pragma float_control(precise, on, push)
 #endif
 #if defined(_MSC_VER) && !defined(__clang__)
@@ -139,6 +140,6 @@ namespace GlitchlessFdlibm
 	}
 }
 
-#if defined(_MSC_VER) || defined(__clang__)
+#if (defined(_MSC_VER) || defined(__clang__)) && !defined(__wasm__)
 #pragma float_control(pop)
 #endif

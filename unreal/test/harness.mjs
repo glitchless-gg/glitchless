@@ -23,13 +23,62 @@ const SERVER_ROOT = process.env.SERVER_ROOT || ROOT;
 
 export function requireEngine() {
   if (!fs.existsSync(UE_ROOT)) {
-    console.error(`Unreal Engine not found at ${UE_ROOT}. Install 5.8 or set UE_ROOT.`);
+    console.error(`Unreal Engine not found at ${UE_ROOT}. Install 5.8 (or 5.9) or set UE_ROOT.`);
     process.exit(2);
+  }
+  console.log(`Unreal Engine ${engineVersion() || '(version unknown)'} at ${UE_ROOT}`);
+}
+
+// The engine's version as its Build.version has it ("5.9.0-…"), or null.
+export function engineVersion() {
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(UE_ROOT, 'Engine/Build/Build.version'), 'utf8'));
+    return `${v.MajorVersion}.${v.MinorVersion}.${v.PatchVersion}-${v.Changelist}`;
+  } catch {
+    return null;
   }
 }
 
-// A Development build of the test game, cooked and staged (and packaged, with -package).
+// The test project and the plugins build in place, so one checkout plays on 5.8 and then 5.9 (or back) only if the
+// other engine's Binaries and Intermediate go first: UBT and the editor can take a module built by the other engine
+// for this one's. A marker in the project's Intermediate names the engine that built it.
+export function forgetOtherEngineBuilds() {
+  const marker = path.join(path.dirname(PROJECT), 'Intermediate/glitchless-engine.txt');
+  const now = engineVersion() || UE_ROOT;
+  const before = fs.existsSync(marker) ? fs.readFileSync(marker, 'utf8').trim() : null;
+  if (before !== now) {
+    const builds = [path.dirname(PROJECT), ...['Glitchless', 'GlitchlessToolset'].map((p) => path.join(ROOT, 'unreal/Plugins', p))].flatMap((d) => [path.join(d, 'Binaries'), path.join(d, 'Intermediate')]);
+    const stale = builds.filter((d) => fs.existsSync(d));
+    if (stale.length) console.log(`built by ${before || 'an unknown engine'} before, not ${now}: clearing ${stale.map((d) => path.relative(ROOT, d)).join(', ')}`);
+    for (const d of stale) fs.rmSync(d, { recursive: true, force: true });
+  }
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, `${now}\n`);
+}
+
+// The test project's editor target (UnrealEditor with the game's module and the plugins built in), which mp.mjs plays
+// and the cook runs.
+export function buildEditor(log) {
+  forgetOtherEngineBuilds();
+  const script = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'Build.bat' : 'Mac/Build.sh');
+  console.log(`building the editor target (log: ${log})…`);
+  const args = ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex'];
+  // Windows runs a .bat only through cmd, as one command line with its paths quoted (C:\Program Files\…).
+  const opts = { encoding: 'utf8', maxBuffer: 1 << 28 };
+  const q = (a) => (/\s/.test(a) ? `"${a}"` : a);
+  const r = WINDOWS ? spawnSync([script, ...args].map(q).join(' '), { ...opts, shell: true }) : spawnSync(script, args, opts);
+  fs.writeFileSync(log, `${r.stdout}\n${r.stderr}`);
+  if (r.status !== 0) throw new Error(`the editor target didn't build (log: ${log})`);
+}
+
+// A Development build of the test game, cooked and staged (and packaged, with -package). The cook runs the project's
+// editor target, so it's built first when this engine hasn't built it (a fresh checkout, or just after switching
+// engines): BuildCookRun's -nocompileeditor would otherwise stop at the cook.
 export function packageGame(platform, log, extra = []) {
+  forgetOtherEngineBuilds();
+  if (!fs.existsSync(path.join(path.dirname(PROJECT), 'Binaries', WINDOWS ? 'Win64' : 'Mac', 'GlitchlessTestEditor.target'))) {
+    buildEditor(log.replace(/(\.log)?$/, '-editor.log'));
+  }
   const uat = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'RunUAT.bat' : 'RunUAT.sh');
   console.log(`packaging a ${platform} Development build (log: ${log})…`);
   const args = ['BuildCookRun', `-project=${PROJECT}`, `-platform=${platform}`, '-clientconfig=Development', '-build', '-cook', '-stage', '-pak', '-nop4', '-utf8output', '-unattended', '-nocompileeditor', ...extra];

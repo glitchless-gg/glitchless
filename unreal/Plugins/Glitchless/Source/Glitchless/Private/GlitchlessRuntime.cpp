@@ -10,6 +10,9 @@
 #include "GlitchlessSettings.h"
 #include "GlitchlessStrings.h"
 #include "GlitchlessTransport.h"
+#if GLITCHLESS_WEB
+#include "Web/GlitchlessWebPage.h"
+#endif
 
 #include "Async/Async.h"
 #include "Blueprint/BlueprintExceptionInfo.h"
@@ -394,6 +397,14 @@ void FGlitchlessRuntime::Configure(Glitchless::FCore& C, const FString& SaveSubd
 	C.Scrubber.AddPath(GlitchlessText::Utf8(FPlatformProcess::UserHomeDir()), "home:");
 	C.Scrubber.AddPath(GlitchlessText::Utf8(FPlatformProcess::BaseDir()), "app:");
 #endif
+#if GLITCHLESS_WEB
+	// A web build sends by the page's fetch (Unreal's HTTP is off there), names the browser as its device, and reads
+	// its flags and the debug rule from the page's address. No dedicated server runs in a page.
+	if (SaveSubdir.IsEmpty())
+	{
+		GlitchlessWeb::Configure(C, &Mutex);
+	}
+#endif
 }
 
 FGlitchlessRuntime::~FGlitchlessRuntime()
@@ -533,6 +544,9 @@ void FGlitchlessRuntime::Shutdown(const FString& Reason)
 	}
 	bShutDown = true;
 	DrainErrors();
+#if GLITCHLESS_WEB
+	GlitchlessWebPage::ClearParting(); // the session ends here, so the page has nothing to send as it goes
+#endif
 	With([&](Glitchless::FCore& C) { C.Shutdown(GlitchlessText::Utf8(Reason)); });
 	FScopeLock Lock(&Mutex);
 	if (ServerCore)
@@ -654,6 +668,9 @@ void FGlitchlessRuntime::OnBeginFrame()
 		RegisterInput();
 	}
 	DrainErrors();
+#if GLITCHLESS_WEB
+	TickWeb(FPlatformTime::Seconds());
+#endif
 
 	const double Now = FPlatformTime::Seconds();
 	const bool bRenders = FApp::CanEverRender() && GDynamicRHI != nullptr;
@@ -710,14 +727,27 @@ void FGlitchlessRuntime::OnBeginFrame()
 		// thread: its tick is the time between frames less that sleep.
 		Cost.Game = FMath::Max(0.0, Dt - FApp::GetIdleTime() * 1000.0);
 	}
-	if (bFirst)
+#if GLITCHLESS_WEB
+	// A web build's frame waits for the browser's (4 ms at 240 Hz, the fastest screen) only while the page shows. A
+	// page that doesn't (opened in a background tab, or one hidden since) has its engine loop on regardless, so its
+	// ticks, and any tick shorter than a screen's frame, aren't frames a player saw. Counted, the first windows had
+	// thousands of frames a second, the budget came out at 240 Hz, and time to first frame was the first tick's.
+	const bool bLoadingTick = !bFirst && (Dt < 3.5 || bPageHidden);
+#else
+	const bool bLoadingTick = false;
+#endif
+	if (bFirst || bLoadingTick)
 	{
 		// Nothing is measured until there is a last frame to time from, and the startup map loaded before that:
 		// the first frame measured is that load's.
 		bMapLoaded = Cost.MapLoaded;
 		bLevelStreamed = Cost.LevelStreamed;
 	}
-	if (!bFirst && !bShutDown)
+	if (bLoadingTick && !bShutDown)
+	{
+		With([](Glitchless::FCore& C) { C.Idle(); }); // a hidden page that plays on still sends what it tracks
+	}
+	if (!bFirst && !bLoadingTick && !bShutDown)
 	{
 		With([&](Glitchless::FCore& C) { C.Frame(Dt, Cost); });
 		// A listen server's tick is its host's frame: the game thread's own time in it, or with no renderer to time
@@ -1374,6 +1404,60 @@ void FGlitchlessRuntime::OnEnginePreExit()
 {
 	Shutdown(TEXT("quit"));
 }
+
+#if GLITCHLESS_WEB
+// The page's own events, since Unreal hears nothing as a tab is hidden or closed (its Wasm application handles focus
+// only). Hidden: what waits goes now and the game plays on. The page always holds the session's end to beacon as it
+// goes, since the game thread can't answer then (unreal/test/web.mjs): a tab closed while it shows is hidden and gone
+// in one go, so the page is handed it on every change and every 5 seconds, and a quit takes it back (Shutdown).
+void FGlitchlessRuntime::TickWeb(double Now)
+{
+	GlitchlessWeb::Poll();
+	for (const int Event : GlitchlessWebPage::TakeEvents())
+	{
+		if (Event == GlitchlessWebPage::Hidden)
+		{
+			bPageHidden = true;
+			With([](Glitchless::FCore& C) { C.SendWaiting(); });
+			StageParting(Now);
+		}
+		else if (Event == GlitchlessWebPage::Shown)
+		{
+			bPageHidden = false;
+		}
+		else if (Event == GlitchlessWebPage::Leaving)
+		{
+			With([](Glitchless::FCore& C) { C.OnPageGone(); }); // the page sent the parting batch itself
+		}
+		else if (Event == GlitchlessWebPage::Restored)
+		{
+			bPageHidden = false;
+			With([](Glitchless::FCore& C) { C.OnForeground(); }); // back from the back-forward cache
+			StageParting(Now);
+		}
+	}
+	// The game plays on (a level that ends, a run that grows longer): the parting batch keeps up.
+	if (Now - PartingAt >= 5)
+	{
+		StageParting(Now);
+	}
+}
+
+void FGlitchlessRuntime::StageParting(double Now)
+{
+	PartingAt = Now;
+	Glitchless::FCore::FParting Parting;
+	With([&Parting](Glitchless::FCore& C) { Parting = C.Parting("pagehide"); });
+	if (Parting.Body.empty())
+	{
+		GlitchlessWebPage::ClearParting();
+	}
+	else
+	{
+		GlitchlessWebPage::SetParting(Parting.Url, Parting.Body.data(), Parting.Body.size());
+	}
+}
+#endif
 
 // ───────────────────────────── -glitchless-measure ─────────────────────────────
 

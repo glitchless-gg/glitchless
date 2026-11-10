@@ -17,7 +17,7 @@ text; the store doesn't copy it over.
 
 | field | value |
 | --- | --- |
-| Asset Name | **Glitchless: game observability for coding agents** (as on the Asset Library) |
+| Asset Name | **Glitchless: Game Observability for Coding Agents** (title case, which the store's reviewers ask for) |
 | Asset URL Slug | **glitchless**, the addon's folder name: the page is `store.godotengine.org/asset/glitchless/glitchless/` |
 | Asset type | **Addon** |
 | License | **MIT**. The zip carries `addons/glitchless/LICENSE` ("Copyright (c) 2026 The Glitchless authors"), and the source repo's root `LICENSE` is the same file, as the guidelines ask |
@@ -62,10 +62,11 @@ Glitchless times every frame on every player's device and names each hitch's lik
 ### AI usage disclosure
 
 ```text
-The addon's GDScript was written with AI coding agents (Claude Code) under the developer's direction, then reviewed and tested by the developer: an end-to-end test suite runs the addon in Godot 4.7 on desktop and as a web export in Chromium on every release, and the release is checked for script warnings in a fresh project. The mascot in the thumbnail was drawn with AI image generation. The screenshots are real captures of the Glitchless dashboard.
+Code written with AI coding agents (Claude Code), directed, reviewed and tested by the developer: end-to-end tests run in Godot on desktop and web for every release. The mascot art is AI-generated; the screenshots are real captures.
 ```
 
-The owner checks this before sending: it has to be true of what's submitted.
+232 characters: the field keeps about 255 and cuts the rest without saying so. The owner checks this before sending: it has
+to be true of what's submitted.
 
 ## Media
 

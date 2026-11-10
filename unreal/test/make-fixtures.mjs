@@ -1,13 +1,15 @@
 // Writes the fixture the Unreal plugin's core tests check their C++ ports against: frame times with
 // the sketch packages/sdk/src/sketch.js makes of them (as JSON.stringify writes it, byte for byte),
-// V8's Math.log for the values the sketch buckets, numbers as JSON.stringify writes them, and error
-// fingerprints from fingerprint.js.
+// V8's Math.log for the values the sketch buckets, numbers as JSON.stringify writes them, error
+// fingerprints from fingerprint.js, and what device.js makes of browsers' user agents and GPUs (a web build
+// reads its page the same way, Private/Core/GlitchlessPage.cpp).
 //   node unreal/test/make-fixtures.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { fingerprint, normalizeMessage } from '../../packages/sdk/src/fingerprint.js';
+import { parseUserAgent, isSteamDeck, cleanGpu, cleanVendor, classifyGpu } from '../../packages/sdk/src/device.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT = path.join(ROOT, 'unreal/test/fixtures/js-fixture.json');
@@ -80,6 +82,73 @@ const errors = [
   ['log_error', 'Uncaught   \tspaces 0X1F 0x 00 007 1234567 0xGG', ''],
 ];
 
+// Browsers as players have them, with userAgentData's mobile where Chromium gives it (null: none): the Unity
+// fixture's list (unity/test/make-fixtures.mjs). Edge and Opera say Chrome/ before their own names, and every iOS
+// browser says Safari/: the browser SDK goes by its rules' order, not the leftmost name, and the C++ port must too.
+const agents = [
+  ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', false],
+  ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', null],
+  ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15', null],
+  ['Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0', null],
+  ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0', false],
+  ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 OPR/125.0.0.0', false],
+  ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.19041', null],
+  ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1', null],
+  ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0.7390.96 Mobile/15E148 Safari/604.1', null],
+  ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/144.0 Mobile/15E148 Safari/605.1.15', null],
+  ['Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 EdgiOS/141.0.3537.71 Mobile/15E148 Safari/605.1.15', null],
+  ['Mozilla/5.0 (iPad; CPU OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1', null],
+  ['Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36', true],
+  ['Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', false],
+  ['Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36 EdgA/141.0.0.0', true],
+  ['Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36 OPR/92.0.0.0', true],
+  ['Mozilla/5.0 (Linux; Android 10; K; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36', true],
+  ['Mozilla/5.0 (Linux; Android 14; SAMSUNG SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36', null],
+  ['Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', false],
+  ['Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0', null],
+  ['Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36', null],
+  ['Mozilla/5.0 (X11; Linux x86_64) Valve Steam Client SteamDeck/1', null],
+  ['Mozilla/5.0 Edg/ Edge/x EdgA/7a Chrome/ Version/ Safari/', null],
+  ['', null],
+];
+const linuxChrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+const decks = [
+  [linuxChrome, 'AMD Custom GPU 0405 (vangogh, LLVM 15.0.7, DRM 3.54, 6.5.0-valve22-1-neptune-65)'],
+  [linuxChrome, 'ANGLE (AMD, AMD Custom GPU 0932, OpenGL 4.6)'],
+  [linuxChrome, 'AMD Radeon RX 7800 XT'],
+  [linuxChrome, 'AMD Custom GPU 04050 (not one)'],
+  [linuxChrome, 'vangoghx'],
+  ['Mozilla/5.0 (X11; Linux x86_64) Valve Steam Client SteamDeck/1', ''],
+  ['Mozilla/5.0 (X11; Linux x86_64) Steam Deck', ''],
+  ['Mozilla/5.0 (X11; Linux x86_64; rv:144.0) Gecko/20100101 Firefox/144.0', 'Radeon R9 200 Series, or similar'],
+];
+// GPUs as a WebGL context names them (the unmasked vendor and renderer): ANGLE's wrappers on each OS, phones,
+// software renderers, and odd ones.
+const gpus = [
+  ['Google Inc. (Apple)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Pro, Unspecified Version)'],
+  ['Google Inc. (NVIDIA)', 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 (0x00002206) Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+  ['Google Inc. (Intel)', 'ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+  ['Google Inc. (AMD)', 'ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+  ['Google Inc. (Google)', 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)'],
+  ['Google Inc. (Qualcomm)', 'ANGLE (Qualcomm, Adreno (TM) 740, OpenGL ES 3.2)'],
+  ['Google Inc. (ARM)', 'ANGLE (ARM, Mali-G78, OpenGL ES 3.2)'],
+  ['Google Inc. (Intel)', 'ANGLE (Intel, Mesa Intel(R) Xe Graphics (TGL GT2), OpenGL 4.6)'],
+  ['Google Inc. (NVIDIA)', 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 6GB (0x00001C03) Direct3D11 vs_5_0 ps_5_0, D3D11-27.21.14.5671)'],
+  ['Google Inc. (Apple)', 'ANGLE (Apple, Apple M2 (0xABCDEF) vs_5_0 OpenGL thing)'],
+  ['Google Inc.', 'ANGLE (Vendor, , x)'],
+  ['', 'ANGLE ()'],
+  ['', 'ANGLE (only)'],
+  ['Apple Inc.', 'Apple GPU'],
+  ['ARM', 'Mali-G57'],
+  ['Qualcomm', 'Adreno (TM) 650'],
+  ['AMD', 'AMD Custom GPU 0405 (vangogh, LLVM 15.0.7, DRM 3.54, 6.5.0-valve22-1-neptune-65)'],
+  ['NVIDIA Corporation', 'NVIDIA GeForce GTX 1060/PCIe/SSE2'],
+  ['Intel Inc.', 'Intel Iris OpenGL Engine'],
+  ['Mozilla', 'Mozilla'],
+  ['', ''],
+  ['', '  spaced name  '],
+];
+
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(
   OUT,
@@ -92,7 +161,16 @@ fs.writeFileSync(
       numbers,
       rounds,
       fingerprints: errors.map(([kind, message, fn]) => ({ kind, message, fn, normalized: normalizeMessage(message), fingerprint: fingerprint(kind, message, fn) })),
+      user_agents: agents.map(([ua, mobile]) => {
+        const r = parseUserAgent({ userAgent: ua, userAgentData: mobile == null ? undefined : { mobile } });
+        return { ua, uad_mobile: mobile, browser: r.browser, browser_version: r.browserVersion, os: r.os, mobile: r.mobile };
+      }),
+      steam_decks: decks.map(([ua, gpu]) => ({ ua, gpu, steam_deck: isSteamDeck({ userAgent: ua, gpu }) })),
+      gpus: gpus.map(([vendor, renderer]) => {
+        const name = cleanGpu(renderer);
+        return { vendor, renderer, name, gpu_vendor: cleanVendor(vendor, renderer), tier: classifyGpu(name) };
+      }),
     },
   ) + '\n',
 );
-console.log(`wrote ${path.relative(ROOT, OUT)}: ${Object.keys(sketches).length} sketches, ${logs.length} logarithms, ${numbers.length} numbers, ${errors.length} fingerprints`);
+console.log(`wrote ${path.relative(ROOT, OUT)}: ${Object.keys(sketches).length} sketches, ${logs.length} logarithms, ${numbers.length} numbers, ${errors.length} fingerprints, ${agents.length} user agents, ${decks.length} Steam Deck checks, ${gpus.length} GPUs`);

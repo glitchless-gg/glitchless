@@ -38,7 +38,7 @@ Read more: [a five-second first launch, found in player data and fixed](https://
 | [`packages/sdk`](packages/sdk) | `glitchless`: SDK, Three.js, Phaser (3 and 4), Babylon.js and PlayCanvas adapters, overlay, WebMCP tools, Datadog RUM bridge. 138 KB as one `<script>` (44 KB gzipped); a Three.js game's bundle adds 34 KB gzipped ([measured](packages/sdk/bench/overhead.mjs)) |
 | [`godot`](godot) | Glitchless for **Godot 4.5+** (`addons/glitchless`): the same events from native Godot games, with errors through Godot's loggers, an anonymous mode and `--glitchless-measure` for agents. A demo game and end-to-end test sit alongside |
 | [`unity`](unity) | Glitchless for **Unity 6.0 LTS and later** (`gg.glitchless.sdk`, installed by git URL): frame timing with the player loop split into update, physics and render, profiler counters, errors from Unity's log, scenes as levels, an offline outbox and `--glitchless-measure` for agents. A sample game and end-to-end test sit alongside |
-| [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
+| [`unreal`](unreal) | Glitchless for **Unreal Engine 5.8 and 5.9** (`Plugins/Glitchless`, C++ source): game, render, RHI and GPU times, hitches with their causes (pipeline states created on the spot, garbage collection, map and asset loads), ensures, Blueprint errors and crashes, maps as levels, bug reports, settings that need no code, and `-glitchless-measure` for agents. An optional toolset gives Unreal MCP `Status` and `Measure` tools. A demo with planted problems and an end-to-end test sit alongside |
 | [`gamemaker`](gamemaker) | Glitchless for **GameMaker 2024.2+** (GML scripts, a local package or `tools/install.mjs`): frame windows from `delta_time`, hitches named by what GameMaker can see (texture pages, room changes, collections, instance bursts), instance, surface and DS counts for leaks, rooms as levels, crashes sent on the next launch, bug reports and `-glitchless-measure` for agents. A demo with planted problems, a Node test that runs the GML without GameMaker, and an end-to-end test sit alongside |
 | [`roblox`](roblox) | Glitchless for **Roblox** (a Luau ModuleScript, by Rojo, Wally or a `.rbxm` model): each player's frame windows, stutters with their causes from Roblox's `Stats` service, errors from LocalScripts and server Scripts (scrubbed of players' names), loading time and ping, and each game server's frames, players and memory, all sent from the server, the only place Roblox lets a script make HTTP requests. Anonymous only: no user ID, name or display name ([PRIVACY.md](roblox/PRIVACY.md)) |
 | [`server`](server) | Intake, query API, findings and alerts: one Node 20+ server with a file store and no npm dependencies (`npm run server`, or the [Docker image](#run-it-on-a-server)) |
@@ -84,9 +84,9 @@ hit and check that the fix worked.
    the same address.
 
 2. Read ~/.glitchless/plugin/glitchless/skills/instrument/SKILL.md and follow it for this game. It
-   covers Unity 6.0 or later, Godot 4.5 or later, Unreal Engine 5.8, Three.js (and React Three
-   Fiber), Roblox, Phaser 3 and 4, Babylon.js, PlayCanvas, and GameMaker 2024.2 or later; for Godot
-   it sends you to ~/.glitchless/godot/addons/glitchless/README.md. On Roblox only the game's
+   covers Unity 6.0 or later, Godot 4.5 or later, Unreal Engine 5.8 and 5.9, Three.js (and React
+   Three Fiber), Roblox, Phaser 3 and 4, Babylon.js, PlayCanvas, and GameMaker 2024.2 or later; for
+   Godot it sends you to ~/.glitchless/godot/addons/glitchless/README.md. On Roblox only the game's
    servers can send, so the client token goes in a server Script, and I need to turn on Allow HTTP
    Requests in Game Settings: tell me.
    Use these settings:
@@ -141,8 +141,8 @@ hit and check that the fix worked.
      GameMaker builds don't need it: they measure themselves with --glitchless-measure
      (-glitchless-measure in Unreal and GameMaker). A Roblox game is measured from play tests in
      Roblox Studio.
-   - For an Unreal game, Epic's Unreal MCP (UE 5.8, Experimental) can sit beside Glitchless: it is
-     your hands in the editor (open maps, look inside Blueprints, edit actors, start Play In
+   - For an Unreal game, Epic's Unreal MCP (UE 5.8 and 5.9, Experimental) can sit beside Glitchless:
+     it is your hands in the editor (open maps, look inside Blueprints, edit actors, start Play In
      Editor), and Glitchless says what is wrong and whether a change fixed it. If the project uses
      it, or I ask for it, follow the "Agents in the editor: Unreal MCP" part of the instrument
      skill: it adds the Glitchless Toolset plugin, so Unreal MCP can also measure the game in Play

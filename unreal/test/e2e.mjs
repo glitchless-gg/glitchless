@@ -6,7 +6,7 @@
 //   node unreal/test/e2e.mjs              build, cook and package, then play
 //   node unreal/test/e2e.mjs --no-build   play the last package again
 //   node unreal/test/e2e.mjs --offscreen  render with no window (on by itself over SSH on Windows)
-//   UE_ROOT=/path/to/UE_5.8 node unreal/test/e2e.mjs
+//   UE_ROOT=/path/to/UE_5.9 node unreal/test/e2e.mjs   another engine (5.8 by default)
 //
 //   1. autoplay   the scripted run: events, context, hitches from game code, garbage collection and a
 //                 map load, a log error, an ensure, a Blueprint error, a death, a bug report

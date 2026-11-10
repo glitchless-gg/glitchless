@@ -1133,6 +1133,16 @@ namespace Glitchless
 
 	// ───────────────────────────── frame timing ─────────────────────────────
 
+	void FCore::Idle()
+	{
+		if (PlayerOff)
+		{
+			return; // as Frame: nothing runs while the player has Glitchless off
+		}
+		Begin();
+		Tick();
+	}
+
 	void FCore::Frame(double DtMs, const FFrameCost& Measured)
 	{
 		if (PlayerOff)
@@ -2355,16 +2365,16 @@ namespace Glitchless
 
 	// ───────────────────────────── lifecycle ─────────────────────────────
 
-	void FCore::OnBackground()
+	void FCore::OnBackground(const std::string& Reason)
 	{
 		PausedAt = Ticks();
 		SkipNextFrame();
 		PendingLong.reset();
 		if (Inited && Enabled && !Ended)
 		{
-			EndLevel("background");
+			EndLevel(Reason);
 			Ended = true;
-			Push(SessionEnd("background"));
+			Push(SessionEnd(Reason));
 		}
 		if (Inited && Enabled)
 		{
@@ -2373,6 +2383,77 @@ namespace Glitchless
 			SendNow(SendDeadlineMs);
 			FinishWrites();
 			WriteAtOnce = false;
+		}
+	}
+
+	void FCore::SendWaiting()
+	{
+		if (Inited && Enabled && !Ended)
+		{
+			WriteAtOnce = true; // the browser may drop the page before a job on another thread finishes
+			Flush();
+			SendNow(SendDeadlineMs);
+			FinishWrites();
+			WriteAtOnce = false;
+		}
+	}
+
+	FCore::FParting FCore::Parting(const std::string& Reason)
+	{
+		FParting P;
+		if (!Inited || !Enabled || Ended || Dropping() || !Sampled || !MaySend())
+		{
+			return P;
+		}
+		// The events as Push would stamp them, without queueing them or ending the level.
+		const auto Line = [this](FValue E) {
+			E.Set("ts", UnixNow());
+			if (!E.Has("level"))
+			{
+				E.Set("level", Level ? FValue(*Level) : FValue());
+			}
+			Stamp(E);
+			return E.Serialize();
+		};
+		std::vector<std::string> Events;
+		if (LevelOpen)
+		{
+			FValue E = Ev("level_abandon");
+			E.Set("level", Level ? FValue(*Level) : FValue());
+			E.Set("duration_s", Round((Ticks() - LevelStartedAt) / 1000, 2));
+			E.Set("reason", Reason);
+			Events.push_back(Line(std::move(E)));
+		}
+		FValue End = Ev("session_end");
+		End.Set("reason", Reason);
+		End.Set("duration_s", Round((UnixNow() - StartedAt) / 1000.0, 1));
+		Events.push_back(Line(std::move(End)));
+		FBatch B;
+		B.Bid = NewId("b_", 16);
+		B.Service = Service;
+		B.Env = Env;
+		B.Version = Version;
+		B.Sid = SessionId;
+		B.Pid = PlayerId;
+		B.Events = std::move(Events);
+		P.Url = IntakeUrl();
+		P.Body = Encode(Body(B));
+		return P;
+	}
+
+	void FCore::OnPageGone()
+	{
+		PausedAt = Ticks();
+		SkipNextFrame();
+		PendingLong.reset();
+		if (Inited && Enabled && !Ended)
+		{
+			if (LevelOpen)
+			{
+				LeftLevel = Level;
+				LevelOpen = false;
+			}
+			Ended = true;
 		}
 	}
 
@@ -2657,6 +2738,10 @@ namespace Glitchless
 			Steam::AddTo(Dev, ReadSteam());
 		}
 		E.Set("device", Dev);
+		if (EngineInfo.IsObject())
+		{
+			E.Set("engine", EngineInfo);
+		}
 		E.Set("page", FValue());
 		E.Set("nav_ms", FValue());
 		if (Role == ERole::Server)

@@ -211,6 +211,9 @@ namespace Glitchless
 		std::string SaveDir;
 		FFileSystem Files;
 		std::function<FValue(bool Detailed)> Device;
+		/** session_start's engine, for a web build, whose device is the browser: {name, version, renderer}, as the
+		 * browser SDK's engine adapters and a Unity WebGL build send theirs. Null elsewhere (the device names the engine). */
+		FValue EngineInfo;
 		/** The game's Steam facts (GlitchlessSteam.h), an empty object until Steamworks answers. */
 		std::function<FValue()> SteamFacts;
 		/** Where an iOS build was installed from (DeviceFacts::IosDistribution); unset or "" elsewhere. */
@@ -319,15 +322,37 @@ namespace Glitchless
 		void OnMapUnloaded(int Handle);
 		/** The frame that just ended took DtMs and cost what Cost says. */
 		void Frame(double DtMs, const FFrameCost& Cost);
+		/** A tick that isn't a frame a player saw (a web page that isn't showing yet, or is hidden): the timers run
+		 * (windows close, batches go) and nothing is timed. */
+		void Idle();
 		/** The next frame's time is a gap (a pause, a breakpoint, focus coming back). */
 		void SkipNextFrame() { SkipNextFrames(1); }
 		/** The next Count frames are Glitchless's (a screenshot read back, the bug report box's first draw), not the game's. */
 		void SkipNextFrames(int Count) { SkipFrames = std::max(SkipFrames, Count); }
 		/** A key, button or touch went down. Code names it ("SpaceBar", "pointer", "Gamepad_FaceButton_Bottom"). */
 		void OnInput(const std::string& Code);
-		/** A phone app in the background is usually never seen again, so going there ends the session and sends at once. */
-		void OnBackground();
+		/** A phone app in the background is usually never seen again, so going there ends the session and sends at once.
+		 * Reason goes in session_end and level_abandon. */
+		void OnBackground(const std::string& Reason = "background");
 		void OnForeground();
+		/** A web page out of view (another tab, the phone locked): what is waiting goes now, as on the way to the
+		 * background, and the session goes on, since the player may come back to the tab. The browser may freeze or
+		 * drop a hidden page without another word. */
+		void SendWaiting();
+		/** What a web page sends from its own pagehide handler, where the game thread can't answer in time: a
+		 * request's address and its body. Empty when there is nothing to send. */
+		struct FParting
+		{
+			std::string Url;
+			std::vector<uint8_t> Body;
+		};
+		/** The batch OnBackground(Reason) would send now (the level going abandoned, the session's end), encoded and
+		 * under a batch ID of its own, with nothing ended: the web build hands it to the page ahead of time, and the
+		 * page beacons it if it goes. Empty when the session sends nothing (off, not sampled, already ended). */
+		FParting Parting(const std::string& Reason);
+		/** The page went and sent its Parting itself: the session and its level end here too, with nothing sent. Back
+		 * from the back-forward cache, OnForeground goes on as on a phone. */
+		void OnPageGone();
 		void Shutdown(const std::string& Reason);
 		/** Ends the session and sends what is waiting, without waiting on the network: a listen server that stopped hosting. */
 		void EndSession(const std::string& Reason);
