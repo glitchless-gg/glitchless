@@ -172,6 +172,13 @@ try {
   checkAutoplay(check, batches, events(batches));
   checkSentOnce(check, batches);
   check('nothing is left in the outbox', () => assert.ok(!fs.existsSync(outbox), 'outbox.json is still there'));
+  // Unreal's ini reads an unquoted // as the start of a comment: the test game's Intake is in quotes, as Project
+  // Settings writes it, and the log names the address the run sends to (-glitchless-intake here), not the setting's.
+  check('the log names where it sends, and the Intake setting loaded whole', () => {
+    const text = fs.readFileSync(path.join(tmp, 'autoplay.log'), 'utf8');
+    assert.match(text, new RegExp(`sending .* to http://127\\.0\\.0\\.1:${recorderPort}`));
+    assert.doesNotMatch(text, /the Intake setting reads/);
+  });
 
   // 2. crash
   console.log('2. crash, then a launch that sends it…');

@@ -5,6 +5,7 @@
 
 #include "Editor.h"
 #include "Modules/ModuleManager.h"
+#include "ToolsetRegistry/UToolsetRegistry.h"
 #include "UObject/StrongObjectPtr.h"
 #if UE_VERSION_OLDER_THAN(5, 9, 0)
 #include "ToolsetRegistry/ToolCallAsyncResultString.h"
@@ -49,4 +50,22 @@ UMeasureResult* UGlitchlessToolset::Measure(float Seconds)
 	return Result;
 }
 
-IMPLEMENT_MODULE(FDefaultModuleImpl, GlitchlessToolset)
+// Unreal MCP lists a toolset only once it is registered with the Toolset Registry, which every engine toolset does as
+// its module starts: neither 5.8 nor 5.9 finds toolset classes on its own, so without this the tools never showed.
+class FGlitchlessToolsetModule : public IModuleInterface
+{
+	virtual void StartupModule() override
+	{
+		UToolsetRegistry::RegisterToolsetClass(UGlitchlessToolset::StaticClass());
+	}
+
+	virtual void ShutdownModule() override
+	{
+		if (UObjectInitialized())
+		{
+			UToolsetRegistry::UnregisterToolsetClass(UGlitchlessToolset::StaticClass());
+		}
+	}
+};
+
+IMPLEMENT_MODULE(FGlitchlessToolsetModule, GlitchlessToolset)

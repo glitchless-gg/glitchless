@@ -192,8 +192,8 @@ namespace Glitchless
 	class FCore
 	{
 	public:
-		static constexpr const char* SdkVersion = "0.5.4";
-		static constexpr const char* Sdk = "glitchless-unreal/0.5.4";
+		static constexpr const char* SdkVersion = "0.5.5";
+		static constexpr const char* Sdk = "glitchless-unreal/0.5.5";
 		static constexpr int SendDeadlineMs = 1500; // how long closing or going to the background may wait on the network
 
 		FCore();

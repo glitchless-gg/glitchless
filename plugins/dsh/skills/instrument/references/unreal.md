@@ -54,11 +54,15 @@ starts Glitchless with it, so nothing calls Init:
 ```ini
 [/Script/Glitchless.GlitchlessSettings]
 Service=<game-id>
-Intake=http://localhost:7777
+Intake="http://localhost:7777"
 ClientToken=gl_pub_dev
 Privacy=Anonymous
 bSendInDevelopmentBuilds=True
 ```
+
+Keep the quotes around the URL: Unreal's ini reads an unquoted `//` as the start of a comment, so
+`Intake=https://api.glitchless.gg` loads as `https:` and nothing reaches Glitchless. Project Settings writes the quotes
+itself; a line written by hand, or by an agent, needs them.
 
 Play In Editor and Development builds send as env `dev`, Shipping builds as `prod`. The version is the project's
 `ProjectVersion` unless `Version=` is set here: bump it on every release. For a game jam, keep
@@ -188,8 +192,10 @@ To set it up, copy `GlitchlessToolset` next to `Glitchless` in `Plugins/`, enabl
 Start Server), and run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex…) for the client
 config. Start Play In Editor before calling `Measure`. Numbers from the editor run slower than a packaged build
 (shaders compile on first use there): confirm a fix with a packaged Development build and `-glitchless-measure`.
-On 5.9 use the toolset of 0.5.4 or later: 5.9 renamed the async tool result `Measure` returns,
-and older copies don't compile there.
+In Unreal MCP the toolset is `GlitchlessToolset.GlitchlessToolset`: `list_toolsets` lists it, `describe_toolsets`
+(`describe_toolset` on 5.8) shows `Status` and `Measure`, and `call_tool` runs them. If `list_toolsets` doesn't list
+it, the project has a copy from 0.5.4 or earlier, which never registered itself: copy the toolset again from the
+Glitchless repo. Older copies than 0.5.4 also don't compile on 5.9.
 
 ## 7. Verify
 

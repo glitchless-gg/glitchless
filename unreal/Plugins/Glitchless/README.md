@@ -18,7 +18,7 @@ It sends the same events as the browser, Unity and Godot SDKs, so the dashboard,
 
 From Fab: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is.
 
-From GitHub: download `glitchless-unreal-0.5.4.zip` from the [glitchless-unreal 0.5.4 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.4) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
+From GitHub: download `glitchless-unreal-0.5.5.zip` from the [glitchless-unreal 0.5.5 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.5) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
 
 ## Set it up
 
@@ -27,11 +27,15 @@ No code: **Project Settings → Plugins → Glitchless**, fill in **Service** (y
 ```ini
 [/Script/Glitchless.GlitchlessSettings]
 Service=my-game
-Intake=http://localhost:7777
+Intake="http://localhost:7777"
 ClientToken=gl_pub_dev
 Privacy=Anonymous
 bSendInDevelopmentBuilds=True
 ```
+
+Keep the quotes around the URL: Unreal's ini reads an unquoted `//` as the start of a comment, so
+`Intake=https://api.glitchless.gg` loads as `https:` and nothing reaches Glitchless. Project Settings writes the quotes
+itself; a line written by hand, or by an agent, needs them.
 
 Or from C++, as early as you can (your `UGameInstance::Init`), leaving Service empty in the settings:
 
@@ -218,9 +222,16 @@ Unreal 5.8 and 5.9 ship Unreal MCP (Experimental), an MCP server inside the edit
 
 Enable **Unreal MCP**, **All Toolsets** (or just Toolset Registry) and **Glitchless Toolset** in **Edit → Plugins**, start the server (`ModelContextProtocol.StartServer`, or Editor Preferences → Model Context Protocol → Auto Start Server), run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex, ...) for the project's `.mcp.json`, then start Play In Editor before calling the tools. It is a plugin of its own because Unreal MCP is Experimental and isn't in 5.7; the Glitchless plugin doesn't need it.
 
+Use this version of the toolset or later: it registers itself with the Toolset Registry as its module starts, as
+Epic's toolsets do. 0.5.4 and earlier built and loaded but never registered, so Unreal MCP never listed them on 5.8
+or 5.9.
+In Unreal MCP it is `GlitchlessToolset.GlitchlessToolset`: on 5.9, `list_toolsets` lists it, `describe_toolsets`
+shows its two tools, and `call_tool` runs them (5.8 names the middle one `describe_toolset`). `unreal/test/toolset.mjs`
+starts the editor with Unreal MCP on a port of its own and checks all three.
+
 ## For the Glitchless server and docs (SPEC §5c)
 
-The envelope's `sdk` is `glitchless-unreal/0.5.4`. Differences from the browser SDK on the wire:
+The envelope's `sdk` is `glitchless-unreal/0.5.5`. Differences from the browser SDK on the wire:
 
 | | |
 | --- | --- |

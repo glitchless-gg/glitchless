@@ -15,7 +15,7 @@ import { Sketch } from '../../packages/sdk/src/sketch.js';
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const PROJECT = path.join(ROOT, 'unreal/test/GlitchlessTest/GlitchlessTest.uproject');
 export const SERVICE = 'glitchless-unreal-test';
-export const SDK = 'glitchless-unreal/0.5.4';
+export const SDK = 'glitchless-unreal/0.5.5';
 export const WINDOWS = process.platform === 'win32';
 export const UE_ROOT = process.env.UE_ROOT || (WINDOWS ? 'C:/Program Files/Epic Games/UE_5.8' : '/Users/Shared/Epic Games/UE_5.8');
 // SERVER_ROOT: another checkout whose server to play against (one with newer server work than this one).
@@ -56,13 +56,15 @@ export function forgetOtherEngineBuilds() {
   fs.writeFileSync(marker, `${now}\n`);
 }
 
-// The test project's editor target (UnrealEditor with the game's module and the plugins built in), which mp.mjs plays
-// and the cook runs.
+// The test project's editor target (UnrealEditor with the game's module and the plugins built in), which mp.mjs and
+// toolset.mjs play and the cook runs. -NoHotReload: with any editor open on the machine (another session's), UBT
+// otherwise links a numbered hot-reload copy of each changed module that the next editor doesn't load, so a test ran
+// the build before (seen 10 Nov 2026).
 export function buildEditor(log) {
   forgetOtherEngineBuilds();
   const script = path.join(UE_ROOT, 'Engine/Build/BatchFiles', WINDOWS ? 'Build.bat' : 'Mac/Build.sh');
   console.log(`building the editor target (log: ${log})…`);
-  const args = ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex'];
+  const args = ['GlitchlessTestEditor', WINDOWS ? 'Win64' : 'Mac', 'Development', `-Project=${PROJECT}`, '-WaitMutex', '-NoHotReload'];
   // Windows runs a .bat only through cmd, as one command line with its paths quoted (C:\Program Files\…).
   const opts = { encoding: 'utf8', maxBuffer: 1 << 28 };
   const q = (a) => (/\s/.test(a) ? `"${a}"` : a);

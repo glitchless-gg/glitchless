@@ -510,11 +510,19 @@ void FGlitchlessRuntime::Init(const FGlitchlessOptions& Options)
 			bHaveOptions = true;
 		}
 		C.Init(O);
-		LogDevice->SetIntake(GlitchlessText::Tchar(C.GetIntake()));
+		const FString Intake = GlitchlessText::Tchar(C.GetIntake());
+		LogDevice->SetIntake(Intake);
+		// Unreal's ini reads an unquoted // as the start of a comment, so Intake=https://api.glitchless.gg written into
+		// DefaultGame.ini by hand loads as "https:". Project Settings writes the quotes itself.
+		if (Options.Intake.EndsWith(TEXT(":")) && !Options.Intake.Contains(TEXT("/")))
+		{
+			UE_LOG(LogGlitchless, Warning, TEXT("Glitchless: the Intake setting reads \"%s\": Unreal's ini takes an unquoted // as the start of a comment. Put the URL in quotes in Config/DefaultGame.ini, as in Intake=\"https://api.glitchless.gg\"%s"),
+				*Options.Intake, Intake == Options.Intake ? TEXT(". Until then nothing is sent.") : TEXT(". -glitchless-intake gives this run its address."));
+		}
 		if (C.IsEnabled())
 		{
 			UE_LOG(LogGlitchless, Log, TEXT("Glitchless %s: sending %s %s (%s) to %s"), FGlitchless::SdkVersion(), *GlitchlessText::Tchar(C.GetService()),
-				*GlitchlessText::Tchar(C.GetVersion()), *GlitchlessText::Tchar(C.GetEnv()), *Options.Intake);
+				*GlitchlessText::Tchar(C.GetVersion()), *GlitchlessText::Tchar(C.GetEnv()), *Intake);
 		}
 		else if (C.IsTurnedOff())
 		{
