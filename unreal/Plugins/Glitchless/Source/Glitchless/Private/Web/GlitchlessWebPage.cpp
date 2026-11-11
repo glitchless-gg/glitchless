@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <cstring>
+#include <map>
+#include <set>
 #include <emscripten/em_js.h>
 #include <emscripten/proxying.h>
 #include <emscripten/threading.h>
@@ -13,6 +15,8 @@
 namespace
 {
 	constexpr int FactsCapacity = 8192;
+	constexpr int KeptCapacity = 4096;
+	constexpr size_t KeptLine = 200; // the longest name or text the page keeps
 	constexpr int AnswerCapacity = 8192;
 	constexpr int RingSize = 16; // GlitchlessWeb_ReadPage's ring: 16 events, then the count
 
@@ -20,12 +24,19 @@ namespace
 	// page's Atomics reach it.
 	char GFacts[FactsCapacity];
 	std::atomic<int32_t> GFactsLength{-1}; // -1 until the page has been read
+	char GKept[KeptCapacity]; // what the page keeps, a line for each name and a line for its text
+	std::atomic<int32_t> GKeptLength{-1}; // -1 until the page has been read; set before GFactsLength
+	std::string GKeptUnder; // written by Start before the main thread is asked to read
 	std::atomic<int32_t> GRing[RingSize + 1]; // the page's events, then how many were ever written
 	std::atomic<int> GStarted{0};
 
 	// The game thread's alone.
 	int32_t GRead = 0;
 	std::vector<GlitchlessWebPage::FRequest*> GReleased; // released while on their way
+	std::map<std::string, std::string> GKeptNow; // what the page keeps, as far as the game thread knows
+	std::set<std::string> GKeptChanged; // kept or forgotten here: what the page read of these, if it comes later, is older
+	bool GKeptTaken = false; // the page's reading is in GKeptNow
+	bool GKeptWaited = false;
 
 	double Address(const void* P) { return static_cast<double>(reinterpret_cast<uintptr_t>(P)); }
 }
@@ -44,7 +55,37 @@ struct GlitchlessWebPage::FRequest
 
 // The page's facts as JSON, and its events, which go into the ring as they happen. On the browser's main thread.
 // (No regular expressions or backslashes here: EM_JS bodies are C strings.)
-EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capacity, double Ring), {
+// What the page keeps goes first (a line for each name under Under and a line for its text), so it is there once
+// the facts are; and glitchlessOff, which the page's own sends ask: true while the page keeps "off" as the choice.
+EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capacity, double Ring, double Under, double Kept, double KeptLength, int KeptSize, int LineSize), {
+	var under = "";
+	var kept = "";
+	try {
+		under = UTF8ToString(Under);
+		var newline = String.fromCharCode(10);
+		for (var i = 0; under && i < localStorage.length; i++) {
+			var key = localStorage.key(i);
+			if (key.indexOf(under) !== 0) continue;
+			var name = key.slice(under.length);
+			var text = localStorage.getItem(key) || "";
+			if (!name || name.length > LineSize || text.length > LineSize || name.indexOf(newline) >= 0 || text.indexOf(newline) >= 0) continue;
+			kept += name + newline + text + newline;
+		}
+	} catch (e) {
+		kept = "";
+	}
+	globalThis.glitchlessKeptUnder = under;
+	globalThis.glitchlessOff = function() {
+		try {
+			return !!globalThis.glitchlessKeptUnder && localStorage.getItem(globalThis.glitchlessKeptUnder + "enabled") === "off";
+		} catch (e) {
+			return false;
+		}
+	};
+	var keptBytes = new TextEncoder().encode(kept);
+	var keptLength = keptBytes.length <= KeptSize ? keptBytes.length : 0;
+	new Uint8Array(HEAP8.buffer, Kept, keptLength).set(keptBytes.subarray(0, keptLength));
+	Atomics.store(new Int32Array(HEAP8.buffer, KeptLength, 1), 0, keptLength);
 	var f = { ua: "", mobile: null, dpr: null, screen: null, cores: null, memory: null, gpu: "", vendor: "", protocol: "", host: "", search: "" };
 	try {
 		var nav = navigator;
@@ -80,7 +121,7 @@ EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capac
 		window.addEventListener("pagehide", function() {
 			var parting = globalThis.glitchlessParting;
 			globalThis.glitchlessParting = null;
-			if (parting) {
+			if (parting && !globalThis.glitchlessOff()) {
 				var sent = false;
 				try { sent = navigator.sendBeacon(parting.url, new Blob([parting.body], { type: "text/plain" })); } catch (e) {}
 				if (!sent) {
@@ -103,6 +144,10 @@ EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capac
 EM_JS(void, GlitchlessWeb_Fetch, (double State, double AnswerLength, double Answer, int Capacity, double Url, double ContentType, double Body, double Size, int bGet, int TimeoutMs), {
 	var finish = function(status) { Atomics.store(new Int32Array(HEAP8.buffer, State, 1), 0, status); };
 	var timer = 0;
+	if (globalThis.glitchlessOff && globalThis.glitchlessOff()) {
+		finish(0); // the player said no: nothing leaves the page
+		return;
+	}
 	try {
 		var init = { method: bGet ? "GET" : "POST", mode: "cors", credentials: "omit" };
 		if (!bGet) {
@@ -147,11 +192,26 @@ EM_JS(void, GlitchlessWeb_ClearParting, (), {
 	globalThis.glitchlessParting = null;
 });
 
+// Keeps the text under the name in the page's localStorage, or with bForget keeps nothing there. A browser that
+// refuses (storage blocked, or full) throws, and nothing is kept past this page.
+EM_JS(void, GlitchlessWeb_Keep, (double State, double Name, double Text, double Size, int bForget), {
+	try {
+		var under = globalThis.glitchlessKeptUnder;
+		if (under) {
+			var key = under + UTF8ToString(Name);
+			if (bForget) localStorage.removeItem(key);
+			else localStorage.setItem(key, new TextDecoder().decode(HEAPU8.slice(Text, Text + Size)));
+		}
+	} catch (e) {}
+	Atomics.store(new Int32Array(HEAP8.buffer, State, 1), 0, 1);
+});
+
 namespace
 {
 	void ReadPageOnMainThread(void*)
 	{
-		GlitchlessWeb_ReadPage(Address(GFacts), Address(&GFactsLength), FactsCapacity, Address(GRing));
+		GlitchlessWeb_ReadPage(Address(GFacts), Address(&GFactsLength), FactsCapacity, Address(GRing), Address(GKeptUnder.c_str()), Address(GKept),
+			Address(&GKeptLength), KeptCapacity, static_cast<int>(KeptLine));
 	}
 
 	void FetchOnMainThread(void* Arg)
@@ -170,6 +230,13 @@ namespace
 	void ClearPartingOnMainThread(void*)
 	{
 		GlitchlessWeb_ClearParting();
+	}
+
+	// A request stands in for the change: its Url the name, its Body the text, bGet for forgetting.
+	void KeepOnMainThread(void* Arg)
+	{
+		GlitchlessWebPage::FRequest* R = static_cast<GlitchlessWebPage::FRequest*>(Arg);
+		GlitchlessWeb_Keep(Address(&R->State), Address(R->Url.c_str()), Address(R->Body.data()), static_cast<double>(R->Body.size()), R->bGet ? 1 : 0);
 	}
 
 	// Runs Fn(Request) on the browser's main thread, after whatever was sent there before (the queue keeps order).
@@ -209,6 +276,44 @@ namespace
 		OnMainThread(FetchOnMainThread, R);
 		return R;
 	}
+
+	// Takes what the main thread read of the page's storage, once it has: names changed here since are newer.
+	void TakeKept()
+	{
+		const int32_t N = GKeptLength.load();
+		if (GKeptTaken || N < 0)
+		{
+			return;
+		}
+		GKeptTaken = true;
+		const std::string All(GKept, static_cast<size_t>(N));
+		for (size_t From = 0; From < All.size();)
+		{
+			const size_t NameEnd = All.find('\n', From);
+			const size_t TextEnd = NameEnd == std::string::npos ? NameEnd : All.find('\n', NameEnd + 1);
+			if (TextEnd == std::string::npos)
+			{
+				break;
+			}
+			const std::string Name = All.substr(From, NameEnd - From);
+			if (!GKeptChanged.count(Name))
+			{
+				GKeptNow[Name] = All.substr(NameEnd + 1, TextEnd - NameEnd - 1);
+			}
+			From = TextEnd + 1;
+		}
+	}
+
+	void Change(const std::string& Name, const std::string& Text, bool bForget)
+	{
+		Sweep();
+		GlitchlessWebPage::FRequest* R = new GlitchlessWebPage::FRequest();
+		R->Url = Name;
+		R->Body.assign(Text.begin(), Text.end());
+		R->bGet = bForget;
+		OnMainThread(KeepOnMainThread, R);
+		GlitchlessWebPage::Release(R); // freed once the page has it
+	}
 }
 
 namespace GlitchlessWebPage
@@ -218,12 +323,13 @@ namespace GlitchlessWebPage
 		return true;
 	}
 
-	void Start()
+	void Start(const std::string& KeptUnder)
 	{
 		if (GStarted.exchange(1) != 0)
 		{
 			return;
 		}
+		GKeptUnder = KeptUnder;
 		for (std::atomic<int32_t>& Slot : GRing)
 		{
 			Slot.store(0);
@@ -239,6 +345,47 @@ namespace GlitchlessWebPage
 		}
 		const int32_t N = GFactsLength.load();
 		return N > 0 ? std::string(GFacts, static_cast<size_t>(N)) : std::string();
+	}
+
+	bool Kept(const std::string& Name, std::string& Out, int TimeoutMs)
+	{
+		for (int Waited = 0; !GKeptWaited && GKeptLength.load() < 0 && Waited < TimeoutMs && !emscripten_is_main_browser_thread(); Waited++)
+		{
+			usleep(1000);
+		}
+		GKeptWaited = true;
+		TakeKept();
+		const auto It = GKeptNow.find(Name);
+		if (It == GKeptNow.end())
+		{
+			return false;
+		}
+		Out = It->second;
+		return true;
+	}
+
+	void Keep(const std::string& Name, const std::string& Text)
+	{
+		if (GKeptUnder.empty() || Name.empty() || Name.size() > KeptLine || Text.size() > KeptLine || Name.find('\n') != std::string::npos || Text.find('\n') != std::string::npos)
+		{
+			return;
+		}
+		TakeKept();
+		GKeptChanged.insert(Name);
+		GKeptNow[Name] = Text;
+		Change(Name, Text, false);
+	}
+
+	void Forget(const std::string& Name)
+	{
+		if (GKeptUnder.empty() || Name.empty())
+		{
+			return;
+		}
+		TakeKept();
+		GKeptChanged.insert(Name);
+		GKeptNow.erase(Name);
+		Change(Name, std::string(), true);
 	}
 
 	std::vector<int> TakeEvents()
@@ -344,8 +491,11 @@ namespace GlitchlessWebPage
 	{
 	};
 	bool IsWeb() { return false; }
-	void Start() {}
+	void Start(const std::string&) {}
 	std::string Facts(int) { return std::string(); }
+	bool Kept(const std::string&, std::string&, int) { return false; }
+	void Keep(const std::string&, const std::string&) {}
+	void Forget(const std::string&) {}
 	std::vector<int> TakeEvents() { return {}; }
 	void SetParting(const std::string&, const uint8_t*, size_t) {}
 	void ClearParting() {}

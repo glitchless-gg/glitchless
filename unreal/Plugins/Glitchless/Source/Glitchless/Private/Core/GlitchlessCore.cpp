@@ -3622,7 +3622,37 @@ namespace Glitchless
 		return Id;
 	}
 
+	// The name a web build's page keeps this file under as well (Page), or "" for a file that is SaveDir's alone.
+	std::string FCore::PageName(const std::string& Path) const
+	{
+		return Path == PlayerPath() ? "player_id" : Path == ChoicePath() ? "enabled" : "";
+	}
+
+	// The page's copy first: the file may have gone with the last page. A file the page has no copy of (written by a
+	// build from before the page kept any) is the page's to keep from here on.
 	bool FCore::ReadFile(const std::string& Path, std::string& Out) const
+	{
+		const std::string Name = Page.Read ? PageName(Path) : std::string();
+		if (Name.empty())
+		{
+			return ReadDisk(Path, Out);
+		}
+		if (Page.Read(Name, Out))
+		{
+			return true;
+		}
+		if (!ReadDisk(Path, Out))
+		{
+			return false;
+		}
+		if (Page.Write)
+		{
+			Page.Write(Name, Out);
+		}
+		return true;
+	}
+
+	bool FCore::ReadDisk(const std::string& Path, std::string& Out) const
 	{
 		if (Files.Read)
 		{
@@ -3646,7 +3676,14 @@ namespace Glitchless
 
 	bool FCore::WriteFile(const std::string& Path, const std::string& Contents) const
 	{
-		return WriteWhole(Files, Path, Contents);
+		const bool Written = WriteWhole(Files, Path, Contents);
+		const std::string Name = Page.Write ? PageName(Path) : std::string();
+		if (Name.empty())
+		{
+			return Written;
+		}
+		Page.Write(Name, Contents);
+		return true; // the page has it, whether or not the file was written
 	}
 
 	// Replaces the file whole, through the file layer the Unreal side gives, or else the C library (as a crash writes
@@ -3676,6 +3713,11 @@ namespace Glitchless
 
 	void FCore::RemoveFile(const std::string& Path) const
 	{
+		const std::string Name = Page.Remove ? PageName(Path) : std::string();
+		if (!Name.empty())
+		{
+			Page.Remove(Name);
+		}
 		if (Files.Delete)
 		{
 			Files.Delete(Path);

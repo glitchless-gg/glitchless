@@ -56,6 +56,8 @@ private:
 	bool bGenre = false;
 	bool bSwitch = false;
 	bool bSwitchCrash = false;
+	bool bOff = false;
+	bool bOn = false;
 	bool bMultiplayer = false;
 	bool bJoined = false;
 	bool bSolo = false;

@@ -22,12 +22,15 @@
  *  - a page that isn't on the developer's machine is played by players, so a Development build sends there, and
  *    ?glitchless, ?glitchless-debug and ?glitchless-synthetic on the page's address are flags;
  *  - hidden, the page sends what waits and plays on, and holds the session's end to beacon if it goes (the
- *    runtime's TickWeb).
+ *    runtime's TickWeb);
+ *  - the install ID and the player's choice are kept in the page's own storage as well as in Saved, which a web
+ *    build doesn't always keep past a reload, so one player stays one player and "off" stays off.
  * unreal/test/web.mjs runs the page layer and the core's rules in Chromium.
  */
 namespace GlitchlessWeb
 {
-	/** Points the core at the page: its transport, device, engine, flags and the debug rule. Before Init. */
+	/** Points the core at the page: its transport, device, engine, flags, the debug rule and what it keeps. After
+	 * the core's SaveDir is set, before ReadChoice and Init. */
 	void Configure(Glitchless::FCore& C, FCriticalSection* CoreLock);
 	/** Runs the Done of requests that landed. Each frame, on the game thread. */
 	void Poll();

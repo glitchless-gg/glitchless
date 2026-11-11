@@ -18,7 +18,7 @@ It sends the same events as the browser, Unity and Godot SDKs, so the dashboard,
 
 From Fab: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is.
 
-From GitHub: download `glitchless-unreal-0.5.5.zip` from the [glitchless-unreal 0.5.5 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.5) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
+From GitHub: download `glitchless-unreal-0.5.6.zip` from the [glitchless-unreal 0.5.6 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.6) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
 
 ## Set it up
 
@@ -207,6 +207,23 @@ new:
     Development build follows the debug rule; add `?glitchless` to send from it, as `-glitchless` does elsewhere.
   - Every 5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts (Epic's web HTTP
     settings), so it shows under Errors once a session. Mark it known (`glitchless_mark_known`).
+  - **A reload is the same player, and off stays off** (0.5.6). Unreal doesn't always keep a web build's `Saved`
+    folder past the page, and the plugin's install ID and the player's on or off choice are files in it:
+    - On a desktop browser 5.9 puts `Saved` in the browser's own files for the site (OPFS), where it lasts. With an
+      engine built from source that was already enough: in Chromium, 0.5.5 was the same player after a reload and
+      after the browser restarted, and off stayed off.
+    - On an iPhone or iPad, and with `?saved=memory` on the address, `Saved` is in memory and ends with the page.
+      With `?saved=memory`, 0.5.5 counted every page load as a new player.
+    - Epic lists UE-412003 for the preview: saves and settings lost on reload in a C++ web game built with the
+      launcher's engine. Its workaround, which your game's own saves need, is to add
+      `-project=../../../<Project>/<Project>.uproject` to **Page Args** and package again.
+
+    So the plugin also keeps the ID (install and full mode) and the choice in the page's own `localStorage`, and
+    reads that copy first. There is nothing to set up. Anonymous mode keeps no ID there either, and while the choice
+    is off the page itself sends nothing. Unsent batches stay in `Saved` alone: where it is in memory, what hadn't
+    gone when a page crashed is lost. A private window, or a browser that clears the site's data, forgets all of it,
+    as it does for any web game. `unreal/test/web.mjs` reloads the plugin's core on a real page with `Saved` in
+    memory, and `web-game.mjs` reloads a 5.9 web build of the test game with `?saved=memory` and without.
   - Blueprints that call the Glitchless nodes haven't been tried in a web build; the test game's C++ has.
   - On 5.8, which has no web platform, Unreal warns once a build about the plugin's "Wasm" platform. The Fab zip for
     5.8 leaves it out.
@@ -231,7 +248,7 @@ starts the editor with Unreal MCP on a port of its own and checks all three.
 
 ## For the Glitchless server and docs (SPEC §5c)
 
-The envelope's `sdk` is `glitchless-unreal/0.5.5`. Differences from the browser SDK on the wire:
+The envelope's `sdk` is `glitchless-unreal/0.5.6`. Differences from the browser SDK on the wire:
 
 | | |
 | --- | --- |

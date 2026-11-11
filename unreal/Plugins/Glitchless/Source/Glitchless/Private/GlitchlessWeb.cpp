@@ -116,8 +116,15 @@ namespace GlitchlessWeb
 {
 	void Configure(Glitchless::FCore& C, FCriticalSection* CoreLock)
 	{
-		GlitchlessWebPage::Start();
+		// What the page keeps is named by the game's own Saved folder ("glitchless:/<Project>/Saved/Glitchless/enabled"),
+		// as Unreal's files in the browser are: one origin may serve many games.
+		GlitchlessWebPage::Start("glitchless:" + C.SaveDir + "/");
 		const bool bRead = Glitchless::Page::ParseFacts(GlitchlessWebPage::Facts(2000), GFacts);
+
+		// The install ID and the player's choice are the page's to keep as well: Saved doesn't always outlast it.
+		C.Page.Read = [](const std::string& Name, std::string& Out) { return GlitchlessWebPage::Kept(Name, Out, 2000); };
+		C.Page.Write = [](const std::string& Name, const std::string& Text) { GlitchlessWebPage::Keep(Name, Text); };
+		C.Page.Remove = [](const std::string& Name) { GlitchlessWebPage::Forget(Name); };
 
 		const std::shared_ptr<FWebTransport> Transport = std::make_shared<FWebTransport>(CoreLock);
 		GTransport = Transport;

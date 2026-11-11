@@ -48,6 +48,8 @@ void UGlitchlessTestScript::Initialize(FSubsystemCollectionBase& Collection)
 	bGenre = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-genre"));
 	bSwitch = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-switch"));
 	bSwitchCrash = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-switch-crash"));
+	bOff = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-off"));
+	bOn = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-on"));
 	FParse::Value(FCommandLine::Get(), TEXT("glitchless-test-quit="), QuitAfter);
 	bSolo = FParse::Param(FCommandLine::Get(), TEXT("glitchless-test-solo"));
 	if (bMultiplayer)
@@ -107,6 +109,16 @@ bool UGlitchlessTestScript::Step(float DeltaTime)
 	if (bSwitch || bSwitchCrash)
 	{
 		return StepSwitch();
+	}
+	if (bOff || bOn)
+	{
+		// The settings screen's toggle, set once and left there: what a later launch (or a web page's reload) finds.
+		if (Done == 2)
+		{
+			FGlitchless::SetEnabled(bOn);
+			UE_LOG(LogGlitchlessTest, Display, TEXT("Glitchless turned %s by the player"), bOn ? TEXT("on") : TEXT("off"));
+		}
+		return true;
 	}
 	if (bDialog)
 	{

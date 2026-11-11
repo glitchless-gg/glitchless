@@ -174,6 +174,15 @@ namespace Glitchless
 		std::function<void(const std::string& Dir)> MakeDir;
 	};
 
+	/** What a web build's page keeps for the game in its own storage, by name (Web/GlitchlessWebPage's Kept, Keep and
+	 * Forget). Unset everywhere else. */
+	struct FPageStore
+	{
+		std::function<bool(const std::string& Name, std::string& Out)> Read;
+		std::function<void(const std::string& Name, const std::string& Text)> Write;
+		std::function<void(const std::string& Name)> Remove;
+	};
+
 	struct FStats
 	{
 		int64_t Sent = 0;
@@ -192,8 +201,8 @@ namespace Glitchless
 	class FCore
 	{
 	public:
-		static constexpr const char* SdkVersion = "0.5.5";
-		static constexpr const char* Sdk = "glitchless-unreal/0.5.5";
+		static constexpr const char* SdkVersion = "0.5.6";
+		static constexpr const char* Sdk = "glitchless-unreal/0.5.6";
 		static constexpr int SendDeadlineMs = 1500; // how long closing or going to the background may wait on the network
 
 		FCore();
@@ -210,6 +219,13 @@ namespace Glitchless
 		/** Where the outbox and install ID live; empty writes nothing to disk. */
 		std::string SaveDir;
 		FFileSystem Files;
+		/** A web build's page: the install ID and the player's choice are kept there too (as "player_id" and "enabled"),
+		 * and read from there first, because a web build's Saved folder doesn't always outlast the page. UE 5.9 keeps it
+		 * in the browser's own files (OPFS) on a desktop browser, but in memory on an iPhone or iPad, with ?saved=memory
+		 * on the address, where OPFS can't be opened, and in a C++ game packaged from the launcher's 5.9 preview
+		 * (Epic's UE-412003): there every page load was a new player, and a player's "off" was forgotten. The outbox
+		 * stays SaveDir's alone. */
+		FPageStore Page;
 		std::function<FValue(bool Detailed)> Device;
 		/** session_start's engine, for a web build, whose device is the browser: {name, version, renderer}, as the
 		 * browser SDK's engine adapters and a Unity WebGL build send theirs. Null elsewhere (the device names the engine). */
@@ -578,7 +594,9 @@ namespace Glitchless
 		static bool WriteWhole(const FFileSystem& Fs, const std::string& Path, const std::string& Contents);
 		void LoadOutbox();
 		std::string LoadPlayerId();
+		std::string PageName(const std::string& Path) const;
 		bool ReadFile(const std::string& Path, std::string& Out) const;
+		bool ReadDisk(const std::string& Path, std::string& Out) const;
 		bool WriteFile(const std::string& Path, const std::string& Contents) const;
 		void RemoveFile(const std::string& Path) const;
 		void Debug(const std::string& Msg) const;

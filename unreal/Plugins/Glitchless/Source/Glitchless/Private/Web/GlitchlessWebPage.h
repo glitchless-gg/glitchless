@@ -7,9 +7,10 @@
 #include <vector>
 
 /**
- * The page a web build (Unreal's Wasm target, UE 5.9 and later) runs in, for the plugin's web transport and device
- * facts. Plain C++ and Emscripten, no Unreal types, so unreal/test/web.mjs builds it with em++ alone and runs it in
- * Chromium; everywhere but Emscripten every call does nothing (Facts is empty, requests fail at once).
+ * The page a web build (Unreal's Wasm target, UE 5.9 and later) runs in, for the plugin's web transport, device
+ * facts and the two things that must outlast a page. Plain C++ and Emscripten, no Unreal types, so
+ * unreal/test/web.mjs builds it with em++ alone and runs it in Chromium; everywhere but Emscripten every call does
+ * nothing (Facts is empty, requests fail at once, nothing is kept).
  *
  * Why it is shaped this way:
  *  - Unreal's HTTP is the null one on the web ([HTTP] bUseNullHttp=true in BaseWasmEngine.ini), so requests go by the
@@ -25,6 +26,11 @@
  *    (hidden, shown, left, back from the back-forward cache) are read on the main thread too.
  *  - A page that is going stops its Workers before the game thread can answer, so the request for then (the
  *    session's end) is handed to the page ahead (SetParting), and its pagehide handler sends it.
+ *  - A web build's Saved folder doesn't always outlast the page (Core/GlitchlessCore.h's Page says where it doesn't),
+ *    so the install ID and the player's choice are kept in the page's localStorage as well (Kept, Keep, Forget).
+ *    Only the main thread has localStorage: it reads what is kept once, as it reads the facts, and the game thread
+ *    hands it each change. And while the page keeps "off" as the choice, the page itself sends nothing, so a player
+ *    who said no is safe even from a game thread that hasn't read the choice yet.
  * Every call but Start is for one thread at a time: the game thread.
  */
 namespace GlitchlessWebPage
@@ -40,8 +46,10 @@ namespace GlitchlessWebPage
 	/** True in a web build (Emscripten), where the rest does something. */
 	bool IsWeb();
 
-	/** Starts, once: reads the page and listens to it on the browser's main thread. Returns at once. */
-	void Start();
+	/** Starts, once: reads the page and listens to it on the browser's main thread. Returns at once. KeptUnder: what
+	 * the page keeps is in its localStorage under this and a name, so it says whose it is: a host such as itch.io
+	 * serves every game from one origin, with one localStorage between them. Empty: the page keeps nothing. */
+	void Start(const std::string& KeptUnder = std::string());
 
 	/** The page's facts as JSON (Core/GlitchlessPage.h's ParseFacts reads it), waiting at most TimeoutMs for the main
 	 * thread to have read them; empty when it hasn't, or off the web. Start first. */
@@ -57,10 +65,22 @@ namespace GlitchlessWebPage
 	/** Takes the parting POST back (the page is in view again, and the session goes on). */
 	void ClearParting();
 
+	/** What the page keeps under Name, as it was when the page was read and as Keep and Forget have left it since:
+	 * false when it keeps nothing there. Waits at most TimeoutMs for the main thread to have read the page, the first
+	 * time only. Start first. */
+	bool Kept(const std::string& Name, std::string& Out, int TimeoutMs);
+	/** Keeps Text under Name from now on (one line, at most 200 characters), for this page and the next. Returns at
+	 * once; a browser that refuses (storage blocked, or full) keeps it for this page only. */
+	void Keep(const std::string& Name, const std::string& Text);
+	/** Keeps nothing under Name any more. */
+	void Forget(const std::string& Name);
+
 	struct FRequest;
 
 	/** Starts a POST on the main thread and returns at once. ContentType text/plain needs no preflight. A body of up
-	 * to 60,000 bytes goes with keepalive, so it arrives even if the page goes now. */
+	 * to 60,000 bytes goes with keepalive, so it arrives even if the page goes now. While the page keeps "off" under
+	 * "enabled" (the player's choice), no request leaves the page, this, a GET or the parting one: it fails as one
+	 * that never got an answer. */
 	FRequest* Post(const std::string& Url, const uint8_t* Body, size_t Size, const std::string& ContentType, int TimeoutMs);
 	/** Starts a GET on the main thread and returns at once; its answer's text is Text's. */
 	FRequest* Get(const std::string& Url, int TimeoutMs);

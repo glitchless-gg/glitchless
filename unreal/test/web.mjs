@@ -14,6 +14,11 @@
 //              with nothing behind it (0, not a hang); hidden, the page sends what waits and plays on, and hands
 //              the page its parting batch; shown again, takes it back; leaving it, the page beacons that batch
 //   2. hosted  the same page at game.test: not on this machine, and ?glitchless on its address is a flag
+//   3. kept    the plugin's core on the page, as a game in install mode, with its Saved folder in memory (as UE
+//              keeps a web build's on an iPhone, with ?saved=memory, or in a launcher-built C++ game): reloaded,
+//              it is the same player; turned off by the player and reloaded, nothing leaves the page, not even
+//              from a game thread that hasn't read the choice; on again, the same player; and in anonymous mode
+//              the page keeps no ID
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -42,7 +47,7 @@ function emxx() {
 function build() {
   const out = path.join(tmp, 'site');
   fs.mkdirSync(out);
-  const sources = [path.join(ROOT, 'unreal/test/web/PageTest.cpp'), path.join(WEB, 'GlitchlessWebPage.cpp'), ...['GlitchlessPage', 'GlitchlessJson', 'GlitchlessText', 'GlitchlessSketch'].map((f) => path.join(CORE, `${f}.cpp`))];
+  const sources = [path.join(ROOT, 'unreal/test/web/PageTest.cpp'), path.join(WEB, 'GlitchlessWebPage.cpp'), ...fs.readdirSync(CORE).filter((f) => f.endsWith('.cpp')).map((f) => path.join(CORE, f))];
   // UE 5.9's Wasm settings that matter here (WasmToolChain.cs): wasm64 lowered to 32-bit memory, pthreads with the
   // engine's main on a Worker, memory that grows, no exceptions or RTTI; and the warnings as errors.
   const args = ['-std=c++20', '-O1', '-fno-exceptions', '-fno-rtti', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-pthreads-mem-growth',
@@ -212,6 +217,107 @@ for (const [label, run] of [['local', local], ['hosted', hosted]]) {
     assert.deepEqual(lines(run.log, 'event').map((e) => e.event), [0, 1, 0]);
   });
 }
+// 3. What the page keeps. One browser profile for every load, as one player's browser is; each load is a new page
+// in it, so Saved (in memory) starts empty every time and only the page's own storage carries anything over.
+const profile = await browser.newContext();
+const KEPT = 'glitchless:/saved/';
+async function game(label, query, { leaveAfter = false } = {}) {
+  const page = await profile.newPage();
+  const log = [];
+  page.on('console', (m) => log.push(m.text()));
+  page.on('pageerror', (e) => log.push(`PAGEERROR ${e.message}`));
+  const from = seen.length;
+  await page.goto(`http://127.0.0.1:${sitePort}/page.html?intake=http://127.0.0.1:${proxyPort}&${query}`);
+  await until(() => lines(log, 'played').length > 0 || log.some((l) => l.startsWith('PAGEERROR')), 30_000, `${label}: the game's run`);
+  await new Promise((r) => setTimeout(r, 1500)); // the last batch lands
+  const kept = await page.evaluate((under) => Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith(under)).map((k) => [k.slice(under.length), localStorage.getItem(k)])), KEPT);
+  if (leaveAfter) {
+    await page.goto('about:blank');
+    await new Promise((r) => setTimeout(r, 1500)); // a parting batch would land
+  }
+  await page.close();
+  fs.writeFileSync(path.join(tmp, `kept-${label}.log`), log.join('\n'));
+  const requests = seen.slice(from);
+  const batches = requests.filter((r) => r.path.startsWith('/v1/intake') && r.method === 'POST');
+  return { log, kept, requests, batches, began: lines(log, 'game')[0], played: lines(log, 'played')[0], players: [...new Set(batches.map((b) => b.json?.player_id ?? null))], names: batches.flatMap((b) => b.json?.events || []).filter((e) => e.type === 'custom').map((e) => e.name) };
+}
+// Another game on the same origin (itch.io serves every game from one) keeps its own things under its own name.
+const other = await profile.newPage();
+await other.goto(`http://127.0.0.1:${sitePort}/page.html?intake=http://127.0.0.1:${proxyPort}&session=s_webother000000000`);
+await other.evaluate(() => localStorage.setItem('glitchless:/other/player_id', 'p_someoneelse0'));
+await other.close();
+
+const first = await game('first', 'player=install');
+const reloaded = await game('reloaded', 'player=install');
+const turnedOff = await game('off', 'player=install&act=off');
+const stillOff = await game('still-off', 'player=install');
+const sneak = await game('sneak', 'player=install&act=sneak', { leaveAfter: true });
+const turnedOn = await game('on', 'player=install&act=on');
+const anonymous = await game('anonymous', 'player=anonymous');
+const anonymousAgain = await game('anonymous-again', 'player=anonymous');
+const others = await (async () => {
+  const page = await profile.newPage();
+  await page.goto(`http://127.0.0.1:${sitePort}/page.html?intake=http://127.0.0.1:${proxyPort}&session=s_webother000000001`);
+  const value = await page.evaluate(() => localStorage.getItem('glitchless:/other/player_id'));
+  await page.close();
+  return value;
+})();
+await profile.close();
+
+check('kept: install mode makes a player ID on the first load and the page keeps it', () => {
+  assert.ok(!first.log.some((l) => l.startsWith('PAGEERROR')), first.log.filter((l) => l.startsWith('PAGEERROR')).join('\n'));
+  assert.match(first.began?.player_id || '', /^p_[a-z0-9]{12}$/);
+  assert.equal(first.began.saved_before, false);
+  assert.equal(first.began.saved_after, true, 'the ID is in Saved too, where Saved lasts');
+  assert.deepEqual(first.players, [first.began.player_id]);
+  assert.deepEqual(first.kept, { player_id: first.began.player_id });
+});
+check('kept: reloaded with Saved gone, it is the same player in a new session', () => {
+  assert.equal(reloaded.began?.saved_before, false, 'Saved outlasted the page: this test needs it in memory');
+  assert.equal(reloaded.began.player_id, first.began.player_id);
+  assert.deepEqual(reloaded.players, [first.began.player_id]);
+  assert.notEqual(reloaded.played.session_id, first.played.session_id);
+  assert.deepEqual(reloaded.kept, { player_id: first.began.player_id });
+});
+check('kept: the player turns it off: the page keeps "off", and nothing goes after', () => {
+  assert.ok(turnedOff.names.includes('before_act'), `sent before the switch: ${JSON.stringify(turnedOff.names)}`);
+  assert.ok(!turnedOff.names.includes('after_act'), 'an event from after the switch was sent');
+  assert.equal(turnedOff.played?.off, true);
+  assert.deepEqual(turnedOff.kept, { player_id: first.began.player_id, enabled: 'off' });
+});
+check('kept: reloaded, off is still off from the start: no request of any kind leaves the page', () => {
+  assert.equal(stillOff.began?.saved_before, false);
+  assert.equal(stillOff.began.off, true);
+  assert.equal(stillOff.played?.off, true);
+  assert.deepEqual(stillOff.requests.map((r) => `${r.method} ${r.path}`), []);
+  assert.deepEqual(stillOff.kept, { player_id: first.began.player_id, enabled: 'off' });
+});
+check('kept: while the page keeps "off", the page itself refuses a batch, a health question and the parting batch', () => {
+  assert.deepEqual(sneak.played, { post: 0, get: 0 });
+  assert.deepEqual(sneak.requests.map((r) => `${r.method} ${r.path}`), []);
+});
+check('kept: turned on again in a later load, the page keeps "on" and it is the same player', () => {
+  assert.equal(turnedOn.began?.off, true);
+  assert.equal(turnedOn.played?.off, false);
+  assert.ok(!turnedOn.names.includes('before_act'), 'an event from before the switch was sent');
+  assert.ok(turnedOn.names.includes('after_act'), `after the switch: ${JSON.stringify(turnedOn.names)}`);
+  assert.deepEqual(turnedOn.players, [first.began.player_id]);
+  assert.deepEqual(turnedOn.kept, { player_id: first.began.player_id, enabled: 'on' });
+});
+check('kept: anonymous mode sends no player ID and the page keeps none, not even one an install-mode build left', () => {
+  for (const run of [anonymous, anonymousAgain]) {
+    assert.equal(run.began?.player_id, '');
+    assert.ok(run.batches.length > 0, 'nothing was sent');
+    assert.deepEqual(run.players, [null]);
+    assert.deepEqual(run.kept, { enabled: 'on' }, 'only the choice, which is the same for everyone who made it');
+  }
+  assert.notEqual(anonymousAgain.played.session_id, anonymous.played.session_id);
+});
+check('kept: another game on the same origin keeps its own ID', () => {
+  assert.equal(others, 'p_someoneelse0');
+  assert.ok(![first, reloaded, turnedOn].some((r) => r.players.includes('p_someoneelse0')));
+});
+
 check('local: a page on 127.0.0.1 is the developer\'s, with no flags', () => {
   const f = lines(local.log, 'facts')[0];
   assert.equal(f.local, true);

@@ -1,6 +1,6 @@
 # What Glitchless for Unreal sends
 
-This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `Core/GlitchlessRules.cpp`, `GlitchlessDevice.cpp`, `Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp` and `GlitchlessRuntime.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs`, `node unreal/test/mp.mjs` and, for a web build, `node unreal/test/web-game.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
+This file lists every field the Unreal plugin sends in each mode, what it keeps on the device, and what a game's privacy page and store answers would need to say. It was written from `Source/Glitchless/Private/Core/GlitchlessCore.cpp`, `Core/GlitchlessRules.cpp`, `GlitchlessDevice.cpp`, `Core/GlitchlessSteam.cpp`, `GlitchlessSteamworks.cpp`, `GlitchlessRuntime.cpp` and, for a web build, `GlitchlessWeb.cpp` and `Web/GlitchlessWebPage.cpp`, and checked against what reached a local server in `node unreal/test/e2e.mjs`, `node unreal/test/mp.mjs` and, for a web build, `node unreal/test/web-game.mjs` and `node unreal/test/web.mjs`. Keep it in step with those files. The browser, Unity and Godot SDKs have their own lists; anonymous and full mean the same thing in all of them.
 
 Nothing here is legal advice. The store answers at the end are a reading of Apple's, Google's and Valve's categories; check them against the forms as they are when you submit.
 
@@ -11,7 +11,7 @@ Nothing here is legal advice. The store answers at the end are a reading of Appl
 | | anonymous | install | full |
 | --- | --- | --- | --- |
 | Session ID | random, made at launch, **kept in memory only** | random, made at launch, saved with unsent batches until they go | the same as install |
-| Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `Saved/Glitchless/player_id`, so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
+| Player ID | **none**. The server files each session under its session ID | random `p_…` made on first launch and saved in `Saved/Glitchless/player_id` (in a web build, in the page's storage as well: see Kept on the device), so returning players can be counted. Not tied to any account, platform ID or advertising ID | the same as install |
 | Device | OS name, a low/mid/high tier, renderer and graphics API, screen size (and on phones its refresh rate), whether it is a Steam Deck, and on iOS whether it came from the App Store or TestFlight | the same as anonymous | adds model, OS version, GPU name and vendor, core count, memory |
 | Positions | **not sent** unless Positions is on: deaths go without a place, no movement samples | the same as anonymous | death places and 4 Hz position samples in the game world |
 | Saved on the device | unsent batches, without the session or player ID; the player's on or off choice, once the game has asked | unsent batches with their IDs, the player ID, and the on or off choice | the same as install |
@@ -31,7 +31,7 @@ The Glitchless server does not read or store the address a request came from. Th
 
 ## Field by field
 
-Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, and always on a server), `sdk` (`glitchless-unreal/0.5.5`), `batch_id` (random, made for each batch and sent again with its retries) and, from a game server, `role: "server"`.
+Every batch sends the envelope: `service`, `env`, `version` (the game's), `session_id`, `player_id` (null in anonymous mode, and always on a server), `sdk` (`glitchless-unreal/0.5.6`), `batch_id` (random, made for each batch and sent again with its retries) and, from a game server, `role: "server"`.
 
 Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level` (the game's own level name, or null). While the game has set them, every event also carries `zone` (`SetZone`: where the player is in the game's world, in the game's words) and `match`, `party` and `run` (the group IDs below).
 
@@ -102,7 +102,7 @@ A dedicated server, and a listen server while it hosts, sends a session of its o
 
 ## The player's off switch
 
-A game can let the player turn Glitchless off in its settings (a "Share performance data" toggle wired to `FGlitchless::SetEnabled`, or **Set Enabled** in Blueprint), and back on. From the moment it is off nothing more is measured, kept or sent, in every mode: no frames, errors, crashes, events, positions or network samples, no bug report, and no request of any kind. What was waiting to be sent is deleted, on the device too (`Saved/Glitchless/outbox.json`, a listen server's `Server/outbox.json`), and the session ends without a word. The choice is saved on the device (below) and read before anything is measured on the next launch, so a player who said no sends nothing at all in a later launch, not even what an earlier one left behind. With **Opt In** set, a device where the player hasn't chosen yet starts off. Turning it back on starts a new session under a new random session ID. The install ID (install and full mode) stays on the device while it is off, so a player who turns it back on counts once; nothing else about them is kept. What was sent before the player turned it off stays on the server for the game's retention.
+A game can let the player turn Glitchless off in its settings (a "Share performance data" toggle wired to `FGlitchless::SetEnabled`, or **Set Enabled** in Blueprint), and back on. From the moment it is off nothing more is measured, kept or sent, in every mode: no frames, errors, crashes, events, positions or network samples, no bug report, and no request of any kind. What was waiting to be sent is deleted, on the device too (`Saved/Glitchless/outbox.json`, a listen server's `Server/outbox.json`), and the session ends without a word. The choice is saved on the device (below) and read before anything is measured on the next launch, so a player who said no sends nothing at all in a later launch, not even what an earlier one left behind. In a web build the page keeps the choice too, so the same holds after a reload wherever the browser keeps the site's data. With **Opt In** set, a device where the player hasn't chosen yet starts off. Turning it back on starts a new session under a new random session ID. The install ID (install and full mode) stays on the device while it is off, so a player who turns it back on counts once; nothing else about them is kept. What was sent before the player turned it off stays on the server for the game's retention.
 
 ## Steam facts
 
@@ -135,6 +135,15 @@ When the game already uses Steamworks through Unreal's `SteamShared` or `OnlineS
 
 `Saved` is the game's own folder: `%LOCALAPPDATA%\<Game>\Saved` on Windows, `~/Library/Application Support/Epic/<Game>/Saved` on macOS. Uninstalling the game may leave it; deleting it removes these files.
 
+**In a web build** (UE 5.9) nothing is written to the player's disk as files they can open: `Saved` belongs to the browser. On a desktop browser Unreal keeps it in the browser's private files for the site the game is played on (OPFS), where it lasts between visits. On an iPhone or iPad, and with `?saved=memory` on the page's address, Unreal keeps it in memory, and it ends with the page. So that a reload is still the same player and a player's "off" still holds, two of the files above are also kept in the page's `localStorage`, with the same contents and by the same rules:
+
+| `localStorage` key | what | mode |
+| --- | --- | --- |
+| `glitchless:<the game's Saved folder>/Glitchless/player_id` | the random player ID | **install** and **full**. Anonymous mode deletes it if another build left one, as it does the file |
+| `glitchless:<the game's Saved folder>/Glitchless/enabled` | the player's choice, `on` or `off` and nothing else | all, once the game has called Set Enabled |
+
+The page's copy is read first as the plugin starts. While the choice kept there is `off`, the page sends nothing at all, whatever the game does. Unsent batches are never kept there: they stay in `Saved/Glitchless/outbox.json`, so where `Saved` is in memory, what hadn't been sent when a page crashed is lost and not sent later. Both keys belong to the site the game is played on (on itch.io, itch's own address for games, which every game there shares: the key names the game's folder so each game has its own). Clearing the site's data in the browser removes them and the files; a private window forgets them when it closes; and a browser that blocks storage keeps them for one page load only, so there each load is a new player and the game should pass its own saved setting to Set Enabled as it starts.
+
 ## Kept on the server
 
 The open-source Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. The hosted service at glitchless.gg keeps them for as long as the plan says.
@@ -161,7 +170,7 @@ If the game ships on Steam and uses Steamworks, add:
 > **Steam**
 > On Steam, the reports also say which build and beta branch of the game you run, whether it runs on a Steam Deck or other Steam hardware, under Proton or in Big Picture mode, what kind of controller you use, the game's language, and whether you play through Family Sharing or a timed trial. They carry no Steam ID, account name or anything else from your Steam account.
 
-Install mode needs one more sentence: a random number is saved with the game, so we can tell how many players come back; it is not linked to your account. Full mode needs that, the device model, and positions in the game world.
+Install mode needs one more sentence: a random number is saved with the game (for a game played in the browser: saved by your browser for the game's site), so we can tell how many players come back; it is not linked to your account. Full mode needs that, the device model, and positions in the game world.
 
 ## For the store forms
 

@@ -165,8 +165,9 @@ public:
 
 	/** The player's "Share performance data" setting, for a toggle in the game's settings. Off stops Glitchless at
 	 * once: nothing more is measured or sent, what was waiting (on the device too) is dropped, and the session ends
-	 * without a word. On starts a new session. The choice is saved on the device (Saved/Glitchless/enabled) and read
-	 * before anything is measured on the next launch, so a player who turned it off sends nothing at all. A call that
+	 * without a word. On starts a new session. The choice is saved on the device (Saved/Glitchless/enabled, and in a
+	 * web build by the page too, so it holds across a reload) and read before anything is measured on the next
+	 * launch, so a player who turned it off sends nothing at all. A call that
 	 * changes nothing does nothing, so the game can pass its own saved setting every time it starts. It can't turn
 	 * on a build that doesn't send (bEnabled, Enabled false, no intake, a development build without -glitchless). */
 	static void SetEnabled(bool bOn);
