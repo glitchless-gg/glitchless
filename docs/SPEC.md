@@ -1560,8 +1560,8 @@ The feed's and the API's review IDs differ, so adding or removing the key starts
 Apple's crash counts come from the Analytics Reports API ("App Crashes"), which an Admin must request once in App
 Store Connect before any report exists: a later step.
 
-**Not connected (yet).** Microsoft Partner Center, Epic, itch.io, GOG, PlayStation and Nintendo have no adapter;
-Meta Quest's reviews and vitals have no API, so they would come in as a CSV import (a later step).
+**Not connected.** Microsoft Partner Center, Epic, GOG, PlayStation, Nintendo and Meta Quest have no adapter (itch.io
+is §3l).
 
 **Glitchless Cloud.** Settings → Integrations, per game, a card per store: Steam's App ID (required) and its two
 optional keys; Google Play's package name and service account key; the App Store's Apple ID (the number in its App
