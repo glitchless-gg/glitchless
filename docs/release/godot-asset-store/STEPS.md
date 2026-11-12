@@ -30,11 +30,11 @@ never by hand. The parent session runs it, commits, tags and pushes the mirror, 
    from `docs/release/godot-asset-store/media/`, or paste the `raw.githubusercontent.com` links in LISTING.md if the form
    asks for links.
 5. **Versions.** Add a version:
-   - Version name `0.6.7`.
+   - Version name `0.6.8`.
    - Changelog: from LISTING.md.
    - Minimum Godot version `4.5`, no maximum.
    - Additional information: from LISTING.md.
-   - The file: `dist/godot-asset-store/glitchless-0.6.7.zip` in this repo (the export script writes it).
+   - The file: `dist/godot-asset-store/glitchless-0.6.8.zip` in this repo (the export script writes it).
 6. **Pricing.** Free. Leave the donation link empty and reviews on.
 7. **Submit.** On **Overview**, press **Submit**: it goes into the review queue. The store doesn't say how long review
    takes.
@@ -56,9 +56,9 @@ The parent session runs `node scripts/export-godot-addon.mjs`, which writes the 
 Neither catalogue offers a way to publish a version automatically. The store has no API, and the library takes edits
 from a signed-in account, with a moderator approving each.
 
-## Now, for 0.6.7
+## Now, for 0.6.8
 
-- **Asset Store:** the first-time steps above with version `0.6.7`, or, if 0.6.6 is already there, **Versions → add**
-  `0.6.7` with the shorter changelog in LISTING.md.
-- **Asset Library:** the edit, once the parent session has pushed 0.6.7 and run `--fields`. Earlier commits are
-  superseded: go straight to 0.6.7.
+- **Asset Store:** the first-time steps above with version `0.6.8`, or, if an earlier version is already there, **Versions → add**
+  `0.6.8` with the shorter changelog in LISTING.md.
+- **Asset Library:** the edit, once the parent session has pushed 0.6.8 and run `--fields`. Earlier commits are
+  superseded: go straight to 0.6.8.

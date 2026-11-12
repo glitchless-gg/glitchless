@@ -2826,7 +2826,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5. Godot SDK
 
-`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.7"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
+`godot/addons/glitchless` sends the same envelope with `"sdk": "glitchless-godot/0.6.8"` and the same event types. See its [README](../godot/addons/glitchless/README.md) and [PRIVACY.md](../godot/addons/glitchless/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |
@@ -2856,7 +2856,7 @@ retention (§6); a player who wants it deleted asks the game's developer.
 
 ## 5b. Unity SDK
 
-`unity/Packages/gg.glitchless.sdk` (Unity 6.0 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.7.3"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
+`unity/Packages/gg.glitchless.sdk` (Unity 6.0 LTS and later) sends the same envelope with `"sdk": "glitchless-unity/0.7.4"`. See its [README](../unity/Packages/gg.glitchless.sdk/README.md) and [PRIVACY.md](../unity/Packages/gg.glitchless.sdk/PRIVACY.md). Differences:
 
 | | |
 | --- | --- |

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.4
 
 - WebGL builds say where they were played. `session_start.page` used to be null, so a Unity web game on itch.io counted under `(none)` in a board's `$site` and not as a browser play in the itch.io funnel. The jslib now reads the page's address as the browser SDK does, and `session_start.page` is `{url, referrer}`: the page's origin and path (`https://html-classic.itch.zone/html/15550123/index.html`) and the origin of the page that led there (`https://maker.itch.io`), or null when none did. Never the query string, a fragment or the whole referrer. Native builds still send `page: null`.
 
