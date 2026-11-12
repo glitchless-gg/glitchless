@@ -122,7 +122,9 @@ only touch web builds, the 5.9 Preview, the Toolset (GitHub only) or docs.
     ```
 27. In the portal: the listing → **Project versions** → the UE 5.8 version → edit. **Version title**
     `Glitchless <version> (UE 5.8)`, then **Replace file** and upload `dist/unreal/Glitchless_<version>_UE5.8.zip`:
-    since November 2026 Fab takes an uploaded file only, not a link. Engine version and platforms stay. Submit.
+    since November 2026 Fab takes an uploaded file only, not a link. Engine version and platforms stay. Add an entry
+    on top of the listing's **Changelog** (LISTING.md → "Changelog"), covering everything since the version Fab had.
+    Submit.
     The same zip stays on the GitHub release for anyone who wants it outside Fab.
 28. **A new engine version** is a project version of its own (Fab §4.2.2.d), with its own zip: `--engine 5.9` keeps
     `Wasm` in the platform list, since 5.9 knows it. Add one only once the portal's engine picker lists that version.

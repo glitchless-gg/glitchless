@@ -1,6 +1,6 @@
 # What Glitchless for the web sends
 
-This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js`, `src/device.js`, `src/steam.js`, `src/bugreport.js`, `src/props.js`, `src/groups.js`, `src/counts.js`, `src/net.js`, the engine adapters (`src/three.js`, `src/phaser.js`, `src/babylon.js`, `src/playcanvas.js`) and, for game servers, `src/server.js`; keep it in step with them. The Godot, Unity and Unreal SDKs have their own lists (`godot/addons/glitchless/PRIVACY.md`, `unity/Packages/gg.glitchless.sdk/PRIVACY.md`, `unreal/Plugins/Glitchless/PRIVACY.md`), and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
+This file lists every field the browser SDK sends in each privacy mode and what it keeps in the browser, so a game's privacy page can say the same. It was written from `src/core.js`, `src/device.js`, `src/steam.js`, `src/bugreport.js`, `src/props.js`, `src/groups.js`, `src/counts.js`, `src/net.js`, the engine adapters (`src/three.js`, `src/phaser.js`, `src/babylon.js`, `src/playcanvas.js`) and, for game servers, `src/server.js`, and for a game in a Reddit post, the relay in `src/devvit.js`; keep it in step with them. The Godot, Unity and Unreal SDKs have their own lists (`godot/addons/glitchless/PRIVACY.md`, `unity/Packages/gg.glitchless.sdk/PRIVACY.md`, `unreal/Plugins/Glitchless/PRIVACY.md`), and the modes mean the same thing in all of them (`docs/SPEC.md` §4b).
 
 Nothing here is legal advice.
 
@@ -132,6 +132,29 @@ The form tells players what it sends ("your note, the screenshot and where you a
 | `glitchless.enabled` (localStorage) | `on` or `off`: the player's choice to share performance data, once the game has called `setEnabled`. It holds nothing about the player | all |
 
 Unsent batches are held in memory only, and are dropped if the page closes before they can be sent.
+
+## In a Reddit post (`glitchless/devvit`)
+
+A game in a Reddit post sends through its app's own server, which relays to Glitchless with `glitchless/devvit`
+(`docs/SPEC.md` §5g). Every session sent that way is anonymous, whatever mode the game set:
+
+- the relay sets `player_id` to null, so nothing links one session to another (install mode reads as anonymous; full
+  mode keeps its device fields and positions, without the ID). The browser keeps no ID worth having there anyway:
+  Reddit clears a post's browser storage with each app version;
+- it adds the subreddit's name and the post's ID (`t3_…`) as the session properties `subreddit` and `post`;
+- it replaces the playing redditor's username, user ID and logged-out ID with `<redditor>` wherever the game's text
+  holds them (errors, events, properties, a bug report's note), and leaves pictures alone;
+- it never forwards the request's headers: Reddit's token, cookies and the `devvit-*` metadata that say who the
+  redditor is stay on Reddit's servers. Glitchless sees the request come from Reddit, not from the player.
+
+No Reddit username, user ID, snoovatar or flair is ever read by the SDK. Reddit asks the app's README for a "Fetch
+Domains" section and the app's details for a Privacy Policy; for that policy:
+
+> This game uses Glitchless (glitchless.gg) to measure how it runs and how it is played. As you play, the game's
+> server sends Glitchless how the session ran (frame times, loading time, errors), what happened in the game (levels
+> started and finished, the game's own events), your browser, operating system and screen size, and the subreddit and
+> post you played in. It sends no Reddit username, user ID or other personal information, and nothing that ties one
+> session to another. Glitchless's privacy policy: https://www.glitchless.gg/privacy.html.
 
 ## Server mode (`glitchless/server`)
 

@@ -13,6 +13,7 @@
 import { Sketch } from '../../packages/sdk/src/sketch.js';
 import { newCell, addEvent, mergeCell, cellToJSON, cellFromJSON, minuteOf, eventName, smallAttrs, overBudget, MINUTE, OTHER, ATTRS, FIXED } from './rollups.js';
 import { addZoneWindow, mergeZoneSeconds } from './zones.js';
+import { pageHosts } from './sites.js';
 
 // 'script' is a Godot GDScript runtime error, an Unreal Blueprint runtime error, and 'exception' an
 // unhandled Unity exception: the function stops part way, like an uncaught JS exception.
@@ -75,9 +76,10 @@ export function newSession(e) {
     idOrder: e.__order ?? null, // its arrival order, when a store knows it (orders sessions on ties)
     first_ts: e.ts,
     last_ts: e.ts,
-    startAt: null, // last session_start: ts, device, session_type
+    startAt: null, // last session_start: ts, device, session_type, page
     device: null,
     session_type: 'user',
+    page: null, // the hosts of the page a web game ran on, { host, ref } (sites.js): where it was played
     endAt: null, // last session_end: ts, end_reason (set with it)
     marks: [],
     errors: 0,
@@ -121,6 +123,7 @@ export function addToSession(s, e) {
       s.startAt = e.ts;
       s.device = e.device || null;
       s.session_type = e.session_type || 'user';
+      s.page = pageHosts(e.page);
       // A game's server (A9): its tick rate, capacity, build, region and host, as it described itself.
       s.server = e.server || null;
       if (e.props) addProps(s, e.props, e.ts);
@@ -500,6 +503,7 @@ export function mergeSession(a, b) {
     a.startAt = b.startAt;
     a.device = b.device;
     a.session_type = b.session_type;
+    a.page = b.page ?? null;
     a.server = b.server ?? null;
   }
   if (b.svl) mergeServerLevels(a, b.svl);

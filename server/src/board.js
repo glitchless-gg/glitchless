@@ -33,9 +33,10 @@
 //   breakdown   how an event's attribute values compare (`event`, `by`, `limit`), by count or by `sum`
 //               (`by` can also be $version or $level, which every event has: purchases by version, or a
 //               Steam fact of the session that sent it, such as $steam_branch, counted by count only)
-//               Both take `by` $platform, $browser, $device_tier, $link or $graphics: the platform, browser, GPU
-//               tier, connection or graphics setting of the sessions that sent the event (Windows, macOS, Steam
-//               Deck, iOS, Android…; Chrome, Safari…; high to low; Wi-Fi…; Automatic, then low to high), counted
+//               Both take `by` $platform, $browser, $device_tier, $link, $graphics or $site: the platform, browser,
+//               GPU tier, connection, graphics setting or site (itch.io…, sites.js) of the sessions that sent the
+//               event (Windows, macOS, Steam Deck, iOS, Android…; Chrome, Safari…; high to low; Wi-Fi…; Automatic,
+//               then low to high), counted
 //               (no sum); without `event`, the sessions in each (and their players). Both take
 //               `per` $hours (each bucket or row per hour played) and `rate` or `avg`: a breakdown's rows then
 //               each have their rate with its interval (or average) next to the overall one, leaving out rows
@@ -62,8 +63,9 @@
 //   sessions    recent sessions, optionally only those that `sent` an event (`limit`)
 //   reports     the latest bug reports players sent, with their notes (`limit`)
 //   store_reviews, store_players, store_sales   a store's reviews by build, players online next to the sessions
-//               measured, units, returns and wishlists (reviews.js), for a game connected to a store (`store`)
-//   store_revenue  a revenue source's (RevenueCat's or Stripe's) revenue in the window, revenue per player measured,
+//               measured, units, returns and wishlists (itch.io: page views, browser plays measured there, downloads
+//               and purchases) (reviews.js), for a game connected to a store (`store`)
+//   store_revenue  a revenue source's (RevenueCat's, Stripe's, Roblox's or itch.io's) revenue in the window, revenue per player measured,
 //               installs or active users next to the players measured, MRR, active subscriptions or trials, revenue or
 //               installs and active users per day, or revenue by version next to Glitchless's; Stripe's refunds, new
 //               paying customers and revenue by product (`measure`, revenue.js); money in the source's currency,
@@ -160,7 +162,7 @@ const MAX_PAGES = 20;
 // Dimensions every event has, for `by`: $version and $level.
 const DIMENSIONS = ['version', 'level', 'zone'];
 // What series and breakdowns can split sessions by (analytics.js SESSION_SPLITS): $platform, $browser, $device_tier,
-// $link, $graphics.
+// $link, $graphics, $site.
 const SESSION_BY = Object.keys(SESSION_SPLITS).map((k) => `$${k}`);
 const SESSION_WORDS = `${SESSION_BY.join(', ')}, or a session property ($rank, $class…)`;
 // Session properties (A6, properties.js) split wherever $platform does: `$<key>` for any key the property rules allow.

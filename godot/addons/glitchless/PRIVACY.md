@@ -150,6 +150,8 @@ The form tells players what it sends ("your note, the screenshot and where you a
 
 In a web export these live in the browser's storage for the game's site (IndexedDB), with the same contents. Deleting the app, or clearing the site's data in a web export, deletes them all. While the choice is `off`, nothing else is written: the outbox is deleted, unread, and no new one is kept.
 
+In a Reddit post (Devvit Web) a web export sends through its app's own server, whose relay (`glitchless/devvit`) makes every session anonymous whatever mode the game set: it drops the player ID, adds the subreddit and post as session properties, replaces the playing redditor's username and IDs with `<redditor>` in the game's text, and never forwards Reddit's headers (`docs/SPEC.md` §5g, and the browser SDK's PRIVACY.md has a paragraph for the game's privacy policy). Reddit clears a post's browser storage with each app version, so the files above last until the game's next update there.
+
 ## Kept on the server
 
 The Glitchless server stores events as they arrive, each with its envelope and the time it arrived. The file store reads back the last 14 days, though the files stay until deleted. Glitchless Cloud keeps them for the plan's retention. Bug reports are kept apart from the events, each with its screenshot, and go when the game's events do; Datadog and OpenTelemetry forwarding never sends them.

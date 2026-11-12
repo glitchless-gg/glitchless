@@ -13,7 +13,7 @@ const glitchless = Glitchless.init({
   service: 'zoomies',              // game id (required)
   version: '1.0.0',                // build version (required — powers version compare)
   env: 'dev',                      // dev | staging | prod
-  intake: 'http://localhost:7777', // Glitchless API base URL. Omit → offline/overlay-only mode
+  intake: 'http://localhost:7777', // Glitchless API base URL, or a path on the page's own server (a Reddit post's relay, '/api/glitchless', §5g). Omit → offline/overlay-only mode
   clientToken: 'gl_pub_dev',       // public, write-only token: safe to ship inside the game
   overlay: true,                   // in-game HUD, toggle with the backtick (`) key. Default: on unless env is prod
   privacy: 'anonymous',            // default. 'install' adds a stored random player ID (retention, §4b); 'full' that, GPU/CPU detail and positions (packages/sdk/PRIVACY.md)
@@ -328,7 +328,7 @@ type and device, and Glitchless Cloud doesn't count it again toward the plan's p
 
 | type | fields |
 | --- | --- |
-| `session_start` | `session_type` (`user`: a player; `tester`: a person on a test build, a TestFlight or development install on iOS, or a debug or sideloaded build on Android (Godot, §4b); `synthetic`: a bot, a playtest or a store's test phone; `simulated`: made-up data), `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck, distribution}`, `page {url, referrer}`. The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). The engine SDKs send `distribution` on iOS: `app_store`, `testflight` or `development`, and Godot on Android: `google_play`, `store`, `sideloaded` or `development` (§4b; intake drops any other value). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c). `props`: the session's properties set before its first batch (below). Intake makes a `user` (or unset) `session_type` `synthetic` when the batch comes from one of Firebase Test Lab's published addresses (Google Play's pre-launch phones, `server/src/test-lab.js`), whatever engine sent it; the address decides only that and isn't stored |
+| `session_start` | `session_type` (`user`: a player; `tester`: a person on a test build, a TestFlight or development install on iOS, or a debug or sideloaded build on Android (Godot, §4b); `synthetic`: a bot, a playtest or a store's test phone; `simulated`: made-up data), `privacy` (`anonymous`, `install`, `full`), `device {browser, browser_version, os, mobile, gpu, gpu_vendor, gpu_tier, cores, memory_gb, screen:[w,h], dpr, webgl, steam_deck, distribution}`, `page {url, referrer}` (the browser SDK's: the page's origin and path, and the origin of the page that led there; the engine SDKs send null. The server keeps only the two hosts, which `$site` reads, §3b). The browser sends `steam_deck: true` only when it can tell it runs on a Steam Deck (§4b). The engine SDKs send `distribution` on iOS: `app_store`, `testflight` or `development`, and Godot on Android: `google_play`, `store`, `sideloaded` or `development` (§4b; intake drops any other value). A game that uses Steamworks adds its Steam facts to `device` (`steam_build`, `steam_branch`, `steam_hardware`…, §4c). `props`: the session's properties set before its first batch (below). Intake makes a `user` (or unset) `session_type` `synthetic` when the batch comes from one of Firebase Test Lab's published addresses (Google Play's pre-launch phones, `server/src/test-lab.js`), whatever engine sent it; the address decides only that and isn't stored |
 | `frame_window` | every window (5 s; sent in batches every 15 s): `frames, fps, ft {sketch}, ft_p50, ft_p95, ft_p99, ft_max, jank` (frames > 33.3ms), `hitches` (frames > 50ms), `render_ms` (avg CPU ms inside `renderer.render`), `draw_calls, draw_calls_max, triangles, geometries, textures, programs, heap_mb, ctx {…gauges}`, `budget_ms` (from the display's refresh rate, read off the fastest frames and checked again as the session goes). A window never spans two levels: `levelStart` closes it, with the positions sampled so far. `net` (A8, §1) while the player was connected: `{rtt {sketch at 5%}, rtt_p50, rtt_p95, rtt_max, jitter_ms, loss_pct, in_kbps, out_kbps, samples, transport, link, host}` |
 | `hitch` | single frame > 50ms: `duration_ms, draw_calls, triangles, ctx, recent [last 5 game events], loaf [{source, fn, ms}], causes` (`script`, `shader_compile`, `gc`, `asset_load`, `frozen`; engine SDKs also `gpu_or_os`: none of their other causes applies and what they measured inside the game, its code, physics, the renderer's CPU work and the GPU where it is timed, adds up to less than max(16 ms, 40% of the frame), so the time went to the GPU, to presenting the frame or to the OS). With `instrumentThree`, what the frame sent to the GPU, counted on the WebGL context: `causes` adds `shader_compile` (a program linked), `texture_upload` (4+ textures uploaded or re-uploaded, or a megapixel), `geometry_upload` (32+ buffers or 4 MB), `render` (`renderer.render` took 40% of the frame); adds `render_ms`, `textures_uploaded`, `texture_mpx`, `buffers_uploaded`, `buffer_kb`, `programs_linked` |
 | `load` | `ts` is when the first frame was drawn; `ttff_ms` (navigation → first rendered frame; engine SDKs: process start → first frame), `assets {count, bytes, ms, slowest:[{url, ms, bytes}]}`. Engine SDKs add `first_launch`: whether this is the first launch of this game version on the device (the first after an install or an update builds the shader caches and reads files the OS hasn't cached, so it starts slower). They keep the last version that ran in a file of their own to tell; it holds no ID, the same on every device. The slow-start finding compares the two when both have 3+ sessions |
@@ -575,7 +575,7 @@ with its `focus`) and see the brand in `glitchless_dashboard`; people do the sam
 | `frame_time`, `errors`, `deaths`, `events` | `by` (`$zone` or `$level`) and `limit` (frame_time), `limit` (errors), `by` and `level` (deaths, as on `levels`) | frame-time p50/p95 over time, or with `by` a row per zone or level (Zones, below); top errors, deaths by level and cause (with `by`, per level and value), every custom event |
 | `findings` | `limit` | the ranked findings |
 | `sessions` | `sent`, `limit` | recent sessions, or only those that sent an event, each opening its replay |
-| `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, Roblox, §3f, §3k): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day |
+| `store_reviews`, `store_vitals`, `store_players`, `store_sales` | `store` | for a game connected to a store (Steam, Google Play, the App Store, Roblox, itch.io, §3f, §3k, §3l): reviews over time and by build with what was measured on each, the store's vitals by version next to Glitchless's, players online next to the sessions measured, units, returns and wishlists by day (itch.io: page views, browser plays measured there, downloads and purchases) |
 | `store_score` | `store` | a store's rating (§3f): the average stars of the written reviews synced in the window and how many, next to the store's own rating where it has one (the App Store's, from Apple's lookup; Steam's summary); Google Play's is the synced reviews' average, and says so |
 | `store_revenue` | `measure`, `store`, `show` | for a game connected to RevenueCat (§3h) or Stripe (§3i): its revenue in the window, revenue per player measured, installs or active users next to Glitchless's new players and players, MRR, active subscriptions or trials, revenue per day, installs and active users per day, revenue by version next to what Glitchless measured, installs and revenue by country on a world map with a ranked list (`by_country`; `show` installs or revenue first), or revenue by store next to the sessions on its platform (`by_store`); Stripe's refunds, new paying customers, revenue by product (§3i; no installs, MRR, subscriptions, trials or stores); Roblox's Robux, new users (`installs`), daily active users (`active_users`) and `retention` (D1, D7, D30 by cohort day, §3k) |
 | `reports` | `limit` | the latest bug reports players sent, each opening its report |
@@ -676,7 +676,7 @@ as `(other)`; a property with more than 200 values on one day is an ID, not a pr
 many values)` (the events query marks it `identifier_like`). Nothing is kept per property ahead of time: a split reads
 the sessions, so over 31 days or less, as the platform split does.
 
-**By platform, browser, device tier, connection and graphics setting** (`sessionsBy` and `SESSION_SPLITS` in
+**By platform, browser, device tier, connection, graphics setting and site** (`sessionsBy` and `SESSION_SPLITS` in
 `server/src/analytics.js`). `by` on a breakdown or a series can split the sessions themselves, each by its
 `session_start.device` (and its network or properties, below), in plain words:
 
@@ -686,6 +686,7 @@ the sessions, so over 31 days or less, as the platform split does.
 | `$browser` | browser (`device.browser`, the Performance view's `by_browser`) | the browser SDK's `Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`, `Other`, which a Unity web build (§5b) and a Godot web export (§5) send too. Each is read from the browser's own name in the user agent, not the first name there (Edge and Opera also say `Chrome/`, and every iOS browser `Safari/`), with that browser's major version: Edge on Android and iOS is `Edge`, Firefox on iOS `Firefox`, Chrome on iOS `Chrome`, and other Chromium browsers (Samsung Internet, Brave, Vivaldi, Android's web view) are `Chrome` with Chromium's version (`parseUserAgent` in `packages/sdk/src/device.js`). The browser SDK up to 0.7.0 read the first name instead (0.7.1 reads each browser's own), so its sessions name desktop Edge and Opera `Chrome`, and Firefox on iOS `Safari` (with WebKit's version). The engine SDKs send their engine there otherwise, so their sessions are `Godot app`, `Unity app`, `Unreal app`, `GameMaker app`, or `<engine> web build` when the OS is the web (its browser unknown) |
 | `$device_tier` | GPU tier (`device.gpu_tier`, the Performance view's tiers) | `High-end GPU`, `Mid-range GPU`, `Low-end GPU`, `Software rendering (no GPU)`, `Unknown GPU`, in that order (other splits: most first) |
 | `$graphics` | graphics setting (`graphicsOf`, the Performance view's `by_graphics`) | the session's `graphics` property when the game sets one, in its own words (any engine: `low`, `high`, `ultra`), else what the SDK read itself: Roblox's Graphics Quality (`device.quality`, §5), `Automatic` or `1` to `10`; `(none)` without either. In order: `Automatic`, then numbers low to high, then the usual preset words low to high (`lowest`, `very low`, `low`, `medium`, `normal`, `high`, `very high`, `ultra`, `epic`, `cinematic`, `max`), then other words (most first), then `(none)`. The property comes first so a game that names its presets keeps them; `prop.graphics=` filters read the property only |
+| `$site` | where a web game was played (`siteOf`, `server/src/sites.js`), from `session_start.page`, of which a session keeps only the page's host and its referrer's host | a site the table names, by the hosts its game frames are served from, then by the page that led there: `itch.io` (a frame on `*.itch.zone`, such as `html-classic.itch.zone`, or a page on or reached from `*.itch.io`), `CrazyGames` (`*.crazygames.com`), and `Poki`, `Newgrounds` and `GX.games` by their own addresses as the referrer only (`poki.com`, `newgrounds.com`, `gx.games`: the hosts their frames are served from weren't confirmed), and `Reddit` (a post's web view on `*.devvit.net`, or a page reached from `*.reddit.com`, §5g). Else `localhost` for the developer's own machine or network (`localhost`, `*.localhost`, `*.local`, loopback and private addresses, a page opened from a file), else the page's own host without `www.` (`mygame.com`); `(none)` for a session with no page: a native build, and the engine SDKs' web builds (a Godot web export, a Unity WebGL build), which send none, except in a Reddit post, where the relay's `subreddit` property says `Reddit`. A `site` property the game sets comes first, in its own words (as `graphics` does). Sessions stored before pages were kept are `(none)`. A site is a row in `SITES`, so another one is one line |
 
 With an `event`, a split counts that event from each group's sessions (a breakdown's rows: `{value, count, sessions,
 players}`; `players` is null when the game sends no player IDs), and a series places each session's events where the
@@ -693,7 +694,7 @@ session kept their time: a session keeps the first 16 of an event (above), so th
 spread evenly over the minutes it played after the 16th, and the panel's `spread` says how many. Without an `event`, a
 breakdown counts the sessions in each group and their players (`counts: "sessions"`; `total`, and `players`, each
 player once, with player IDs), and a series the sessions playing in each time bucket. Either answers `split`: what
-the groups are, in words (`platform`, `browser`, `device tier`, `connection`, `graphics quality`). Counts only: a `sum` can't be split this way (sums are
+the groups are, in words (`platform`, `browser`, `device tier`, `connection`, `graphics quality`, `site`). Counts only: a `sum` can't be split this way (sums are
 kept per minute, not per session; for money by store, `store_revenue` `by_store`). Read from the sessions, so over 31
 days or less; a longer range says so.
 
@@ -1361,7 +1362,7 @@ when there are none). Spike protection keeps its own email; the plan notice says
 Glitchless Cloud checks every game with alerts on every 15 minutes, one run at a time, then each of their
 workspaces' plan.
 
-### 3f. Store reviews and vitals: Steam, Google Play, the App Store, Roblox
+### 3f. Store reviews and vitals: Steam, Google Play, the App Store, Roblox, itch.io
 
 What players write about a game on its store pages is joined to what Glitchless measures, **by build**: "the
 reviews say it stutters since the update" becomes which build, which devices, how many reviewers played on a Steam
@@ -1373,10 +1374,12 @@ and vitals, and storage, the join, the panels, the finding and the queries are t
 adapters: Steam ([`server/src/steam.js`](../server/src/steam.js), its keyless calls; Glitchless Cloud adds the
 publisher's keys and the partner calls), the App Store
 ([`server/src/app-store.js`](../server/src/app-store.js), Apple's public review feed; Glitchless Cloud adds the App
-Store Connect API), Google Play (Glitchless Cloud only, with a service account) and Roblox (Glitchless Cloud only:
-its public stats, and with an Open Cloud key its own analytics; it has no written reviews, §3k).
+Store Connect API), Google Play (Glitchless Cloud only, with a service account), Roblox (Glitchless Cloud only:
+its public stats, and with an Open Cloud key its own analytics; it has no written reviews, §3k) and itch.io (Glitchless
+Cloud only: a page's public data, and with an API key its views, downloads, purchases and earnings; it has no API for
+comments or ratings, §3l).
 A host hands the core a game's stores with `createApp({ stores: { read(projectId, service, { from, to, recordsFrom }) } })`,
-which answers `{ steam: {…}, google_play: {…}, app_store: {…}, roblox: {…} }` (the connected ones) or null; without it the store
+which answers `{ steam: {…}, google_play: {…}, app_store: {…}, roblox: {…}, itch: {…} }` (the connected ones) or null; without it the store
 panels say the game has no store connected, and nothing else changes. Every adapter is read only: none replies to a
 review or writes anything to a store.
 
@@ -1439,14 +1442,15 @@ frame rates) need a range of 31 days or less.
 | --- | --- | --- |
 | `store_reviews` | `store` | positive, negative and negative-about-performance reviews (any topic) by day (by hour under 3 days), each release marked; a row per release in the window: reviews, positive %, negative about performance (count and %), the store's segment (Steam Deck %), and the sessions, frame p95 and crash-free % measured on its version; the store's all-time score |
 | `store_players` | `store` | players online as the store counted them each sync (Steam), next to the sessions Glitchless saw playing in that minute (for ranges of 31 days or less): `coverage_pct`, measured over counted, is how much of the game's play has telemetry |
-| `store_sales` | `store` | units sold, returns (and the return rate), wishlist adds and deletes by day (Steam: from the Financial API Group key) |
+| `store_sales` | `store` | units sold, returns (and the return rate), wishlist adds and deletes by day (Steam: from the Financial API Group key); itch.io's page as a funnel (§3l): page views, browser plays (the sessions measured on itch.io), downloads and purchases by day, each step's share of the page views, and earnings by currency |
 | `store_vitals` | `store` | the store's vitals version by version (newest first; by day weighted by users, or the store's latest for the version), next to the sessions, frame p95, crash-free % and the matching measures Glitchless has of the same version; the lines where the two disagree; Google Play's slowest devices and GPUs on its freshest day; the App Store's heaviest hang signatures in the latest build |
 | `store_score` | `store` | a store's rating, small (default size `s`; one panel per store): the average stars of the written reviews Glitchless synced in the window and how many (`synced: {average, reviews, stars: [1★…5★ counts], since, capped}`; on Steam the share positive instead), next to the store's own overall number where it has one (`overall`): the App Store's rating from Apple's public lookup, every rating with or without a review, weighted over the connection's countries, and the current version's (`{average, count, countries, day, current: {average, count, version}}`); Steam's review summary (`{desc, positive_pct, count}`). Google Play has no API for its overall rating: `overall` is null and a note says the number is the synced reviews' average. `notes` say which number is which |
 
-`store` is `steam`, `app_store`, `google_play` or `roblox` (default: the game's first connected store). Roblox has no
+`store` is `steam`, `app_store`, `google_play`, `roblox` or `itch` (default: the game's first connected store). Roblox has no
 written reviews: its `store_reviews` panel and query answer `{empty, why}`, its `store_score` is its thumbs up and down
 (`overall: {up, down, votes, positive_pct, favorites, visits, playing, day}`), its `store_players` its players now, and
-its page is its own (§3k). A game connected to a
+its page is its own (§3k). itch.io has none either: its `store_reviews` and `store_score` answer `{empty, why}` (itch.io
+has no API for comments or ratings), its `store_sales` is its funnel, and its page is its own (§3l). A game connected to a
 store gets a **page per store** on the automatic dashboard, after the Overview (`steam`, `app-store`, `google-play`):
 `store_reviews`, `store_vitals` where the store reports vitals, `store_players` where the store counts players,
 `frame_time` when the game sends frame times, and `store_sales` when there are sales (or, on Steam, a financial key).
@@ -1454,6 +1458,12 @@ A saved dashboard adds the panels like any other, and Glitchless Cloud adds the 
 dashboards when the game is first connected to that store (`withStorePage`: after the first page, unless a page already
 shows that store; taken off, it isn't added again). A share link shows `store_reviews`, `store_vitals`,
 `store_players` and `store_score` (counts and stars, never review text) and `store_sales` only when made with sums.
+
+**Query** `store_sales`: one store's own counts by day (`store`, default the first connected one with sales) → Steam's
+`{connected, store, store_name, stores, app_id, synced_at, ts, sales_series, wishlist_series, totals: {units, returns,
+return_pct, wishlist_adds, wishlist_deletes, wishlist_purchases}}`, or itch.io's funnel (§3l), or `{empty, why}`; a
+store with no sales answers `{connected: true, empty: true, why}`. The MCP tool `glitchless_store` reads it with
+`show: "sales"`.
 
 **The finding** (`store-reviews-<store>-<release key>`, category `reviews`), per store: of the releases in the last
 30 days, the latest with 5 or more reviews since it went live (on Google Play and the App Store, 5 or more reviews of
@@ -1491,7 +1501,8 @@ hour: up, down, down about performance, and the same in the store's segment), `P
 `SALES#<month>` and `WISH#<month>` (by day; a day the store sends again replaces what was there), `VIT#<month>`
 (vitals by day; likewise), `VITV` (each version's latest vitals), `SNAP#devices`, `SNAP#hangs` and `SNAP#rating` (the
 App Store's own rating; the latest snapshot of each), `SNAP#public` and `SNAP#platforms` (Roblox's public stats and its
-vitals by platform, §3k), `RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
+vitals by platform, §3k; `SNAP#public` is itch.io's page too, §3l), `TRAF#<month>` (itch.io's page by day, §3l),
+`RELEASES` and `NOTES` (release marks), `META`, and `X#<name>` for what the adapter keeps for
 itself (Steam: its builds). Each day or month item expires 400 days after its period.
 
 **Steam.** What a sync takes, per game, from where its last sync stopped:
@@ -1719,7 +1730,8 @@ player; the gap between them is the purchases that never reach Glitchless. The c
 ([`server/src/revenue.js`](../server/src/revenue.js): storage, panels, the Revenue page, the query; a source's data
 comes through the same `stores.read` as the stores', under its name); the adapter that calls RevenueCat is Glitchless
 Cloud's. Read only: nothing is written to RevenueCat, and its
-webhooks (RevenueCat's Pro plan) are not used.
+webhooks (RevenueCat's Pro plan) are not used. The other sources come the same way: Stripe (§3i), Roblox's Robux (§3k)
+and itch.io's earnings (§3l, whose panels are on its own page rather than a Revenue page).
 
 **Connecting.** The RevenueCat project ID (`proj…`; the 8 characters after `/projects/` in the dashboard's address are
 taken too), a currency (one of the 14 RevenueCat converts to: USD, EUR, GBP, AUD, CAD, JPY, BRL, KRW, CNY, MXN, SEK,
@@ -2248,6 +2260,94 @@ vitals by platform for it yet.
 names of `IsNewUser` (read as `true`, `1` or `new…`), how soon a day's numbers and a place version's vitals come in,
 how often a query comes back as an operation to poll, and the rate limit of the Analytics Query API (beta, so its
 answers may change). The public stats' shapes were read from games.roblox.com.
+
+
+### 3l. itch.io: a game's page, next to the browser plays measured there (Glitchless Cloud)
+
+A game on itch.io connects its page in Settings → Integrations, so what itch.io counts of the page sits next to what
+Glitchless measures of the game. itch.io plays an HTML5 game in a frame on its page, and Glitchless measures each play
+there (`$site` `itch.io`, §3b), so together they make the funnel itch.io's own dashboard doesn't give an agent: **page
+views → browser plays → downloads → purchases**. itch.io is a store (§3f: no reviews, its funnel as `store_sales`) and a
+revenue source (§3h: its earnings), stored under one name, `itch`. The adapter that calls itch.io is Glitchless
+Cloud's; storage, the join and everything shown are the core's (`server/src/reviews.js`,
+`server/src/revenue.js`, `server/src/sites.js`). Read only: nothing is ever written to itch.io, and its pages are never
+scraped: **itch.io has no API for a game's comments, ratings or reviews**, so none are read.
+
+**Connecting.** The game's page, `https://<maker>.itch.io/<game>`, read as jam rooms read a linked game's page (§3j,
+`checkLink` in `server/src/rooms.js`: https, the host in lower case, no trailing slash, nothing after the path; the
+game frame's address on `*.itch.zone`, which changes with every upload, is refused and says so). Its public
+`https://<maker>.itch.io/<game>/data.json` (no key) gives itch.io's ID for the game, its title, price and tags; a page
+that answers 404 there (none at that address, or a draft or restricted page) is refused unless the key finds it. For
+itch.io's numbers, an **itch.io API key** (itch.io → Settings → API keys → Generate new API key). **A key made there is
+a full-account key**: itch.io scopes only the keys its OAuth apps get, and Glitchless has no itch.io OAuth app (one
+that asked for `profile:games` alone would be the owner's to register), so Settings says plainly that the key can do
+everything the account can and that Glitchless only reads with it: the one call it ever makes with it is
+`GET https://api.itch.io/profile/games`. The key is checked on save with that call: a key itch.io refuses (403,
+`{"errors": ["invalid key"]}`) refuses the save, and so does a page that isn't among the key's account's games, naming
+the games the key has. A new page with the key kept is checked again. The key is sealed like a store's credentials and
+never sent back (the dashboard gets `…` and its last four characters). A new page forgets the kept data.
+
+**The sync** (hourly with the stores, the `glitchless-stores` Lambda):
+
+| from | call | when | key |
+| --- | --- | --- | --- |
+| title, price, tags | `GET https://<maker>.itch.io/<game>/data.json` (`id`, `title`, `price` as itch.io formats it, `tags`) | once a day | none |
+| views, downloads, purchases, earnings | `GET https://api.itch.io/profile/games` with `Authorization: Bearer <key>`: the game (matched by itch.io's ID, else its `url`), its `views_count`, `downloads_count`, `purchases_count` and `earnings: [{currency, amount, amount_formatted}]` (`amount` in the currency's smallest unit: 5047 is $50.47), each an all-time total | every sync | the API key |
+
+itch.io documents no rate limits, so a game's page is read once a day and its totals once a sync (at most 6 "Sync
+now" presses an hour, as every store), and all games' page reads stop at 10,000 a day.
+
+**Days from totals.** itch.io gives totals only, so a day's page views, downloads, purchases and earnings are how much
+the totals grew between hourly reads, each read's growth counted on the UTC day it was read (one in the last hour of a
+day can count on the next). The **first read** has nothing to take a difference from: it counts nothing, its day
+counts from then (`from`, the first read's time), and the sync's note says the next sync has the first numbers
+(Settings → Integrations shows it under Last sync; the funnel says it when empty). A total that **goes down** (itch.io
+takes off purchases it finds were fraud, and refunds) adds nothing to the day, which keeps what went as `removed`, and
+the growth after it counts from the lower total. A day the syncs missed has no numbers, and the day they resume carries
+what came in since (`since`, the first day missed). Earnings are kept per currency, never converted.
+
+**The funnel** (`store_sales` with `store: itch`; the MCP tool `glitchless_store` with `show: "sales"`): every UTC day of
+the window, `series` of page views, browser plays, downloads and purchases (`[{key, label, values, measured?}]`; null
+for a day itch.io's numbers don't cover), `earnings_by_day`, `steps: [{step, label, value, of_views_pct, source}]`
+(`views`, `plays`, `downloads`, `purchases`; each step's share of the page views), `totals: {views, plays, players,
+downloads, purchases, earnings: {<currency>: amount}}`, `incomplete_day`, `page` (its `SNAP#public`) and `notes` (how a
+day is counted, the first day's `from`, a day's `since` or `removed`, how plays are counted, several currencies).
+**Browser plays** are the window's sessions whose `$site` is `itch.io`, by the UTC day they started, and `players`
+their players (null without player IDs); they come from the sessions themselves, so over 31 days or less (a longer
+range says so, and the steps from itch.io stay). A play is a session: a player who plays twice is two plays, so plays
+can pass page views. itch.io's downloads don't include browser plays. A Godot web export or a Unity WebGL build sends no
+page, so its plays on itch.io count only when the game sets the `site` property to `itch.io` itself.
+
+**Earnings** (§3h's `store_revenue` panels, `store: itch`): `revenue` ("Earnings on itch.io", with the window's
+purchases as `transactions`), `per_player` (over the players Glitchless measured, every site's) and `by_day`, in the
+currency the game has earned most in; earnings in another currency are named in the notes, never added in, and a game
+with earnings in two currencies has no `transactions` (purchases aren't per currency). itch.io gives one total, so
+there is no `by_version`, `by_country` or any other split, and a query filtered to a version answers `{empty, why}`.
+A free game's earnings are 0.
+
+**The itch.io page** (`itch`, on the automatic dashboard and added to saved ones on the first connection, after the
+first page; no Revenue page, as most games on itch.io are free): the funnel (`store_sales`, size `l`), earnings,
+earnings per player, the players measured, where the game's sessions were played (a `breakdown` by `$site`), and
+earnings per day.
+
+**Queries.** `store_sales` with `store=itch` answers the funnel with `{connected, store, store_name, stores, app_id,
+synced_at}`. `store_revenue` with `store=itch` answers §3h's shape with `totals: {revenue, transactions, days,
+incomplete}`, `days: [{day, revenue, transactions, sessions, players, new_players, purchases}]`, `versions: null` with
+`versions_why`, and `countries: null`. `store_reviews` with `store=itch` answers `{empty, why}`.
+
+**Stored** under `STORE#<project>#itch` (§3f's layout): `TRAF#<month>` (by day: `views`, `downloads`, `purchases`,
+`earnings: {<currency>: amount}`, and `from`, `since`, `removed`, `incomplete` where they apply; a day sent again
+replaces what was there), `SNAP#public` (`{day, at, id, title, price, tags, url}`), `SNAP#overview` (what Settings shows
+under Last sync: the all-time totals now, `{at, currency, all_time: true, first_read, metrics: [views, downloads,
+purchases, earnings]}`), `REV#<month>` (by day: `revenue`, `transactions`, `currency`) and `META`. The connection is
+`PROJECT#<project>` `ITCH` (`{url, user, slug, gameId, title, …}`); the sync's own state is `ITCH#<project>` `STATE`
+(`{last: the latest read's totals and time, day: the day being counted, currency, firstRead, page: {day}}`).
+
+**Not yet seen from itch.io itself** (answered by a stand-in that follows its docs and the answers checked on 12
+November 2026: a page's `data.json`, `{"errors": ["invalid game"]}` with 404 for no page, `{"errors": ["invalid key"]}`
+with 403 for an unknown key): a real `/profile/games` answer with numbers, what a scoped OAuth key without
+`profile:games` answers, how soon itch.io's totals move after a view or a purchase, and whether `earnings` is before or
+after itch.io's share.
 
 
 ## 4. Derived concepts
@@ -2806,6 +2906,87 @@ sets the attributes back. The run is then read from the server: `GET /v1/query/s
 counts if the session lasted into it), then `GET /v1/query/playtest` for the players' sessions, with the server
 sessions' `errors` (marked `server`) and `crashes` added. With the default scenarios, no level started in any play test
 is an error (no autoplay mode); more than one server session in a play test is a note.
+
+## 5g. Games in a Reddit post (Devvit Web)
+
+Reddit's Developer Platform runs a game inside a post. A Devvit Web app has a client (a web game, or a Unity or Godot
+web build) shown in a webview, and a server (Node; Hono in Reddit's templates) that runs on Reddit's servers. The
+webview may fetch only its own origin's `/api/` paths: its Content-Security-Policy's `connect-src` is `'self'`. Reddit's
+script on every page of it (`webview.devvit.net/scripts/devvit.v1.min.js`) sets `globalThis.devvit` and adds the
+app's token (`Authorization: Bearer …`) to the page's same-origin fetches; the token carries the request's context
+(app, subreddit, post, user), which Reddit's server SDK reads from `devvit-*` request headers. So a game in a post
+sends to a path on its own page, `/api/glitchless`, and the app's server relays it to the intake.
+
+**The relay**, `glitchless/devvit` (`packages/sdk/src/devvit.js`, no dependencies, nothing from `@devvit`):
+`glitchlessRelay({ intake = 'https://api.glitchless.gg', clientToken, context })` returns `fetch(request)` (a Fetch
+API handler: Hono's `api.all('/glitchless/*', (c) => relay.fetch(c.req.raw))`) and `node(req, res)` (Node's own
+server, as Reddit's hello-world template has it, and Express's `app.use('/api/glitchless', relay.node)`). `context`
+is Devvit's server `context` (from `@devvit/web/server`, a proxy over the request) or a function returning it.
+
+| | |
+| --- | --- |
+| paths | a path ending `/v1/intake` (POST) or `/v1/health` (GET, HEAD), wherever the relay is mounted; `OPTIONS` 204; any other path 404, another method 405. Forwarded to `<intake>/v1/intake?token=…` and `<intake>/v1/health` only |
+| token | with `clientToken`, every batch goes with it and a request naming another token is refused (403); without, the request's own, if it's a public token (`gl_pub_…`), else 401: a secret key is never forwarded |
+| size | 1 MB a request (413) and 8 MB unpacked for a gzipped batch, the intake's own limits. Not JSON with an `events` array: 400 |
+| batch | `player_id` null. `session_start.privacy` `install` becomes `anonymous`; `full` keeps its device fields and positions, without the ID. `session_start.props` gains `subreddit` (`context.subredditName`, `[A-Za-z0-9_]{2,21}`) and `post` (`context.postId`, `t3_…`), unless the game set those keys or has 12 already. In every string of every event, the playing redditor's username (3 or more characters), user ID (`t2_…`, and without its prefix when that's 6 or more characters) and logged-out ID (`loid`), as whole words (letters, digits, `_` and `-` are word characters), become `<redditor>`; a `data:` URL (a bug report's screenshot) is left as it is, and so is the envelope, the game's own settings and IDs |
+| sent | JSON, `content-type: text/plain`, `x-glitchless-relay: devvit`, and none of the request's headers (Devvit's say who the redditor is) |
+| answer | the intake's status, body and `Retry-After`. An intake that can't be reached, or doesn't answer in 10 s, is 502, which the SDKs send again. `/v1/health` is kept 5 minutes |
+
+**The SDKs in a post.** The browser SDK, Unity's web build and Godot's web export take `/api/glitchless` as their
+intake. They know they're in a post by `globalThis.devvit` (an object with a `token` string):
+
+- What goes as the page is hidden or leaves (`session_end`, `level_abandon`, the batch waiting) is sent by the page's
+  `fetch` with `keepalive: true`, uncompressed, instead of `navigator.sendBeacon`. A beacon carries no header, so it
+  would reach `/api/` without the app's token; a keepalive fetch, like a beacon, is finished by the browser after the
+  page has gone.
+- The browser SDK leaves out the webmcp.dev widget, whose socket to the agent's machine is outside `connect-src`,
+  unless the game passes `webmcp: { bridge: true }`; the browser's own WebMCP still registers the tools.
+- Everywhere, not only in a post: the browser SDK's overlay and bug report form style their shadow roots with
+  constructed stylesheets (`adoptedStyleSheets`), which a CSP without `'unsafe-inline'` styles takes, and Godot reads
+  the page through `JavaScriptBridge.get_interface`, never `eval`, which a CSP without `'unsafe-eval'` refuses (Godot's
+  engine evals nothing else).
+- Godot puts a path intake on the page's origin (its HTTPRequest takes whole addresses only); Unity's
+  `UnityWebRequest` takes the path as it is.
+- GameMaker can't send from a post yet: its HTML5 runner's `http_request` is an XMLHttpRequest, which Reddit's script
+  doesn't give the token (Reddit's own GameMaker demo adds `Authorization: Bearer` to each request itself), and the
+  GameMaker SDK has no way to add a header. Unreal's web builds aren't tested in a post.
+
+`session_start.page.url` is the webview's address (`https://…devvit.net/<entry>.html`), which is how a board can tell a
+Reddit play from another host's. Browser storage clears with each app version (the webview's address changes), so a
+game that has the player's off switch keeps the choice itself (Redis, through its own `/api/` route) and passes it to
+`setEnabled` at start.
+
+**Anonymous only.** Devvit's rules ("Privacy and data rules") ask apps to minimize data, never profile redditors or
+try to re-identify, de-anonymize or reverse-hash data about them, get consent before processing it, and send no data
+of anyone under 13. A hash of the Reddit user ID salted per game would count returning players, but it is derived from
+the redditor's account and kept off Reddit, and a hash of a known ID is a lookup away from the ID. So a Reddit game
+has only anonymous mode, as a Roblox game has (§5e): the relay drops `player_id`, and the install-mode ID wouldn't
+last anyway (storage clears with each app version). Returning players are Reddit's own numbers: the app's Analytics
+tab and Devvit Journeys (starts, completions, sessions per user per day, a CSV of 30 days). Reddit publishes no API for
+them, so there is nothing to sync, as there is for Roblox (§3k). A game can fire Journeys events where it calls
+Glitchless, with `@devvit/analytics/client/reddit`'s `telemetry`: `appReady()` at the first frame, `startJourney()` at
+`levelStart` on the player's Play, `progress({ progress })` at a checkpoint, `endJourney({ complete, game: { win,
+score } })` at `levelComplete` or `levelFail`. The SDKs don't depend on `@devvit`.
+
+**Limits per player.** Through the relay every player of a game reaches the intake from Reddit's servers. Intake
+limits are per client token (the key's `rps`, §6), in the open-source server and Glitchless Cloud alike, never per
+address, so relaying changes nothing: a game's players share its rate, as on any other host. Each batch still carries
+its anonymous `session_id`, which a per-session limit would key on if one is ever needed, and `x-glitchless-relay`
+marks relayed requests in logs. The relay keeps no state: Devvit's server may run each request in a fresh process.
+
+**Reddit's review.** The app's `devvit.json` asks for `api.glitchless.gg` (`"permissions": {"http": {"enable": true,
+"domains": ["api.glitchless.gg"]}}`), which Reddit reviews when the app is next playtested or uploaded, usually in 1 to
+2 business days; until then the relay's fetch fails (502). Reddit's fetch policy approves documented APIs and refuses
+personal domains, so an open-source Glitchless server on the developer's own domain will most likely be refused:
+Reddit games send to Glitchless Cloud. Reddit also asks for a README with a "Fetch Domains" section and links to the
+app's own Terms and Privacy Policy; the instrument skill's `references/reddit.md` has the README text, and the game's
+privacy policy links Glitchless's (https://www.glitchless.gg/privacy.html).
+
+**Tests.** `packages/sdk/test/devvit.test.js` (the relay), `devvit-page.test.js` (the browser SDK's last send),
+`devvit-webview.mjs` (`npm run test:devvit`: in Chromium, a Devvit-shaped webview from `devvit-harness.js`, with
+`connect-src 'self'`, no inline scripts or styles, Reddit's fetch wrapper and `/api/` only with the token, framed by a
+page of another origin, through the relay to `server/src/local.js`), and step 7 of `godot/test/web.mjs` (Godot's web
+export in the same webview, with no `'unsafe-eval'`). A real post (`devvit playtest`) needs a Reddit login.
 
 ## 6. Projects, keys and storage
 

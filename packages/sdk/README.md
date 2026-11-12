@@ -346,6 +346,34 @@ ends the process if it is called before its `init()`, so Glitchless never loads 
 calls for Family Sharing, timed trials or Proton, so those aren't sent. No Steam ID or name is ever read
 ([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).
 
+### In a Reddit post (Devvit Web)
+
+A game in a Reddit post may fetch only its own app's `/api/` routes, so it sends to `/api/glitchless`, and the app's
+server passes that on with `glitchless/devvit`, adding the subreddit and the post as session properties:
+
+```ts
+// src/server/routes/api.ts (Hono, as Reddit's templates have it)
+import { context } from '@devvit/web/server';
+import { glitchlessRelay } from 'glitchless/devvit';
+
+const glitchless = glitchlessRelay({ clientToken: 'gl_pub_…', context });
+api.all('/glitchless/*', (c) => glitchless.fetch(c.req.raw));
+// Node's own server or Express: glitchless.node(req, res)
+```
+
+```js
+// the game
+Glitchless.init({ service: 'my-game', version, intake: '/api/glitchless', clientToken: 'gl_pub_…' });
+```
+
+`devvit.json` asks for the domain, which Reddit reviews when the app is next playtested or uploaded:
+`"permissions": { "http": { "enable": true, "domains": ["api.glitchless.gg"] } }`. Through the relay every session is
+anonymous: it drops any player ID, scrubs the redditor's name and IDs from the game's text, and never forwards the
+request's headers. In a post the SDK sends its last batch by keepalive fetch (a beacon would lack the app's token) and
+leaves out the webmcp.dev widget. Unity's and Godot's web builds work the same way. [SPEC §5g](../../docs/SPEC.md#5g-games-in-a-reddit-post-devvit-web)
+has the details, and the instrument skill's [Reddit steps](../../plugin/glitchless/skills/instrument/references/reddit.md)
+the README text Reddit asks for.
+
 ## WebMCP
 
 Tools the running game exposes:

@@ -100,8 +100,14 @@ test('the files an agent finds in a project name its engine, a native project fi
   assert.equal(engineFrom(['Cargo.toml', 'bevy']).engine, null);
   assert.equal(engineFrom(['manifest.json']).engine, null, "a web app's manifest.json isn't Unity's");
   assert.equal(engineFrom(['tsconfig.project.json.bak', 'project.json']).engine, null, "a project.json isn't Rojo's");
+  // A game in a Reddit post: Reddit first, whatever else names the engine of the game in the post.
+  assert.deepEqual(engineFrom(['devvit.json', 'package.json', 'phaser', '@devvit/web', 'hono']), { engine: 'reddit', sign: 'devvit.json', also: ['phaser'] });
+  assert.deepEqual(engineFrom(['package.json', '@devvit/web', 'three']), { engine: 'reddit', sign: '@devvit/web', also: ['threejs'] });
+  assert.deepEqual(engineFrom(['devvit.json', 'src/client/public/Build/SampleGame.wasm.unityweb']).also, ['unity'], "Reddit's Unity template holds the build");
+  assert.deepEqual(engineFrom(['devvit.json', 'src/client/public/index.pck']).also, ['godot']);
+  assert.equal(engineFrom(['devvit-notes.json', 'devvit.config.ts']).engine, null);
   // Every reference the skill has is an engine, in the order of the skill's table.
-  assert.deepEqual(ENGINES.map((e) => e.id), ['unity', 'godot', 'unreal', 'threejs', 'roblox', 'phaser', 'babylon', 'playcanvas', 'gamemaker']);
+  assert.deepEqual(ENGINES.map((e) => e.id), ['unity', 'godot', 'unreal', 'threejs', 'roblox', 'phaser', 'babylon', 'playcanvas', 'gamemaker', 'reddit']);
   assert.deepEqual(ENGINES.map((e) => `${e.id}.md`).sort(), fs.readdirSync(path.join(ROOT, 'plugin/glitchless/skills/instrument/references')).sort());
 });
 
@@ -139,6 +145,34 @@ test("each engine gets its own steps, with the cloud's intake and the game's cli
     assert.ok(text.length <= limit, `${id}: ${text.length} characters, over the ${limit} the tool's description promises`);
   }
   assert.equal(made.length, 0, 'a game already here is set up, not made again');
+});
+
+test("a game in a Reddit post gets Reddit's steps (the relay), then its client's engine's, in one answer", async () => {
+  const limit = Number((await workspace.listTools()).tools.find((t) => t.name === 'glitchless_create_game').description.match(/up to ([\d,]+) characters/)[1].replace(/,/g, ''));
+  for (const [args, client] of [
+    [{ files: ['devvit.json', 'package.json', 'phaser', '@devvit/web'] }, 'phaser'],
+    [{ files: ['devvit.json', 'three'] }, 'threejs'],
+    [{ engine: 'unity', files: ['devvit.json'] }, 'unity'],
+    [{ engine: 'godot', files: ['devvit.json'] }, 'godot'],
+    [{ files: ['devvit.json', 'package.json', '@devvit/web', 'hono'] }, null],
+    [{ engine: 'reddit' }, null],
+  ]) {
+    const text = await steps(workspace, { ...args, game: 'Skyward' });
+    const label = JSON.stringify(args);
+    assert.match(text, new RegExp(`^# Add Glitchless to this Reddit${client ? ` \\(${nameOf(client).replace('.', '\\.')}\\)` : ''} game`), label);
+    assert.ok(text.includes('\n# Reddit\n') && text.includes('"domains": ["api.glitchless.gg"]') && text.includes("glitchlessRelay({ clientToken: '<the game client token>', context })"), `${label}: the relay`);
+    assert.ok(text.includes('## Fetch Domains'), `${label}: the README part Reddit asks for`);
+    assert.ok(text.includes("- client token: gl_pub_skyward (Skyward's)."), `${label}: where it sends`);
+    if (client) assert.ok(text.indexOf(`\n# ${nameOf(client)}\n`) > text.indexOf('\n# Reddit\n'), `${label}: the client's steps after Reddit's`);
+    for (const other of ENGINES.filter((e) => e.id !== client && e.id !== 'reddit')) assert.ok(!text.includes(`\n# ${other.name}\n`), `${label} leaves out ${other.name}`);
+    for (const [, href] of text.matchAll(/\]\(([^)\s]+)\)/g)) assert.match(href, /^https:\/\//, `${label}: ${href}`);
+    assert.ok(text.length <= limit, `${label}: ${text.length} characters, over ${limit}`);
+  }
+  const godot = await steps(workspace, { engine: 'godot', files: ['devvit.json'], game: 'Skyward' });
+  assert.ok(godot.includes('git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless') && godot.includes('\n## Install\n'), "a Godot client's addon README parts come too");
+  // Without a game yet, the call to make one keeps Reddit and the client.
+  assert.match(await steps(workspace, { engine: 'godot', files: ['devvit.json'] }), /Call glitchless_create_game again with name \(the game's name, as players know it\) and engine: "godot" and files: \["devvit\.json"\]/);
+  assert.match(await steps(workspace, { files: ['devvit.json'] }), /and engine: "reddit": it makes the game/);
 });
 
 test('the sections an engine borrows from another come along, and the Godot README parts its steps send it to', async () => {

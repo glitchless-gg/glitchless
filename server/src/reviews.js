@@ -27,13 +27,18 @@
 //                releases: [Mark], notes: [Mark],      the store's release history; notes (patch notes) when it has none
 //                vitals: [Vital], snapshots: { devices?, hangs? },
 //                players: [[ts, n]] | null, sales: [{ day, units, returns }] | null,
-//                wishlists: [{ day, adds, deletes, purchases, gifts }] | null } }
+//                wishlists: [{ day, adds, deletes, purchases, gifts }] | null,
+//                traffic: [{ day, views, downloads, purchases, earnings: { <currency>: amount }, from?, since?,
+//                            removed? }] | null } }   itch.io's page by UTC day (below)
 //   Mark: { source, build_id?, version?, from, title?, url?, approx? }
 // A revenue source (RevenueCat, Stripe) comes in the same way, under its name, with revenue instead of reviews: it is
 // stored and read here with the stores' data, and its panel, page and query are revenue.js's. Roblox is both: a store
 // with no written reviews (players' thumbs up and down, favorites, visits and players now; its vitals) and a revenue
-// source (Robux, daily active and new users, retention).
-import { versions, pct, round, platformOf } from './analytics.js';
+// source (Robux, daily active and new users, retention). itch.io is both too: a store with no reviews (it has no API for
+// comments or ratings) whose own numbers are page views, downloads and purchases a day, its funnel next to the browser
+// plays Glitchless measured on itch.io (sites.js), and a revenue source (its earnings). SPEC §3l.
+import { versions, pct, round, platformOf, hasPlayerId, playersAreSessions } from './analytics.js';
+import { siteOf, ITCH } from './sites.js';
 import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue, storeRetention } from './revenue.js';
 
 const HOUR = 3_600_000;
@@ -46,6 +51,7 @@ export const STORES = {
   google_play: { name: 'Google Play', players: false, sales: false, segment: null, buildFact: null, versioned: true, vitals: ['slow_rendering_20fps', 'slow_rendering_30fps', 'crash_rate', 'anr_rate'] },
   app_store: { name: 'App Store', players: false, sales: false, segment: null, buildFact: null, versioned: true, vitals: ['hang_rate', 'launch_time', 'animation_hitch_rate'] },
   roblox: { name: 'Roblox', players: true, sales: false, segment: null, buildFact: null, versioned: true, reviews: false, vitals: ['client_crash_rate', 'client_crashes', 'fps_p50', 'fps_p10'] },
+  itch: { name: 'itch.io', players: false, sales: true, segment: null, buildFact: null, versioned: false, reviews: false, vitals: [] },
 };
 const storeName = (store) => STORES[store]?.name ?? store;
 const NOT_CONNECTED = 'This game has no store connected (Glitchless Cloud: Settings → Integrations).';
@@ -88,7 +94,8 @@ const READ_REVIEWS = 3000;
 const LOOKBACK = 30 * DAY;
 const RECORD_DAYS = 62;
 // health: Google Play's 28-day user-perceived crash and ANR rates over every version (the alerts' store rule). public:
-// Roblox's public stats (thumbs up and down, favorites, visits, players now); platforms: its vitals by platform.
+// Roblox's public stats (thumbs up and down, favorites, visits, players now), or itch.io's page (title, price, tags);
+// platforms: Roblox's vitals by platform.
 const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health', 'public', 'platforms'];
 
 // ───────────────────────────── topics ─────────────────────────────
@@ -169,13 +176,20 @@ function withTopics(r) {
 //   STORE#<projectId>#<store>  PL#<YYYY-MM>       { samples: [[ts, players]] }
 //   STORE#<projectId>#<store>  SALES#<YYYY-MM>    { days: { <YYYY-MM-DD>: { units, returns } } }   (the store's days)
 //   STORE#<projectId>#<store>  WISH#<YYYY-MM>     { days: { <YYYY-MM-DD>: { adds, deletes, purchases, gifts } } }
+//   STORE#<projectId>#<store>  TRAF#<YYYY-MM>     { days: { <YYYY-MM-DD>: { views, downloads, purchases, earnings, … } } }
+//                                                 itch.io's page by UTC day: how much its all-time totals grew between
+//                                                 hourly reads (cloud's itch.js). `earnings`: { <currency>: amount };
+//                                                 `from`: the first day, counted from the first read (ms); `since`: a
+//                                                 day that also has the days before it the sync missed; `removed`: what
+//                                                 itch.io took off a total that day (fraud, refunds), counted as none
 //   STORE#<projectId>#<store>  VIT#<YYYY-MM>      { rows: { <key>: Vital } }   vitals by day (a day sent again replaces)
 //   STORE#<projectId>#<store>  VITV               { rows: { <key>: Vital } }   vitals by version, the latest of each
 //   STORE#<projectId>#<store>  SNAP#<name>        the latest of a snapshot: devices (the worst devices and GPUs), hangs,
 //                                                 rating (the App Store's own: { day, at, average, count, countries:
 //                                                 [{ country, average, count, version, current_average,
 //                                                 current_count }] }); public (Roblox's: { day, at, up, down,
-//                                                 favorites, visits, playing, updated }); platforms (Roblox's vitals by
+//                                                 favorites, visits, playing, updated }; itch.io's: { day, at, id,
+//                                                 title, price, tags, url }); platforms (Roblox's vitals by
 //                                                 platform: { from, to, rows: [{ platform, client_crash_rate,
 //                                                 client_crashes, fps_p50, fps_p10 }] }); a revenue source's overview and
 //                                                 charts (revenue.js)
@@ -285,7 +299,7 @@ export function createStoreData(kv) {
 
   return {
     // What one sync brought: any of { reviews, players: [ts, n] (or a list of them), releases, notes, summary, sales,
-    // wishlists, vitals, snapshots: { devices?, hangs?, rating?, overview?, charts? }, extras: { <name>: object }, and a
+    // wishlists, traffic, vitals, snapshots: { devices?, hangs?, rating?, overview?, charts? }, extras: { <name>: object }, and a
     // revenue source's revenue, revenue_versions and splits by country and store (revenue.js) }. → reviews added
     async write(projectId, store, batch) {
       const key = pk(projectId, store);
@@ -311,6 +325,7 @@ export function createStoreData(kv) {
       for (const [name, value] of Object.entries(batch.extras ?? {})) await kv.put({ pk: key, sk: `X#${name}`, ...value });
       if (batch.sales?.length) await addDays(key, 'SALES', batch.sales, ({ units, returns }) => ({ units, returns }));
       if (batch.wishlists?.length) await addDays(key, 'WISH', batch.wishlists, ({ adds, deletes, purchases, gifts }) => ({ adds, deletes, purchases, gifts }));
+      if (batch.traffic?.length) await addDays(key, 'TRAF', batch.traffic, trafficDay);
       if (REVENUE_BATCHES.some((k) => batch[k]?.length)) await writeRevenue(kv, key, batch, (month) => expires(monthEnd(month)));
       const meta = (await kv.get(key, 'META')) ?? {};
       await kv.put({ pk: key, sk: 'META', summary: batch.summary ?? meta.summary ?? null, synced_at: batch.syncedAt ?? Date.now(), reviews: (meta.reviews ?? 0) + added });
@@ -338,7 +353,7 @@ export function createStoreData(kv) {
         kv.get(key, 'NOTES'),
         kv.get(key, 'VITV'),
         ...SNAPSHOTS.map((s) => kv.get(key, `SNAP#${s}`)),
-        ...months.flatMap((m) => ['RH', 'PL', 'SALES', 'WISH', 'VIT'].map((p) => kv.get(key, `${p}#${m}`))),
+        ...months.flatMap((m) => MONTHLY.map((p) => kv.get(key, `${p}#${m}`))),
       ]);
       const snaps = rest.slice(0, SNAPSHOTS.length);
       const monthly = rest.slice(SNAPSHOTS.length);
@@ -346,14 +361,16 @@ export function createStoreData(kv) {
       const players = [];
       const sales = [];
       const wishlists = [];
+      const traffic = [];
       const vitals = Object.values(byVersion?.rows ?? {});
       const [lo, hi] = [isoDay(since), isoDay(to)];
       months.forEach((m, i) => {
-        const [rh, pl, sa, wi, vi] = monthly.slice(i * 5, i * 5 + 5);
+        const [rh, pl, sa, wi, vi, tr] = monthly.slice(i * MONTHLY.length, (i + 1) * MONTHLY.length);
         for (const [hour, c] of Object.entries(rh?.hours ?? {})) if (+hour >= since - HOUR && +hour <= to) hours.push([+hour, ...c]);
         for (const s of pl?.samples ?? []) if (s[0] >= since && s[0] <= to) players.push(s);
         for (const [day, v] of Object.entries(sa?.days ?? {})) sales.push({ day, ...v });
         for (const [day, v] of Object.entries(wi?.days ?? {})) wishlists.push({ day, ...v });
+        for (const [day, v] of Object.entries(tr?.days ?? {})) traffic.push({ day, ...v });
         for (const v of Object.values(vi?.rows ?? {})) if (v.day >= lo && v.day <= hi) vitals.push(v);
       });
       const recLo = recordsFrom ?? Math.max(since, to - RECORD_DAYS * DAY);
@@ -390,6 +407,7 @@ export function createStoreData(kv) {
         players: STORES[store]?.players ? players.sort((a, b) => a[0] - b[0]) : null,
         sales: sales.length ? sales.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
         wishlists: wishlists.length ? wishlists.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
+        traffic: traffic.length ? traffic.sort((a, b) => (a.day < b.day ? -1 : 1)) : null,
         ...(REVENUE_SOURCES[store] ? await readRevenue(kv, key, months, store) : {}),
       };
     },
@@ -407,6 +425,25 @@ export function createStoreData(kv) {
       for (const item of items) await kv.remove(item.pk, item.sk);
       return items.length;
     },
+  };
+}
+
+// The month items a read takes, in this order.
+const MONTHLY = ['RH', 'PL', 'SALES', 'WISH', 'VIT', 'TRAF'];
+
+// An itch.io day as kept: its counts, earnings by currency, and what says how it was counted.
+function trafficDay(r) {
+  const count = (v) => (Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+  const earnings = Object.fromEntries(Object.entries(r.earnings ?? {}).filter(([c, v]) => /^[A-Z]{3}$/.test(c) && Number.isFinite(v)).map(([c, v]) => [c, round(v, 2)]));
+  return {
+    views: count(r.views),
+    downloads: count(r.downloads),
+    purchases: count(r.purchases),
+    earnings,
+    ...(Number.isFinite(r.from) ? { from: r.from } : {}),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(r.since ?? '') ? { since: r.since } : {}),
+    ...(r.removed && Object.keys(r.removed).length ? { removed: r.removed } : {}),
+    ...(r.incomplete ? { incomplete: true } : {}),
   };
 }
 
@@ -646,7 +683,8 @@ export const STORE_PANELS = {
   store_reviews: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} reviews by build`, size: 'l', shared: true },
   store_vitals: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} vitals next to Glitchless`, size: 'l', shared: true },
   store_players: { title: (p) => `On ${p.store ? storeName(p.store) : 'the store'} now vs measured`, size: 'm', shared: true },
-  store_sales: { title: () => 'Units, returns and wishlists', size: 'm', shared: 'sums', hidden: () => 'Units, returns and wishlists are not shown on this shared board.' },
+  // itch.io's: page views, browser plays (measured), downloads and purchases, a funnel by day.
+  store_sales: { title: (p) => (p.store === 'itch' ? 'itch.io: page views to purchases' : 'Units, returns and wishlists'), size: 'm', shared: 'sums', hidden: (p) => (p.store === 'itch' ? "itch.io's views, downloads and purchases are not shown on this shared board." : 'Units, returns and wishlists are not shown on this shared board.') },
   // Stars: the window's written reviews' average, and the store's own rating (the App Store's, Steam's summary).
   store_score: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} rating`, size: 's', shared: true },
   // A revenue source's revenue, MRR, subscriptions and trials (revenue.js; `measure`): money, so like sales.
@@ -665,14 +703,31 @@ export function storePanelFields(p, at, BoardError) {
 // A page per connected store on the automatic dashboard: its reviews by build, its vitals next to Glitchless's, its
 // players online, frame times (to read next to the reviews), its units, returns and wishlists; then a Revenue page for
 // a revenue source (revenue.js). Roblox's page leads with what it has instead of reviews: its rating (thumbs up and
-// down), daily active and new users, retention (which the anonymous Roblox SDK can't count), then its vitals.
+// down), daily active and new users, retention (which the anonymous Roblox SDK can't count), then its vitals. itch.io's
+// is its funnel (page views, browser plays, downloads, purchases) and where the game's sessions were played ($site).
 export function storePages(ctx, { frames = false } = {}) {
   const all = Object.entries(ctx.stores ?? {});
-  const revenue = all.filter(([store]) => REVENUE_SOURCES[store]);
+  const revenue = all.filter(([store]) => REVENUE_SOURCES[store] && !REVENUE_SOURCES[store].onStorePage);
   return [...all.filter(([store]) => STORES[store]).map(([store, st]) => storePage(store, { frames, sales: Boolean(st.sales || st.wishlists || st.keys?.financial) })), ...revenue.map(([store], i) => revenuePage(store, { id: i ? `revenue-${store}` : 'revenue', named: revenue.length > 1 }))];
 }
 
 function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales = false } = {}) {
+  if (store === 'itch') {
+    return {
+      id,
+      title: storeName(store),
+      icon: 'flag',
+      panels: [
+        { type: 'store_sales', store, size: 'l' },
+        { type: 'store_revenue', store, measure: 'revenue', size: 's' },
+        { type: 'store_revenue', store, measure: 'per_player', size: 's' },
+        { type: 'stat', metric: 'players', title: 'Players measured', size: 's' },
+        { type: 'breakdown', by: '$site', title: 'Where it was played', size: 'm' },
+        { type: 'store_revenue', store, measure: 'by_day', size: 'm' },
+        ...(frames ? [{ type: 'frame_time', size: 'm' }] : []),
+      ],
+    };
+  }
   if (store === 'roblox') {
     const source = (measure, size) => ({ type: 'store_revenue', store, measure, size });
     return {
@@ -711,6 +766,8 @@ function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales
 // store panel naming it, or naming none; for a revenue source, a store_revenue panel).
 export function withStorePage(dashboard, store, { sales = false } = {}) {
   if (!dashboard?.pages) return null;
+  // itch.io's money is on its own page.
+  if (REVENUE_SOURCES[store]?.onStorePage) return storeOnly(dashboard, store, { sales });
   // Roblox is a store and a revenue source: its page, then its Revenue page after it.
   if (STORES[store] && REVENUE_SOURCES[store]) {
     const page = storeOnly(dashboard, store, { sales });
@@ -769,7 +826,10 @@ export function storePanel(ctx, p, { currency = null } = {}) {
 }
 
 const notSynced = (st) => `${storeName(st.store)} has not been synced yet: the first sync runs within the hour.`;
-const NO_REVIEWS = { roblox: "Roblox has no written reviews: players give a thumbs up or down, which the Roblox rating panel shows (store_score)." };
+const NO_REVIEWS = {
+  roblox: "Roblox has no written reviews: players give a thumbs up or down, which the Roblox rating panel shows (store_score).",
+  itch: "itch.io has no API for a game's comments or ratings, so Glitchless doesn't read them. Its page views, downloads and purchases are on the itch.io panel (store_sales; glitchless_store with show \"sales\").",
+};
 
 function reviewsPanel(ctx, st) {
   if (STORES[st.store]?.reviews === false) return { empty: true, why: NO_REVIEWS[st.store] };
@@ -820,6 +880,7 @@ function reviewsPanel(ctx, st) {
 function scorePanel(ctx, st) {
   const name = storeName(st.store);
   if (st.store === 'roblox') return robloxScore(st);
+  if (STORES[st.store]?.reviews === false) return { empty: true, why: NO_REVIEWS[st.store] };
   const from = Math.max(ctx.from, st.reviews_from ?? ctx.from);
   const stars = st.store !== 'steam';
   const rated = stars ? (st.reviews ?? []).filter((r) => r.ts >= from && r.ts <= ctx.to && r.rating != null) : [];
@@ -892,6 +953,7 @@ function playersPanel(ctx, st) {
 }
 
 function salesPanel(ctx, st) {
+  if (st.store === 'itch') return itchFunnel(ctx, st);
   if (!st.sales && !st.wishlists) return { empty: true, why: st.keys?.financial ? `No units, returns or wishlists in this window yet: ${storeName(st.store)} reports them once a day.` : st.store === 'steam' ? 'Units, returns and wishlists need a Financial API Group key (Glitchless Cloud: Settings → Integrations → Steam).' : `No units or returns from ${storeName(st.store)}.` };
   const lo = isoDay(ctx.from);
   const hi = isoDay(ctx.to);
@@ -916,6 +978,109 @@ function salesPanel(ctx, st) {
       wishlist_purchases: st.wishlists ? sum(wish, 'purchases') : null,
     },
   };
+}
+
+// itch.io's page by UTC day, as a funnel: page views, the browser plays Glitchless measured on itch.io (sessions whose
+// page was on itch.io, sites.js; from the sessions themselves, so over 31 days or less), downloads and purchases, with
+// the window's earnings by currency. itch.io gives all-time totals only, so its days are how much they grew between
+// the hourly reads (cloud's itch.js): what each day says about how it was counted goes in the notes.
+function itchFunnel(ctx, st) {
+  const lo = isoDay(ctx.from);
+  const hi = isoDay(ctx.to);
+  const rows = (st.traffic ?? []).filter((r) => r.day >= lo && r.day <= hi);
+  const keyed = Boolean(st.keys?.api);
+  const plays = ctx.daily ? null : itchPlays(ctx);
+  if (!rows.length && !plays?.sessions) {
+    if (!st.synced_at) return { empty: true, why: notSynced(st) };
+    if (!keyed) return { empty: true, why: "No browser plays on itch.io in this window, and itch.io's page views, downloads and purchases need an itch.io API key (Glitchless Cloud: Settings → Integrations → itch.io)." };
+    const first = st.snapshots?.overview?.first_read;
+    return { empty: true, why: first && first >= ctx.from ? `itch.io gives all-time totals only: Glitchless counts a day by how much they grew between its hourly reads, from its first read at ${new Date(first).toISOString().slice(11, 16)} UTC on ${isoDay(first)}. The next sync has the first numbers.` : 'No views, plays, downloads or purchases on itch.io in this window.' };
+  }
+  const days = [];
+  for (let t = Date.parse(`${lo}T00:00:00Z`); isoDay(t) <= hi; t += DAY) days.push(isoDay(t));
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  const col = (k) => days.map((d) => (byDay.has(d) ? (byDay.get(d)[k] ?? null) : null));
+  const sum = (k) => (rows.some((r) => Number.isFinite(r[k])) ? rows.reduce((a, r) => a + (r[k] ?? 0), 0) : null);
+  const earnings = {};
+  for (const r of rows) for (const [c, v] of Object.entries(r.earnings ?? {})) earnings[c] = round((earnings[c] ?? 0) + v, 2);
+  const totals = { views: sum('views'), plays: plays?.sessions ?? null, players: plays?.players ?? null, downloads: sum('downloads'), purchases: sum('purchases'), earnings };
+  // Plays are compared with page views over the same time: the days itch.io's numbers cover, the first from its first read.
+  const covers = new Map(rows.map((r) => [r.day, r.from ?? Date.parse(`${r.day}T00:00:00Z`)]));
+  const compared = plays ? plays.starts.filter((t) => covers.has(isoDay(t)) && t >= covers.get(isoDay(t))).length : null;
+  const per = (k, v = totals[k]) => (totals.views && v != null ? pct(v, totals.views) : null);
+  const steps = [
+    { step: 'views', label: 'Page views', value: totals.views, of_views_pct: null, source: 'itch.io' },
+    { step: 'plays', label: 'Browser plays', value: totals.plays, of_views_pct: per('plays', compared), ...(compared !== totals.plays ? { compared } : {}), source: 'Glitchless' },
+    { step: 'downloads', label: 'Downloads', value: totals.downloads, of_views_pct: per('downloads'), source: 'itch.io' },
+    { step: 'purchases', label: 'Purchases', value: totals.purchases, of_views_pct: per('purchases'), source: 'itch.io' },
+  ];
+  return {
+    ts: days.map((d) => Date.parse(`${d}T00:00:00Z`)),
+    days,
+    series: [
+      { key: 'views', label: 'Page views (itch.io)', values: col('views') },
+      { key: 'plays', label: 'Browser plays (Glitchless)', measured: true, values: plays ? days.map((d) => plays.byDay.get(d) ?? 0) : days.map(() => null) },
+      { key: 'downloads', label: 'Downloads (itch.io)', values: col('downloads') },
+      { key: 'purchases', label: 'Purchases (itch.io)', values: col('purchases') },
+    ],
+    earnings_by_day: days.map((d) => byDay.get(d)?.earnings ?? null),
+    steps,
+    totals,
+    incomplete_day: byDay.get(hi)?.incomplete ? hi : null,
+    page: st.snapshots?.public ?? null,
+    notes: itchNotes(ctx, st, rows, plays, keyed, compared),
+  };
+}
+
+// The window's sessions played on itch.io: how many, their players (with player IDs), how many began each UTC day, and
+// when each began.
+function itchPlays(ctx) {
+  const byDay = new Map();
+  const players = new Set();
+  const starts = [];
+  for (const s of ctx.sessions.values()) {
+    if (siteOf(s) !== ITCH) continue;
+    const t = s.start ?? s.first_ts;
+    starts.push(t);
+    if (hasPlayerId(s)) players.add(s.player_id);
+    byDay.set(isoDay(t), (byDay.get(isoDay(t)) ?? 0) + 1);
+  }
+  return { sessions: starts.length, players: playersAreSessions(ctx) ? null : players.size, byDay, starts };
+}
+
+function itchNotes(ctx, st, rows, plays, keyed, compared) {
+  const time = (ms) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
+  const out = [];
+  if (!keyed) out.push("Page views, downloads and purchases need an itch.io API key (Settings → Integrations → itch.io): without one Glitchless reads only the page's title, price and tags.");
+  else out.push("itch.io gives all-time totals only: a day's page views, downloads, purchases and earnings are how much they grew between Glitchless's hourly reads (UTC days), so one in the last hour of a day can count on the next.");
+  const first = rows.find((r) => r.from);
+  if (first) out.push(`${first.day} counts from ${time(first.from)}, when Glitchless first read itch.io.`);
+  for (const r of rows.filter((x) => x.since)) out.push(`${r.day} also has what came in since ${r.since}: Glitchless couldn't read itch.io in between.`);
+  for (const r of rows.filter((x) => x.removed)) {
+    const what = Object.entries(r.removed).filter(([k, v]) => k !== 'earnings' && v > 0).map(([k, v]) => `${v.toLocaleString('en-US')} ${k}`);
+    const money = Object.entries(r.removed.earnings ?? {}).map(([c, v]) => `${v} ${c}`);
+    out.push(`On ${r.day} itch.io's totals went down (${[...what, ...(money.length ? [`earnings by ${money.join(', ')}`] : [])].join(', ')}): it takes off purchases it finds were fraud, and refunds. That day counts none of them, never less than zero.`);
+  }
+  if (ctx.daily) out.push('Browser plays come from the sessions themselves: pick a range of 31 days or less to see them.');
+  else out.push("Browser plays are the sessions Glitchless measured on itch.io (in its game frame on itch.zone, or from an itch.io page); itch.io's downloads don't include them, and a player who plays twice is two plays. A Godot web export or a Unity WebGL build doesn't send its page, so its plays on itch.io count here only when the game sets the site property to itch.io.");
+  if (compared != null && rows.length && compared !== plays.sessions) out.push(`Browser plays' share of page views counts the ${compared.toLocaleString('en-US')} of them from when itch.io's numbers start${first ? ` (${time(first.from)} on ${first.day})` : ''}, so both cover the same time.`);
+  if (plays?.players == null && plays?.sessions) out.push('The game sends no player IDs, so plays are sessions and players are not counted.');
+  const currencies = [...new Set(rows.flatMap((r) => Object.keys(r.earnings ?? {})))];
+  if (currencies.length > 1) out.push(`itch.io reports earnings in ${currencies.join(' and ')}: each is shown in its own currency, never converted or added together.`);
+  return out;
+}
+
+// The store_sales query (app.js): one store's own counts by day, next to what Glitchless measured (Steam: units,
+// returns and wishlists; itch.io: page views, browser plays, downloads and purchases). glitchless_store with show
+// "sales".
+export function storeSales(ctx, params = new URLSearchParams()) {
+  const store = params.get('store')?.trim() || null;
+  if (store && !STORES[store]) return { connected: false, why: `store is one of ${Object.keys(STORES).join(', ')}`, stores: Object.keys(ctx.stores ?? {}) };
+  const st = store ? pickStore(ctx, store) : (Object.values(ctx.stores ?? {}).find((x) => STORES[x.store]?.sales) ?? pickStore(ctx, null));
+  if (!st) return { connected: false, why: store && ctx.stores ? `This game has no ${storeName(store)} connection (Glitchless Cloud: Settings → Integrations).` : NOT_CONNECTED, stores: Object.keys(ctx.stores ?? {}) };
+  if (!STORES[st.store]?.sales) return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), empty: true, why: `${storeName(st.store)} reports no sales to Glitchless: units, returns and wishlists come from Steam, page views, downloads and purchases from itch.io.` };
+  const panel = salesPanel(ctx, st);
+  return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...panel };
 }
 
 // ── store vitals next to Glitchless ──

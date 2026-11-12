@@ -18,6 +18,9 @@
 //                 and ?glitchless-synthetic marks the session a bot's
 //   5. off switch a player's "off" is kept in IndexedDB: the next visit measures and sends nothing
 //   6. outbox     batches a visit couldn't send are kept in IndexedDB and sent on the next visit
+//   7. reddit     in a Reddit post (packages/sdk/test/devvit-harness.js: connect-src 'self', no 'unsafe-eval', /api/ only
+//                 with the app's token), sending to /api/glitchless through glitchless/devvit: the page is read without
+//                 eval, the session has the subreddit and post and no player ID, and it ends by keepalive fetch
 // The page's address (127.0.0.1, or game.test mapped to it) is where it runs; the demo's own flags go in the export's
 // GODOT_CONFIG args, as a game's would. Every intake request passes through a proxy here that notes how it was sent.
 import { spawn, spawnSync } from 'node:child_process';
@@ -31,6 +34,8 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { parseUserAgent, isSteamDeck, cleanGpu, cleanVendor, classifyGpu } from '../../packages/sdk/src/device.js';
 import { findGodot } from './godot-bin.mjs';
+import { glitchlessRelay } from '../../packages/sdk/src/devvit.js';
+import { devvitApp, REDDITOR } from '../../packages/sdk/test/devvit-harness.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PROJECT = path.join(ROOT, 'godot');
@@ -424,6 +429,64 @@ try {
       assert.ok(earlier, 'no earlier session');
       assert.ok(eventsOf(intakes(from)).some((e) => e.session_id === earlier.session_id && e.type === 'frame_window'), 'the earlier session came without its frames');
     });
+  }
+
+  // 7. reddit: the export in a Devvit-shaped webview. Godot's shell is an inline script, so this page allows inline
+  // scripts (a game for Reddit moves it to a file of its own); eval stays refused, as a strict webview has it.
+  {
+    let relay;
+    const app = await devvitApp({
+      dirs: { '/': path.join(site, 'nothreads') },
+      csp: "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; media-src 'self' blob:",
+      rewrite: (html, u) => html.replace('"args":[]', `"args":${JSON.stringify(JSON.parse(u.searchParams.get('args') || '[]'))}`),
+      api: async (request) => (new URL(request.url).pathname.startsWith('/api/glitchless/') ? relay.fetch(request) : null),
+    });
+    relay = glitchlessRelay({ intake: `http://127.0.0.1:${proxy.port}`, clientToken: 'gl_pub_dev', context: app.context });
+    const webview = `http://daily-dots-x1-webview.devvit.test:${app.port}`;
+    const reddit = await chromium.launch({ channel: 'chromium', args: ['--host-resolver-rules=MAP *.devvit.test 127.0.0.1', `--unsafely-treat-insecure-origin-as-secure=${webview}`] });
+    try {
+      const from = proxy.requests.length;
+      const page = await (await reddit.newContext()).newPage();
+      const logs = [];
+      page.on('console', (m) => logs.push(m.text()));
+      page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+      await page.goto(`${webview}/index.html?args=${encodeURIComponent(JSON.stringify(['--', '--intake=/api/glitchless', '--privacy=install', '--level-seconds=1.5']))}`);
+      await waitFor(() => eventsOf(intakes(from)).some((e) => e.type === 'frame_window') && intakes(from).length >= 2, 15_000);
+      const leftAt = Date.now();
+      await page.goto('about:blank');
+      await waitFor(() => eventsOf(intakes(from)).some((e) => e.type === 'session_end'), 5000);
+      await waitFor(() => app.requests.every((r) => r.status !== 0), 5000); // the relay's answers to the last sends
+      const events = eventsOf(intakes(from));
+      const start = events.find((e) => e.type === 'session_start');
+      const sent = app.requests.filter((r) => r.path.startsWith('/api/glitchless/'));
+      const last = sent.filter((r) => r.method === 'POST' && r.at >= leftAt);
+      if (process.env.DEBUG) for (const r of sent) console.log('reddit', r.method, r.path, r.mode, r.authorized, r.status, r.at - leftAt);
+      check('reddit: a debug export on a Reddit page is a hosted one, read without eval, and sends to its relay\'s path', () => {
+        assert.ok(logs.includes('glitchless on: true'), logs.join('\n'));
+        assert.ok(start, 'no session_start');
+        assert.equal(start.device.browser, 'Chrome');
+        assert.match(start.device.os, /^(macOS|Linux|Windows)$/);
+        assert.ok(!app.violations.some((v) => /eval/.test(`${v['blocked-uri']} ${v['violated-directive']}`)), JSON.stringify(app.violations));
+        assert.ok(!logs.some((l) => /EvalError|pageerror/.test(l)), logs.filter((l) => /Eval|pageerror/.test(l)).join('\n'));
+      });
+      check('reddit: every request carried the app\'s token through Reddit\'s fetch, and the relay took it', () => {
+        assert.ok(sent.length >= 3, `${sent.length} requests`);
+        assert.deepEqual(sent.filter((r) => !r.authorized || r.status >= 400).map((r) => `${r.method} ${r.path} ${r.mode} ${r.status}`), []);
+      });
+      check('reddit: the session has the subreddit and post, and no player ID though the game asked for install mode', () => {
+        assert.deepEqual([start.props?.subreddit, start.props?.post], [REDDITOR.subredditName, REDDITOR.postId]);
+        assert.equal(start.privacy, 'anonymous');
+        assert.ok(intakes(from).every((r) => r.batch.player_id === null));
+      });
+      check('reddit: leaving the page ends the session by fetch with keepalive, with the token', () => {
+        const end = events.find((e) => e.type === 'session_end');
+        assert.equal(end?.reason, 'pagehide');
+        assert.ok(last.length >= 1 && last.every((r) => r.authorized && r.mode === 'cors' && r.status === 202), JSON.stringify(last));
+      });
+    } finally {
+      await reddit.close();
+      await app.close();
+    }
   }
 } finally {
   await browser?.close();

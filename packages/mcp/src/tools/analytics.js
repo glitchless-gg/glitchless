@@ -13,7 +13,7 @@ tool(
     rate: z.string().optional().describe('The share of the event\'s events where a flag holds ("won": true or false, or 1 or 0) or a word outcome holds ("result=win")'),
     avg: z.string().optional().describe('A numeric attribute\'s mean per event, e.g. "duration_s"'),
     of: z.string().optional().describe('A numeric attribute whose distribution to give, e.g. "duration_s" (match length) or "placement"'),
-    by: z.string().optional().describe('With rate, avg or of: split by an attribute (a list splits by element), $version, $level, $zone, $platform, $browser, $device_tier, $link (the kind of connection), $graphics (the graphics setting), or a session property ("$rank")'),
+    by: z.string().optional().describe('With rate, avg or of: split by an attribute (a list splits by element), $version, $level, $zone, $platform, $browser, $device_tier, $link (the kind of connection), $graphics (the graphics setting), $site (where a web game was played: itch.io, its own site…), or a session property ("$rank")'),
     min: z.number().int().optional().describe('With rate or avg and by: the fewest events a row needs (default 30 for a rate, 10 for an average); smaller rows are counted in small'),
     first: z.boolean().optional().describe('With name: the seconds from each session\'s start to its first such event (median_s, p90_s, over the sessions that sent it) and the ended sessions that never sent it (never, ended, never_pct). For a lobby: how long players stay before first leaving, and how many never leave. Works for events a Roblox server sends for a player'),
     detail: z.boolean().optional().describe("Every value of every attribute and property, with its sessions (default: the top 5 of each)"),

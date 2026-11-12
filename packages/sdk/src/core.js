@@ -76,6 +76,7 @@ export class Glitchless {
     this.opts.intake = this.opts.intake ? String(this.opts.intake).replace(/\/$/, '') : null;
     this.sessionId = 's_' + randomId(16); // per page load, kept in memory only
     this.sdk = SDK; // engine adapters name themselves here (glitchless-phaser/…), so fix advice fits the engine
+    this.devvit = inDevvit(); // a game in a Reddit post, sending through its app's relay (SPEC §5g)
     this.engine = null; // { name, version, renderer }, set by an engine adapter
     this.privacy = PRIVACY_LEVELS.includes(this.opts.privacy) ? this.opts.privacy : 'anonymous';
     this.positionsOn = this.opts.positions ?? this.privacy === 'full';
@@ -157,7 +158,9 @@ export class Glitchless {
     if (this.positionsOn) this.posTimer = setInterval(() => this.samplePosition(), 1000 / this.opts.positionHz);
     if (this.opts.overlay ?? this.opts.env !== 'prod') this.overlay = new Overlay(this);
     const webmcp = this.opts.webmcp ?? this.opts.env !== 'prod';
-    if (webmcp) this.webmcp = new WebMCPBridge(this, typeof webmcp === 'object' ? webmcp : {});
+    // In a Reddit post the webmcp.dev widget can't reach the agent's machine (the page may fetch only its own app), so
+    // it's left out unless the game asks for it; the browser's own WebMCP still registers the tools.
+    if (webmcp) this.webmcp = new WebMCPBridge(this, { ...(this.devvit ? { bridge: false } : {}), ...(typeof webmcp === 'object' ? webmcp : {}) });
     this.log('init', { session: this.sessionId, sampled: this.sampled, intake: this.opts.intake });
   }
 
@@ -1120,8 +1123,8 @@ export class Glitchless {
       events,
     });
     const url = `${this.opts.intake}/v1/intake?token=${encodeURIComponent(this.opts.clientToken)}`;
-    if (beacon && navigator.sendBeacon && body.length < BEACON_LIMIT) {
-      const ok = navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
+    if (beacon && body.length < BEACON_LIMIT && (this.devvit || navigator.sendBeacon)) {
+      const ok = this.devvit ? keepalive(url, body) : navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' }));
       if (ok) this.stats.sent += events.length;
       return Promise.resolve(ok);
     }
@@ -1256,6 +1259,25 @@ function chunkBySize(events, limit) {
   }
   if (cur.length) chunks.push(cur);
   return chunks;
+}
+
+// A page in a Reddit post (Devvit Web): Reddit's script on the page sets globalThis.devvit and adds the app's token to
+// the page's own fetches, which the app's /api/ routes need.
+function inDevvit() {
+  const d = typeof window !== 'undefined' ? globalThis.devvit : null;
+  return !!d && typeof d === 'object' && typeof d.token === 'string';
+}
+
+// What a beacon is elsewhere, in a Reddit post: the page's own fetch with keepalive, which the browser finishes after
+// the page has gone as it does a beacon, and which carries the app's token. A beacon can't, and the relay's /api/ path
+// would turn it away. Sent uncompressed, at once: there is no time to gzip as the page goes.
+function keepalive(url, body) {
+  try {
+    fetch(url, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // gzip with the browser's CompressionStream; falls back to the plain string where it's missing

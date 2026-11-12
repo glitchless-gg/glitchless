@@ -17,7 +17,7 @@ import { Presence, PLAYERS_NOW_MS } from './presence.js';
 import { propsWhere, pageWhere, andWhere, propertyList, propertyKey } from './properties.js';
 import { matchList, matchDetail } from './matches.js';
 import { serversView } from './servers.js';
-import { storeReviews, storeVitals } from './reviews.js';
+import { storeReviews, storeVitals, storeSales } from './reviews.js';
 import { revenueQuery } from './revenue.js';
 import { markTestLab } from './test-lab.js';
 import { BRAND_IMAGES, BrandError, checkImage, checkAccent, checkFocus, brandBody, hasBrand } from './brand.js';
@@ -54,7 +54,7 @@ const RESOLVED_QUERIES = new Set(['errors', 'overview', 'findings', 'board']);
 const SERVER_QUERIES = new Set(['overview', 'findings', 'board', 'servers', 'matches']);
 // Queries that join a game's store reviews and vitals (reviews.js) and its revenue (revenue.js) when the host has them:
 // their panels, finding, queries.
-const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_revenue']);
+const STORE_QUERIES = new Set(['overview', 'findings', 'dashboard', 'board', 'store_reviews', 'store_vitals', 'store_sales', 'store_revenue']);
 // The session types a query can keep: `type`, or `session_type` as the sessions call it (§3). One it doesn't know is
 // an error rather than every session, so a script asking for players never counts bots by mistake.
 const SESSION_TYPES = ['all', 'user', 'tester', 'synthetic', 'simulated'];
@@ -642,6 +642,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       case 'store_vitals':
         // A store's own vitals by version next to what Glitchless measured (reviews.js storeVitals): glitchless_store with show "vitals".
         return { meta, ...storeVitals(ctx, params) };
+      case 'store_sales':
+        // A store's own counts by day (Steam's units, returns and wishlists; itch.io's page views, downloads and purchases
+        // next to the browser plays measured there), reviews.js storeSales: glitchless_store with show "sales".
+        return { meta, ...storeSales(ctx, params) };
       case 'store_revenue':
         // Real revenue from a revenue source (RevenueCat, Stripe) by day and version, next to the sessions and players measured
         // and the game's own purchase events (revenue.js revenueQuery), in the dashboard's currency: glitchless_revenue.

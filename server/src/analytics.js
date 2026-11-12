@@ -19,6 +19,7 @@ import { versionStat, versionContext } from './sums.js';
 import { withZoneTime, zoneStat } from './zones.js';
 import { occurrenceCount, sessionOccurrenceCount } from './occurrences.js';
 import { propertyKey, propertySplit, propOf, sessionPasses, NONE } from './properties.js';
+import { siteOf } from './sites.js';
 import { measureOf, measureBy, rateOf, avgOf } from './rates.js';
 import { percentileFromOccurrences } from './distributions.js';
 import { linkOf, networkView, NET_METRICS } from './network.js';
@@ -1250,8 +1251,9 @@ function steamEventsBy(ctx, f, dim) {
 
 // What a board can split sessions by (series and breakdowns, `by: "$<name>"`), each from the session's session_start
 // device, in plain words: the platform it ran on (platformOf: Windows, macOS, Linux, Steam Deck, iOS, Android…), the
-// browser it ran in (browserOf), its GPU tier as the Performance view sorts it (high to low), its connection and its
-// graphics setting. `order`: rows in this order rather than most first (a list of values, or a value's rank).
+// browser it ran in (browserOf), its GPU tier as the Performance view sorts it (high to low), its connection, its
+// graphics setting and the site its page was on. `order`: rows in this order rather than most first (a list of values,
+// or a value's rank).
 const TIERS = { high: 'High-end GPU', mid: 'Mid-range GPU', low: 'Low-end GPU', software: 'Software rendering (no GPU)', unknown: 'Unknown GPU' };
 export const SESSION_SPLITS = {
   platform: { label: 'platform', of: (s) => platformOf(s.device) },
@@ -1261,6 +1263,9 @@ export const SESSION_SPLITS = {
   link: { label: 'connection', of: (s) => linkOf(s) },
   // The graphics setting the session played at (graphicsOf), lowest to highest.
   graphics: { label: 'graphics quality', of: (s) => graphicsOf(s) ?? NONE, order: graphicsRank },
+  // Where a web game was played (sites.js): itch.io and the other sites games are put on, localhost, or the game's own
+  // site by its host; "(none)" for a session with no page (a native build, an engine's web build).
+  site: { label: 'site', of: (s) => siteOf(s) },
 };
 
 // A session's graphics setting, for a board's $graphics and the Performance view's by_graphics: the `graphics`

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- WebGL builds work in a Reddit post (Devvit Web). There a game may fetch only its own app's `/api/` routes, so it sends to its app's server, which relays to Glitchless with the `glitchless/devvit` relay: `Intake = "/api/glitchless"`. The last batch as the page is hidden or goes is then sent by the page's own `fetch` with keepalive instead of `navigator.sendBeacon`, since only the page's fetches carry the app's token that Reddit's `/api/` routes need. Elsewhere nothing changes. See the docs' SPEC §5g.
 - A bug report no longer waits for ever for its screenshot. The screenshot is read at the end of the frame, and in the Editor the end of a frame comes only while the Game view is drawn: in batch mode with a graphics device (PlayMode tests without `-nographics`) it never came, so `ReportBug` never answered, and the form stayed open and empty without pausing the game until it was closed. When the end of the frame doesn't come within 5 frames, the report goes, and the form opens, without a screenshot. Players' builds, and the Editor with its Game view showing, take it as before.
 
 ## 0.7.2

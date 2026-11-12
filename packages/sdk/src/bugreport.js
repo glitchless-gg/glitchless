@@ -5,6 +5,7 @@
 
 import { anonymizeDevice } from './device.js';
 import { LOGO_DATA_URI } from './logo.js';
+import { styleRoot } from './shadow-css.js';
 
 export const MAX_SCREENSHOT = 200_000; // characters of data URL the server keeps (larger ones lose the picture)
 const RECENT = 20;
@@ -232,13 +233,14 @@ export class BugReportForm {
       this.host = document.createElement('div');
       this.host.id = 'glitchless-bug-report';
       this.root = this.host.attachShadow({ mode: 'open' });
+      this.style = styleRoot(this.root, CSS);
     }
     document.body.appendChild(this.host);
   }
 
   render(state) {
     const done = { sent: 'Thanks! Your report was sent.', offline: 'Not sent: this build has no Glitchless intake.', failed: "Couldn't send it now. It will be sent with the game's next batch." }[state];
-    this.root.innerHTML = `<style>${CSS}</style>
+    this.root.innerHTML = `${this.style}
       <div class="back"><div class="panel" role="dialog" aria-modal="true" aria-label="Report a bug">
         <div class="hdr"><img src="${LOGO_DATA_URI}" alt=""><b>Report a bug</b></div>
         ${

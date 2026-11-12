@@ -5,7 +5,9 @@
 //     Three.js game split by browser and OS alike;
 //   - the page's lifecycle. WebGL has one thread, so a request the game waits on as the page goes can never move:
 //     the last batches go by navigator.sendBeacon instead, which the browser sends after the page has gone, the way
-//     the browser SDK sends its own (core.js installLifecycle).
+//     the browser SDK sends its own (core.js installLifecycle). In a Reddit post (SPEC §5g) they go by the page's own
+//     fetch with keepalive, which the browser also finishes after the page has gone: the app's /api/ routes take only
+//     requests with the app's token, which Reddit's script on the page adds to its fetches and a beacon can't carry.
 var GlitchlessPage = {
   // A JSON string: { ua, mobile, dpr, screen }. mobile is userAgentData's (Chromium, on https) or null.
   GlitchlessPageFacts: function () {
@@ -30,10 +32,15 @@ var GlitchlessPage = {
   // sendBeacon or the browser turned it down (it takes about 64 KB at a time, for the whole page).
   GlitchlessPageBeacon: function (url, body, length) {
     try {
+      var bytes = HEAPU8.slice(body, body + length);
+      var devvit = typeof globalThis !== 'undefined' ? globalThis.devvit : null;
+      if (devvit && typeof devvit.token === 'string' && typeof fetch === 'function') {
+        fetch(UTF8ToString(url), { method: 'POST', body: bytes, headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+        return 1;
+      }
       if (typeof navigator === 'undefined' || !navigator.sendBeacon) return 0;
       // text/plain is safelisted, so the beacon needs no CORS preflight; the server reads the JSON whatever it says.
-      var blob = new Blob([HEAPU8.slice(body, body + length)], { type: 'text/plain' });
-      return navigator.sendBeacon(UTF8ToString(url), blob) ? 1 : 0;
+      return navigator.sendBeacon(UTF8ToString(url), new Blob([bytes], { type: 'text/plain' })) ? 1 : 0;
     } catch (e) {
       return 0;
     }

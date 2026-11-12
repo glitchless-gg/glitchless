@@ -1,6 +1,6 @@
 ---
 name: instrument
-description: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8 or 5.9, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
+description: Add Glitchless observability to a game (Unity 6.0+, Godot 4.5+, Unreal Engine 5.8 or 5.9, Three.js or React Three Fiber, Roblox, Phaser 3 or 4, Babylon.js, PlayCanvas or GameMaker 2024.2+), also in a Reddit post (Devvit Web). Frame-time percentiles, hitch attribution, errors, gameplay events, level heatmaps, and tools that let coding agents measure the running game. Use when the user wants telemetry, analytics, performance monitoring or "observability" in a game, or asks to add Glitchless.
 ---
 
 # Instrument a game with Glitchless
@@ -22,9 +22,11 @@ have a way to measure the running game before and after a change.
 | `@babylonjs/core` or `babylonjs` in package.json, or a `<script>` that loads Babylon.js | Babylon.js 5+ | [references/babylon.md](references/babylon.md) |
 | `playcanvas` in package.json, a PlayCanvas Editor project (scripts using `pc.createScript` or `pc.Script`), or a `<script>` that loads PlayCanvas | PlayCanvas 2.x | [references/playcanvas.md](references/playcanvas.md) |
 | a `*.yyp` file | GameMaker 2024.2+ | [references/gamemaker.md](references/gamemaker.md) |
+| `devvit.json` (a game in a Reddit post, Devvit Web), whatever its client is made with | Reddit, with the client's engine | [references/reddit.md](references/reddit.md) first, then the client's engine's file |
 
-Read only the file for this game's engine: each one walks through reading the game, installing,
-levels and events, bots and measuring, and checking it works. Apply these settings first.
+Read only the file for this game's engine (for a game in a Reddit post, reddit.md and then its client's): each one
+walks through reading the game, installing, levels and events, bots and measuring, and checking it works. Apply these
+settings first.
 
 Settings, for every engine:
 

@@ -2,6 +2,7 @@
 // Toggle with the backtick (`) key. Rendered in a shadow root so game CSS can't touch it.
 
 import { LOGO_DATA_URI } from './logo.js';
+import { styleRoot } from './shadow-css.js';
 
 const CSS = `
 :host { all: initial; }
@@ -38,7 +39,7 @@ export class Overlay {
     this.host = document.createElement('div');
     this.host.id = 'glitchless-overlay';
     const root = this.host.attachShadow({ mode: 'open' });
-    root.innerHTML = `<style>${CSS}</style>
+    root.innerHTML = `${styleRoot(root, CSS)}
       <div class="gd">
         <div class="panel">
           <div class="hdr" title="Click or press \` to collapse"><img src="${LOGO_DATA_URI}" alt=""><span class="t">Glitchless</span><span class="svc"></span><span class="dot"></span></div>

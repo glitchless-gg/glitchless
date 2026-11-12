@@ -120,7 +120,7 @@ test('the automatic dashboard gets a page per store: reviews by build, players n
     assert.ok(players.coverage_pct > 0 && players.coverage_pct < 100, String(players.coverage_pct));
     assert.ok(players.latest.store > 0);
     assert.deepEqual(validateDashboard({ pages: [{ title: 'Steam', panels: [{ type: 'store_sales', store: 'steam' }, { type: 'store_reviews' }] }] }).pages[0].panels, [{ type: 'store_sales', store: 'steam' }, { type: 'store_reviews' }]);
-    assert.throws(() => validateDashboard({ pages: [{ title: 'x', panels: [{ type: 'store_reviews', store: 'itch' }] }] }), /store must be one of steam, google_play, app_store/);
+    assert.throws(() => validateDashboard({ pages: [{ title: 'x', panels: [{ type: 'store_reviews', store: 'epic' }] }] }), /store must be one of steam, google_play, app_store/);
   } finally {
     await g.close();
   }
@@ -180,7 +180,7 @@ test('the reviews query filters by store, build, sentiment, keyword, Steam Deck 
     assert.match(none.error, /no build or version "9\.9\.9" among this game's releases on Steam/);
     assert.deepEqual(none.releases, ['1.4.1', '1.4.2']);
     assert.match((await g.get('store_reviews', { store: 'google_play' })).why, /no Google Play connection/);
-    assert.match((await g.get('store_reviews', { store: 'itch' })).why, /store is one of/);
+    assert.match((await g.get('store_reviews', { store: 'epic' })).why, /store is one of/);
   } finally {
     await g.close();
   }

@@ -88,7 +88,10 @@ hit and check that the fix worked.
    Three Fiber), Roblox, Phaser 3 and 4, Babylon.js, PlayCanvas, and GameMaker 2024.2 or later; for
    Godot it sends you to ~/.glitchless/godot/addons/glitchless/README.md. On Roblox only the game's
    servers can send, so the client token goes in a server Script, and I need to turn on Allow HTTP
-   Requests in Game Settings: tell me.
+   Requests in Game Settings: tell me. For a game that runs inside a Reddit post (a devvit.json in
+   the project), the skill's Reddit part comes first: the game sends through its app's own server to
+   Glitchless Cloud, never to localhost, and Reddit reviews that address the next time I playtest or
+   upload the app, so tell me to do that early.
    Use these settings:
    - intake URL: http://localhost:7777
    - client token: gl_pub_dev (it's public and can only send data, so it's fine inside the game
@@ -267,6 +270,8 @@ For an Unreal game, copy [`unreal/Plugins/Glitchless`](unreal/Plugins/Glitchless
 For a Roblox experience, put [`roblox/src`](roblox/src) in ReplicatedStorage as `Glitchless` (Rojo or Wally, or `rojo build roblox/default.project.json -o Glitchless.rbxm` and insert it), turn on **Allow HTTP Requests** in Game Settings → Security, and call `require(ReplicatedStorage.Glitchless).init({ service = "my-game", clientToken = "gl_pub_dev", intake = "http://localhost:7777" })` from a server Script. A play test in Studio reaches a local server; a published game needs an `https://` one. See its [README](roblox/README.md).
 
 For a GameMaker game, run `node gamemaker/tools/install.mjs path/to/Game.yyp` (or import `Glitchless-0.4.2.yymps` from the [release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-gamemaker/v0.4.2) with **Tools → Import Local Package**), then call `glitchless_init("my-game", "", "prod", "http://localhost:7777");` in the first room's creation code. See its [README](gamemaker/README.md).
+
+For a game in a Reddit post (Devvit Web), the post can fetch only its own app's `/api/` routes: the game sends to `/api/glitchless`, and the app's server mounts the relay from `glitchless/devvit` (`glitchlessRelay({ clientToken, context })`) and asks Reddit for `api.glitchless.gg` in `devvit.json`. Every session through it is anonymous. See [SPEC §5g](docs/SPEC.md#5g-games-in-a-reddit-post-devvit-web) and the instrument skill's [Reddit steps](plugin/glitchless/skills/instrument/references/reddit.md).
 
 ## Connect your coding agent
 

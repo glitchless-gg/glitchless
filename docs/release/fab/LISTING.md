@@ -127,6 +127,23 @@ and Pricing page).
 Live since 11 November 2026 with 0.5.0; the table is what to set next. [STEPS.md](STEPS.md) → "Updating the Fab version"
 says when and how. UE 5.9 gets a row of its own once the portal's engine picker lists it (it didn't on 11 November).
 
+## Changelog
+
+Fab's **Changelog** field ("what's new with your product"). The newest goes on top; each entry covers everything since
+the version Fab had before.
+
+```text
+0.5.6 (from 0.5.0)
+
+• Unreal Engine 5.9: the plugin also runs on Epic's 5.9 MegaJam Preview, web builds included. Fab lists 5.8 only for now, so for 5.9 download the same plugin from GitHub (github.com/glitchless-gg/glitchless/releases).
+• The plugin's own upload warnings no longer show up as your game's errors (with Capture Warnings on, a failed server check while the player was offline was reported as a game error).
+• A session that's sent across two launches, a crash included, keeps its device and kind of session.
+• Saving the offline outbox no longer holds up a frame: it's written off the game thread.
+• Log errors with no text are dropped.
+• If the Intake setting was cut off (an unquoted URL in DefaultGame.ini loads as "https:"), the plugin says so in the log instead of sending nothing quietly.
+• The plugin links to this Fab page.
+```
+
 ## Third-party software declaration (Fab §4.2.5)
 
 Answer **"This product uses third-party software"**, then fill in Fab's form with:

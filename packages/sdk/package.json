@@ -26,7 +26,9 @@
     "crash-reporting",
     "error-tracking",
     "webmcp",
-    "mcp"
+    "mcp",
+    "reddit",
+    "devvit"
   ],
   "homepage": "https://www.glitchless.gg",
   "bugs": {
@@ -48,7 +50,8 @@
     "./playcanvas": "./src/playcanvas.js",
     "./net": "./src/net.js",
     "./server": "./src/server.js",
-    "./sketch": "./src/sketch.js"
+    "./sketch": "./src/sketch.js",
+    "./devvit": "./src/devvit.js"
   },
   "files": [
     "src",

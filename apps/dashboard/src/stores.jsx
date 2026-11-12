@@ -1,7 +1,8 @@
 // The store panels of a board (server/src/reviews.js), for a game connected to a store (Steam, Google Play, the App
 // Store): its reviews over time with each release marked and a row per build (what players said, what Glitchless
 // measured on it), the store's own vitals next to Glitchless's, players online next to the sessions measured, and units,
-// returns and wishlists by day; Roblox's vitals by place version and by platform, and its rating as thumbs up and down.
+// returns and wishlists by day; Roblox's vitals by place version and by platform, and its rating as thumbs up and down;
+// itch.io's page as a funnel (Funnel): page views, browser plays measured there, downloads and purchases by day.
 // And a revenue source's (RevenueCat's, Stripe's or Roblox's, server/src/revenue.js): its revenue,
 // installs, active users, MRR, subscriptions and trials (Stripe: refunds and new paying customers) as numbers (Board.jsx
 // draws them as stats, with revenueStat), revenue per day next to the game's own purchase events (Stripe: and its
@@ -35,7 +36,7 @@ export function StorePanelBody({ p }) {
   if (p.type === 'store_reviews') return <Reviews p={p} />;
   if (p.type === 'store_vitals') return <Vitals p={p} />;
   if (p.type === 'store_players') return <Players p={p} />;
-  if (p.type === 'store_sales') return <Sales p={p} />;
+  if (p.type === 'store_sales') return p.store === 'itch' ? <Funnel p={p} /> : <Sales p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_day') return <RevenueDays p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'by_version') return <RevenueVersions p={p} />;
   if (p.type === 'store_revenue' && p.measure === 'players_by_day') return <CustomerDays p={p} />;
@@ -66,8 +67,8 @@ export function revenueStat(p) {
     };
   }
   if (p.measure === 'revenue') {
-    // Stripe's: payments rather than transactions, and what's left after refunds, disputes and its fees.
-    const what = p.net != null ? ['payment', 'payments'] : ['transaction', 'transactions'];
+    // Stripe's: payments rather than transactions, and what's left after refunds, disputes and its fees; itch.io's: purchases.
+    const what = p.net != null ? ['payment', 'payments'] : p.store === 'itch' ? ['purchase', 'purchases'] : ['transaction', 'transactions'];
     return {
       value,
       sub: p.transactions != null ? `${fmtNum(p.transactions)} ${what[p.transactions === 1 ? 0 : 1]} on ${p.store_name}` : `On ${p.store_name}`,
@@ -101,6 +102,7 @@ export function revenueStat(p) {
 // panel itself.
 export function storeLine(p) {
   if (p.type === 'store_reviews') return `${fmtNum(p.total)} reviews, ${fmtPct(p.positive_pct, 0)} positive · ${fmtNum(p.perf_negative)} about performance`;
+  if (p.type === 'store_sales' && p.store === 'itch') return p.page?.title ? `${p.page.title}${p.page.price ? `, ${p.page.price}` : ''}` : null;
   if (p.type === 'store_revenue') {
     if (p.measure === 'by_day') return `${money(p, p.total)} on ${p.store_name}`;
     if (p.measure === 'players_by_day') return `${fmtNum(p.installs)} ${p.store === 'roblox' ? 'new users' : 'installs'} on ${p.store_name}${p.new_players != null ? ` · ${fmtNum(p.new_players)} new players measured` : ''}`;
@@ -122,12 +124,13 @@ export function storeInfo(p) {
     ];
   if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).`, p.about];
   if (p.type === 'store_players') return [p.why_no_coverage || (p.store === 'roblox' ? 'Roblox is asked how many are playing now once an hour. The gap is players in servers whose experience runs without the Roblox SDK, or with HTTP requests turned off.' : `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`)];
+  if (p.type === 'store_sales' && p.store === 'itch') return notes;
   if (p.type === 'store_sales') return [`By day, as ${p.store_name} reports them${p.store === 'steam' ? ' (units and returns by Pacific day, wishlists by GMT day), from the Financial API key' : ''}.`];
   if (p.type === 'store_score') return scoreInfo(p);
   if (p.type !== 'store_revenue') return notes;
   if (p.measure === 'by_day')
     return [
-      `By UTC day, as ${p.store_name} counts it${p.net_total != null ? `: ${money(p, p.refunds_total)} of it refunded or disputed, and ${money(p, p.net_total)} left after Stripe's fees` : ' (production purchases only)'}.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`,
+      `By UTC day, as ${p.store_name} counts it${p.net_total != null ? `: ${money(p, p.refunds_total)} of it refunded or disputed, and ${money(p, p.net_total)} left after Stripe's fees` : p.store === 'itch' ? '' : ' (production purchases only)'}.${p.incomplete_day ? ` ${p.incomplete_day} is still filling in.` : ''}`,
       p.glitchless && `The game's own purchase events add up to ${money(p, p.glitchless.sum)}, ${fmtPct(p.glitchless.coverage_pct, 0)} of it.`,
       ...notes.filter((n) => !/add up to/.test(n)),
     ];
@@ -672,6 +675,26 @@ function Sales({ p }) {
   );
 }
 
+// itch.io's page as a funnel: each step's count over the window and its share of the page views (browser plays are
+// what Glitchless measured there), the earnings beside purchases, then the four by day.
+const FUNNEL_COLORS = { views: 'var(--ink)', plays: '#3d8cf5', downloads: '#1fae84', purchases: '#fa5c5c' };
+function Funnel({ p }) {
+  const t = p.totals;
+  const earned = Object.entries(t.earnings ?? {}).map(([c, v]) => fmtMoney(v, c)).join(' + ');
+  // Plays before itch.io's numbers start aren't compared with its page views: the line says how many are.
+  const share = (s) => `${fmtPct(s.of_views_pct, s.of_views_pct < 10 ? 1 : 0)} of page views${s.compared != null ? ` (${fmtNum(s.compared)} since itch.io's first read)` : ''}`;
+  return (
+    <>
+      <div className="row" style={{ gap: 18, marginBottom: 6 }}>
+        {p.steps.map((s) => (
+          <Figure key={s.step} label={s.label} value={s.value == null ? '–' : fmtNum(s.value)} sub={s.step === 'purchases' && earned ? `${earned} earned` : s.of_views_pct != null ? share(s) :s.step === 'plays' ? 'measured by Glitchless' : `on ${p.store_name}`} />
+        ))}
+      </div>
+      <TimeSeries ts={p.ts} height={140} series={p.series.filter((s) => s.values.some((v) => v != null)).map((s) => ({ ...s, color: FUNNEL_COLORS[s.key] }))} />
+    </>
+  );
+}
+
 function Figure({ label, value, sub, title }) {
   return (
     <div className="figure" title={title}>
@@ -706,6 +729,10 @@ export function storeCsv(p) {
       ...(o && p.store === 'steam' ? [['Steam positive (%)', o.positive_pct, o.count]] : []),
       ...(p.synced ? [[p.store === 'steam' ? 'Reviews in this window, positive (%)' : 'Reviews in this window (stars)', p.synced.average ?? p.synced.positive_pct, p.synced.reviews]] : []),
     ];
+  }
+  if (p.type === 'store_sales' && p.store === 'itch') {
+    const currencies = [...new Set(p.earnings_by_day.flatMap((e) => Object.keys(e ?? {})))];
+    return [['Day', ...p.series.map((s) => s.label), ...currencies.map((c) => `Earnings (${c})`)], ...p.days.map((d, i) => [d, ...p.series.map((s) => s.values[i]), ...currencies.map((c) => p.earnings_by_day[i]?.[c] ?? null)])];
   }
   if (p.type === 'store_sales') {
     const series = [...(p.sales_series ?? []), ...(p.wishlist_series ?? [])];

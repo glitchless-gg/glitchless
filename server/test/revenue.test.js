@@ -147,7 +147,7 @@ test("the store_revenue query: by day with the day's sessions, one version's rev
     const one = await g.get('store_revenue', { version: '1.4.2' });
     assert.equal(one.empty, true);
     assert.match(one.why, /no revenue of 1\.4\.2 alone/);
-    assert.equal((await g.get('store_revenue', { store: 'steam' })).why, 'store is one of revenuecat, stripe, roblox');
+    assert.equal((await g.get('store_revenue', { store: 'steam' })).why, 'store is one of revenuecat, stripe, roblox, itch');
 
     // The dashboard's money is in euros: RevenueCat's dollars are shown as dollars, and not compared.
     const put = await fetch(`${g.base}/v1/dashboard?service=caverun`, { method: 'PUT', body: JSON.stringify({ currency: 'EUR', pages: [{ id: 'overview', title: 'Overview', panels: [{ type: 'store_revenue', measure: 'revenue' }] }] }) });

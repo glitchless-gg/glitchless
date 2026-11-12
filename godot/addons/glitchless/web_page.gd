@@ -12,9 +12,15 @@ extends RefCounted
 ## It also tells glitchless.gd what the page does (listen): Godot hears nothing
 ## as a tab is hidden or closed, and a web export can't wait for a request then,
 ## so the last batches go by navigator.sendBeacon (beacon), as the browser SDK
-## sends its own. And it reads the page's address, which never leaves the
-## device: a page on the developer's own machine follows the debug-build rule,
-## and ?glitchless there is --glitchless (flags).
+## sends its own; in a Reddit post, by the page's own fetch with keepalive. And
+## it reads the page's address, which never leaves the device: a page on the
+## developer's own machine follows the debug-build rule, ?glitchless there is
+## --glitchless (flags), and an intake given as a path is on the page's origin.
+##
+## Everything is read property by property (get_interface), never with
+## JavaScriptBridge.eval: a page whose Content-Security-Policy has no
+## 'unsafe-eval', as a game in a Reddit post has (SPEC §5g), refuses eval, and
+## Godot's engine needs eval for nothing else.
 
 # Fields that are a number or null (JSON's "not measured") are written `value if known else null`: Godot warns that
 # the two branches differ in type, which is the point, so that warning is off for this file.
@@ -42,42 +48,17 @@ const BROWSERS: Array = [
 	["Safari/(\\d+)", "Safari"],
 ]
 
-## What the page says, raw: the user agent, userAgentData.mobile (Chromium on
-## https; null elsewhere), devicePixelRatio, the screen in CSS pixels,
-## navigator.hardwareConcurrency (Godot's own count stops at 2 on the web),
-## navigator.deviceMemory (Chromium; GB, rounded and capped by the browser), the
-## GPU from a WebGL context of its own (the unmasked renderer, as the browser SDK
-## probes it; Godot's own name for it is "WebKit WebGL"), and the page's address.
-const READ_JS := """(function () {
-	var f = { ua: '', mobile: null, dpr: null, screen: null, cores: null, memory: null, gpu: '', vendor: '', protocol: '', host: '', search: '' };
-	try {
-		var nav = navigator;
-		f.ua = nav.userAgent || '';
-		if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean') f.mobile = nav.userAgentData.mobile;
-		if (typeof nav.hardwareConcurrency === 'number') f.cores = nav.hardwareConcurrency;
-		if (typeof nav.deviceMemory === 'number') f.memory = nav.deviceMemory;
-		if (typeof devicePixelRatio === 'number' && devicePixelRatio > 0) f.dpr = devicePixelRatio;
-		if (typeof screen !== 'undefined' && screen.width > 0) f.screen = [screen.width, screen.height];
-		f.protocol = location.protocol;
-		f.host = location.hostname;
-		f.search = location.search;
-	} catch (e) {}
-	try {
-		var canvas = document.createElement('canvas');
-		var gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-		if (gl) {
-			var ext = gl.getExtension('WEBGL_debug_renderer_info');
-			f.gpu = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) || '');
-			f.vendor = String(gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR) || '');
-			var lose = gl.getExtension('WEBGL_lose_context');
-			if (lose) lose.loseContext();
-		}
-	} catch (e) {}
-	return JSON.stringify(f);
-})()"""
+## What the page says, raw (facts): the user agent, userAgentData.mobile
+## (Chromium on https; null elsewhere), devicePixelRatio, the screen in CSS
+## pixels, navigator.hardwareConcurrency (Godot's own count stops at 2 on the
+## web), navigator.deviceMemory (Chromium; GB, rounded and capped by the
+## browser), the GPU from a WebGL context of its own (the unmasked renderer, as
+## the browser SDK probes it; Godot's own name for it is "WebKit WebGL"), the
+## page's address, and whether Reddit's webview script is on the page (devvit).
 
 static var _facts: Variant = null  # read once a launch
 static var _flags: Variant = null
+static var _ignore: Variant = null  # a JavaScript callback that drops a keepalive fetch's failure
 
 var _callbacks: Array = []  # the JavaScript functions listen() made, kept so the page can call them
 
@@ -86,17 +67,56 @@ static func in_page() -> bool:
 	return OS.has_feature("web")
 
 
-## The page's raw facts (READ_JS), once a launch; {} off the web or when the
-## page can't be read.
+## The page's raw facts, once a launch; {} off the web or when the page can't
+## be read.
 static func facts() -> Dictionary:
 	if _facts == null:
-		_facts = {}
-		if in_page():
-			var json: Variant = JavaScriptBridge.eval(READ_JS, true)
-			var parsed: Variant = JSON.parse_string(str(json)) if json is String else null
-			if parsed is Dictionary:
-				_facts = parsed
+		_facts = _read_page() if in_page() else {}
 	return _facts
+
+
+static func _read_page() -> Dictionary:
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	var nav: Variant = JavaScriptBridge.get_interface("navigator")
+	var location: Variant = JavaScriptBridge.get_interface("location")
+	if window == null or nav == null or location == null:
+		return {}
+	var f := {"ua": _text(nav.userAgent), "mobile": null, "dpr": _number(window.devicePixelRatio), "screen": null, "cores": _number(nav.hardwareConcurrency), "memory": _number(nav.deviceMemory), "gpu": "", "vendor": "", "protocol": _text(location.protocol), "host": _text(location.hostname), "search": _text(location.search), "origin": _text(location.origin), "devvit": false}
+	var uad: Variant = nav.userAgentData
+	if uad != null and uad.mobile is bool:
+		f.mobile = uad.mobile
+	var screen: Variant = window.screen
+	if screen != null and _number(screen.width) != null and float(screen.width) > 0.0:
+		f.screen = [screen.width, screen.height]
+	var devvit: Variant = window.devvit
+	f.devvit = devvit != null and devvit.token is String
+	var document: Variant = JavaScriptBridge.get_interface("document")
+	var canvas: Variant = document.createElement("canvas") if document != null else null
+	var gl: Variant = canvas.getContext("webgl2") if canvas != null else null
+	if gl == null and canvas != null:
+		gl = canvas.getContext("webgl")
+	if gl != null:
+		var ext: Variant = gl.getExtension("WEBGL_debug_renderer_info")
+		f.gpu = _text(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL if ext != null else gl.RENDERER))
+		f.vendor = _text(gl.getParameter(ext.UNMASKED_VENDOR_WEBGL if ext != null else gl.VENDOR))
+		var lose: Variant = gl.getExtension("WEBGL_lose_context")
+		if lose != null:
+			lose.loseContext()
+	return f
+
+
+static func _text(v: Variant) -> String:
+	return v if v is String else ""
+
+
+static func _number(v: Variant) -> Variant:
+	return v if v is float or v is int else null
+
+
+## The page's origin ("https://….devvit.net"), for an intake given as a path on
+## it; "" off the web.
+static func origin() -> String:
+	return str(facts().get("origin", ""))
 
 
 ## What the page says about the device, in the browser SDK's words: browser,
@@ -232,10 +252,32 @@ static func hosted() -> bool:
 static func beacon(url: String, body: String) -> bool:
 	if not in_page():
 		return false
+	if facts().get("devvit", false):
+		return _keepalive(url, body)
 	var nav: Variant = JavaScriptBridge.get_interface("navigator")
 	if nav == null:
 		return false
 	return nav.sendBeacon(url, body) == true
+
+
+## In a Reddit post the app's /api/ routes take only requests with the app's
+## token, which Reddit's script adds to the page's own fetches and a beacon
+## can't carry: there the page's fetch with keepalive goes instead, which the
+## browser also finishes after the page has gone.
+static func _keepalive(url: String, body: String) -> bool:
+	var window: Variant = JavaScriptBridge.get_interface("window")
+	var init: Variant = JavaScriptBridge.create_object("Object")
+	if window == null or init == null:
+		return false
+	init.method = "POST"
+	init.body = body
+	init.keepalive = true
+	var sent: Variant = window.fetch(url, init)
+	if sent != null:
+		if _ignore == null:
+			_ignore = JavaScriptBridge.create_callback(func(_args: Array) -> void: pass)
+		sent.call("catch", _ignore)
+	return true
 
 
 ## Calls on_page with HIDDEN, SHOWN, LEAVING or RESTORED as the page does. The

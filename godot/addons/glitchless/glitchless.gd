@@ -391,6 +391,10 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 	_env = env if env != "" else "prod"
 	var flag_intake := _flag_value("--glitchless-intake")
 	_intake = (flag_intake if flag_intake != "" else intake).trim_suffix("/")
+	# A web export that sends through its own page's server (a Reddit post's relay, "/api/glitchless", SPEC §5g):
+	# HTTPRequest takes only a whole address, so a path goes on the page's origin.
+	if _intake.begins_with("/") and WebPage.in_page() and WebPage.origin() != "":
+		_intake = WebPage.origin() + _intake
 	role = _decide_role()
 	# A server sends nothing about players: no player ID, no positions, no device detail.
 	_privacy = str(_opts.privacy) if str(_opts.privacy) in ["install", "full"] and role != "server" else "anonymous"

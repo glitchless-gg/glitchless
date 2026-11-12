@@ -31,12 +31,14 @@ const EXTRAS = {
 };
 
 // The signs of each engine in a project's files and package.json dependencies, a native engine's first: its project
-// file wins over a package.json kept for tooling.
+// file wins over a package.json kept for tooling. A Reddit app (Devvit Web) comes before them all: its steps (the
+// relay) lead, and the engine its client is made with follows (a web game's package, or a Unity or Godot web build).
 const SIGNS = [
+  ['reddit', /(^|\/)devvit\.(json|yaml)$|^@devvit\/(web|server|client|start)$|^devvit$/],
   ['unreal', /\.uproject$/],
-  ['godot', /(^|\/)project\.godot$/],
+  ['godot', /(^|\/)project\.godot$|\.pck$/],
   ['gamemaker', /\.yyp$/],
-  ['unity', /(^|\/)(projectsettings(\/projectversion\.txt)?|projectversion\.txt|packages\/manifest\.json|assembly-csharp\.csproj)$|\.unity$/],
+  ['unity', /(^|\/)(projectsettings(\/projectversion\.txt)?|projectversion\.txt|packages\/manifest\.json|assembly-csharp\.csproj)$|\.unity(web)?$/],
   ['roblox', /\.project\.json$|(^|\/)wally\.toml$|\.rbxlx?$|\.(server|client)\.luau?$/],
   ['threejs', /^(three|@react-three\/fiber|three(\.module)?(\.min)?\.js)$/],
   ['phaser', /^phaser((\.min)?\.js)?$/],
@@ -58,8 +60,11 @@ export function engineFrom(files = []) {
 }
 
 // The engine a call names (engine) or its files do: { engine: one of ENGINES or null, sign, also: other engines' names }.
+// An engine named with files that name a Reddit app is that app's client: Reddit's steps, then the engine's.
 export function pickEngine({ engine, files } = {}) {
-  const found = engine ? { engine, sign: null, also: [] } : engineFrom(files);
+  let found = engine ? { engine, sign: null, also: [] } : engineFrom(files);
+  const app = engine && engine !== 'reddit' ? engineFrom(files) : null;
+  if (app?.engine === 'reddit') found = { engine: 'reddit', sign: app.sign, also: [engine] };
   return { engine: ENGINES.find((e) => e.id === found.engine) ?? null, sign: found.sign, also: found.also.map((id) => ENGINES.find((e) => e.id === id)).filter(Boolean) };
 }
 
@@ -134,7 +139,7 @@ function relink(text, from, carried) {
 //     the game the call named couldn't be made, such as a plan with no room for another);
 //   { server: url }  a Glitchless server somewhere else, which this MCP server reads with no workspace;
 //   { local: url }   a Glitchless server on this computer.
-function sending(where, engine) {
+function sending(where, engine, again = `engine: "${engine.id}"`) {
   const head = '## Where this game sends\n\nThese go where the steps below put the intake URL and client token (their examples show a local server, http://localhost:7777 and gl_pub_dev).';
   const pub = "It's public and can only send data, so it may live in the game's source. A key that starts gl_sk_ or gl_ws_ never goes in the game.";
   if (where.cloud) {
@@ -144,9 +149,9 @@ function sending(where, engine) {
         ? `${where.game.client_token} (${where.game.name}'s). ${pub}`
         : `${where.game.name} has no active client token: ask the person to make one in Glitchless (${where.dashboard ?? 'the dashboard'}, Settings → Keys & access).`
       : where.blocked
-        ? `none yet: the game wasn't made (${where.blocked.replace(/\.$/, '')}).${where.others?.length ? ` If this game is one already here (${where.others.join(', ')}), call glitchless_create_game again with game set to its name and engine: "${engine.id}", and the steps come with its client token. Otherwise tell the person why, and ask which they want.` : ' Tell the person why.'}`
+        ? `none yet: the game wasn't made (${where.blocked.replace(/\.$/, '')}).${where.others?.length ? ` If this game is one already here (${where.others.join(', ')}), call glitchless_create_game again with game set to its name and ${again}, and the steps come with its client token. Otherwise tell the person why, and ask which they want.` : ' Tell the person why.'}`
         : where.can_make
-        ? `none yet. Call glitchless_create_game again with name (the game's name, as players know it) and engine: "${engine.id}": it makes the game and returns these steps with its client token.${here}`
+        ? `none yet. Call glitchless_create_game again with name (the game's name, as players know it) and ${again}: it makes the game and returns these steps with its client token.${here}`
         : `none yet, and this connection may only read, so it can't make the game: ask the person to add it in Glitchless (${where.dashboard ?? 'the dashboard'}), then call this again with game set to its name. Or they connect again with "Create games and share links" ticked.${here}`;
     return [
       head,
@@ -173,38 +178,47 @@ function sending(where, engine) {
 // cut to this game, the engine's own reference (with, for Godot, the README parts it sends the agent to), what it
 // borrows from other references, and the skill's last sections (the game's own metrics, a jam room, the report).
 // picked: what pickEngine answered; where: sending()'s.
-export function instrumentGuide({ engine, sign, also = [] }, where) {
-  const extras = EXTRAS[engine.id] ?? {};
+export function instrumentGuide({ engine: picked, sign, also = [] }, where) {
+  // A game in a Reddit post: Reddit's steps (the relay), then those of the engine its client is made with, if known.
+  const reddit = picked.id === 'reddit' ? picked : null;
+  const engine = reddit ? (also.find((e) => e.id !== 'reddit') ?? null) : picked;
+  if (reddit) also = also.filter((e) => e !== engine);
+  const lead = reddit ?? engine;
+  const extras = (engine && EXTRAS[engine.id]) ?? {};
   const [top, settings, ...rest] = sections(body(TEXTS[INSTRUMENT])).filter((s) => s.level <= 2);
-  const ref = body(TEXTS[engine.ref]);
+  const ref = engine ? body(TEXTS[engine.ref]) : '';
   const readme = extras.readme ? sections(TEXTS[extras.readme.path]).filter((s) => extras.readme.parts.includes(s.title)) : [];
-  const lent = borrowed(engine.ref, ref, new Set([INSTRUMENT, engine.ref]));
-  const carried = new Set([INSTRUMENT, engine.ref, ...readme.map((s) => `${extras.readme.path}#${s.slug}`), ...lent.flatMap((b) => b.sections.map((s) => `${b.file}#${s.slug}`))]);
+  const own = [INSTRUMENT, ...(reddit ? [reddit.ref] : []), ...(engine ? [engine.ref] : [])];
+  const lent = engine ? borrowed(engine.ref, ref, new Set(own)) : [];
+  const carried = new Set([...own, ...readme.map((s) => `${extras.readme.path}#${s.slug}`), ...lent.flatMap((b) => b.sections.map((s) => `${b.file}#${s.slug}`))]);
 
   // The skill's table of every engine becomes the one line about this game.
   const lines = settings.text.split('\n');
   const table = lines.findIndex((l) => l.startsWith('|'));
   const end = lines.findIndex((l, i) => i > table && !l.startsWith('|'));
-  if (table >= 0) lines.splice(table, end - table, `This game: ${engine.name}${sign ? ` (${sign})` : ''}. Its steps follow these settings${readme.length ? `: the addon's README first, then "${nameOf(engine.ref)}"` : `, under "${nameOf(engine.ref)}"`}.`);
+  const order = [...(reddit ? [`"${nameOf(reddit.ref)}"`] : []), ...(readme.length ? ["the addon's README"] : []), ...(engine ? [`"${nameOf(engine.ref)}"`] : [])];
+  const what = reddit ? `a game in a Reddit post${engine ? `, its client made with ${engine.name}` : ''}` : engine.name;
+  if (table >= 0) lines.splice(table, end - table, `This game: ${what}${sign ? ` (${sign})` : ''}. Its steps follow these settings${order.length > 1 ? `: ${order.slice(0, -1).join(', ')} first, then ${order.at(-1)}` : `, under ${order[0]}`}.`);
 
   const out = [
-    `# Add Glitchless to this ${engine.name} game`,
+    `# Add Glitchless to this ${reddit ? `${reddit.name}${engine ? ` (${engine.name})` : ''}` : engine.name} game`,
     '',
-    `These are the steps of Glitchless's instrument skill, the one in the Glitchless plugin for Claude Code, Codex and Cursor, cut to ${engine.name}. Work through them in order, in the game's folder. Where they say to follow the \`dashboard\` skill, call glitchless_dashboard with guide: true.`,
+    `These are the steps of Glitchless's instrument skill, the one in the Glitchless plugin for Claude Code, Codex and Cursor, cut to ${reddit ? `a game in a Reddit post${engine ? ` made with ${engine.name}` : ''}` : engine.name}. Work through them in order, in the game's folder. Where they say to follow the \`dashboard\` skill, call glitchless_dashboard with guide: true.`,
     '',
-    sending(where, engine),
+    sending(where, lead, reddit && engine ? `engine: "${engine.id}" and files: ["devvit.json"]` : undefined),
   ];
   if (extras.kit) {
     out.push('', '## Get the SDK', '', `The ${engine.name} steps copy files from the Glitchless agent kit, a copy of the Glitchless repo kept outside the game's folder so it never gets committed. Get it first:`, '', '```bash', KIT, '```', '', `If ~/.glitchless is already there, run \`git -C ~/.glitchless pull\` instead. The ${engine.name} SDK is at ~/.glitchless/${extras.kit}${extras.readme ? `, with its whole README, which the ${engine.name} steps quote below` : ''}.`);
   }
   out.push('', relink(top.intro, INSTRUMENT, carried), '', relink(lines.join('\n'), INSTRUMENT, carried));
+  if (reddit) out.push('', relink(body(TEXTS[reddit.ref]), reddit.ref, carried));
   // The README comes before the reference, as the skill's table orders them: it installs the addon and wires the game.
   if (readme.length) {
     out.push('', `# From the ${engine.name} addon's README`, '', `Start here: the parts of ~/.glitchless/${extras.readme.path} that install the addon and wire it into the game. The "${nameOf(engine.ref)}" steps after them add the rest; the file itself has more (Steam, flags, errors, phones).`);
     // "Use" without its subsections: the reference below has the ones that matter, in fewer words.
     for (const s of readme) out.push('', relink(s.title === 'Use' ? s.intro : s.text, extras.readme.path, carried));
   }
-  out.push('', relink(ref, engine.ref, carried));
+  if (engine) out.push('', relink(ref, engine.ref, carried));
   for (const b of lent) {
     out.push('', `# From the ${nameOf(b.file)} steps`, '', `The ${engine.name} steps above point here.`);
     for (const s of b.sections) out.push('', relink(s.text, b.file, carried));

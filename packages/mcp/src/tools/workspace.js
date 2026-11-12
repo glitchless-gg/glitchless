@@ -108,8 +108,8 @@ act(
     name: z.string().optional().describe("The game's name, as players know it (not needed with demo). One already in the workspace is returned, not made again"),
     demo: z.boolean().optional().describe('Make the demo game, with a week of sample play'),
     rename: z.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names"),
-    engine: z.enum(ENGINES.map((e) => e.id)).optional().describe("Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker"),
-    files: z.array(z.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)"),
+    engine: z.enum(ENGINES.map((e) => e.id)).optional().describe("Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker; reddit for a game in a Reddit post (with files: [\"devvit.json\"] and the engine of the game in it, Reddit's steps and that engine's come together)"),
+    files: z.array(z.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, devvit.json for a game in a Reddit post, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)"),
   },
   async ({ name, demo, rename, engine, files, game }) => {
     if (rename != null) {
