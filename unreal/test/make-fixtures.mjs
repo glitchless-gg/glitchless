@@ -1,8 +1,9 @@
 // Writes the fixture the Unreal plugin's core tests check their C++ ports against: frame times with
 // the sketch packages/sdk/src/sketch.js makes of them (as JSON.stringify writes it, byte for byte),
 // V8's Math.log for the values the sketch buckets, numbers as JSON.stringify writes them, error
-// fingerprints from fingerprint.js, and what device.js makes of browsers' user agents and GPUs (a web build
-// reads its page the same way, Private/Core/GlitchlessPage.cpp).
+// fingerprints from fingerprint.js, what device.js makes of browsers' user agents and GPUs (a web build
+// reads its page the same way, Private/Core/GlitchlessPage.cpp), and the origin URL gives each referrer, which
+// session_start's page sends.
 //   node unreal/test/make-fixtures.mjs
 import fs from 'node:fs';
 import path from 'node:path';
@@ -149,6 +150,9 @@ const gpus = [
   ['', '  spaced name  '],
 ];
 
+// Referrers as pages have them: core.js sends new URL(referrer).origin.
+const referrers = ['https://maker.itch.io/', 'HTTPS://Maker.Itch.IO/Game?x=1#y', 'http://game.test:8080/a/b?c', 'https://user:pw@host.example:443/x', 'http://host.example:80', 'https://[::1]:7777/x', 'file:///Users/me/game/index.html', 'about:blank'];
+
 fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(
   OUT,
@@ -170,7 +174,8 @@ fs.writeFileSync(
         const name = cleanGpu(renderer);
         return { vendor, renderer, name, gpu_vendor: cleanVendor(vendor, renderer), tier: classifyGpu(name) };
       }),
+      referrers: referrers.map((url) => ({ url, origin: new URL(url).origin })),
     },
   ) + '\n',
 );
-console.log(`wrote ${path.relative(ROOT, OUT)}: ${Object.keys(sketches).length} sketches, ${logs.length} logarithms, ${numbers.length} numbers, ${errors.length} fingerprints, ${agents.length} user agents, ${decks.length} Steam Deck checks, ${gpus.length} GPUs`);
+console.log(`wrote ${path.relative(ROOT, OUT)}: ${Object.keys(sketches).length} sketches, ${logs.length} logarithms, ${numbers.length} numbers, ${errors.length} fingerprints, ${agents.length} user agents, ${decks.length} Steam Deck checks, ${gpus.length} GPUs, ${referrers.length} referrers`);

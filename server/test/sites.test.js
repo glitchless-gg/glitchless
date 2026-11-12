@@ -32,9 +32,9 @@ test('a page is kept as its hosts only, and the table names the site', () => {
 
   assert.equal(siteOf({ page: { host: 'html-classic.itch.zone', ref: null } }), 'itch.io');
   assert.equal(siteOf({ page: { host: 'html-classic.itch.zone' }, props: { site: ['Newgrounds', 1] } }), 'Newgrounds', "the game's own site property comes first");
-  assert.equal(siteOf({ device: { browser: 'Godot' } }), '(none)', 'an engine build sends no page');
+  assert.equal(siteOf({ device: { browser: 'Godot' } }), '(none)', 'a native engine build sends no page');
 
-  // Reddit: a post's web view on devvit.net, or, for an engine's web build that sends no page, the subreddit the
+  // Reddit: a post's web view on devvit.net, or, for a web build that sends no page, the subreddit the
   // Reddit relay (glitchless/devvit) always sets.
   assert.equal(siteOfHosts('my-game-abc123-0-0-0-webview.devvit.net', null), 'Reddit');
   assert.equal(siteOfHosts('cdn.example.net', 'www.reddit.com'), 'Reddit');

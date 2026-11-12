@@ -37,7 +37,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 
 | event | fields | when |
 | --- | --- | --- |
-| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy`, `device` (below), `props` (the properties set so far, below) | the first batch of a session |
+| `session_start` | `session_type` (`user`, `tester` for TestFlight and development installs on iOS, or `synthetic`), `privacy`, `device` (below), `props` (the properties set so far, below); in a web build `engine` (Unreal's version) and `page` (the page's origin and path, and the referrer's origin, below) | the first batch of a session |
 | `session_end` | `reason` (`quit`, `background`, `measure`, `crash`), `duration_s` | quitting, going to the background on a phone, a crash |
 | `frame_window` | frame count, fps, the refresh rate measured from the frames (`hz`, `budget_ms`), frame-time sketch and percentiles, slow/jank/hitch/frozen counts, game/render/RHI thread and GPU ms (averages over the window), draw calls and triangles (averages, and the most draw calls), garbage collections and their ms, pipeline states compiled, packages loaded (totals over the window), UObject and actor counts, the process's memory MB, texture MB (the last sample: every 30 frames and as the window closes); `screen` and `window` size in pixels, `ctx` (the game's gauges and the engine counts, each the highest value it was set to in the window) | every 5 s |
 | `hitch` | duration, the thread that held it up, likely causes, the same timings and counts for that one frame, `ctx` (the gauges as they were then), `recent` (names of the game events in the last 1.5 s) | a frame over 50 ms, at most 3 per window |
@@ -74,7 +74,7 @@ Every event has `type`, `ts` (when it happened, in milliseconds, UTC) and `level
 | `gpu`, `gpu_vendor` | `NVIDIA GeForce RTX 4070`, `NVIDIA` | **full** |
 | `cores`, `memory_gb` | `16`, `32` | **full** |
 
-In a web build these come from the page as the browser SDK reads them (the user agent, the screen, a WebGL context's GPU name, the core count and memory the browser gives). The page's address is read only to tell the developer's own machine from a player's and for `?glitchless` flags; it is never sent.
+In a web build these come from the page as the browser SDK reads them (the user agent, the screen, a WebGL context's GPU name, the core count and memory the browser gives). The page's address is read to tell the developer's own machine from a player's and for `?glitchless` flags. Of it, `session_start` sends the page's origin and path only (`https://html-classic.itch.zone/html/15550123/index.html`, never the query string), and of the page that led there (`document.referrer`) its origin only (`https://maker.itch.io`), as `page`, as the browser SDK does: that is where the game was played.
 
 **Error text.** Unreal's messages come from the engine and the game's code, not from the player. Paths on the device are cut down before sending, in every mode: the project's Saved folder, the project, the engine, the user's settings folder and documents become `saved:`, `project:`, `engine:`, `settings:` and `documents:`, and on a phone the app's data folder and the app itself become `home:` and `app:`; `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` lose the name; iOS container IDs (made per install) become `<id>`. If the game puts anything of the player's into a `UE_LOG` error, an ensure message or `Error()` attributes, it is sent. Don't.
 

@@ -1,7 +1,8 @@
 // A web build's page (Private/Core/GlitchlessPage.cpp) must read user agents, GPUs and the Steam Deck as the
 // browser SDK's device.js does, so an Unreal web game splits by browser, OS and GPU like every other web game.
 // fixtures/js-fixture.json holds device.js's answers (unreal/test/make-fixtures.mjs). The rest is the web
-// build's own rules: which pages are the developer's, which flags a page's address may carry, and the device.
+// build's own rules: which pages are the developer's, which flags a page's address may carry, the device, and the
+// page session_start sends (its origin and path, and the referrer's origin, as URL(...).origin gives it).
 
 #include "GlitchlessPage.h"
 #include "GlitchlessText.h"
@@ -93,6 +94,33 @@ TEST(PageOnTheDevelopersMachineIsLocal)
 	{
 		EXPECT(!Page::IsLocal("https:", Host));
 	}
+}
+
+TEST(PageReferrerOriginsMatchUrl)
+{
+	EXPECT(Rows("referrers").size() > 5);
+	for (const FValue& Row : Rows("referrers"))
+	{
+		EXPECT_EQ(Page::OriginOf(Row.Find("url")->AsString()), Row.Find("origin")->AsString());
+	}
+	EXPECT_EQ(Page::OriginOf(""), "");
+}
+
+TEST(PageAddressIsOriginPathAndTheReferrersOrigin)
+{
+	Page::FFacts Itch;
+	EXPECT(Page::ParseFacts(R"J({"url":"https://html-classic.itch.zone/html/15550123/index.html","referrer":"https://maker.itch.io"})J", Itch));
+	EXPECT_EQ(Page::Address(Itch).Serialize(), R"J({"url":"https://html-classic.itch.zone/html/15550123/index.html","referrer":"https://maker.itch.io"})J");
+	// Never a query string, a fragment or a whole referrer, whatever the page script handed over.
+	Page::FFacts Leaky;
+	EXPECT(Page::ParseFacts(R"J({"url":"https://a.example/play?token=x#s","referrer":"https://maker.itch.io/game?secret=1"})J", Leaky));
+	EXPECT_EQ(Page::Address(Leaky).Serialize(), R"J({"url":"https://a.example/play","referrer":"https://maker.itch.io"})J");
+	Page::FFacts Direct;
+	EXPECT(Page::ParseFacts(R"J({"url":"https://mygame.pages.dev/","referrer":""})J", Direct));
+	EXPECT_EQ(Page::Address(Direct).Serialize(), R"J({"url":"https://mygame.pages.dev/","referrer":null})J");
+	Page::FFacts None;
+	EXPECT(Page::ParseFacts("{}", None));
+	EXPECT(Page::Address(None).IsNull());
 }
 
 TEST(PageFlagsAreOnlyGlitchlessOnes)

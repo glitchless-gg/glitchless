@@ -123,6 +123,8 @@ namespace GlitchlessSdk
                 // A web build's browser_version is the browser's: the Unity version goes here, as the browser SDK's engine
                 // adapters send theirs.
                 EngineInfo = web ? () => new Dictionary<string, object> { ["name"] = "unity", ["version"] = Application.unityVersion, ["renderer"] = SystemInfo.graphicsDeviceType.ToString() == "WebGPU" ? "webgpu" : "webgl" } : (Func<Dictionary<string, object>>)null,
+                // Where a web build is played (an itch.io frame, a Reddit post, its own site), as the browser SDK says it.
+                Page = () => WebPage.Read()?.Address,
                 Steam = SteamInfo.Read,
                 Engine = SampleEngine,
                 StartupMs = () => Time.realtimeSinceStartupAsDouble * 1000,

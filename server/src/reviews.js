@@ -1,12 +1,14 @@
 // Store reviews and store vitals: what players write about a game on its store pages, and what each store measures of
 // it (Google Play's slow rendering, crashes and ANRs; the App Store's hangs, launch time and animation hitches; Roblox's
-// crash rate and frame rate by place version and by platform), joined to what Glitchless measures, by build and
+// crash rate and frame rate by place version and by platform; the Microsoft Store's crash and hang rates by package
+// version), joined to what Glitchless measures, by build and
 // version. "The reviews say it stutters since the update" becomes which build, which devices, and the frame times and
 // crashes measured on that build's version; "Play says 1.4.2 crashes for 3% of users" sits next to the crash-free
 // sessions Glitchless saw on 1.4.2, with a line where the two disagree. Store-neutral: a store adapter (steam.js,
-// app-store.js here; Google Play, the App Store Connect API and Roblox in Glitchless Cloud) turns its answers into the
+// app-store.js here; Google Play, the App Store Connect API, Roblox and the Microsoft Store in Glitchless Cloud) turns its
+// answers into the
 // shapes below; storage, the join, the board panels, the finding and the queries are here, once, for every store.
-// SPEC §3f, §3k.
+// SPEC §3f, §3k, §3m.
 //
 // A review, as every store gives it:
 //   { store, id, ts, up, rating, lang, text, topics, version, device: { os, cpu, gpu, ram_mb, model } | null,
@@ -18,7 +20,8 @@
 // A vital, as every store gives it: { metric, value, version, build, day, period: 'day' | 'version', users,
 // percentile, device } — a rate in percent, a time in ms or a rate per hour, as VITALS says. Google Play's come per day
 // and version code (`build`); the App Store's per version, over the versions Apple keeps (`period: 'version'`); Roblox's
-// per day and place version (`version`: the number game.PlaceVersion gives, which the Roblox SDK sends as its version).
+// per day and place version (`version`: the number game.PlaceVersion gives, which the Roblox SDK sends as its version);
+// the Microsoft Store's per day and package version (`build` 1.4.2.0, `version` 1.4.2).
 //
 // A host hands the core every store a game is connected to (createApp({ stores })), as ctx.stores:
 //   { <store>: { store, app_id, synced_at, keys, summary: { desc, positive, negative, total } | null,
@@ -36,7 +39,10 @@
 // with no written reviews (players' thumbs up and down, favorites, visits and players now; its vitals) and a revenue
 // source (Robux, daily active and new users, retention). itch.io is both too: a store with no reviews (it has no API for
 // comments or ratings) whose own numbers are page views, downloads and purchases a day, its funnel next to the browser
-// plays Glitchless measured on itch.io (sites.js), and a revenue source (its earnings). SPEC §3l.
+// plays Glitchless measured on itch.io (sites.js), and a revenue source (its earnings). SPEC §3l. The Microsoft Store has
+// reviews by package version, its own ratings by day (snapshots.rating.days), acquisitions of the game and its add-ons by
+// day (sales, with `kinds`, `xbox`, `addons`, `addons_by` and dollars where Microsoft says), and crash and hang rates
+// with the newest version's heaviest failures (snapshots.failures). SPEC §3m.
 import { versions, pct, round, platformOf, hasPlayerId, playersAreSessions } from './analytics.js';
 import { siteOf, ITCH } from './sites.js';
 import { REVENUE_SOURCES, REVENUE_PANEL, REVENUE_BATCHES, revenuePanelFields, revenuePage, revenuePanel, writeRevenue, readRevenue, storeRetention } from './revenue.js';
@@ -52,6 +58,7 @@ export const STORES = {
   app_store: { name: 'App Store', players: false, sales: false, segment: null, buildFact: null, versioned: true, vitals: ['hang_rate', 'launch_time', 'animation_hitch_rate'] },
   roblox: { name: 'Roblox', players: true, sales: false, segment: null, buildFact: null, versioned: true, reviews: false, vitals: ['client_crash_rate', 'client_crashes', 'fps_p50', 'fps_p10'] },
   itch: { name: 'itch.io', players: false, sales: true, segment: null, buildFact: null, versioned: false, reviews: false, vitals: [] },
+  microsoft_store: { name: 'Microsoft Store', players: false, sales: true, segment: null, buildFact: null, versioned: true, vitals: ['crash_rate', 'unresponsive_rate', 'crash_reports'] },
 };
 const storeName = (store) => STORES[store]?.name ?? store;
 const NOT_CONNECTED = 'This game has no store connected (Glitchless Cloud: Settings → Integrations).';
@@ -69,6 +76,11 @@ const NOT_CONNECTED = 'This game has no store connected (Glitchless Cloud: Setti
 //   client_crashes    Roblox: how many times the Roblox app crashed (to read when the rate is noisy); a count, summed
 //   fps_p50, fps_p10  Roblox: the frame rate of the median player's client, and of the slowest tenth — Glitchless: the
 //                     same over its sessions, each session's median frame rate
+//   crash_rate        (also) the Microsoft Store: devices that used a version that day with a crash — Glitchless:
+//                     sessions that crashed
+//   unresponsive_rate the Microsoft Store: devices that used a version that day on which Windows reported the game
+//                     not responding (a hang; no Glitchless match)
+//   crash_reports     the Microsoft Store: the crashes it counted (scaled from a sample); a count, summed
 export const VITALS = {
   slow_rendering_20fps: { label: 'Slow rendering (under 20 fps)', unit: '%', vs: 'slow20_pct' },
   slow_rendering_30fps: { label: 'Slow rendering (under 30 fps)', unit: '%', vs: 'slow30_pct' },
@@ -81,6 +93,8 @@ export const VITALS = {
   client_crashes: { label: 'Crashes', unit: '', vs: null, sum: true },
   fps_p50: { label: 'Frame rate, median player', unit: 'fps', vs: 'fps_p50' },
   fps_p10: { label: 'Frame rate, slowest 10%', unit: 'fps', vs: 'fps_p10' },
+  unresponsive_rate: { label: 'Stopped responding', unit: '%', vs: null },
+  crash_reports: { label: 'Crash reports', unit: '', vs: null, sum: true },
 };
 
 // Stored items live this long past their day or month (the longest plan's retention).
@@ -95,8 +109,8 @@ const LOOKBACK = 30 * DAY;
 const RECORD_DAYS = 62;
 // health: Google Play's 28-day user-perceived crash and ANR rates over every version (the alerts' store rule). public:
 // Roblox's public stats (thumbs up and down, favorites, visits, players now), or itch.io's page (title, price, tags);
-// platforms: Roblox's vitals by platform.
-const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health', 'public', 'platforms'];
+// platforms: Roblox's vitals by platform; failures: the Microsoft Store's heaviest failures in the newest version.
+const SNAPSHOTS = ['devices', 'hangs', 'rating', 'overview', 'charts', 'health', 'public', 'platforms', 'failures'];
 
 // ───────────────────────────── topics ─────────────────────────────
 
@@ -323,7 +337,7 @@ export function createStoreData(kv) {
       if (batch.vitals?.length) await addVitals(key, batch.vitals);
       for (const [name, value] of Object.entries(batch.snapshots ?? {})) if (SNAPSHOTS.includes(name) && value) await kv.put({ pk: key, sk: `SNAP#${name}`, ...value });
       for (const [name, value] of Object.entries(batch.extras ?? {})) await kv.put({ pk: key, sk: `X#${name}`, ...value });
-      if (batch.sales?.length) await addDays(key, 'SALES', batch.sales, ({ units, returns }) => ({ units, returns }));
+      if (batch.sales?.length) await addDays(key, 'SALES', batch.sales, salesDay);
       if (batch.wishlists?.length) await addDays(key, 'WISH', batch.wishlists, ({ adds, deletes, purchases, gifts }) => ({ adds, deletes, purchases, gifts }));
       if (batch.traffic?.length) await addDays(key, 'TRAF', batch.traffic, trafficDay);
       if (REVENUE_BATCHES.some((k) => batch[k]?.length)) await writeRevenue(kv, key, batch, (month) => expires(monthEnd(month)));
@@ -425,6 +439,19 @@ export function createStoreData(kv) {
       for (const item of items) await kv.remove(item.pk, item.sk);
       return items.length;
     },
+  };
+}
+
+// A day of sales as kept: units and returns (Steam), and the Microsoft Store's acquisitions by kind, on Xbox consoles,
+// its add-ons and what players paid in dollars when Microsoft says.
+function salesDay({ units, returns, kinds, xbox, paid_usd, addons, addons_usd, addons_by }) {
+  const counts = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => Number.isFinite(v)).slice(0, 20));
+  return {
+    units,
+    returns,
+    ...(kinds ? { kinds: counts(kinds), xbox: xbox ?? 0, addons: addons ?? 0, addons_by: counts(addons_by) } : {}),
+    ...(Number.isFinite(paid_usd) ? { paid_usd } : {}),
+    ...(Number.isFinite(addons_usd) ? { addons_usd } : {}),
   };
 }
 
@@ -683,8 +710,9 @@ export const STORE_PANELS = {
   store_reviews: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} reviews by build`, size: 'l', shared: true },
   store_vitals: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} vitals next to Glitchless`, size: 'l', shared: true },
   store_players: { title: (p) => `On ${p.store ? storeName(p.store) : 'the store'} now vs measured`, size: 'm', shared: true },
-  // itch.io's: page views, browser plays (measured), downloads and purchases, a funnel by day.
-  store_sales: { title: (p) => (p.store === 'itch' ? 'itch.io: page views to purchases' : 'Units, returns and wishlists'), size: 'm', shared: 'sums', hidden: (p) => (p.store === 'itch' ? "itch.io's views, downloads and purchases are not shown on this shared board." : 'Units, returns and wishlists are not shown on this shared board.') },
+  // itch.io's: page views, browser plays (measured), downloads and purchases, a funnel by day; the Microsoft Store's:
+  // acquisitions of the game and its add-ons by day.
+  store_sales: { title: (p) => (p.store === 'itch' ? 'itch.io: page views to purchases' : p.store === 'microsoft_store' ? 'Acquisitions and add-ons' : 'Units, returns and wishlists'), size: 'm', shared: 'sums', hidden: (p) => (p.store === 'itch' ? "itch.io's views, downloads and purchases are not shown on this shared board." : p.store === 'microsoft_store' ? 'Acquisitions and add-ons are not shown on this shared board.' : 'Units, returns and wishlists are not shown on this shared board.') },
   // Stars: the window's written reviews' average, and the store's own rating (the App Store's, Steam's summary).
   store_score: { title: (p) => `${p.store ? storeName(p.store) : 'Store'} rating`, size: 's', shared: true },
   // A revenue source's revenue, MRR, subscriptions and trials (revenue.js; `measure`): money, so like sales.
@@ -704,7 +732,8 @@ export function storePanelFields(p, at, BoardError) {
 // players online, frame times (to read next to the reviews), its units, returns and wishlists; then a Revenue page for
 // a revenue source (revenue.js). Roblox's page leads with what it has instead of reviews: its rating (thumbs up and
 // down), daily active and new users, retention (which the anonymous Roblox SDK can't count), then its vitals. itch.io's
-// is its funnel (page views, browser plays, downloads, purchases) and where the game's sessions were played ($site).
+// is its funnel (page views, browser plays, downloads, purchases) and where the game's sessions were played ($site). The
+// Microsoft Store's leads with its ratings and acquisitions, which come with every connection.
 export function storePages(ctx, { frames = false } = {}) {
   const all = Object.entries(ctx.stores ?? {});
   const revenue = all.filter(([store]) => REVENUE_SOURCES[store] && !REVENUE_SOURCES[store].onStorePage);
@@ -724,6 +753,21 @@ function storePage(store, { id = store.replace(/_/g, '-'), frames = false, sales
         { type: 'stat', metric: 'players', title: 'Players measured', size: 's' },
         { type: 'breakdown', by: '$site', title: 'Where it was played', size: 'm' },
         { type: 'store_revenue', store, measure: 'by_day', size: 'm' },
+        ...(frames ? [{ type: 'frame_time', size: 'm' }] : []),
+      ],
+    };
+  }
+  if (store === 'microsoft_store') {
+    return {
+      id,
+      title: storeName(store),
+      icon: 'flag',
+      panels: [
+        { type: 'store_score', store, size: 's' },
+        { type: 'store_sales', store, size: 'm' },
+        { type: 'stat', metric: 'players', title: 'Players measured', size: 's' },
+        { type: 'store_reviews', store, size: 'l' },
+        { type: 'store_vitals', store, size: 'l' },
         ...(frames ? [{ type: 'frame_time', size: 'm' }] : []),
       ],
     };
@@ -894,12 +938,27 @@ function scorePanel(ctx, st) {
       ? { average: r.average, count: r.count, countries: (r.countries ?? []).filter((x) => x.count > 0).map((x) => x.country), day: r.day, current: currentRating(r) }
       : st.store === 'steam' && st.summary?.total
         ? { desc: st.summary.desc ?? null, positive_pct: pct(st.summary.positive, st.summary.total), count: st.summary.total }
-        : null;
-  if (!synced && !overall) return { empty: true, why: st.synced_at ? (st.store === 'app_store' ? `No ${name} reviews in this window, and no rating from Apple yet: it is read once a day.` : `No ${name} reviews were written in this window.`) : notSynced(st) };
+        : st.store === 'microsoft_store'
+          ? msRatings(ctx, r)
+          : null;
+  if (!synced && !overall) return { empty: true, why: st.synced_at ? (st.store === 'app_store' ? `No ${name} reviews in this window, and no rating from Apple yet: it is read once a day.` : st.store === 'microsoft_store' ? `No ${name} reviews or ratings in this window: Microsoft's ratings are read once a day, a day or more late.` : `No ${name} reviews were written in this window.`) : notSynced(st) };
   const notes = [];
   if (st.store === 'google_play') notes.push("Google Play has no API for its overall rating, so this is the average of the written reviews Glitchless synced (Google Play gives a week of them at a time).");
   if (st.store === 'app_store') notes.push(overall ? `Apple's rating counts every rating in ${overall.countries.map((x) => x.toUpperCase()).join(', ')}, with or without a review, for every version; the reviews' average is of the written reviews Glitchless synced.` : "Apple's own rating is read once a day from its public lookup: none yet.");
+  if (st.store === 'microsoft_store') notes.push(overall ? `Microsoft's ratings are every rating players gave in this window, with or without a review, on any version and device${overall.since ? ` (kept from ${overall.since}, the plan's retention)` : ''}; the reviews' average is of the written reviews Glitchless synced.` : "Microsoft's ratings are read once a day: none in this window yet.");
   return { synced, overall, notes };
+}
+
+// The Microsoft Store's ratings in the window, from its stars by day (read once a day over the plan's retention):
+// { average, count, stars: [1★…5★], since, day } or null when none.
+function msRatings(ctx, r) {
+  const lo = isoDay(ctx.from);
+  const hi = isoDay(ctx.to);
+  const stars = [0, 0, 0, 0, 0];
+  for (const [day, counts] of Object.entries(r?.days ?? {})) if (day >= lo && day <= hi) counts.forEach((n, i) => (stars[i] += n));
+  const count = stars.reduce((a, n) => a + n, 0);
+  if (!count) return null;
+  return { average: round(stars.reduce((a, n, i) => a + n * (i + 1), 0) / count, 2), count, stars, since: r.from && r.from > lo ? r.from : null, day: r.day ?? null };
 }
 
 function robloxScore(st) {
@@ -954,6 +1013,7 @@ function playersPanel(ctx, st) {
 
 function salesPanel(ctx, st) {
   if (st.store === 'itch') return itchFunnel(ctx, st);
+  if (st.store === 'microsoft_store') return msAcquisitions(ctx, st);
   if (!st.sales && !st.wishlists) return { empty: true, why: st.keys?.financial ? `No units, returns or wishlists in this window yet: ${storeName(st.store)} reports them once a day.` : st.store === 'steam' ? 'Units, returns and wishlists need a Financial API Group key (Glitchless Cloud: Settings → Integrations → Steam).' : `No units or returns from ${storeName(st.store)}.` };
   const lo = isoDay(ctx.from);
   const hi = isoDay(ctx.to);
@@ -977,6 +1037,53 @@ function salesPanel(ctx, st) {
       wishlist_deletes: st.wishlists ? sum(wish, 'deletes') : null,
       wishlist_purchases: st.wishlists ? sum(wish, 'purchases') : null,
     },
+  };
+}
+
+// The Microsoft Store's acquisitions of the game and of its add-ons by UTC day (each time someone got it: bought it, got
+// it free, a trial, through Xbox Game Pass, a pre-order), with the window's totals by kind, how many were on an Xbox
+// console, the add-ons most acquired, and what players paid in US dollars where Microsoft says.
+function msAcquisitions(ctx, st) {
+  const lo = isoDay(ctx.from);
+  const hi = isoDay(ctx.to);
+  const rows = (st.sales ?? []).filter((r) => r.day >= lo && r.day <= hi).sort((a, b) => (a.day < b.day ? -1 : 1));
+  if (!rows.length) return { empty: true, why: st.synced_at ? 'No acquisitions from the Microsoft Store in this window yet: Microsoft reports them a day or more late, and they are read once a day.' : notSynced(st) };
+  const sum = (k) => rows.reduce((a, r) => a + (r[k] ?? 0), 0);
+  const money = (k) => (rows.some((r) => Number.isFinite(r[k])) ? round(sum(k), 2) : null);
+  const tally = (k) => {
+    const out = {};
+    for (const r of rows) for (const [name, n] of Object.entries(r[k] ?? {})) out[name] = (out[name] ?? 0) + n;
+    return Object.entries(out).sort((a, b) => b[1] - a[1]);
+  };
+  const units = sum('units');
+  const xbox = sum('xbox');
+  const paid = money('paid_usd');
+  const addonsPaid = money('addons_usd');
+  return {
+    ts: rows.map((r) => Date.parse(`${r.day}T00:00:00Z`)),
+    sales_series: [
+      { label: 'Acquisitions', values: rows.map((r) => r.units ?? 0) },
+      { label: 'Add-on acquisitions', values: rows.map((r) => r.addons ?? 0) },
+    ],
+    totals: {
+      units,
+      returns: null,
+      return_pct: null,
+      wishlist_adds: null,
+      wishlist_deletes: null,
+      wishlist_purchases: null,
+      kinds: Object.fromEntries(tally('kinds')),
+      xbox,
+      addons: sum('addons'),
+      top_addons: tally('addons_by').slice(0, 5).map(([name, count]) => ({ name, count })),
+      paid_usd: paid,
+      addons_usd: addonsPaid,
+    },
+    notes: [
+      "Acquisitions are Microsoft's count of each time someone got the game (bought it, got it free, a trial, through Xbox Game Pass, a pre-order), by UTC day, a day or more late; add-on acquisitions the same for its add-ons.",
+      xbox ? `${xbox} of the ${units} acquisitions were on an Xbox console.` : null,
+      paid != null || addonsPaid != null ? `What players paid, in US dollars as Microsoft converts it, before Microsoft's share: ${paid ?? 0} for the game, ${addonsPaid ?? 0} for add-ons.` : null,
+    ].filter(Boolean),
   };
 }
 
@@ -1078,7 +1185,7 @@ export function storeSales(ctx, params = new URLSearchParams()) {
   if (store && !STORES[store]) return { connected: false, why: `store is one of ${Object.keys(STORES).join(', ')}`, stores: Object.keys(ctx.stores ?? {}) };
   const st = store ? pickStore(ctx, store) : (Object.values(ctx.stores ?? {}).find((x) => STORES[x.store]?.sales) ?? pickStore(ctx, null));
   if (!st) return { connected: false, why: store && ctx.stores ? `This game has no ${storeName(store)} connection (Glitchless Cloud: Settings → Integrations).` : NOT_CONNECTED, stores: Object.keys(ctx.stores ?? {}) };
-  if (!STORES[st.store]?.sales) return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), empty: true, why: `${storeName(st.store)} reports no sales to Glitchless: units, returns and wishlists come from Steam, page views, downloads and purchases from itch.io.` };
+  if (!STORES[st.store]?.sales) return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), empty: true, why: `${storeName(st.store)} reports no sales to Glitchless: units, returns and wishlists come from Steam, acquisitions from the Microsoft Store, page views, downloads and purchases from itch.io.` };
   const panel = salesPanel(ctx, st);
   return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...panel };
 }
@@ -1186,8 +1293,10 @@ function disagreements(store, version, s, m) {
   }
   const c = s.crash_rate;
   const k = m.crashed_pct;
-  if (twice(c, k, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `${name} counts crashes for ${c}% of users on ${version}, Glitchless recorded ${k}% of sessions crashing: native crashes, and crashes before the SDK starts, never reach Glitchless.` });
-  else if (twice(k, c, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `Glitchless recorded ${k}% of sessions crashing on ${version}, ${name} counts ${c}% of users: Glitchless also counts a stopped game loop or a fatal script error, which the OS doesn't see as a crash.` });
+  // (The Microsoft Store counts devices in a day, Google Play users.)
+  const who = store === 'microsoft_store' ? 'devices' : 'users';
+  if (twice(c, k, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `${name} counts crashes for ${c}% of ${who} on ${version}, Glitchless recorded ${k}% of sessions crashing: native crashes, and crashes before the SDK starts, never reach Glitchless.` });
+  else if (twice(k, c, 0.5)) out.push({ metric: 'crash_rate', store_value: c, glitchless_value: k, says: `Glitchless recorded ${k}% of sessions crashing on ${version}, ${name} counts ${c}% of ${who}: Glitchless also counts a stopped game loop or a fatal script error, which the OS doesn't see as a crash.` });
   if (store === 'roblox') out.push(...robloxDisagreements(version, s, m));
   const l = s['launch_time:p50'] ?? s.launch_time;
   const t = m.ttff_p50;
@@ -1219,6 +1328,7 @@ function vitalsLate(st) {
     return 'Roblox reports them for a place version once enough players have played it, keeps them 28 days, and they are read once a day';
   }
   if (st.store === 'google_play') return 'Google Play reports them a day or two late, and only for a version enough people have played';
+  if (st.store === 'microsoft_store') return 'Microsoft reports crashes and daily usage a day or more late and keeps crashes 30 days; they are read once a day';
   if (!st.keys?.api) return 'they need an App Store Connect API key';
   return 'Apple publishes them for a version once enough people have used it, and they are read once a day';
 }
@@ -1237,9 +1347,13 @@ function vitalsPanel(ctx, st) {
     notes: rows.flatMap((r) => r.notes.map((n) => ({ version: r.version, ...n }))),
     devices: st.snapshots?.devices ?? null,
     hangs: st.snapshots?.hangs ?? null,
+    failures: st.snapshots?.failures ?? null,
     ...(st.store === 'roblox' ? { platforms: platformsOf(ctx, st), about: ROBLOX_VITALS } : {}),
+    ...(st.store === 'microsoft_store' ? { about: MICROSOFT_VITALS } : {}),
   };
 }
+
+const MICROSOFT_VITALS = "The Microsoft Store's numbers are Microsoft's own, from Windows error reporting: of the devices that used a package version that day, the share with a crash and the share where Windows reported the game not responding, and how many crashes it counted (scaled from a sample). Microsoft keeps them 30 days. A version is the package version with a trailing .0 dropped (1.4.2.0 is 1.4.2). Xbox consoles aren't in them: Microsoft retired its analytics API for Xbox.";
 
 const ROBLOX_VITALS = "Roblox's numbers are its own, from every player's client: the crash rate is the sessions in which the Roblox app crashed, of the sessions that ended (the same unit Glitchless counts: a player's time in a server), and the frame rates are of the median player and the slowest tenth. Roblox keeps them 28 days. A version is the place version (game.PlaceVersion), which the Roblox SDK sends as the game's version.";
 
@@ -1281,7 +1395,7 @@ export function storeVitals(ctx, params = new URLSearchParams()) {
   const rows = panel.rows ? (version ? panel.rows.filter((r) => r.version === version || String(r.build) === version) : panel.rows) : [];
   // Roblox: its retention too, which the anonymous Roblox SDK can't count (revenue.js).
   const extra = st.store === 'roblox' ? { platforms: panel.platforms ?? null, about: ROBLOX_VITALS, retention: storeRetention(ctx, 'roblox') } : {};
-  return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...(panel.empty ? { empty: true, why: panel.why } : { columns: panel.columns, rows, notes: panel.notes.filter((n) => !version || n.version === version), devices: panel.devices, hangs: panel.hangs }), ...extra };
+  return { connected: true, store: st.store, store_name: storeName(st.store), stores: Object.keys(ctx.stores ?? {}), app_id: st.app_id, synced_at: st.synced_at, ...(panel.empty ? { empty: true, why: panel.why } : { columns: panel.columns, rows, notes: panel.notes.filter((n) => !version || n.version === version), devices: panel.devices, hangs: panel.hangs, failures: panel.failures, ...(panel.about && st.store !== 'roblox' ? { about: panel.about } : {}) }), ...extra };
 }
 
 // ── the finding (findings.js) ──

@@ -112,6 +112,7 @@ namespace GlitchlessSdk
         public Func<Dictionary<string, object>> Steam = () => null; // the game's Steamworks facts (SteamInfo.Read), null until it answers
         public Func<Dictionary<string, object>> Engine; // mesh, texture, object counts and memory, where Unity has them
         public Func<Dictionary<string, object>> EngineInfo = () => null; // session_start.engine {name, version, renderer}: WebGL builds, whose browser_version is the browser's
+        public Func<Dictionary<string, object>> Page = () => null; // session_start.page {url, referrer}: a WebGL build's page (WebPage), where it was played
         public Func<double> StartupMs; // time since the app started, for time to first frame
         public Func<string[]> Args = () => Environment.GetCommandLineArgs();
         public Func<int[]> ScreenSize = () => null;
@@ -2046,7 +2047,7 @@ namespace GlitchlessSdk
                 ["session_type"] = sessionType,
                 ["privacy"] = PrivacyName,
                 ["device"] = device,
-                ["page"] = null,
+                ["page"] = Page?.Invoke(),
                 ["nav_ms"] = null,
             };
             var engine = EngineInfo?.Invoke();

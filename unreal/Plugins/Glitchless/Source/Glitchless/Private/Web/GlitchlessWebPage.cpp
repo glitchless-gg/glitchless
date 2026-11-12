@@ -86,7 +86,7 @@ EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capac
 	var keptLength = keptBytes.length <= KeptSize ? keptBytes.length : 0;
 	new Uint8Array(HEAP8.buffer, Kept, keptLength).set(keptBytes.subarray(0, keptLength));
 	Atomics.store(new Int32Array(HEAP8.buffer, KeptLength, 1), 0, keptLength);
-	var f = { ua: "", mobile: null, dpr: null, screen: null, cores: null, memory: null, gpu: "", vendor: "", protocol: "", host: "", search: "" };
+	var f = { ua: "", mobile: null, dpr: null, screen: null, cores: null, memory: null, gpu: "", vendor: "", protocol: "", host: "", search: "", url: "", referrer: "" };
 	try {
 		var nav = navigator;
 		f.ua = nav.userAgent || "";
@@ -98,6 +98,8 @@ EM_JS(void, GlitchlessWeb_ReadPage, (double Facts, double FactsLength, int Capac
 		f.protocol = location.protocol;
 		f.host = location.hostname;
 		f.search = location.search;
+		f.url = location.origin + location.pathname;
+		if (document.referrer) f.referrer = new URL(document.referrer).origin;
 	} catch (e) {}
 	try {
 		var canvas = document.createElement("canvas");

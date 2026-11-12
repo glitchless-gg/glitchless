@@ -13,8 +13,10 @@ namespace GlitchlessSdk
     /// would, so without this every Unity web player was browser "Unity", OS "Web". DeviceInfo takes the browser, its
     /// major version, the OS, whether it is a phone, the pixel ratio and the screen from here instead, read exactly as
     /// the browser SDK reads them (packages/sdk/src/device.js): a Unity web game and a Three.js game split by browser
-    /// and OS alike, and ParityTests holds the two to the same answers. GlitchlessRunner sends the last batches through
-    /// Beacon as the page hides or goes (Listen). Outside a WebGL player, Read is null and nothing here calls the page.
+    /// and OS alike, and ParityTests holds the two to the same answers. Address is session_start's page, where the game
+    /// was played (an itch.io frame, a Reddit post, its own site), as the browser SDK sends it. GlitchlessRunner sends
+    /// the last batches through Beacon as the page hides or goes (Listen). Outside a WebGL player, Read is null and
+    /// nothing here calls the page.
     /// </summary>
     public static class WebPage
     {
@@ -28,6 +30,12 @@ namespace GlitchlessSdk
             public object Dpr; // devicePixelRatio to 2 places, or null
             public int[] Screen; // the screen in CSS pixels, as the browser SDK sends it, or null
             public bool SteamDeck;
+            public string Url; // the page's origin and path, never its query string or fragment
+            public string Referrer; // the origin of the page that led here, or null
+
+            /// <summary>session_start's page, as the browser SDK sends it: {url, referrer}. The server keeps only the two
+            /// hosts, for the board's $site and the itch.io funnel (SPEC §3b). Null when the page gave no address.</summary>
+            public Dictionary<string, object> Address => Url == null ? null : new Dictionary<string, object> { ["url"] = Url, ["referrer"] = Referrer };
         }
 
         public delegate void PageCallback(int what);
@@ -80,8 +88,8 @@ namespace GlitchlessSdk
         /// the Deck. The browser SDK's isSteamDeck (device.js); browsers that hide the GPU say nothing.</summary>
         public static bool IsSteamDeck(string ua, string gpu) => DeckAgent.IsMatch(ua ?? "") || DeckGpu.IsMatch(gpu ?? "");
 
-        /// <summary>The page's facts from what the jslib read ({ua, mobile, dpr, screen}); gpu is the GPU name Unity
-        /// reports, for the Steam Deck rule. Null when there is nothing to read.</summary>
+        /// <summary>The page's facts from what the jslib read ({ua, mobile, dpr, screen, url, referrer}); gpu is the GPU name
+        /// Unity reports, for the Steam Deck rule. Null when there is nothing to read.</summary>
         public static Facts FromJson(string json, string gpu)
         {
             if (string.IsNullOrEmpty(json)) return null;
@@ -101,7 +109,34 @@ namespace GlitchlessSdk
             if (page.TryGetValue("screen", out var s) && s is List<object> wh && wh.Count == 2 && wh[0] is double w && wh[1] is double h && w > 0 && h > 0)
                 f.Screen = new[] { (int)w, (int)h };
             f.SteamDeck = IsSteamDeck(ua, gpu);
+            f.Url = PageUrl(page.TryGetValue("url", out var url) ? url as string : null);
+            f.Referrer = OriginOf(page.TryGetValue("referrer", out var r) ? r as string : null);
             return f;
+        }
+
+        /// <summary>A page's address without its query string or fragment, which can carry a player's tokens: the jslib
+        /// sends origin and path already, and this holds to it. Null for none.</summary>
+        public static string PageUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return null;
+            var cut = url.IndexOfAny(new[] { '?', '#' });
+            return cut < 0 ? url : url.Substring(0, cut);
+        }
+
+        static readonly Regex Origin = new Regex(@"^(https?)://(?:[^@/?#]*@)?([^/?#]+)", RegexOptions.IgnoreCase);
+
+        /// <summary>The origin of an address, as the browser's URL(address).origin says it (core.js originOf):
+        /// "https://maker.itch.io" for "https://maker.itch.io/game?x=1", "null" for a file or another address with no
+        /// origin of its own, and null for none. The jslib sends the referrer's origin already, and this holds to it.</summary>
+        public static string OriginOf(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return null;
+            var m = Origin.Match(url);
+            if (!m.Success) return "null";
+            var scheme = m.Groups[1].Value.ToLowerInvariant();
+            var host = m.Groups[2].Value.ToLowerInvariant();
+            if ((scheme == "http" && host.EndsWith(":80")) || (scheme == "https" && host.EndsWith(":443"))) host = host.Substring(0, host.LastIndexOf(':'));
+            return scheme + "://" + host;
         }
 
         /// <summary>Whether this is a WebGL player, where the page can be asked.</summary>

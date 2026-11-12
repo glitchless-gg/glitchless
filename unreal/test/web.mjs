@@ -13,7 +13,8 @@
 //              preflight, one released on its way that still lands, one over keepalive's budget, one to an address
 //              with nothing behind it (0, not a hang); hidden, the page sends what waits and plays on, and hands
 //              the page its parting batch; shown again, takes it back; leaving it, the page beacons that batch
-//   2. hosted  the same page at game.test: not on this machine, and ?glitchless on its address is a flag
+//   2. hosted  the same page at game.test, reached from a page on maker.itch.io: not on this machine, ?glitchless on
+//              its address is a flag, and session_start's page is its origin and path and the referrer's origin alone
 //   3. kept    the plugin's core on the page, as a game in install mode, with its Saved folder in memory (as UE
 //              keeps a web build's on an iPhone, with ?saved=memory, or in a launcher-built C++ game): reloaded,
 //              it is the same player; turned off by the player and reloaded, nothing leaves the page, not even
@@ -123,20 +124,20 @@ const proxy = await startProxy(proxyPort, serverPort, seen);
 const web = await serveSite(site, sitePort);
 let browser;
 try {
-  browser = await chromium.launch({ args: ['--host-resolver-rules=MAP game.test 127.0.0.1', `--unsafely-treat-insecure-origin-as-secure=http://game.test:${sitePort}`] });
+  browser = await chromium.launch({ args: ['--host-resolver-rules=MAP game.test 127.0.0.1, MAP maker.itch.io 127.0.0.1', `--unsafely-treat-insecure-origin-as-secure=http://game.test:${sitePort}`] });
 } catch (err) {
   console.error(`Playwright's Chromium didn't start (npx playwright install chromium): ${err.message}`);
   process.exit(2);
 }
 
-async function play(label, host, query) {
+async function play(label, host, query, referer) {
   const page = await browser.newPage();
   const log = [];
   page.on('console', (m) => log.push(m.text()));
   page.on('pageerror', (e) => log.push(`PAGEERROR ${e.message}`));
   const session = `s_web${label}0000000000`.slice(0, 18);
   const from = seen.length;
-  await page.goto(`http://${host}:${sitePort}/page.html?intake=http://127.0.0.1:${proxyPort}&session=${session}${query}`);
+  await page.goto(`http://${host}:${sitePort}/page.html?intake=http://127.0.0.1:${proxyPort}&session=${session}${query}`, { referer });
   await until(() => lines(log, 'sent').length > 0 || log.some((l) => l.startsWith('PAGEERROR')), 30_000, `${label}: the page's sends`);
   const isolated = await page.evaluate(() => globalThis.crossOriginIsolated === true);
   // Hidden: another tab. Then the page goes (another page in its place).
@@ -161,7 +162,7 @@ async function play(label, host, query) {
 }
 
 const local = await play('local', '127.0.0.1', '');
-const hosted = await play('hosted', 'game.test', '&glitchless&glitchless-intake=https://elsewhere.example');
+const hosted = await play('hosted', 'game.test', '&glitchless&glitchless-intake=https://elsewhere.example', `http://maker.itch.io:${sitePort}/game?secret=1`);
 fs.writeFileSync(path.join(tmp, 'local.log'), local.log.join('\n'));
 fs.writeFileSync(path.join(tmp, 'hosted.log'), hosted.log.join('\n'));
 
@@ -323,10 +324,16 @@ check('local: a page on 127.0.0.1 is the developer\'s, with no flags', () => {
   assert.equal(f.local, true);
   assert.deepEqual(f.flags, []);
 });
+check('local: session_start\'s page is the page\'s origin and path, without its query string, and no referrer', () => {
+  assert.deepEqual(lines(local.log, 'facts')[0]?.address, { url: `http://127.0.0.1:${sitePort}/page.html`, referrer: null });
+});
 check('hosted: a page at game.test is played by players, and only ?glitchless counts as a flag', () => {
   const f = lines(hosted.log, 'facts')[0];
   assert.equal(f.local, false);
   assert.deepEqual(f.flags, ['-glitchless']);
+});
+check('hosted: session_start\'s page is the page\'s origin and path, and the referrer\'s origin alone', () => {
+  assert.deepEqual(lines(hosted.log, 'facts')[0]?.address, { url: `http://game.test:${sitePort}/page.html`, referrer: `http://maker.itch.io:${sitePort}` });
 });
 
 await browser.close();

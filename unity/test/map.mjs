@@ -17,6 +17,8 @@
 //    platformer has it), plays it in headless Chromium on this Mac's GPU against a local Glitchless server, and checks
 //    /v1/query/heatmap for its two levels: the map with its axis, bounds and size, the deaths on it, and the colour the
 //    picture has where the dashboard draws each death. Prints each capture's cost, step by step, as the player measured it.
+//    Its session_start names the page it was played on, as the browser SDK's does: the server counts it on localhost
+//    in a board's $site (a fresh server only: the check saves a dashboard).
 // The maps are kept in the temporary folder printed at the end, to look at.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -227,6 +229,15 @@ async function webglTest(pipeline) {
     while (!lines.some((l) => l.includes('[map-probe] done')) && Date.now() - started < 180_000) await new Promise((r) => setTimeout(r, 250));
     fs.writeFileSync(path.join(tmp, `webgl-${pipeline}.console.log`), lines.join('\n'));
     check(`webgl (${pipeline}): the probe ran to its end`, () => assert.ok(lines.some((l) => l.includes('[map-probe] done')), `no "[map-probe] done" in ${path.join(tmp, `webgl-${pipeline}.console.log`)}`));
+    if (!intakeGiven) {
+      // Where it was played: session_start's page, which the server keeps as its host (127.0.0.1 is localhost).
+      await fetch(`${intake}/v1/dashboard?service=map-probe`, { method: 'PUT', body: JSON.stringify({ pages: [{ id: 'sites', title: 'Sites', panels: [{ type: 'breakdown', by: '$site' }] }] }) });
+      const board = await (await fetch(`${intake}/v1/query/board?${new URLSearchParams({ service: 'map-probe', from: String(started - 60_000), page: 'sites' })}`)).json();
+      check(`webgl (${pipeline}): session_start names the page it was played on, so the server counts it on localhost ($site)`, () => {
+        const rows = board.board?.panels?.[0]?.rows ?? [];
+        assert.deepEqual(rows.map((r) => r.value), ['localhost'], JSON.stringify(rows));
+      });
+    }
 
     // What each capture cost, step by step (the SDK's debug line), and the frames around it.
     for (const level of ['probe-2d', 'probe-3d']) {

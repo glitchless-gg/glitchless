@@ -167,6 +167,8 @@ namespace GlitchlessWeb
 				C.IsDevelopmentBuild = false;
 			}
 			C.IsMobile = Glitchless::Page::ParseUserAgent(GFacts.Ua, GFacts.UadMobile).Mobile;
+			// Where it is played (an itch.io frame, a Reddit post, its own site), as the browser SDK says it.
+			C.Address = Glitchless::Page::Address(GFacts);
 		}
 	}
 

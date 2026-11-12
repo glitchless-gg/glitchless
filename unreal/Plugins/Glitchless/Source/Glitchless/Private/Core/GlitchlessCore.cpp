@@ -2742,7 +2742,7 @@ namespace Glitchless
 		{
 			E.Set("engine", EngineInfo);
 		}
-		E.Set("page", FValue());
+		E.Set("page", Address.IsObject() ? Address : FValue());
 		E.Set("nav_ms", FValue());
 		if (Role == ERole::Server)
 		{

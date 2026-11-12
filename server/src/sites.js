@@ -1,7 +1,8 @@
 // Where a web game was played: the site its page was on, for a board's `$site` (analytics.js SESSION_SPLITS) and the
-// itch.io page's funnel (reviews.js). The browser SDK sends its page with session_start (SPEC §2: `page.url`, the
-// page's origin and path, and `page.referrer`, the origin of the page that led there); a session keeps only their two
-// hosts (session-state.js `page`), never a path, and this table names the sites games are put on. SPEC §3b.
+// itch.io page's funnel (reviews.js). The browser SDK, a Godot web export, a Unity WebGL build and an Unreal web build
+// send their page with session_start (SPEC §2: `page.url`, the page's origin and path, and `page.referrer`, the origin
+// of the page that led there); a session keeps only their two hosts (session-state.js `page`), never a path, and this
+// table names the sites games are put on. SPEC §3b.
 //
 // itch.io plays an HTML5 game in a frame on html-classic.itch.zone (a frame address that changes with every upload),
 // inside the game's page on <maker>.itch.io, so the frame's referrer is the maker's page: either one says itch.io. A
@@ -9,12 +10,12 @@
 // referrer. A site is matched by its frames' hosts first (`hosts`), then by the page that led there (`referrers`); a
 // host matches its own name and every name under it.
 //
-// The engines' web builds (a Godot web export, a Unity WebGL build) send no page, so they are "(none)" like a native
-// build, unless the game sets a `site` property itself, which comes first, in its own words (as `graphics` does).
+// A web build from an SDK that sends no page (GameMaker's, an older Godot, Unity or Unreal one) is "(none)" like a
+// native build, unless the game sets a `site` property itself, which comes first, in its own words (as `graphics` does).
 import { NONE, propOf } from './properties.js';
 
 // A game in a Reddit post sends through its app's server (glitchless/devvit), which always sets the session's
-// `subreddit` property, so an engine's web build there, which sends no page, still counts as played on Reddit.
+// `subreddit` property, so a web build there that sends no page still counts as played on Reddit.
 export const REDDIT = 'Reddit';
 
 // Each site: what a board shows (`site`), the hosts its game frames are served from, and the hosts of its own pages.
@@ -68,7 +69,7 @@ export function siteOfHosts(host, ref) {
 }
 
 // A session's site: the `site` property when the game sets one, else its page's (siteOfHosts), else Reddit when the
-// Reddit relay set its `subreddit`, else "(none)": a native build, or an engine's web build, which sends no page.
+// Reddit relay set its `subreddit`, else "(none)": a native build, or a web build from an SDK that sends no page.
 export function siteOf(s) {
   const prop = propOf(s, 'site');
   if (prop != null) return prop;

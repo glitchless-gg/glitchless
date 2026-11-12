@@ -32,9 +32,12 @@ namespace Glitchless
 			std::string Protocol; // location.protocol ("https:"), never sent
 			std::string Host; // location.hostname, never sent
 			std::string Search; // location.search, never sent
+			std::string Url; // location.origin and pathname: where the game is played, sent (Address)
+			std::string Referrer; // the origin of the page that led here (document.referrer's), or empty
 		};
 
-		/** The page script's JSON ({ua, mobile, dpr, screen, cores, memory, gpu, vendor, protocol, host, search}). */
+		/** The page script's JSON ({ua, mobile, dpr, screen, cores, memory, gpu, vendor, protocol, host, search, url,
+		 * referrer}). */
 		bool ParseFacts(const std::string& Json, FFacts& Out);
 
 		struct FUserAgent
@@ -63,6 +66,16 @@ namespace Glitchless
 		 * glitchless, glitchless-debug and glitchless-synthetic: the intake and the rest stay the game's to set, so a
 		 * link can't point a player's data at another server. */
 		std::vector<std::string> Flags(const std::string& Search);
+
+		/** session_start's page, as the browser SDK sends it: {url, referrer}, the page's origin and path and the origin
+		 * of the page that led there (null when none did), so the server can tell where the game was played (an itch.io
+		 * frame, a Reddit post, its own site: $site, SPEC §3b). Never a query string, a fragment or a whole referrer.
+		 * Null when the page gave no address. */
+		FValue Address(const FFacts& Facts);
+		/** The origin of an address, as the browser's URL(address).origin says it: "https://maker.itch.io" for
+		 * "https://maker.itch.io/game?x=1", "null" for a file or another address with no origin of its own, and empty
+		 * for none. The page script sends the referrer's origin already, and Address holds to it. */
+		std::string OriginOf(const std::string& Url);
 
 		/** session_start's device for a web build, as the browser SDK sends it: browser, browser_version (major), os,
 		 * mobile, device_tier (from the page's cores and memory), gpu_tier, screen, dpr, refresh_hz (null) and

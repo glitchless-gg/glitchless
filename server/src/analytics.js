@@ -1264,7 +1264,7 @@ export const SESSION_SPLITS = {
   // The graphics setting the session played at (graphicsOf), lowest to highest.
   graphics: { label: 'graphics quality', of: (s) => graphicsOf(s) ?? NONE, order: graphicsRank },
   // Where a web game was played (sites.js): itch.io and the other sites games are put on, localhost, or the game's own
-  // site by its host; "(none)" for a session with no page (a native build, an engine's web build).
+  // site by its host; "(none)" for a session with no page (a native build, a web build from an SDK that sends none).
   site: { label: 'site', of: (s) => siteOf(s) },
 };
 

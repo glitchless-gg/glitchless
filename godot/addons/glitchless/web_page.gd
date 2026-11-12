@@ -13,9 +13,12 @@ extends RefCounted
 ## as a tab is hidden or closed, and a web export can't wait for a request then,
 ## so the last batches go by navigator.sendBeacon (beacon), as the browser SDK
 ## sends its own; in a Reddit post, by the page's own fetch with keepalive. And
-## it reads the page's address, which never leaves the device: a page on the
-## developer's own machine follows the debug-build rule, ?glitchless there is
-## --glitchless (flags), and an intake given as a path is on the page's origin.
+## it reads the page's address: a page on the developer's own machine follows
+## the debug-build rule, ?glitchless there is --glitchless (flags), and an
+## intake given as a path is on the page's origin. Of the address only the
+## origin and path leave the device, with the origin of the page that led there,
+## as session_start's page (address), as the browser SDK sends it: that is
+## where the game was played (an itch.io frame, a Reddit post, its own site).
 ##
 ## Everything is read property by property (get_interface), never with
 ## JavaScriptBridge.eval: a page whose Content-Security-Policy has no
@@ -54,7 +57,8 @@ const BROWSERS: Array = [
 ## web), navigator.deviceMemory (Chromium; GB, rounded and capped by the
 ## browser), the GPU from a WebGL context of its own (the unmasked renderer, as
 ## the browser SDK probes it; Godot's own name for it is "WebKit WebGL"), the
-## page's address, and whether Reddit's webview script is on the page (devvit).
+## page's address and referrer, and whether Reddit's webview script is on the
+## page (devvit).
 
 static var _facts: Variant = null  # read once a launch
 static var _flags: Variant = null
@@ -81,7 +85,7 @@ static func _read_page() -> Dictionary:
 	var location: Variant = JavaScriptBridge.get_interface("location")
 	if window == null or nav == null or location == null:
 		return {}
-	var f := {"ua": _text(nav.userAgent), "mobile": null, "dpr": _number(window.devicePixelRatio), "screen": null, "cores": _number(nav.hardwareConcurrency), "memory": _number(nav.deviceMemory), "gpu": "", "vendor": "", "protocol": _text(location.protocol), "host": _text(location.hostname), "search": _text(location.search), "origin": _text(location.origin), "devvit": false}
+	var f := {"ua": _text(nav.userAgent), "mobile": null, "dpr": _number(window.devicePixelRatio), "screen": null, "cores": _number(nav.hardwareConcurrency), "memory": _number(nav.deviceMemory), "gpu": "", "vendor": "", "protocol": _text(location.protocol), "host": _text(location.hostname), "search": _text(location.search), "origin": _text(location.origin), "path": _text(location.pathname), "referrer": "", "devvit": false}
 	var uad: Variant = nav.userAgentData
 	if uad != null and uad.mobile is bool:
 		f.mobile = uad.mobile
@@ -91,6 +95,8 @@ static func _read_page() -> Dictionary:
 	var devvit: Variant = window.devvit
 	f.devvit = devvit != null and devvit.token is String
 	var document: Variant = JavaScriptBridge.get_interface("document")
+	if document != null:
+		f.referrer = _text(document.referrer)
 	var canvas: Variant = document.createElement("canvas") if document != null else null
 	var gl: Variant = canvas.getContext("webgl2") if canvas != null else null
 	if gl == null and canvas != null:
@@ -117,6 +123,45 @@ static func _number(v: Variant) -> Variant:
 ## it; "" off the web.
 static func origin() -> String:
 	return str(facts().get("origin", ""))
+
+
+## session_start's page, as the browser SDK sends it: {url, referrer}, the
+## page's origin and path and the origin of the page that led there (null when
+## none did). Null off the web or when the page can't be read. The server keeps
+## only the two hosts, for the board's $site and the itch.io funnel (SPEC §3b).
+static func address() -> Variant:
+	var page := facts()
+	if page.is_empty():
+		return null
+	return address_of(str(page.get("origin", "")), str(page.get("path", "")), str(page.get("referrer", "")))
+
+
+## address() from the page's location.origin, location.pathname and
+## document.referrer. Never a query string or a fragment (they can carry a
+## player's tokens), and of the referrer only its origin.
+static func address_of(page_origin: String, path: String, referrer: String) -> Dictionary:
+	var cut := path.find("?")
+	var fragment := path.find("#")
+	if fragment >= 0 and (cut < 0 or fragment < cut):
+		cut = fragment
+	return {"url": page_origin + (path if cut < 0 else path.substr(0, cut)), "referrer": origin_of(referrer)}
+
+
+## The origin of an address, as the browser's URL(address).origin says it
+## (core.js originOf): "https://maker.itch.io" for
+## "https://maker.itch.io/game?x=1", "null" for a file or another address with
+## no origin of its own, and null for none.
+static func origin_of(url: String) -> Variant:
+	if url == "":
+		return null
+	var m := RegEx.create_from_string("(?i)^(https?)://(?:[^@/?#]*@)?([^/?#]+)").search(url)
+	if m == null:
+		return "null"
+	var scheme := m.get_string(1).to_lower()
+	var host := m.get_string(2).to_lower()
+	if (scheme == "http" and host.ends_with(":80")) or (scheme == "https" and host.ends_with(":443")):
+		host = host.substr(0, host.rfind(":"))
+	return "%s://%s" % [scheme, host]
 
 
 ## What the page says about the device, in the browser SDK's words: browser,

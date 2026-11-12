@@ -15,13 +15,15 @@
 //                 going, reason pagehide) by beacon too
 //   3. quit       get_tree().quit() sends the session's end by beacon
 //   4. debug      on this machine a debug export sends nothing without ?glitchless; on a page anywhere else it sends,
-//                 and ?glitchless-synthetic marks the session a bot's
+//                 and ?glitchless-synthetic marks the session a bot's. That page is in a frame on maker.itch.io, as
+//                 itch.io plays a game: session_start's page is the frame's origin and path and the referrer's
+//                 origin alone, and the server counts the session as played on itch.io ($site)
 //   5. off switch a player's "off" is kept in IndexedDB: the next visit measures and sends nothing
 //   6. outbox     batches a visit couldn't send are kept in IndexedDB and sent on the next visit
 //   7. reddit     in a Reddit post (packages/sdk/test/devvit-harness.js: connect-src 'self', no 'unsafe-eval', /api/ only
 //                 with the app's token), sending to /api/glitchless through glitchless/devvit: the page is read without
 //                 eval, the session has the subreddit and post and no player ID, and it ends by keepalive fetch
-// The page's address (127.0.0.1, or game.test mapped to it) is where it runs; the demo's own flags go in the export's
+// The page's address (127.0.0.1, or game.test and maker.itch.io mapped to it) is where it runs; the demo's own flags go in the export's
 // GODOT_CONFIG args, as a game's would. Every intake request passes through a proxy here that notes how it was sent.
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -107,6 +109,8 @@ const gpus = [
   ['Mali-G78', 'ARM'],
   ['', ''],
 ];
+// Referrers as pages have them, and the origin the browser's URL gives each: what session_start's page.referrer is.
+const referrers = ['https://maker.itch.io/', 'HTTPS://Maker.Itch.IO/Game?x=1#y', 'http://game.test:8080/a/b?c', 'https://user:pw@host.example:443/x', 'http://host.example:80', 'https://[::1]:7777/x', 'file:///Users/me/game/index.html', 'about:blank'];
 const linuxChrome = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
 const decks = [
   [linuxChrome, 'AMD Custom GPU 0405 (vangogh, LLVM 15.0.7, DRM 3.54, 6.5.0-valve22-1-neptune-65)'],
@@ -190,6 +194,7 @@ try {
       }),
       gpus: gpus.map(([renderer, vendor]) => ({ renderer, vendor, clean: cleanGpu(renderer), vendor_clean: cleanVendor(vendor, renderer), tier: classifyGpu(cleanGpu(renderer)) })),
       decks: decks.map(([ua, gpu]) => ({ ua, gpu, deck: isSteamDeck({ userAgent: ua, gpu }) })),
+      referrers: referrers.map((url) => ({ url, origin: new URL(url).origin })),
     }),
   );
   if (!fs.existsSync(path.join(PROJECT, '.godot'))) spawnSync(godot, ['--headless', '--path', PROJECT, '--import'], { stdio: 'ignore' });
@@ -225,7 +230,7 @@ try {
   try {
     // game.test is a page players play; Godot's shell runs only in a secure context, which plain http is on 127.0.0.1.
     // (The full Chromium build: its headless shell ignores that flag.)
-    browser = await chromium.launch({ channel: 'chromium', args: ['--host-resolver-rules=MAP game.test 127.0.0.1', `--unsafely-treat-insecure-origin-as-secure=http://game.test:${exports.port}`] });
+    browser = await chromium.launch({ channel: 'chromium', args: ['--host-resolver-rules=MAP game.test 127.0.0.1, MAP maker.itch.io 127.0.0.1', `--unsafely-treat-insecure-origin-as-secure=http://game.test:${exports.port},http://maker.itch.io:${exports.port}`] });
   } catch (err) {
     console.error(`Playwright's Chromium didn't start (npx playwright install chromium): ${err.message}`);
     process.exit(2);
@@ -305,6 +310,9 @@ try {
       assert.match(start.engine.version, /^4\.\d+\.\d+$/);
       assert.equal(start.session_type, 'user');
     });
+    check(`${label}: session_start's page is the page's origin and path, without its query string, and no referrer`, () => {
+      assert.deepEqual(start?.page, { url: `http://127.0.0.1:${exports.port}/${build}/index.html`, referrer: null });
+    });
     check(`${label}: frame windows, hitches, errors (with the user dir cut to user://), deaths and the level funnel arrive`, () => {
       const windows = events.filter((e) => e.type === 'frame_window');
       assert.ok(windows.length >= 2, `${windows.length} frame windows`);
@@ -379,9 +387,15 @@ try {
       assert.deepEqual(proxy.requests.slice(from), []);
       assert.ok(logs.includes('glitchless on: false'), logs.join('\n'));
     });
+    // The game in a frame on the maker's itch.io page, as itch.io plays one. The frame is told to send its whole
+    // address as the referrer (browsers send only the origin across sites by default), so it's the SDK that cuts it.
     const from2 = proxy.requests.length;
-    const hosted = await open(pageUrl('nothreads', 'glitchless-synthetic', [intake, '--level-seconds=1.5'], 'game.test'));
-    await waitFor(() => eventsOf(intakes(from2)).some((e) => e.type === 'frame_window'), 10_000);
+    const frame = pageUrl('nothreads', 'glitchless-synthetic', [intake, '--level-seconds=1.5'], 'game.test');
+    fs.mkdirSync(path.join(site, 'itch'), { recursive: true });
+    fs.writeFileSync(path.join(site, 'itch', 'game.html'), `<!doctype html><iframe src="${frame.replace(/&/g, '&amp;')}" referrerpolicy="unsafe-url" allow="autoplay; fullscreen" width="640" height="360"></iframe>`);
+    const itchPage = `http://maker.itch.io:${exports.port}/itch/game.html?secret=1`;
+    const hosted = await open(itchPage);
+    await waitFor(() => eventsOf(intakes(from2)).some((e) => e.type === 'frame_window'), 15_000);
     await hosted.ctx.close();
     const start = eventsOf(intakes(from2)).find((e) => e.type === 'session_start');
     check('debug: on a page anywhere else, players are playing it: a debug export sends', () => {
@@ -389,6 +403,17 @@ try {
       assert.ok(start, 'no session_start');
     });
     check('debug: ?glitchless-synthetic marks the session a bot\'s', () => assert.equal(start?.session_type, 'synthetic'));
+    check('itch.io: session_start\'s page is the frame\'s origin and path, and the referrer\'s origin alone', () => {
+      assert.deepEqual(start?.page, { url: `http://game.test:${exports.port}/nothreads/index.html`, referrer: `http://maker.itch.io:${exports.port}` });
+    });
+    await fetch(`http://127.0.0.1:${port}/v1/dashboard?service=${SERVICE}`, { method: 'PUT', body: JSON.stringify({ pages: [{ id: 'sites', title: 'Sites', panels: [{ type: 'breakdown', by: '$site' }] }] }) });
+    const board = await query(port, 'board', { page: 'sites' });
+    check('itch.io: the server counts the session as played on itch.io ($site), and the plain pages on localhost', () => {
+      const rows = board.board?.panels?.[0]?.rows ?? [];
+      assert.equal(rows.find((r) => r.value === 'itch.io')?.sessions, 1, JSON.stringify(rows));
+      assert.ok(rows.some((r) => r.value === 'localhost'), JSON.stringify(rows));
+      assert.ok(!rows.some((r) => r.value === '(none)'), JSON.stringify(rows));
+    });
   }
 
   // 5. off switch: kept in IndexedDB across visits

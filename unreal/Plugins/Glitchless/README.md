@@ -205,6 +205,8 @@ new:
   - Package with BuildCookRun's `-package` step: it writes the `wasm-manifest.json` the page loads first.
   - The page's address stands in for the command line: on your own machine (`localhost`, a private address) a
     Development build follows the debug rule; add `?glitchless` to send from it, as `-glitchless` does elsewhere.
+  - `session_start.page` is the page's origin and path and the origin of the page that led there, as the browser
+    SDK sends them (never a query string), so a board's `$site` and the itch.io funnel count plays in itch.io's frame.
   - Every 5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts (Epic's web HTTP
     settings), so it shows under Errors once a session. Mark it known (`glitchless_mark_known`).
   - **A reload is the same player, and off stays off** (0.5.6). Unreal doesn't always keep a web build's `Saved`

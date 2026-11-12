@@ -3,6 +3,7 @@
 
 #include "CoreHarness.h"
 #include "GlitchlessCore.h"
+#include "GlitchlessPage.h"
 #include "TestMain.h"
 
 #include <algorithm>
@@ -672,7 +673,7 @@ TEST(AWebPagesPartingBatchIsMadeAheadAndEndsNothing)
 	EXPECT(!Core->Parting("pagehide").Body.empty());
 }
 
-TEST(AWebBuildsSessionStartNamesItsEngine)
+TEST(AWebBuildsSessionStartNamesItsEngineAndPage)
 {
 	FHarness H;
 	auto Core = H.NewCore();
@@ -681,6 +682,9 @@ TEST(AWebBuildsSessionStartNamesItsEngine)
 	Engine.Set("version", "5.9.0");
 	Engine.Set("renderer", "webgpu");
 	Core->EngineInfo = Engine;
+	Page::FFacts Facts;
+	EXPECT(Page::ParseFacts(R"J({"url":"https://html-classic.itch.zone/html/15550123/index.html","referrer":"https://maker.itch.io"})J", Facts));
+	Core->Address = Page::Address(Facts);
 	Core->Init(FHarness::Options());
 	H.Frames(*Core, 30);
 	Core->Flush();
@@ -689,6 +693,7 @@ TEST(AWebBuildsSessionStartNamesItsEngine)
 	if (!Starts.empty())
 	{
 		EXPECT_EQ(Starts[0].Find("engine")->Serialize(), R"({"name":"unreal","version":"5.9.0","renderer":"webgpu"})");
+		EXPECT_EQ(Starts[0].Find("page")->Serialize(), R"({"url":"https://html-classic.itch.zone/html/15550123/index.html","referrer":"https://maker.itch.io"})");
 	}
 
 	FHarness Native;

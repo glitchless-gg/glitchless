@@ -2134,7 +2134,7 @@ func _session_start_event() -> Dictionary:
 		"session_type": _session_type,
 		"privacy": _privacy,
 		"device": device,
-		"page": null,
+		"page": WebPage.address(),  # a web export's page, where it was played (web_page.gd); null elsewhere
 		"nav_ms": null,
 	}
 	if OS.has_feature("web"):

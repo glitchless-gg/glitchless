@@ -2,7 +2,9 @@
 // Store): its reviews over time with each release marked and a row per build (what players said, what Glitchless
 // measured on it), the store's own vitals next to Glitchless's, players online next to the sessions measured, and units,
 // returns and wishlists by day; Roblox's vitals by place version and by platform, and its rating as thumbs up and down;
-// itch.io's page as a funnel (Funnel): page views, browser plays measured there, downloads and purchases by day.
+// itch.io's page as a funnel (Funnel): page views, browser plays measured there, downloads and purchases by day; the
+// Microsoft Store's acquisitions of the game and its add-ons by day (Sales), its own ratings (Score) and the newest
+// version's heaviest failures under its crash and hang rates (Vitals).
 // And a revenue source's (RevenueCat's, Stripe's or Roblox's, server/src/revenue.js): its revenue,
 // installs, active users, MRR, subscriptions and trials (Stripe: refunds and new paying customers) as numbers (Board.jsx
 // draws them as stats, with revenueStat), revenue per day next to the game's own purchase events (Stripe: and its
@@ -122,9 +124,10 @@ export function storeInfo(p) {
       p.summary && `On ${p.store_name} overall: ${p.summary.desc} (${fmtNum(p.summary.positive)} positive, ${fmtNum(p.summary.negative)} negative).`,
       p.source && `${SOURCE[p.source]?.(p.store_name)}. Frame p95 and crash-free are what Glitchless measured on that build's version.`,
     ];
-  if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : ''}. Right: what Glitchless measured of the same version (sessions).`, p.about];
+  if (p.type === 'store_vitals') return [`Left: what ${p.store_name} measured${p.store === 'google_play' ? ' (users in a day, a day or two late)' : p.store === 'microsoft_store' ? ' (devices in a day, a day or more late)' : ''}. Right: what Glitchless measured of the same version (sessions).`, p.about];
   if (p.type === 'store_players') return [p.why_no_coverage || (p.store === 'roblox' ? 'Roblox is asked how many are playing now once an hour. The gap is players in servers whose experience runs without the Roblox SDK, or with HTTP requests turned off.' : `${p.store_name} is asked for players online once an hour. The gap is players on a build that sends no telemetry: an older build, or one without the SDK.`)];
   if (p.type === 'store_sales' && p.store === 'itch') return notes;
+  if (p.type === 'store_sales' && p.store === 'microsoft_store') return notes;
   if (p.type === 'store_sales') return [`By day, as ${p.store_name} reports them${p.store === 'steam' ? ' (units and returns by Pacific day, wishlists by GMT day), from the Financial API key' : ''}.`];
   if (p.type === 'store_score') return scoreInfo(p);
   if (p.type !== 'store_revenue') return notes;
@@ -403,6 +406,7 @@ function Score({ p }) {
     <div className="score">
       {o && p.store === 'app_store' && <Figure label="Apple's rating" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}${o.current ? ` · ${o.current.version ?? 'this version'}: ${stars(o.current.average)}` : ''}`} />}
       {o && steam && <Figure label="On Steam" value={o.desc ?? fmtPct(o.positive_pct, 0)} sub={`${fmtPct(o.positive_pct, 0)} of ${fmtNum(o.count)} positive`} />}
+      {o && p.store === 'microsoft_store' && <Figure label="Microsoft's ratings" value={stars(o.average)} sub={`${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'} in this window`} />}
       {s && <Figure label={o ? 'This window' : null} value={steam ? fmtPct(s.positive_pct, 0) : stars(s.average)} sub={steam ? `positive, of ${fmtNum(s.reviews)}` : `${fmtNum(s.reviews)} ${s.reviews === 1 ? 'review' : 'reviews'}${o ? '' : ' in this window'}`} />}
       {!s && <Figure label="This window" value="–" sub="no reviews synced" />}
     </div>
@@ -416,6 +420,7 @@ function scoreInfo(p) {
     o && p.store === 'app_store' && `Apple's rating: ${stars(o.average)} from ${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'}.${o.current ? ` ${o.current.version ?? 'This version'}: ${stars(o.current.average)} from ${fmtNum(o.current.count)}.` : ''}`,
     o && p.store === 'steam' && `Steam's summary of every review: ${fmtPct(o.positive_pct, 0)} positive of ${fmtNum(o.count)}.`,
     o && p.store === 'roblox' && `${fmtNum(o.up)} thumbs up and ${fmtNum(o.down)} down, all time${o.day ? `, read ${o.day}` : ''}.`,
+    o && p.store === 'microsoft_store' && `Microsoft's ratings: ${stars(o.average)} from ${fmtNum(o.count)} ${o.count === 1 ? 'rating' : 'ratings'} (${o.stars.map((n, i) => `${i + 1}★ ${fmtNum(n)}`).join(', ')}).`,
     s && `${p.store === 'steam' ? 'The positive share' : 'The average'} of the ${fmtNum(s.reviews)} written ${s.reviews === 1 ? 'review' : 'reviews'} synced in this window${s.since ? ` (since ${fmtTime(s.since, true)})` : ''}.`,
     s?.stars && `Stars: ${s.stars.map((n, i) => `${i + 1}★ ${n}`).join(', ')}.`,
     ...(p.notes ?? []),
@@ -556,6 +561,18 @@ function Vitals({ p }) {
           {d.crash_rate_by_device?.length > 0 && <div>Most crashes: {worst(d.crash_rate_by_device)}</div>}
         </div>
       )}
+      {p.failures?.failures?.length > 0 && (
+        <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
+          Heaviest failures in {p.failures.version}
+          {p.failures.build && p.failures.build !== p.failures.version ? ` (${p.failures.build})` : ''}, last {fmtNum(Math.round((Date.parse(p.failures.to) - Date.parse(p.failures.from)) / DAY) + 1)} days:{' '}
+          {p.failures.failures.map((x, i) => (
+            <span key={i}>
+              {i ? ' · ' : ''}
+              <span className="mono" title={x.name}>{x.symbol ?? x.name}</span> {x.type} on {fmtNum(x.devices, 0)} {x.devices === 1 ? 'device' : 'devices'}
+            </span>
+          ))}
+        </div>
+      )}
       {p.hangs?.signatures?.length > 0 && (
         <div className="muted" style={{ marginTop: 10, fontSize: 12.5 }}>
           Heaviest hangs in build {p.hangs.build}
@@ -652,17 +669,19 @@ function Players({ p }) {
 
 function Sales({ p }) {
   const t = p.totals;
+  const ms = p.store === 'microsoft_store';
   return (
     <>
       <div className="row" style={{ gap: 18, marginBottom: 6 }}>
-        {t.units != null && <Figure label="Units sold" value={fmtNum(t.units)} />}
+        {t.units != null && <Figure label={ms ? 'Acquisitions' : 'Units sold'} value={fmtNum(t.units)} sub={ms ? (t.xbox ? `${fmtNum(t.xbox)} on Xbox` : kindsLine(t.kinds)) : null} title={ms ? Object.entries(t.kinds ?? {}).map(([k, v]) => `${k}: ${fmtNum(v)}`).join('\n') : undefined} />}
+        {ms && <Figure label="Add-ons" value={fmtNum(t.addons)} sub={t.top_addons?.[0] ? `most: ${t.top_addons[0].name}` : null} />}
         {t.returns != null && <Figure label="Returns" value={fmtNum(t.returns)} sub={t.return_pct != null ? `${fmtPct(t.return_pct)} of units` : null} />}
         {t.wishlist_adds != null && <Figure label="Wishlist adds" value={fmtNum(t.wishlist_adds)} sub={`${fmtNum(t.wishlist_deletes)} deleted, ${fmtNum(t.wishlist_purchases)} bought`} />}
       </div>
       <div className="row" style={{ gap: 12, alignItems: 'stretch' }}>
         {p.sales_series && (
           <div style={{ flex: 1, minWidth: 220 }}>
-            <TimeSeries ts={p.ts} height={130} series={[{ ...p.sales_series[0], color: 'var(--ink)' }, { ...p.sales_series[1], color: '#ff6b57' }]} />
+            <TimeSeries ts={p.ts} height={130} series={[{ ...p.sales_series[0], color: 'var(--ink)' }, { ...p.sales_series[1], color: ms ? '#3d8cf5' : '#ff6b57' }]} />
           </div>
         )}
         {p.wishlist_series && (
@@ -673,6 +692,12 @@ function Sales({ p }) {
       </div>
     </>
   );
+}
+
+// The Microsoft Store's acquisitions by kind, the two biggest, as a short line.
+function kindsLine(kinds) {
+  const top = Object.entries(kinds ?? {}).filter(([k]) => !/iap|cancelled|failed|charged/i.test(k)).slice(0, 2);
+  return top.length ? top.map(([k, v]) => `${fmtNum(v)} ${k}`).join(', ') : null;
 }
 
 // itch.io's page as a funnel: each step's count over the window and its share of the page views (browser plays are
@@ -727,6 +752,7 @@ export function storeCsv(p) {
       ['What', 'Value', 'Count'],
       ...(o && p.store === 'app_store' ? [["Apple's rating (stars)", o.average, o.count]] : []),
       ...(o && p.store === 'steam' ? [['Steam positive (%)', o.positive_pct, o.count]] : []),
+      ...(o && p.store === 'microsoft_store' ? [["Microsoft's ratings in this window (stars)", o.average, o.count]] : []),
       ...(p.synced ? [[p.store === 'steam' ? 'Reviews in this window, positive (%)' : 'Reviews in this window (stars)', p.synced.average ?? p.synced.positive_pct, p.synced.reviews]] : []),
     ];
   }

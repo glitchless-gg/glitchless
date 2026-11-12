@@ -3,7 +3,7 @@ using NUnit.Framework;
 namespace GlitchlessSdk.Tests
 {
     /// <summary>
-    /// What a WebGL build's device says, from what its page told the jslib (WebPage.FromJson, DeviceInfo.Collect). The
+    /// What a WebGL build's device and address say, from what its page told the jslib (WebPage.FromJson, DeviceInfo.Collect). The
     /// jslib itself, the beacons and the page's events only run in a browser: a Web build shows those (the package
     /// README's WebGL paragraph). ParityTests checks the user agents against the browser SDK.
     /// </summary>
@@ -57,6 +57,40 @@ namespace GlitchlessSdk.Tests
             var device = DeviceInfo.Collect(false, f);
             Assert.AreEqual(true, device["steam_deck"]);
             Assert.AreEqual("low", device["gpu_tier"], "a Deck's GPU is low, as every SDK has it");
+        }
+
+        [Test]
+        public void ThePagesAddressIsItsOriginAndPathAndTheReferrersOrigin()
+        {
+            var f = WebPage.FromJson("{\"ua\":\"\",\"url\":\"https://html-classic.itch.zone/html/15550123/index.html\",\"referrer\":\"https://maker.itch.io\"}", "");
+            Assert.AreEqual("https://html-classic.itch.zone/html/15550123/index.html", f.Address["url"]);
+            Assert.AreEqual("https://maker.itch.io", f.Address["referrer"]);
+            var none = WebPage.FromJson("{\"url\":\"https://mygame.pages.dev/\",\"referrer\":null}", "");
+            Assert.IsTrue(none.Address.ContainsKey("referrer") && none.Address["referrer"] == null, "no page led here");
+            Assert.IsNull(WebPage.FromJson(Page(MacChrome), "").Address, "a page that gave no address sends none");
+        }
+
+        [Test]
+        public void NeverAQueryStringOrAWholeReferrer()
+        {
+            var f = WebPage.FromJson("{\"url\":\"https://a.example/play?token=x#s\",\"referrer\":\"https://maker.itch.io/game?secret=1\"}", "");
+            Assert.AreEqual("https://a.example/play", f.Address["url"]);
+            Assert.AreEqual("https://maker.itch.io", f.Address["referrer"]);
+            Assert.AreEqual("https://a.example/play", WebPage.PageUrl("https://a.example/play#s=1"));
+            Assert.IsNull(WebPage.PageUrl(""));
+        }
+
+        [Test]
+        public void AReferrersOriginAsTheBrowsersUrlGivesIt()
+        {
+            Assert.AreEqual("https://maker.itch.io", WebPage.OriginOf("HTTPS://Maker.Itch.IO/Game?x=1#y"));
+            Assert.AreEqual("http://game.test:8080", WebPage.OriginOf("http://game.test:8080/a/b?c"));
+            Assert.AreEqual("https://host.example", WebPage.OriginOf("https://user:pw@host.example:443/x"), "no credentials, no default port");
+            Assert.AreEqual("http://host.example", WebPage.OriginOf("http://host.example:80"));
+            Assert.AreEqual("https://[::1]:7777", WebPage.OriginOf("https://[::1]:7777/x"));
+            Assert.AreEqual("null", WebPage.OriginOf("file:///Users/me/game/index.html"), "a file has no origin of its own");
+            Assert.IsNull(WebPage.OriginOf(null));
+            Assert.IsNull(WebPage.OriginOf(""));
         }
 
         [Test]

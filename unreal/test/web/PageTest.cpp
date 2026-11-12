@@ -215,6 +215,7 @@ namespace
 		Core.Page.Write = [](const std::string& Name, const std::string& Text) { GlitchlessWebPage::Keep(Name, Text); };
 		Core.Page.Remove = [](const std::string& Name) { GlitchlessWebPage::Forget(Name); };
 		Core.Device = [Facts](bool bDetailed) { return Page::Device(Facts, bDetailed); };
+		Core.Address = Page::Address(Facts);
 		Core.AppVersion = "1";
 		// The player's choice first, before anything is kept, as the plugin's runtime reads it.
 		Core.ReadChoice();
@@ -287,6 +288,7 @@ int main()
 	Read.Set("device", Page::Device(Facts, true));
 	Read.Set("local", Page::IsLocal(Facts.Protocol, Facts.Host));
 	Read.Set("flags", FValue::Strings(Page::Flags(Facts.Search)));
+	Read.Set("address", Page::Address(Facts));
 	Print("facts", Read);
 
 	const std::string Intake = Param(Facts.Search, "intake");

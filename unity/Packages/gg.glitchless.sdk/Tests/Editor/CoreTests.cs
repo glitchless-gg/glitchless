@@ -136,6 +136,7 @@ namespace GlitchlessSdk.Tests
             core.Flush();
             var events = transport.Events().ToList();
             Assert.AreEqual("session_start", events[0]["type"]);
+            Assert.IsTrue(events[0].ContainsKey("page") && events[0]["page"] == null, "a native build has no page");
             CollectionAssert.IsSubsetOf(new[] { "level_start", "error", "frame_window", "load" }, events.Select(e => e["type"]).ToList());
             var envelope = (Dictionary<string, object>)Json.Parse(transport.Sent[0]);
             Assert.AreEqual("fetch", envelope["service"], "service is lowercased");
@@ -670,6 +671,7 @@ namespace GlitchlessSdk.Tests
                 Log = _ => { },
                 Device = full => new Dictionary<string, object> { ["browser"] = "Chrome", ["browser_version"] = "141", ["os"] = "macOS" },
                 EngineInfo = () => new Dictionary<string, object> { ["name"] = "unity", ["version"] = "6000.3.27f1", ["renderer"] = "webgl" },
+                Page = () => WebPage.FromJson("{\"url\":\"https://html-classic.itch.zone/html/15550123/index.html\",\"referrer\":\"https://maker.itch.io\"}", "").Address,
                 AppVersion = "1.2.3",
                 IsWeb = true,
             };
@@ -697,6 +699,9 @@ namespace GlitchlessSdk.Tests
             var start = beaconed.Single(e => (string)e["type"] == "session_start");
             Assert.AreEqual("Chrome", ((Dictionary<string, object>)start["device"])["browser"]);
             Assert.AreEqual("6000.3.27f1", ((Dictionary<string, object>)start["engine"])["version"], "the Unity version, where the browser SDK's adapters send theirs");
+            var page = (Dictionary<string, object>)start["page"];
+            Assert.AreEqual("https://html-classic.itch.zone/html/15550123/index.html", page["url"], "where it was played: an itch.io frame");
+            Assert.AreEqual("https://maker.itch.io", page["referrer"]);
             Assert.AreEqual(0, core.OutboxEvents);
             var sent = core.Stats.Sent;
             transport.Pending[0](202); // the first request's answer, late: it changes nothing

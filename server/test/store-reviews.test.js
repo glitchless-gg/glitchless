@@ -78,7 +78,8 @@ async function storeGame({ connect = true, steamBuild = false, notes = true, ext
   if (extra) await extra(data, sc);
   const read = async (projectId, service, range) => {
     const out = { steam: { app_id: APP_ID, keys: { publisher: false, financial: false }, ...(await data.read(projectId, 'steam', range)) } };
-    for (const name of ['google_play', 'app_store']) if (await data.stats(projectId, name)) out[name] = { app_id: name === 'app_store' ? '6450000000' : 'gg.glitchless.caverun', keys: {}, ...(await data.read(projectId, name, range)) };
+    const ids = { app_store: '6450000000', google_play: 'gg.glitchless.caverun', microsoft_store: '9NBLGGH4CAVE' };
+    for (const name of Object.keys(ids)) if (await data.stats(projectId, name)) out[name] = { app_id: ids[name], keys: {}, ...(await data.read(projectId, name, range)) };
     return out;
   };
   const server = http.createServer(createApp({ store, stores: connect ? { read } : null, logger: { warn() {}, error() {} } }));
@@ -289,6 +290,54 @@ test("store vitals next to what Glitchless measured, by version, with a line whe
   } finally {
     await g.close();
   }
+});
+
+test("the Microsoft Store: its page, reviews by package version, its crash rate in devices next to Glitchless's, the heaviest failures, its ratings and its acquisitions", async () => {
+  const extra = async (data, sc) => {
+    const day = (n) => new Date(sc.now - n * DAY).toISOString().slice(0, 10);
+    const review = (i, ts, version, rating, text, xbox = false) => ({ store: 'microsoft_store', id: `ms-${i}`, ts, up: rating >= 4, rating, lang: null, ...reviewText(text), version, device: { model: xbox ? 'Xbox Series X|S' : 'Surface Laptop 5', os: xbox ? null : 'Windows 11', cpu: null, gpu: null, ram_mb: null }, microsoft_store: { package_version: `${version}.0`, market: 'US', device_type: xbox ? 'Console-Xbox Series X' : 'PC', xbox, revised: false } });
+    const vitals = [1, 2].flatMap((n) => [
+      { metric: 'crash_rate', value: 2.4, day: day(n), build: '1.4.2.0', version: '1.4.2', users: 350, period: 'day' },
+      { metric: 'unresponsive_rate', value: 1.2, day: day(n), build: '1.4.2.0', version: '1.4.2', users: 350, period: 'day' },
+      { metric: 'crash_reports', value: 10.5, day: day(n), build: '1.4.2.0', version: '1.4.2', users: 350, period: 'day' },
+      { metric: 'crash_rate', value: 0.5, day: day(n), build: '1.4.1.0', version: '1.4.1', users: 60, period: 'day' },
+    ]);
+    const sales = [1, 2].map((n) => ({ day: day(n), units: 9, returns: null, kinds: { Paid: 6, 'Xbox Game Pass': 3, Iap: 2 }, xbox: n === 1 ? 1 : 0, addons: 2, addons_by: { 'Cave Pack': 2 }, paid_usd: null, addons_usd: null }));
+    await data.write('default', 'microsoft_store', {
+      reviews: [review(1, sc.now - DAY, '1.4.2', 1, 'Since the update the caves stutter on my PC.'), review(2, sc.now - 2 * DAY, '1.4.2', 5, 'Great on my Series X', true), review(3, sc.now - 5 * DAY, '1.4.1', 4, 'Fun and fair.')],
+      vitals,
+      sales,
+      snapshots: { rating: { day: day(0), at: sc.now, from: day(13), days: { [day(1)]: [2, 0, 0, 1, 3], [day(2)]: [0, 0, 1, 1, 2], [day(40)]: [9, 0, 0, 0, 0] } }, failures: { day: day(0), from: day(13), to: day(0), version: '1.4.2', build: '1.4.2.0', failures: [{ name: 'APPLICATION_FAULT_c0000005_CaveRun.exe!ShaderCache::Compile', symbol: 'CaveRun.exe!ShaderCache::Compile', type: 'crash', devices: 34, events: 43 }] } },
+      syncedAt: sc.now,
+    });
+  };
+  const g = await storeGame({ extra });
+  try {
+    const { board } = await g.get('board', { page: 'microsoft-store' });
+    assert.deepEqual(board.panels.map((p) => p.type), ['store_score', 'store_sales', 'stat', 'store_reviews', 'store_vitals', 'frame_time']);
+    const [score, sales, , reviews, vitals] = board.panels;
+    assert.deepEqual([score.title, score.overall.count, score.overall.average, score.overall.stars, score.synced.reviews], ['Microsoft Store rating', 10, 3.8, [2, 0, 1, 2, 5], 3], "the window's ratings only, not the day 40 days back");
+    assert.match(score.notes[0], /every rating players gave in this window, with or without a review/);
+    assert.deepEqual([sales.title, sales.totals.units, sales.totals.xbox, sales.totals.addons, sales.totals.kinds, sales.totals.top_addons], ['Acquisitions and add-ons', 18, 1, 4, { Paid: 12, 'Xbox Game Pass': 6, Iap: 4 }, [{ name: 'Cave Pack', count: 4 }]]);
+    assert.deepEqual(sales.sales_series.map((x) => x.label), ['Acquisitions', 'Add-on acquisitions']);
+    assert.ok(sales.notes.some((n) => /1 of the 18 acquisitions were on an Xbox console/.test(n)));
+    assert.deepEqual(reviews.builds.map((b) => [b.version, b.reviews]), [['1.4.2', 2], ['1.4.1', 1]], 'by the version each review names');
+    assert.ok(reviews.builds[0].sessions > 0, 'next to the sessions measured on 1.4.2');
+    assert.deepEqual(vitals.columns.map((c) => c.label), ['Crash rate', 'Stopped responding', 'Crash reports']);
+    assert.deepEqual(vitals.rows.map((r) => [r.version, r.build, r.store.crash_rate, r.store.crash_reports]), [['1.4.2', '1.4.2.0', 2.4, 21], ['1.4.1', '1.4.1.0', 0.5, undefined]], 'rates weighted by devices, reports added up');
+    assert.match(vitals.rows[0].notes.find((n) => n.metric === 'crash_rate').says, /^Glitchless recorded [\d.]+% of sessions crashing on 1\.4\.2, Microsoft Store counts 2\.4% of devices/);
+    assert.equal(vitals.failures.failures[0].symbol, 'CaveRun.exe!ShaderCache::Compile');
+    assert.match(vitals.about, /Xbox consoles aren't in them/);
+    const q = await g.get('store_reviews', { store: 'microsoft_store', device: 'xbox' });
+    assert.deepEqual(q.reviews.map((r) => [r.version, r.microsoft_store.xbox]), [['1.4.2', true]]);
+    const v = await g.get('store_vitals', { store: 'microsoft_store', version: '1.4.2.0' });
+    assert.deepEqual([v.rows.map((r) => r.version), v.failures.version], [['1.4.2'], '1.4.2']);
+    assert.equal((await g.get('store_sales', { store: 'microsoft_store' })).totals.units, 18);
+  } finally {
+    await g.close();
+  }
+  const saved = { pages: [{ id: 'overview', title: 'Overview', panels: [{ type: 'stat', metric: 'players' }] }] };
+  assert.deepEqual(withStorePage(saved, 'microsoft_store').pages.map((p) => [p.id, (p.panels ?? []).map((x) => x.type).join(',')]), [['overview', 'stat'], ['microsoft-store', 'store_score,store_sales,stat,store_reviews,store_vitals']]);
 });
 
 test("withStorePage: a saved dashboard gets a store's page after its first, unless a page already shows that store", () => {

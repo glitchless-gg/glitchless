@@ -230,6 +230,9 @@ namespace Glitchless
 		/** session_start's engine, for a web build, whose device is the browser: {name, version, renderer}, as the
 		 * browser SDK's engine adapters and a Unity WebGL build send theirs. Null elsewhere (the device names the engine). */
 		FValue EngineInfo;
+		/** session_start's page, for a web build: {url, referrer}, where it was played (GlitchlessPage.h's Address), as the
+		 * browser SDK sends it. Null elsewhere. */
+		FValue Address;
 		/** The game's Steam facts (GlitchlessSteam.h), an empty object until Steamworks answers. */
 		std::function<FValue()> SteamFacts;
 		/** Where an iOS build was installed from (DeviceFacts::IosDistribution); unset or "" elsewhere. */

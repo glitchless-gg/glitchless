@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- WebGL builds say where they were played. `session_start.page` used to be null, so a Unity web game on itch.io counted under `(none)` in a board's `$site` and not as a browser play in the itch.io funnel. The jslib now reads the page's address as the browser SDK does, and `session_start.page` is `{url, referrer}`: the page's origin and path (`https://html-classic.itch.zone/html/15550123/index.html`) and the origin of the page that led there (`https://maker.itch.io`), or null when none did. Never the query string, a fragment or the whole referrer. Native builds still send `page: null`.
+
 ## 0.7.3
 
 - WebGL builds work in a Reddit post (Devvit Web). There a game may fetch only its own app's `/api/` routes, so it sends to its app's server, which relays to Glitchless with the `glitchless/devvit` relay: `Intake = "/api/glitchless"`. The last batch as the page is hidden or goes is then sent by the page's own `fetch` with keepalive instead of `navigator.sendBeacon`, since only the page's fetches carry the app's token that Reddit's `/api/` routes need. Elsewhere nothing changes. See the docs' SPEC §5g.

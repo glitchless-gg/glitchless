@@ -146,7 +146,57 @@ namespace Glitchless
 			Out.Protocol = StringField(V, "protocol");
 			Out.Host = StringField(V, "host");
 			Out.Search = StringField(V, "search");
+			Out.Url = StringField(V, "url");
+			Out.Referrer = StringField(V, "referrer");
 			return true;
+		}
+
+		std::string OriginOf(const std::string& Url)
+		{
+			if (Url.empty())
+			{
+				return std::string();
+			}
+			std::string Scheme;
+			for (const char* S : {"http", "https"})
+			{
+				const size_t N = std::strlen(S);
+				if (Url.size() > N + 3 && Text::Lower(Url.substr(0, N + 3)) == std::string(S) + "://")
+				{
+					Scheme = S;
+				}
+			}
+			if (Scheme.empty())
+			{
+				return "null";
+			}
+			const size_t From = Scheme.size() + 3;
+			const size_t End = Url.find_first_of("/?#", From);
+			std::string Host = Text::Lower(Url.substr(From, End == std::string::npos ? std::string::npos : End - From));
+			const size_t At = Host.rfind('@'); // user:password@, which a referrer never carries
+			if (At != std::string::npos)
+			{
+				Host = Host.substr(At + 1);
+			}
+			const std::string DefaultPort = Scheme == "http" ? ":80" : ":443";
+			if (Host.size() > DefaultPort.size() && Host.compare(Host.size() - DefaultPort.size(), DefaultPort.size(), DefaultPort) == 0)
+			{
+				Host.resize(Host.size() - DefaultPort.size());
+			}
+			return Host.empty() ? "null" : Scheme + "://" + Host;
+		}
+
+		FValue Address(const FFacts& Facts)
+		{
+			if (Facts.Url.empty())
+			{
+				return FValue();
+			}
+			FValue A = FValue::Object();
+			A.Set("url", Facts.Url.substr(0, Facts.Url.find_first_of("?#")));
+			const std::string Referrer = OriginOf(Facts.Referrer);
+			A.Set("referrer", Referrer.empty() ? FValue() : FValue(Referrer));
+			return A;
 		}
 
 		FUserAgent ParseUserAgent(const std::string& Ua, int UadMobile)

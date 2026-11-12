@@ -2,22 +2,27 @@
 // it). Two things only the page knows:
 //   - what the browser says about itself (its user agent, whether it is a phone, the pixel ratio and the screen), raw:
 //     WebPage.cs reads it the way the browser SDK does (packages/sdk/src/device.js), so a Unity web game and a
-//     Three.js game split by browser and OS alike;
+//     Three.js game split by browser and OS alike. And where the game is played: the page's origin and path and the
+//     origin of the page that led there, as the browser SDK sends them (core.js sessionStartEvent), never a query
+//     string or a whole referrer;
 //   - the page's lifecycle. WebGL has one thread, so a request the game waits on as the page goes can never move:
 //     the last batches go by navigator.sendBeacon instead, which the browser sends after the page has gone, the way
 //     the browser SDK sends its own (core.js installLifecycle). In a Reddit post (SPEC §5g) they go by the page's own
 //     fetch with keepalive, which the browser also finishes after the page has gone: the app's /api/ routes take only
 //     requests with the app's token, which Reddit's script on the page adds to its fetches and a beacon can't carry.
 var GlitchlessPage = {
-  // A JSON string: { ua, mobile, dpr, screen }. mobile is userAgentData's (Chromium, on https) or null.
+  // A JSON string: { ua, mobile, dpr, screen, url, referrer }. mobile is userAgentData's (Chromium, on https) or null;
+  // referrer is null when no page led here.
   GlitchlessPageFacts: function () {
-    var facts = { ua: '', mobile: null, dpr: null, screen: null };
+    var facts = { ua: '', mobile: null, dpr: null, screen: null, url: null, referrer: null };
     try {
       var nav = typeof navigator !== 'undefined' ? navigator : {};
       facts.ua = nav.userAgent || '';
       if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean') facts.mobile = nav.userAgentData.mobile;
       if (typeof devicePixelRatio === 'number' && devicePixelRatio > 0) facts.dpr = devicePixelRatio;
       if (typeof screen !== 'undefined' && screen.width > 0) facts.screen = [screen.width, screen.height];
+      if (typeof location !== 'undefined') facts.url = location.origin + location.pathname;
+      if (typeof document !== 'undefined' && document.referrer) facts.referrer = new URL(document.referrer).origin;
     } catch (e) {
       // A locked-down page: whatever was read so far.
     }
