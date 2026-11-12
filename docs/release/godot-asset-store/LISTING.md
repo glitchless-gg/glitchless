@@ -1,6 +1,6 @@
 # Godot Asset Store listing: Glitchless for Godot
 
-Every field the [Godot Asset Store](https://store.godotengine.org) asks for, filled in for the addon at 0.6.6. Rules
+Every field the [Godot Asset Store](https://store.godotengine.org) asks for, filled in for the addon at 0.6.7. Rules
 quoted are the store's [guidelines](https://store.godotengine.org/guidelines/) and
 [submission docs](https://docs.godotengine.org/en/stable/community/asset_store/submitting_to_asset_store.html), read
 9 November 2026. The old Asset Library's entry ([5587](https://godotengine.org/asset-library/asset/5587)) has the same
@@ -91,19 +91,28 @@ Starlift's shared board (a shipped Godot game).
 
 | field | value |
 | --- | --- |
-| Version name | **0.6.6** (the addon's `plugin.cfg` version) |
+| Version name | **0.6.7** (the addon's `plugin.cfg` version) |
 | Changelog | See below |
 | Minimum Godot version | **4.5** (the addon needs 4.5's custom loggers) |
 | Maximum Godot version | Leave empty |
 | Additional information | `Turn on the plugin under Project Settings → Plugins, then call Glitchless.init(...). Setup for coding agents: glitchless.gg/godot.html` |
-| File | `dist/godot-asset-store/glitchless-0.6.6.zip` from `node scripts/export-godot-addon.mjs`: `addons/glitchless/` alone, with its LICENSE, README and PRIVACY.md |
+| File | `dist/godot-asset-store/glitchless-0.6.7.zip` from `node scripts/export-godot-addon.mjs`: `addons/glitchless/` alone, with its LICENSE, README and PRIVACY.md |
 
-### Changelog for 0.6.6
+### Changelog for 0.6.7
+
+For the first version on the store (0.6.6 not uploaded yet):
 
 ```text
 First version on the Godot Asset Store.
 - Web exports name the player's browser (Chrome, Safari, Firefox, Edge) and its OS, and send their last batch by beacon as the page closes (0.6.5).
-- No script warnings, even with addons included in the warning settings.
+- No script warnings, even with addons included in the warning settings (0.6.6).
+- Web exports run in a Reddit post (Devvit Web): set the intake to /api/glitchless and the game's Reddit app relays to Glitchless. The page is read without eval, which a strict content policy blocks.
+```
+
+When 0.6.6 is already on the store:
+
+```text
+- Web exports run in a Reddit post (Devvit Web): set the intake to /api/glitchless and the game's Reddit app relays to Glitchless. The page is read without eval, which a strict content policy blocks.
 ```
 
 ## Pricing

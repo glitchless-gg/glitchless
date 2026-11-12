@@ -25,7 +25,7 @@ documented APIs, not a server on the developer's own domain, and a playtest runs
 
 ## 2. Mount the relay in the app's server
 
-In the app's folder: `npm install glitchless`. It has no dependencies and goes into the server's bundle. In Reddit's
+In the app's folder: `npm install glitchless` (0.8.0 or later, the first with the relay). It has no dependencies and goes into the server's bundle. In Reddit's
 templates the API routes are `src/server/routes/api.ts`, mounted at `/api`:
 
 ```ts
