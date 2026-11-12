@@ -44,7 +44,7 @@ You need a Glitchless server to send to: the open-source one runs on your own ma
 
 Private by default: no player ID, no device identifier, only coarse device facts. Players can turn it off at any time: wire a "Share performance data" setting to the Set Enabled node, which stops it at once, deletes what was waiting to be sent, and holds on every later launch; Opt In starts it off until the player says yes. PRIVACY.md lists every field that each of the three modes (anonymous, install, full) sends, with wording for your privacy policy and store forms.
 
-Made for Unreal Engine 5.8. The source is also on GitHub, with a small demo game that has three planted problems for Glitchless to find.
+Made for Unreal Engine 5.8. The same plugin runs on Epic's Unreal Engine 5.9 MegaJam Preview too, web builds included. Fab doesn't offer 5.9 yet, so for 5.9 get it from GitHub, where the source is, with a small demo game that has three planted problems for Glitchless to find.
 
 Optional, separate and Experimental: the Glitchless Toolset plugin on GitHub adds Status and Measure tools to Epic's Unreal MCP (Experimental in UE 5.8), so an agent can measure the game in Play In Editor. This product doesn't include it or need it.
 ```
@@ -84,6 +84,7 @@ Important/Additional Notes:
 - Network use: HTTPS POST requests (or HTTP to a server on your own machine) of gzipped JSON to the Intake URL you set, every 15 seconds and when the game quits. Nothing is sent until Service and Intake are set. Enabled off, or -glitchless-off on the command line, sends nothing.
 - Privacy: anonymous by default, with no player ID and no device identifier. A player who turns it off (Set Enabled, from the game's settings) sends nothing more, in that launch or any later one. PRIVACY.md in the plugin lists every field each mode sends.
 - Dependencies: engine modules only (HTTP, ImageWrapper, Slate, RHI and others). No other plugins; Steam facts are read only through the Steamworks the game already set up.
+- Unreal Engine 5.9 MegaJam Preview: the same plugin builds and runs there, web builds included. Fab doesn't list 5.9 yet, so use the GitHub release (glitchless-unreal-<version>.zip), which isn't tied to 5.8 and keeps the web platform.
 - Third-party code: the natural logarithm from fdlibm 5.3 (Sun Microsystems, freely redistributable, as in V8), so frame-time buckets match the JavaScript SDK exactly.
 ```
 
@@ -119,8 +120,12 @@ and Pricing page).
 | Engine version | **5.8** |
 | Target platforms | **Windows** and **Mac** (see the note under Technical information) |
 | Distribution method | **Engine Plugin** (Fab installs code plugins into `Engine/Plugins/Fab`, §4.3.6.3.a) |
-| Project file link | a direct download of `Glitchless_0.4.0_UE5.8.zip` that needs no sign-in (§4.2.1, and the asset file format page) |
-| Version notes | `0.4.0: first Fab release, for Unreal Engine 5.8.` |
+| Version title | `Glitchless 0.5.6 (UE 5.8)` |
+| File | upload `dist/unreal/Glitchless_0.5.6_UE5.8.zip` with **Replace file** (Fab takes no links now); the same zip is on the [v0.5.6 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.6) |
+| Version notes | `0.5.6: the plugin's own upload warnings are no longer reported as your game's errors, a session sent across two launches keeps its device, saving the offline outbox no longer holds up a frame, and the plugin warns when the Intake setting was cut off.` |
+
+Live since 11 November 2026 with 0.5.0; the table is what to set next. [STEPS.md](STEPS.md) → "Updating the Fab version"
+says when and how. UE 5.9 gets a row of its own once the portal's engine picker lists it (it didn't on 11 November).
 
 ## Third-party software declaration (Fab §4.2.5)
 
@@ -165,16 +170,17 @@ Glitchless makes observability tools for game developers and their coding agents
 
 Our plugins time every frame on real players' machines, catch crashes and errors, and show where players quit. Your coding agent (Claude Code, Codex, Cursor and others) reads the same data over MCP, so you can ask it why a level stutters and let it fix the cause.
 
-The Unreal plugin is free C++ source with Blueprint nodes. It works with the hosted service at glitchless.gg or with a server you run yourself from our open-source repo. We also make SDKs for Unity, Godot, Three.js and GameMaker.
+The Unreal plugin is free C++ source with Blueprint nodes. It works with the hosted service at glitchless.gg or with a server you run yourself from our open-source repo. We also make SDKs for Unity, Godot and Three.js, and for GameMaker, Roblox, Phaser, Babylon.js and PlayCanvas.
 
 Support: support@glitchless.gg · github.com/glitchless-gg/glitchless/issues
 ```
 
 ## FabURL (Fab §4.3.6.c)
 
-Fab wants the `.uplugin` to carry `FabURL`: `com.epicgames.launcher://ue/Fab/product/<id>`, where `<id>` is the ID at the
-end of the listing's URL in the publisher portal. That ID exists only once the draft listing is made, so STEPS.md
-makes the draft first and then builds the zip with `--fab-url`, which stamps it in.
+Fab wants the `.uplugin` to carry `FabURL`: `com.epicgames.launcher://ue/Fab/product/<id>`. Since 11 November 2026 the
+committed `.uplugin` has the live listing's: `ff01059e-8d62-4874-b939-d2f7c61c45b1`, the ID in the public address
+fab.com/listings/<id>. The portal draft's ID, which the 0.4.0 to 0.5.6 Fab zips first carried, is a different one and
+answers 404. `--fab-url` still overrides it.
 
 ## FAQ (optional, "+ Add FAQ")
 
@@ -192,7 +198,10 @@ Q: What does it send about my players?
 A: In the default anonymous mode, no player ID, no device identifier and only coarse device facts. PRIVACY.md in the plugin lists every field per mode, with wording for your privacy policy.
 
 Q: Can my coding agent use it?
-A: Yes. The glitchless-mcp server (npm) gives Claude Code, Codex, Cursor and other MCP clients the findings, errors, sessions and bug reports; packaged builds measure themselves with -glitchless-measure.
+A: Yes. Connect it to the hosted MCP server at https://api.glitchless.gg/mcp (it signs in with your Glitchless account) or run glitchless-mcp from npm. Claude Code, Codex, Cursor and other MCP clients get the findings, errors, sessions and bug reports; packaged builds measure themselves with -glitchless-measure.
+
+Q: Does it work with the Unreal Engine 5.9 MegaJam Preview?
+A: Yes, web builds included. Fab doesn't list 5.9 yet, so download glitchless-unreal-<version>.zip from the GitHub releases (github.com/glitchless-gg/glitchless/releases) and unzip it into <YourProject>/Plugins/Glitchless. The Fab copy is made for 5.8.
 ```
 
 ## Media

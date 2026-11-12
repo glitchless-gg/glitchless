@@ -43,7 +43,8 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
     node unreal/scripts/package-plugin.mjs --fab --engine 5.8 --fab-url <the ID or the whole address>
     ```
     That writes `dist/unreal/Glitchless_0.4.0_UE5.8.zip`, with `"FabURL": "com.epicgames.launcher://ue/Fab/product/<ID>"`
-    in its `.uplugin` (Fab §4.3.6.c), and a `.sha256` beside it.
+    in its `.uplugin` (Fab §4.3.6.c), and a `.sha256` beside it. Once the listing is public, use the ID in its public
+    address instead (step 25): the draft's is a different one.
 
 ## Host the zip
 
@@ -56,7 +57,8 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
       a preview page.
 
     Keep it there until the listing is live (Fab asks for that). Fab wants one zip per engine version, each holding
-    one plugin folder; this one is `Glitchless/` for 5.8.
+    one plugin folder; this one is `Glitchless/` for 5.8. (By 11 November 2026 Fab no longer took links: a project
+    version's file is uploaded in the portal, step 27.)
 
 ## Fill in the listing
 
@@ -100,6 +102,27 @@ late review blocks nothing. The plan is to submit by **Nov 3**.
 
 ## After it's approved
 
-25. If the parent session committed `FabURL` to the `.uplugin`, nothing is left. If not, it adds it then, so GitHub
-    copies point to the Fab page too. Each new engine version (5.9…) is a new project version with its own zip:
-    `--engine 5.9`.
+25. The listing went live on 11 November 2026 at https://www.fab.com/listings/ff01059e-8d62-4874-b939-d2f7c61c45b1,
+    with plugin 0.5.0. Its public ID is not the portal draft's ID from step 10 (that one answers 404 in the launcher),
+    so `FabURL` in the committed `.uplugin` is the public one, and every zip carries it without `--fab-url`.
+
+## Updating the Fab version
+
+Fab keeps its own copy: it downloads the zip when a project version is saved, builds it, reviews that copy and
+ships it. A new file behind the same link never reaches buyers, and GitHub's `releases/latest` link follows whichever
+SDK released last, so a "latest" link can't stand in for an update. Each update is an edit in the portal, and Fab
+reviews it again.
+
+Update Fab when a release changes something for the engine versions Fab lists (5.8 desktop today). Skip releases that
+only touch web builds, the 5.9 Preview, the Toolset (GitHub only) or docs.
+
+26. The release session builds the zip from the release commit and puts it on the GitHub release beside the others:
+    ```bash
+    node unreal/scripts/package-plugin.mjs --fab --engine 5.8 --ref <release commit>
+    ```
+27. In the portal: the listing → **Project versions** → the UE 5.8 version → edit. **Version title**
+    `Glitchless <version> (UE 5.8)`, then **Replace file** and upload `dist/unreal/Glitchless_<version>_UE5.8.zip`:
+    since November 2026 Fab takes an uploaded file only, not a link. Engine version and platforms stay. Submit.
+    The same zip stays on the GitHub release for anyone who wants it outside Fab.
+28. **A new engine version** is a project version of its own (Fab §4.2.2.d), with its own zip: `--engine 5.9` keeps
+    `Wasm` in the platform list, since 5.9 knows it. Add one only once the portal's engine picker lists that version.

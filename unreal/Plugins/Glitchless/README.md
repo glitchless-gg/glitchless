@@ -16,7 +16,7 @@ It sends the same events as the browser, Unity and Godot SDKs, so the dashboard,
 
 ## Install
 
-From Fab: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is.
+From [Fab](https://www.fab.com/listings/ff01059e-8d62-4874-b939-d2f7c61c45b1), for Unreal Engine 5.8: install it to your engine, then enable Glitchless in **Edit → Plugins** (it is under Analytics). Fab installs it into the engine already built, so a Blueprint-only project can use it as it is. Fab doesn't offer the 5.9 MegaJam Preview yet: on 5.9, use the GitHub zip below, which also keeps the web platform.
 
 From GitHub: download `glitchless-unreal-0.5.6.zip` from the [glitchless-unreal 0.5.6 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.6) and unzip it to your project's `Plugins/Glitchless` (or copy this folder there), or add it to a project's `AdditionalPluginDirectories`. Enable it in **Edit → Plugins** and rebuild. A Blueprint-only project needs to become a C++ project once (**Tools → New C++ Class**), because the plugin is source.
 

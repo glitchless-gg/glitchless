@@ -26,7 +26,7 @@ The status column says who has to act:
 | 4.3.1.i | works in binary engine builds | built and tested on the launcher's UE 5.8.4 | ok |
 | 4.3.6.a | `EngineVersion` in the `.uplugin` | stamped into the Fab zip (*script*) | zip |
 | 4.3.6.b | `PlatformAllowList` or `PlatformDenyList` on every module | `["Win64", "Mac", "Linux", "IOS", "Android"]` (U1, 22966b2) | ok |
-| 4.3.6.c | `FabURL` with the listing's ID | ID known only once the draft exists; `--fab-url` stamps it | owner then zip (STEPS 10) |
+| 4.3.6.c | `FabURL` with the listing's ID | in the committed `.uplugin` since 2026-11-11: the live listing's public ID (the portal draft's is different) | ok |
 | 4.3.6.d | depends only on plugins that ship with the engine | Glitchless depends on none. GlitchlessToolset depends on Glitchless, so it can't be listed and stays on GitHub (*script*) | ok |
 | 4.3.6.1.a | source included | all source, no binaries | ok |
 | Legal (review, 27 Oct 2026) | no EULA, licence or conduct files, nor policies other than the licence chosen on Fab | the Fab zip has no LICENSE (the review found it there: Changes needed), names no other licence, and the listing text doesn't mention MIT; the script refuses a licence file or "MIT License" outside `Source/ThirdParty` (*script*) | fixed |

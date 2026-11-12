@@ -106,10 +106,13 @@ function packagePlugin({ plugin, zip }) {
       const plain = text.replace(/^(\/\/ Copyright \(c\) [^\n]*?authors\.) MIT License: see LICENSE\./m, '$1');
       if (plain !== text) fs.writeFileSync(f, plain);
     }
-    // Fab wants the EngineVersion right after VersionName, and FabURL once the draft listing exists. An engine
-    // before 5.9 has no Wasm (web) platform and warns about one it doesn't know, so its zip lists none.
+    // Fab wants the EngineVersion right after VersionName, and FabURL: the live listing's, which the .uplugin
+    // carries since 2026-11-11 (--fab-url overrides it). The ID is the one in the public page's address,
+    // fab.com/listings/<id>, not the portal draft's. An engine before 5.9 has no Wasm (web) platform and warns
+    // about one it doesn't know, so its zip lists none.
     const [major, minor] = args.engine.split('.').map(Number);
     const knowsWasm = major > 5 || (major === 5 && minor >= 9);
+    const fabURL = args['fab-url'] ? fabUrl(args['fab-url']) : descriptor.FabURL;
     const stamped = {};
     for (const [k, v] of Object.entries(descriptor)) {
       if (k === 'EngineVersion' || k === 'FabURL') continue;
@@ -119,10 +122,9 @@ function packagePlugin({ plugin, zip }) {
       }
       stamped[k] = v;
       if (k === 'VersionName') stamped.EngineVersion = `${args.engine}.0`;
-      if (k === 'DocsURL' && args['fab-url']) stamped.FabURL = fabUrl(args['fab-url']);
+      if (k === 'DocsURL' && fabURL) stamped.FabURL = fabURL;
     }
-    if (args['fab-url'] && !stamped.FabURL) stamped.FabURL = fabUrl(args['fab-url']);
-    if (!args['fab-url'] && descriptor.FabURL) stamped.FabURL = descriptor.FabURL;
+    if (fabURL && !stamped.FabURL) stamped.FabURL = fabURL;
     fs.writeFileSync(path.join(top, descriptorPath), JSON.stringify(stamped, null, '\t') + '\n');
   }
 

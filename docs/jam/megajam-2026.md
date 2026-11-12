@@ -58,7 +58,8 @@ throwaway Unreal project, and on Nov 12 copy two things into your jam project.
 ## Install the Unreal plugin
 
 1. Download `glitchless-unreal-0.5.6.zip` from the [glitchless-unreal 0.5.6 release](https://github.com/glitchless-gg/glitchless/releases/tag/glitchless-unreal/v0.5.6) and unzip
-   it so the folder is `<YourProject>/Plugins/Glitchless`.
+   it so the folder is `<YourProject>/Plugins/Glitchless`. This copy works on 5.9 and 5.8. On 5.8 you can install it
+   [from Fab](https://www.fab.com/listings/ff01059e-8d62-4874-b939-d2f7c61c45b1) instead; Fab doesn't offer 5.9 yet.
 2. **Edit → Plugins**, find Glitchless under Analytics, enable it, restart the editor.
 3. The plugin is C++ source. A Blueprint-only project has to become a C++ project once: **Tools → New C++
    Class**, any class. You need Visual Studio 2022 with C++ on Windows, or Xcode on a Mac.

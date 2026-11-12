@@ -8,6 +8,7 @@
 	"CreatedBy": "Glitchless",
 	"CreatedByURL": "https://www.glitchless.gg",
 	"DocsURL": "https://github.com/glitchless-gg/glitchless/blob/main/unreal/Plugins/Glitchless/README.md",
+	"FabURL": "com.epicgames.launcher://ue/Fab/product/ff01059e-8d62-4874-b939-d2f7c61c45b1",
 	"SupportURL": "https://github.com/glitchless-gg/glitchless/issues",
 	"CanContainContent": false,
 	"IsBetaVersion": true,
