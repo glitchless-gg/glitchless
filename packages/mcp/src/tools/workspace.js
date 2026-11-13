@@ -1,5 +1,5 @@
 // A workspace's games, for an agent signed in with a workspace key (glitchless_sign_in, `glitchless-mcp login`, or
-// OAuth over HTTP): sign in, create, set up or rename a game, make, list and revoke share links, mark findings known
+// OAuth over HTTP): sign in, create, set up or rename a game, make, list and revoke share links and claim links, mark findings known
 // and the team's own play as testers, resolve errors, and read and change a game's alerts. Listing games, reading any
 // of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
@@ -147,24 +147,36 @@ act(
 
 act(
   'glitchless_share_links',
-  "A game's read-only share links to its boards: for a dev log, Discord, a publisher, or a game's own \"Live stats\" link. With page: makes one to that board page, which anyone with it sees, and nothing else, signed out; no expiry unless days is set; sums (revenue, totals) show only with sums: true; the link is shown once. With revoke: that link stops working at once, for everyone who has it. With neither: lists them, with the page each shows, when it expires, when it was last opened (to about ten minutes) and whether it's revoked. Ask the person before making or revoking one.",
+  "A game's read-only share links to its boards: for a dev log, Discord, a publisher, or a game's own \"Live stats\" link. With page: makes one to that board page, which anyone with it sees, and nothing else, signed out; no expiry unless days is set; sums (revenue, totals) show only with sums: true; the link is shown once. A share link counts players' sessions only, never bots'. With page and claim: true: a claim link instead, for a game the team made for someone else (bots played a game they posted): its creator opens it, sees that board read only (bots' sessions counted, since they're all the game has) and, signed in or signed up, moves the game into a workspace of their own with its data and dashboard. It works once, expires after days (1, 7, 30 or 90; default 30), and at most 5 can be live per game; not for the demo game. Claiming revokes every key and link the game had, this workspace's keys too, and the game leaves this workspace; its creator gets a new client token. engine (the game's) picks the setup sentence the claim page shows them; promo (a running code such as JAM26) goes on their workspace when they sign up. With revoke: that link (share or claim) stops working at once, for everyone who has it. With neither: lists them all, with kind (share or claim), the page each shows, when it expires, when it was last opened (to about ten minutes) and whether it's revoked or claimed. Ask the person before making or revoking one.",
   {
     page: z.string().optional().describe("Make a link to this board page (glitchless_dashboard lists their ids)"),
     service: z.string().optional().describe("With page: the game's service (default: its most recently active one)"),
     name: z.string().optional().describe('With page: what the link is for, e.g. "Dev log"'),
-    days: z.number().optional().describe('With page: expire after 1, 7, 30, 90 or 365 days'),
-    sums: z.boolean().optional().describe('With page: show sums such as revenue'),
+    days: z.number().optional().describe('With page: expire after 1, 7, 30, 90 or 365 days (a claim link: 1, 7, 30 or 90, default 30)'),
+    sums: z.boolean().optional().describe('With page: show sums such as revenue (not on a claim link)'),
+    claim: z.boolean().optional().describe("With page: make a claim link, which moves the game to its creator's own workspace"),
+    engine: z.enum(ENGINES.map((e) => e.id)).optional().describe("With claim: the game's engine, for the setup sentence its creator is shown"),
+    promo: z.string().optional().describe('With claim: a running promo code, e.g. "JAM26", put on the creator\'s workspace when they sign up'),
     revoke: z.string().optional().describe("Revoke the link with this id (from the list)"),
   },
-  async ({ page, service, name, days, sums, revoke, game }) => {
+  async ({ page, service, name, days, sums, claim, engine, promo, revoke, game }) => {
     const pid = await projectFor(game);
     if (page && revoke) throw new Error('make a link (page) or revoke one (revoke), not both at once');
     if (revoke) {
       await agent('DELETE', `/games/${pid}/shares/${encodeURIComponent(revoke)}`);
       return reply(`Revoked ${revoke}: it stopped working for everyone who has it.`, {});
     }
-    if (!page) return reply('Share links:', (await agent('GET', `/games/${pid}/shares`)).shares);
+    if (!page) {
+      if (claim || engine || promo) throw new Error('a claim link needs the board page it shows: pass page (glitchless_dashboard lists their ids)');
+      return reply('Share links and claim links:', (await agent('GET', `/games/${pid}/shares`)).shares);
+    }
     const svc = await resolveService(service);
+    if (claim) {
+      if (sums) throw new Error("a claim link shows no sums: leave sums out");
+      const out = await agent('POST', `/games/${pid}/shares`, { kind: 'claim', service: svc, page, name, days, engine, promo });
+      return reply(`Claim link to ${svc}'s "${page}" page (shown once, works once, until ${out.share.expiresAt.slice(0, 10)}). Whoever claims it takes the game into their own workspace, and this workspace loses it:\n${out.url}`, out.share);
+    }
+    if (engine || promo) throw new Error('engine and promo are for a claim link: add claim: true');
     const out = await agent('POST', `/games/${pid}/shares`, { service: svc, page, name, days, sums: sums === true });
     return reply(`Share link to ${svc}'s "${page}" page (shown once):\n${out.url}`, out.share);
   },

@@ -1,0 +1,117 @@
+<!doctype html>
+<!-- A plain WebGL game with no Glitchless in it, for the game check's end-to-end test (check.e2e.mjs). It has what a
+     check should find: a Play button, waves named on screen, an error on the third press of Space, a sound file that
+     isn't there, memory that grows every wave and a stall when a wave starts. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Square Siege</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #111; color: #eee; font: 16px system-ui, sans-serif; overflow: hidden; }
+      canvas { display: block; width: 100vw; height: 100vh; }
+      #hud { position: fixed; top: 8px; left: 12px; }
+      #menu { position: fixed; inset: 0; display: grid; place-items: center; background: #111c; }
+      #menu button { font-size: 24px; padding: 12px 32px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="hud">Wave 1</div>
+    <div id="menu"><button id="play">Play</button></div>
+    <script>
+      const canvas = document.getElementById('game');
+      const gl = canvas.getContext('webgl');
+      const hud = document.getElementById('hud');
+      const vs = 'attribute vec2 p; uniform vec2 at; uniform float s; void main() { gl_Position = vec4(at + p * s, 0.0, 1.0); }';
+      const fs = 'precision mediump float; uniform vec3 c; void main() { gl_FragColor = vec4(c, 1.0); }';
+      const shader = (type, src) => {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        return sh;
+      };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, shader(gl.VERTEX_SHADER, vs));
+      gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(prog);
+      gl.useProgram(prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(prog, 'p');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      const u = { at: gl.getUniformLocation(prog, 'at'), s: gl.getUniformLocation(prog, 's'), c: gl.getUniformLocation(prog, 'c') };
+
+      const keys = new Set();
+      const player = { x: 0, y: 0 };
+      let playing = false;
+      let wave = 1;
+      let waveAt = 0;
+      let enemies = [];
+      let shots = 0;
+      const hoard = []; // grows every wave: the leak
+      addEventListener('keydown', (e) => {
+        keys.add(e.key);
+        if (e.key === ' ' && playing) fireLaser();
+      });
+      addEventListener('keyup', (e) => keys.delete(e.key));
+      document.getElementById('play').onclick = () => {
+        document.getElementById('menu').remove();
+        playing = true;
+        waveAt = performance.now();
+        new Audio('sfx/explosion.ogg').play().catch(() => {});
+        startWave();
+      };
+      function fireLaser() {
+        shots++;
+        if (shots === 3) {
+          const laser = null;
+          laser.charge += 1; // the bug: the third shot reads a laser that was never made
+        }
+      }
+      function startWave() {
+        hud.textContent = `Wave ${wave}`;
+        for (let i = 0; i < wave * 8; i++) enemies.push({ x: Math.random() * 2 - 1, y: Math.random() * 2 - 1, v: 0.002 + Math.random() * 0.004 });
+        for (let i = 0; i < 40; i++) hoard.push(new Array(60000).fill(wave));
+        const until = performance.now() + 120; // building the wave stalls the frame
+        while (performance.now() < until) {}
+      }
+      function frame(now) {
+        canvas.width = innerWidth;
+        canvas.height = innerHeight;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0.07, 0.07, 0.1, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        if (playing) {
+          if (now - waveAt > 6000) {
+            wave++;
+            waveAt = now;
+            startWave();
+          }
+          const sp = 0.02;
+          if (keys.has('ArrowLeft') || keys.has('a')) player.x -= sp;
+          if (keys.has('ArrowRight') || keys.has('d')) player.x += sp;
+          if (keys.has('ArrowUp') || keys.has('w')) player.y += sp;
+          if (keys.has('ArrowDown') || keys.has('s')) player.y -= sp;
+          player.x = Math.max(-0.95, Math.min(0.95, player.x));
+          player.y = Math.max(-0.95, Math.min(0.95, player.y));
+          for (const e of enemies) {
+            e.x += (player.x - e.x) * e.v;
+            e.y += (player.y - e.y) * e.v;
+            gl.uniform2f(u.at, e.x, e.y);
+            gl.uniform1f(u.s, 0.02);
+            gl.uniform3f(u.c, 0.9, 0.3, 0.3);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+          }
+          gl.uniform2f(u.at, player.x, player.y);
+          gl.uniform1f(u.s, 0.05);
+          gl.uniform3f(u.c, 0.3, 0.9, 0.5);
+          gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

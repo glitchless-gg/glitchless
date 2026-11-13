@@ -7,12 +7,15 @@
 //   glitchless-playtest --baseline-url http://localhost:5174/   # CI: main build vs this branch's build
 //   glitchless-playtest --command "godot --path ." --save baseline   # an engine build instead of a web game
 //   glitchless-playtest --engine roblox --studio "My Obby" --save baseline   # a play test in Roblox Studio
+//   glitchless-playtest --check https://someone.itch.io/their-game   # a game check: any web game, nothing installed
 //
 // A web game needs the game and a Glitchless server running, and Playwright installed in the game project.
 // An engine build (Unity, Godot, Unreal, GameMaker) needs only the build, with the Glitchless SDK in it.
 // A Roblox game needs its place open in Roblox Studio with Studio's MCP server on, and the Glitchless server it sends to.
+// A game check needs Playwright and a Glitchless server; with a workspace key (gl_ws_…) on Glitchless Cloud it also makes
+// the game and an unlisted share link.
 
-import { playtest, compareSaved } from '../src/index.js';
+import { playtest, compareSaved, gameCheck } from '../src/index.js';
 
 const HELP = `Usage: glitchless-playtest [options]
 
@@ -36,6 +39,16 @@ const HELP = `Usage: glitchless-playtest [options]
   --headed               show the browser windows
   --json                 print the full result as JSON instead of markdown
 
+Game check (any web game, with nothing installed in it):
+  --check URL            play the game at URL (an itch.io page, github.io, Vercel, Netlify…) on a
+                         desktop and a throttled phone, then make its report, dashboard and share link
+  --name NAME            the game's name in Glitchless (default: its page's title)
+  --seconds N            seconds of desktop play (default 90, at most 240; the phone plays 2/3 as long)
+  --profiles LIST        desktop, phone or desktop,phone (default)
+  --ai                   a Claude model picks the inputs from screenshots (ANTHROPIC_API_KEY, @anthropic-ai/sdk)
+  --out DIR              where the report and screenshots go (default .glitchless/checks/<game>-<time>)
+  --no-share             no share link
+
 Scenarios, thresholds, URLs and the command can also be set in glitchless.playtest.json.
 Exit code: 0 pass (or nothing to compare), 1 regression, 2 error.`;
 
@@ -57,6 +70,25 @@ const config = { game: val('game'), command: val('command'), engine: val('engine
 try {
   let result;
   const only = argv.indexOf('--compare-only');
+  if (val('check')) {
+    const r = await gameCheck({
+      url: val('check'),
+      server: config.server,
+      apiKey: config.api_key,
+      name: val('name'),
+      seconds: val('seconds') ? Number(val('seconds')) : undefined,
+      profiles: val('profiles') ? val('profiles').split(',').map((s) => s.trim()) : undefined,
+      ai: has('ai'),
+      outDir: val('out'),
+      share: !has('no-share'),
+      channel: config.channel,
+      headed: config.headed,
+      log,
+    });
+    if (has('json')) console.log(JSON.stringify(r, null, 2));
+    else console.log(`${r.report}\n\n---\nTo send its maker:\n\n${r.dm}\n\nSaved in ${r.dir}`);
+    process.exit(0);
+  }
   if (only >= 0) {
     const [a, b] = argv.slice(only + 1, only + 3);
     if (!a || !b) throw new Error('--compare-only needs two saved run names, e.g. --compare-only baseline latest');

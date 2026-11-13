@@ -1022,8 +1022,8 @@ board, or call the control API:
 
 | route | does |
 | --- | --- |
-| `POST /api/projects/{p}/shares` | `{service, page, pageTitle?, name?, days?, from?, to?, sums?}` → `{share, token, url}`. `days` is 1, 7, 30, 90 or 365; without it the link lasts until it's revoked. `from` and `to` pin the window it shows (below). `sums: true` shows the board's sums such as revenue, which a link leaves out otherwise. At most 25 live links a game |
-| `GET /api/projects/{p}/shares` | the game's links: `{id, name, service, page, pageTitle, hint, status, from, to, sums, createdAt, createdBy, expiresAt, revokedAt, lastUsedAt}`, `status` being Active, Expired or Revoked, `from` and `to` (ISO times) the pinned window or null, `sums` whether it shows sums, and `lastUsedAt` when it was last opened (below) or null |
+| `POST /api/projects/{p}/shares` | `{service, page, pageTitle?, name?, days?, from?, to?, sums?, bots?}` → `{share, token, url}`. `days` is 1, 7, 30, 90 or 365; without it the link lasts until it's revoked. `from` and `to` pin the window it shows (below). `sums: true` shows the board's sums such as revenue, which a link leaves out otherwise. `bots: true` counts every session, bots' too, not only players' (a game check's link, below). At most 25 live links a game |
+| `GET /api/projects/{p}/shares` | the game's links: `{id, name, service, page, pageTitle, hint, status, from, to, sums, bots, createdAt, createdBy, expiresAt, revokedAt, lastUsedAt}`, `status` being Active, Expired or Revoked, `from` and `to` (ISO times) the pinned window or null, `sums` whether it shows sums, `bots` whether it counts bot sessions, and `lastUsedAt` when it was last opened (below) or null |
 | `DELETE /api/projects/{p}/shares/{id}` | revokes it: at once on the server that revoked it, within 15 s on the others |
 
 The link is `https://app.glitchless.gg/s/gl_share_…` (32 base64url characters after the prefix). Like a
@@ -1039,7 +1039,11 @@ open.
 
 **Players only.** A link's board counts the sessions of players: `session_type` user (no bots, playtests, store
 test phones or TestFlight testers) and, when the game has a `prod` environment, only that one (no dev builds), as
-findings read them.
+findings read them. The one exception is a reader with `bots: true`: a link a game check makes (§5h), or a claim
+link (below: a game the team made for someone), whose board counts every session, bots' too, on every environment,
+since such a game has no players yet. A check's link is pinned to the check's own window, so it keeps showing that
+check. Its answers are cached apart from a players' link on the same page. Agents make one with the workspace route
+`POST /v1/agent/games/{game}/shares` and the same body.
 
 **Rolling or pinned.** A link without `from` and `to` shows the last days, from whenever it's opened: the viewer
 picks the past hour up to the past 30 days. A pinned link always shows its own window, such as a jam's week for a
@@ -1049,8 +1053,8 @@ most 30 days and falls between 400 days ago and a year from now. A pinned window
 plan keeps, counted back from now, so once those days have aged out the board shows nothing for them.
 
 **Reading.** The token goes in `x-glitchless-share` (or `?share=`). The reader hook answers
-`{projectId, scopes: ['read'], share: {service, page, from?, to?, sums?}, keyId, rps}` (`from` and `to` in ms for a
-pinned link; `sums: true` for one made with sums). A link outranks a session cookie, so a member
+`{projectId, scopes: ['read'], share: {service, page, from?, to?, sums?, bots?}, keyId, rps}` (`from` and `to` in ms for
+a pinned link; `sums: true` for one made with sums; `bots: true` for a claim link). A link outranks a session cookie, so a member
 who opens one sees what everyone sees. A share reader may only:
 
 - `GET /v1/query/board`, for its page, and
@@ -1111,6 +1115,71 @@ link shows its dates instead, as UTC days: "Nov 12 – 16, 2026"), and it links 
 Glitchless"). A revoked or expired link says so. The token sits in the URL
 fragment, which browsers never send to a server or in a Referer. Pages can't be framed (`frame-ancestors 'none'`):
 CloudFront never sees the fragment, so allowing embeds for shared boards alone would need a path of their own.
+
+#### Claim links (Glitchless Cloud)
+
+A claim link hands a game the Glitchless team made for someone to that person. The game check plays a game someone
+posted with Glitchless's bots and makes its game, dashboard and report in the team's workspace; the claim link lets
+the game's creator move it into a workspace of their own, with its data, dashboard, bug reports, findings, known
+findings and resolved errors. Their SDK then adds real players to it.
+
+**Making one.** The same routes as share links, with `kind: "claim"`: `POST /api/projects/{p}/shares` or
+`POST /v1/agent/games/{game}/shares` with `{kind: "claim", service, page, pageTitle?, name?, days?, engine?, promo?}`
+→ `{share, token, url}`, and `glitchless_share_links` with `claim: true` over MCP. Members who may manage the game
+make them (Owner, Admin, Developer); never for the demo game. `days` is 1, 7, 30 or 90 (default 30): a claim link
+always expires. `engine` (`unity`, `godot`, `unreal`, `threejs`, `gamemaker`, `roblox`, `phaser`, `babylon`,
+`playcanvas` or `reddit`, as `glitchless_create_game` names them) picks the setup sentence the claimant is shown;
+`promo`, a running promo code such as `JAM26`, rides in the link as `?promo=` and goes on the claimant's
+workspace when they sign in, as any promo link's does. At most 5 live claim links a game. The link is
+`https://app.glitchless.gg/#/claim/gl_claim_…` (32 base64url characters after the prefix), shown once and stored as
+a SHA-256. `GET …/shares` lists claim links with the share links, each with `kind` (`share` or `claim`); a claim
+link's `status` is Active, Expired, Revoked or Claimed, with `engine`, `promo` and `claimedAt`. `DELETE
+…/shares/{id}` revokes either kind.
+
+**Reading.** Until it is used, a claim link reads like a share link to its page (`x-glitchless-share` or `?share=`,
+the same limits and rate), with `bots: true`: the game's sessions so far are the bots'.
+
+**The page.** `#/claim/<token>` opens before the sign-in gate: the game's name, its board read only, the expiry and
+"Make it yours". Signed out, that signs in or up first (the token waits in the tab's session storage through
+sign-in, as a promo code does). Signed in, the person picks a workspace they may add games to, or a new one, and
+claims it.
+
+| route | does |
+| --- | --- |
+| `POST /api/claims/preview` | `{token}` → `{claim: {game, service, page, pageTitle, engine, expiresAt}}`, and for someone signed in `workspaces: [{id, name, role, plan, games, room, reason, upgrade}]` and `newWorkspace: {allowed, reason}`. Nothing about the workspace the game is in. A used, revoked or expired link: 410 `CLAIM_GONE` |
+| `POST /api/claims/accept` | `{token, workspaceId}` or `{token, workspaceName}` (a new workspace, theirs) → `{game, workspace, client_token, intake, dashboard, service, engine, bots: true, revoked: {keys, links}, disconnected, me}`; the session opens the game |
+
+**Room.** The game takes a place among the workspace's games (the demo game excepted): a Free workspace that has
+its one game already is refused (403 `PLAN_LIMIT`) with what it can do, in words such as "Mika's games is on the
+Free plan, which has room for one game, and Mika Kart is there already. Upgrade it to Indie, which has room for 5
+games, or put Tiny Tanks in another workspace." `upgrade` says when the person may upgrade it (its Owner). A new
+workspace starts on Free, and each person owns one Free workspace, so `newWorkspace.allowed` is false while they own
+one that isn't paid.
+
+**The move.** One transaction (at most 100 writes, so at most 25 live keys, 25 live share links and 5 claim links
+a game, which the limits already are):
+
+- the link is spent: its lookup is deleted on the condition that it's still there, so of two people pressing at
+  once, one gets the game and the other a 410;
+- the game's locator (`PROJECT#<p> WS`) and its row move to the claimant's workspace, which is now its owner;
+- every key and share link of the game, and its other claim links, stop resolving (the team's secret keys and its
+  agents' workspace keys reach it no more, and its ingest key stops writing), and the claimant gets a new client
+  token;
+- what holds the team's credentials goes: the alert webhook (sealed) and email, which stay off until the claimant
+  adds a channel; the exporters (sealed); and every store connection made with credentials, with what it synced. A
+  store connection without credentials (a public page) follows the game. Rules, known findings, resolved errors and
+  testers stay.
+
+The old keys and links are then marked revoked (`Revoked` in the lists), and this server forgets them at once; the
+others stop within their cache times (15 s for readers, a minute for ingest). Nothing in the event store or the lake
+moves: both key a game's data by project, never by workspace. The sessions the bots sent stay counted in the team's
+month; the claimant's count from their next. Data written while the game was the team's keeps the retention it was
+written with, and the claimant's plan decides how far back they read.
+
+The claimant is told their client token, a sentence to paste into their coding agent for the game's engine
+("Add Glitchless to my Phaser game "Tiny Tanks" by following https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md
+with the intake URL … and the client token …"), and that the numbers so far came from Glitchless's test bots, not
+players.
 
 ### 3d. Source maps
 
@@ -1654,7 +1723,7 @@ says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this ser
 | `GET /v1/agent/games/{game}` | One game | read |
 | `PATCH /v1/agent/games/{game}` | `{ name }` (60 characters at most) renames it, as Settings does (`glitchless_create_game`'s `rename`): its client token, service and data stay; later calls find it by the new name → `{ game: {id, name} }` | manage |
 | `GET /v1/agent/games/{game}/shares` | Its share links | manage |
-| `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, from?, to? }` → the link (shown once) | manage |
+| `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, bots?, from?, to? }` → the link (shown once); `bots` for a game check (§5h) | manage |
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
 | `GET /v1/agent/games/{game}/known` | Its known findings (§3e) | read |
 | `POST /v1/agent/games/{game}/known` | `{ finding, note, until?, until_worse? }` marks one known; `{ finding, clear: true }` clears it. Its person must be an Owner or Admin, as for the alert settings (`glitchless_mark_known`) | manage |
@@ -3116,6 +3185,79 @@ privacy policy links Glitchless's (https://www.glitchless.gg/privacy.html).
 `connect-src 'self'`, no inline scripts or styles, Reddit's fetch wrapper and `/api/` only with the token, framed by a
 page of another origin, through the relay to `server/src/local.js`), and step 7 of `godot/test/web.mjs` (Godot's web
 export in the same webview, with no `'unsafe-eval'`). A real post (`devvit playtest`) needs a Reddit login.
+
+## 5h. Game checks
+
+A game check (`packages/playtest/src/check.js`) shows a game's maker what Glitchless would do for their game before
+they install anything: Glitchless's bots play any web game someone posted, with nothing in it, and make a report, a
+dashboard made for that game and an unlisted link to it. It runs on a computer with a GPU (`glitchless-playtest
+--check URL`, or `glitchless_playtest` with `check_url`), never in the hosted service.
+
+1. **The game.** An itch.io page (`https://<maker>.itch.io/<game>`) is read for its HTML5 frame on
+   `html(-classic).itch.zone`: the page's `<iframe>`, a "Run game" button's `data-iframe`, or the address in its script;
+   the frame is played on its own at the page's frame size (`data-width`, `data-height`). A password page or a game
+   that is only a download stops the check with that reason. Any other address is played as it is; a page whose game is
+   one large `<iframe>` from another site has that frame played instead.
+2. **Asking first.** The site's `robots.txt` is read before anything else, for the agent `GlitchlessCheck` (else `*`;
+   longest rule wins, `Allow` on a tie): a path it disallows stops the check. The browser's User-Agent ends with
+   `GlitchlessCheck/1.0 (+https://www.glitchless.gg)`. A 401, 403 or 429, a Cloudflare challenge (`cf-mitigated:
+   challenge`) or a page asking the visitor to prove they're human stops it on the spot, with no second visit; nothing
+   tries to get past one. Popups are closed, a click that leaves the game's site is undone, and the game's own
+   Glitchless sends (`/v1/intake?token=` with any other token than the check's) are held back, so a game that already
+   has Glitchless never counts the bots as its players.
+3. **Glitchless in the page.** Before any of the page's scripts run (Playwright's `addInitScript`; the page's CSP is
+   bypassed so the SDK can send), the browser SDK's `<script>` build (`/sdk/glitchless.js` from the server the check
+   sends to, else a local build) starts with `sessionType: 'synthetic'`, `env: 'check'`, `version: 'check-<date>'`,
+   anonymous privacy, no overlay or WebMCP, and the session property `profile` (`desktop` or `phone`). The page's
+   engine is named from what it leaves behind: Three.js (`__THREE__`, and the renderer and scene it announces to
+   `__THREE_DEVTOOLS__`), Phaser (`window.Phaser`, whose `Game` constructor is wrapped as it arrives), Babylon.js,
+   PlayCanvas, Unity (`createUnityInstance`, its loader), Godot (`GODOT_CONFIG`), GameMaker, Construct, GDevelop,
+   Defold, PixiJS, PICO-8, KAPLAY, RPG Maker, Ruffle, else Emscripten or the canvas kind (WebGL 2, WebGL, 2D,
+   WebGPU). Three.js, Phaser, Babylon.js and PlayCanvas are handed to their adapters as installing Glitchless with its
+   defaults would (so Phaser's scenes arrive as levels). Draw calls on any WebGL context, frame times and late frames
+   on the check's own clock, JavaScript memory, and words on the page (`Level 3`, `Wave 2`; buttons such as Endless)
+   are kept for the bot's timeline.
+4. **Playing.** Two profiles in real Chrome, one after the other: `desktop` on the computer's own GPU at 1280 × 720
+   (an itch.io frame's own size), for 90 s by default (`seconds`, at most 240); then `phone`, the same computer with
+   CPU throttling 4× (`Emulation.setCPUThrottlingRate`), a 390 × 844 touch screen (844 × 390 for a game wider than it
+   is tall), a mobile User-Agent and a 4G-like connection (9 Mbps down, 1.5 Mbps up, 60 ms), for two thirds as long.
+   Loading lasts until the load event and 2 s without requests (at most 60 s, 120 s on the phone): its seconds,
+   bytes and requests, and files that answer 4xx, are the report's. The explorer clicks a button that says Play
+   (Start, Continue, Retry…), clicks or taps the game, presses Enter and Space, waits 3 s with no input (how much the
+   screen changes by itself), then tries the arrow keys, WASD, the mouse, click and drag and the usual action keys (on
+   the phone: taps, holds on either side, swipes, drags), then mostly the inputs that changed the screen most.
+   Screen change is the share of pixels that clearly changed (by more than 12 of 255 levels of gray) between 192 px
+   wide PNG screenshots (decoded with zlib) before and after a step; two still steps in a row (under 0.1%) count as a
+   game over or a menu, and the bot starts again. With `ai`, a
+   Claude model (`claude-haiku-5-5`, structured output, thinking off, effort low) picks up to six inputs from a JPEG
+   of the game every step, at most 40 times a profile; the key is the environment's (`ANTHROPIC_API_KEY`), and
+   `@anthropic-ai/sdk` an optional peer dependency. Each step is a `glitchless_check` custom event (`profile`, `step`,
+   `input`, `screen`: still, moving or new screen, `label`) on the check's own board.
+5. **Glitchless's side.** With a workspace key on Glitchless Cloud, the check finds the game by its name in the
+   workspace or makes it (`POST /v1/agent/games`); on an open server, any service name with the development token. It
+   reads back `/v1/query/playtest` for its sessions (waiting until each has ended, up to 3 minutes on Glitchless
+   Cloud) and `/v1/query/findings`, saves the dashboard below (`PUT /v1/dashboard`), sets a screenshot of the game as
+   the board's banner (`PUT /v1/brand/banner`) and, on Glitchless Cloud, makes a link to its check page with `bots:
+   true`, pinned to the check's window, for 30 days (§3c). A server that answers without `bots` gets its link revoked,
+   since it would show an empty board. A game on a public site checked against a server on the checker's own computer
+   or network sends nothing (Chrome's Local Network Access keeps public pages from local addresses): the report says
+   so and gives the bots' own numbers, and public games are checked against Glitchless Cloud.
+6. **The dashboard.** Its first page, `check` ("Game check"), is the one the link shows: frames a second, the slowest
+   1 in 20 frames, freezes a minute and errors; a `versions` panel by `$profile` (desktop and phone side by side);
+   frame time; findings when there are any; the errors; what the bots did (a `table` of `glitchless_check`); and a
+   levels panel. Then "Players · with Glitchless installed" and "How they play · with Glitchless" (players, session
+   length, crash-free sessions, quits, retention, deaths, levels, the game's own events, modes by `$mode`, bug
+   reports), whose notes name what the bots saw (its waves, its modes, the inputs it answered to), and the
+   Performance, Errors and Sessions views.
+7. **The report.** Markdown with players as the unit and the normal next to the number: a headline or three (an
+   error, a phone that can't keep up, a long load, freezes with when they came, memory that climbs, missing files,
+   else that it ran well), what the bots did, loading and play by profile, errors, what Glitchless installed would
+   add, and the fine print: the numbers come from Glitchless's test machine (named), not the game's players, the
+   phone is not a real phone, the check is private and its sessions are bots. Agent-facing numbers (sessions,
+   findings' ids) come last. With it, three sentences for the game's maker with the link (`message.txt`), and
+   `check.json`; all in `.glitchless/checks/<game>-<time>/` with the screenshots.
+
+A check is private by default: its game, board and link are in the checker's workspace, and nothing ranks games.
 
 ## 6. Projects, keys and storage
 

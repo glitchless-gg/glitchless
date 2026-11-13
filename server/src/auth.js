@@ -18,7 +18,8 @@
 //     query (its service only), over at most SHARE_MAX_DAYS, with session and player ids, devices, stacks,
 //     breadcrumbs and live events left out of the board's panels; it is rate limited (DEFAULT_SHARE_RPS) by
 //     default. With `from` and `to` (ms) the link is pinned: it always answers that window, whatever the
-//     request asks for.
+//     request asks for. Its board counts players' sessions only, unless `bots: true` (a link showing what bots
+//     found when they played a game no player has yet, such as Glitchless Cloud's claim links): then every session.
 //
 // Two optional hooks let a host put limits on intake (the hosted service uses them for its plans):
 //

@@ -291,9 +291,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
           activity.push({ projectId, ts: Date.now(), client, query: name, params });
           if (activity.length > 200) activity.shift();
         }
-        // Share answers are kept apart from members' (pinned links' from rolling ones', with sums from without),
-        // for SHARE_MAX_AGE_S however many events arrive; members' for 4 s, until the next batch.
-        const share = reader.share ? `share ${pinned(reader.share) ? 'pinned' : 'rolling'}${reader.share.sums ? '+sums' : ''}\n` : '';
+        // Share answers are kept apart from members' (pinned links' from rolling ones', with sums from without, with
+        // bots from without), for SHARE_MAX_AGE_S however many events arrive; members' for 4 s, until the next batch.
+        const share = reader.share ? `share ${pinned(reader.share) ? 'pinned' : 'rolling'}${reader.share.sums ? '+sums' : ''}${reader.share.bots ? '+bots' : ''}\n` : '';
         const key = `${projectId}\n${share}${p}?${withoutKey(url.searchParams)}`;
         const hit = cache.get(key);
         if (hit && Date.now() - hit.at < (share ? SHARE_MAX_AGE_S * 1000 : 4000)) return json(res, 200, hit.body, share ? SHARE_CACHE : undefined);
@@ -456,8 +456,9 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     // and share links leave them out.
     if (testers) q.testers = testerIndex(await testers(projectId));
     // A share link shows players: the sessions of people (no bots, playtests, store test phones or TestFlight testers) on
-    // the game's prod environment when it has one (no dev builds), as findings read them.
-    if (reader.share) {
+    // the game's prod environment when it has one (no dev builds), as findings read them. One made to show what bots
+    // found (`bots`: a game no player has played yet) shows every session.
+    if (reader.share && !reader.share.bots) {
       q.type = 'user';
       if (services.find((s) => s.service === service)?.envs?.includes('prod')) q.env = 'prod';
     }

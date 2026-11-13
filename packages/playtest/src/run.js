@@ -9,7 +9,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
 // Real GPU (Metal via ANGLE on macOS) and no background throttling, same as scripts/bots.js.
-const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+export const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
 
 // Resolve Playwright from the game project first (where people install it), then from here.
 export async function loadPlaywright(cwd = process.cwd()) {

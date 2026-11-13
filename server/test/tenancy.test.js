@@ -311,6 +311,8 @@ test('a share reader reads its one board and nothing else', async () => {
   const t0 = now - 3_600_000;
   readers.pinned = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'pin', from: t0 - 7_200_000, to: t0 + 1500 }, keyId: 'pin', rps: 1000 };
   readers.wide = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'wide', from: now - 60 * 86_400_000, to: now }, keyId: 'wide', rps: 1000 };
+  // A link made to show what bots found, for a game no player has played yet (Glitchless Cloud's claim links).
+  readers.bots = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'bots', bots: true }, keyId: 'bots', rps: 1000 };
   // A game polling its link (Dead Reckoning draws everyone's deaths): pinned around now, one read a second.
   readers.game = { projectId: 'A', scopes: ['read'], share: { ...SHARE, id: 'game', from: t0 - 3_600_000, to: now + 600_000 }, keyId: 'game', rps: 1 };
   const auth = {
@@ -402,6 +404,9 @@ test('a share reader reads its one board and nothing else', async () => {
     assert.deepEqual((await app.get('/v1/query/services', 'pinned')).body.window, { from: pin.from, to: pin.to });
     assert.equal((await app.get('/v1/query/services', 'share')).body.window, null);
     assert.equal((await app.get(`/v1/query/services?from=${pin.from}&to=${pin.to}`, 'share')).body.window, null, 'a rolling link asking for the pinned window gets its own answer');
+    assert.equal((await app.get(`/v1/query/board?from=${now - 7_200_000}&to=${now}`, 'share')).body.board.panels[0].value, 4);
+    // With `bots`, every session counts, the bot's and the dev build's too, and the two answers are kept apart.
+    assert.equal((await app.get(`/v1/query/board?from=${now - 7_200_000}&to=${now}`, 'bots')).body.board.panels[0].value, 6);
     assert.equal((await app.get(`/v1/query/board?from=${now - 7_200_000}&to=${now}`, 'share')).body.board.panels[0].value, 4);
     const wide = (await app.get('/v1/query/board', 'wide')).body.meta;
     assert.equal(wide.to - wide.from, 30 * 86_400_000, 'a pinned window is cut to 30 days too');

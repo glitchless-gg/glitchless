@@ -1,6 +1,6 @@
 # glitchless-playtest
 
-Playtest every change. Your game's autoplay bot plays it on a saved baseline and on the current code, and
+Playtest every change, and check any web game. Your game's autoplay bot plays it on a saved baseline and on the current code, and
 [Glitchless](https://github.com/glitchless-gg/glitchless) compares the two: slow frames, frame time, render and
 update time, draw calls, hitches, errors and crashes. A regression exits with code 1, so it can gate a pull request.
 It plays Unity, Godot, Unreal and GameMaker builds from their command line ([engine builds](#engine-builds)), Roblox
@@ -10,6 +10,12 @@ Chrome.
 ```bash
 npx glitchless-playtest --save baseline   # before changing the code
 npx glitchless-playtest                   # after: compares with "baseline"
+```
+
+It also checks any web game someone posted, with nothing installed in it ([game checks](#game-checks)):
+
+```bash
+npx glitchless-playtest --check https://someone.itch.io/their-game
 ```
 
 ## Engine builds
@@ -110,6 +116,44 @@ hide it, so they fail a run on their own: update CPU is the game's update code, 
 where the engine lets it (Phaser's scene updates and physics). The Phaser demo in the Glitchless repo,
 `apps/phaser-demo`, has a working `glitchless.playtest.json`.
 
+## Game checks
+
+A game check shows a game's maker what Glitchless would do for their game, before they install anything. Glitchless's
+bots play any web game, an itch.io page, a github.io, Vercel or Netlify page or any address, and make a report in
+plain words, a dashboard made for that game and, on Glitchless Cloud, an unlisted link to it, with three sentences to
+send its maker.
+
+```bash
+GLITCHLESS_URL=https://api.glitchless.gg GLITCHLESS_API_KEY=gl_ws_… npx glitchless-playtest --check https://someone.itch.io/their-game
+```
+
+- **Nothing in the game.** The browser SDK is added to the page before it runs, its sessions marked as bots
+  (synthetic), so they never count as players. The engine is named where it can be (Three.js, Phaser, Babylon.js,
+  PlayCanvas, Unity, Godot, GameMaker, Construct, GDevelop, Defold, PixiJS and others, or plain canvas and WebGL), and
+  Three.js, Phaser, Babylon.js and PlayCanvas are handed to their Glitchless adapters, as installing it would.
+- **Two ways of playing**, one after the other, in real Chrome: desktop on this computer's GPU (90 s by default,
+  `--seconds`, at most 240), then a throttled phone: the same computer with its CPU slowed 4×, a phone's touch screen
+  (sideways for a wide game) and a 4G-like connection, for two thirds as long. With loading, 3 to 6 minutes.
+- **A player that needs no help.** It clicks Play, then tries the arrow keys, WASD, the mouse, click and drag and the
+  usual action keys (taps, holds and swipes on the phone), and spends its time on what changes the screen. With
+  `--ai` and an `ANTHROPIC_API_KEY`, a Claude model (Haiku) picks the inputs from screenshots instead
+  (`npm install @anthropic-ai/sdk`; at most 40 screenshots a profile). Each step is kept with the frames, memory,
+  errors and level of that moment, so the report can say when a freeze came.
+- **Where it goes.** With a workspace key (`gl_ws_…`, from `npx glitchless-mcp login`) on Glitchless Cloud, it makes a
+  game named after the page (`--name` to choose; an existing game by that name is reused), its dashboard and a share
+  link that shows the check's bot runs, for 30 days. On the open-source server it saves the dashboard there, with no
+  link. The report, `message.txt` (the link and three sentences), `check.json` and screenshots go in
+  `.glitchless/checks/<game>-<time>/`. Check a game on a public site against a public server: Chrome keeps a public
+  page from sending to a server on your own computer or network, and the report says so when that happens.
+- **It asks first.** It reads the site's robots.txt (as `GlitchlessCheck`) and stops where bots are asked to stay out,
+  stops on a 401, 403 or 429 or a page that checks for a human, never plays more than a few minutes from one computer,
+  closes popups and comes back from links that leave the game. A game that already sends to Glitchless has its own
+  sends held back during the check.
+- **Private.** The check's game and board are in your workspace. Don't use it to rank games.
+
+The numbers come from this computer, not from the game's players, and the report says so. Running checks for anyone
+on the web would need a GPU machine in the cloud; this runs where you run it.
+
 ## Options
 
 ```
@@ -132,6 +176,16 @@ where the engine lets it (Phaser's scene updates and physics). The Phaser demo i
 --channel NAME         browser: chrome (default) or chromium
 --headed               show the browser windows
 --json                 print the full result as JSON instead of markdown
+
+Game check (any web game, with nothing installed in it):
+--check URL            play the game at URL on a desktop and a throttled phone, then make its
+                       report, dashboard and (Glitchless Cloud) share link
+--name NAME            the game's name in Glitchless (default: its page's title)
+--seconds N            seconds of desktop play (default 90, at most 240; the phone plays 2/3 as long)
+--profiles LIST        desktop, phone or desktop,phone (default)
+--ai                   a Claude model picks the inputs (ANTHROPIC_API_KEY, @anthropic-ai/sdk)
+--out DIR              where the report goes (default .glitchless/checks/<game>-<time>)
+--no-share             no share link
 ```
 
 Saved runs go in `.glitchless/playtest/` (add it to `.gitignore`).
@@ -158,12 +212,13 @@ on a fast machine doesn't fail a build.
 ## From code or an agent
 
 ```js
-import { playtest } from 'glitchless-playtest';
+import { playtest, gameCheck } from 'glitchless-playtest';
 const result = await playtest({ saveAs: 'baseline' }); // later: playtest({ compareTo: 'baseline' })
+const check = await gameCheck({ url: 'https://someone.itch.io/their-game', server, apiKey }); // → { report, dm, share, files }
 ```
 
 The [glitchless-mcp](https://www.npmjs.com/package/glitchless-mcp) server exposes the same thing to
-coding agents as the `glitchless_playtest` tool.
+coding agents as the `glitchless_playtest` tool, and a game check as its `check_url`.
 
 ## License
 

@@ -2,7 +2,8 @@
 // a saved baseline. Used by the glitchless-playtest CLI and the glitchless_playtest MCP tool. A web game
 // plays in Chrome (run.js); an engine build (Unity, Godot, Unreal, GameMaker) runs from its command with
 // the SDK's --glitchless-measure (engine.js); a Roblox game plays in the open Roblox Studio over Studio's MCP
-// server (roblox.js).
+// server (roblox.js). A game check (check.js) plays any web game with nothing installed in it, and makes a report and a
+// dashboard for its maker.
 //
 //   await playtest({ saveAs: 'baseline' })          // before a change
 //   await playtest({ compareTo: 'baseline' })       // after it → { verdict, report, ... }
@@ -22,6 +23,10 @@ export { saveRun, loadRun, listRuns } from './runs.js';
 export { playtestRun, loadPlaywright } from './run.js';
 export { engineRun, measureSummary, parseMeasure, detectEngine, splitCommand, ENGINES } from './engine.js';
 export { robloxRun } from './roblox.js';
+// A game check: any web game, nothing installed in it (check.js).
+export { gameCheck, CHECK_SECONDS } from './check.js';
+export { checkReport, checkDm, checkDashboard, headlines, engineWords } from './check-report.js';
+export { itchFrame, robotsAllow, refusal, siteOf } from './check-site.js';
 
 /**
  * @param {object} o

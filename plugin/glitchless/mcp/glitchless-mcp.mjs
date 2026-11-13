@@ -304,10 +304,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path18) {
-  if (!path18)
+function getElementAtPath(obj, path20) {
+  if (!path20)
     return obj;
-  return path18.reduce((acc, key) => acc?.[key], obj);
+  return path20.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -566,11 +566,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path18, issues) {
+function prefixIssues(path20, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path18);
+    iss.path.unshift(path20);
     return iss;
   });
 }
@@ -1103,16 +1103,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path18 = []) => {
+  const processError = (error63, path20 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path20, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path20, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path20, ...issue2.path]);
       } else {
-        const fullpath = [...path18, ...issue2.path];
+        const fullpath = [...path20, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -1151,17 +1151,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path18 = []) => {
+  const processError = (error63, path20 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path18, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path20, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path20, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path18, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path20, ...issue2.path]);
       } else {
-        const fullpath = [...path18, ...issue2.path];
+        const fullpath = [...path20, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -1200,8 +1200,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path18 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path18) {
+  const path20 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path20) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -10478,8 +10478,8 @@ var init_pt = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural2 = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+            const plural3 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -10629,8 +10629,8 @@ var init_pt_BR = __esm({
           case "not_multiple_of":
             return `N\xFAmero inv\xE1lido: deve ser m\xFAltiplo de ${issue2.divisor}`;
           case "unrecognized_keys": {
-            const plural2 = issue2.keys.length > 1 ? "s" : "";
-            return `Chave${plural2} inv\xE1lida${plural2}: ${joinValues(issue2.keys, ", ")}`;
+            const plural3 = issue2.keys.length > 1 ? "s" : "";
+            return `Chave${plural3} inv\xE1lida${plural3}: ${joinValues(issue2.keys, ", ")}`;
           }
           case "invalid_key":
             return `Entrada inv\xE1lida n${translateOriginWithArticle(issue2.origin, "definite")}`;
@@ -19233,13 +19233,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path18 = ref.slice(1).split("/").filter(Boolean);
-  if (path18.length === 0) {
+  const path20 = ref.slice(1).split("/").filter(Boolean);
+  if (path20.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path18[0] === defsKey) {
-    const key = path18[1] === void 0 ? void 0 : decodeJSONPointerSegment(path18[1]);
+  if (path20[0] === defsKey) {
+    const key = path20[1] === void 0 ? void 0 : decodeJSONPointerSegment(path20[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -23695,17 +23695,17 @@ function scanXMcpHeaderDeclarations(inputSchema) {
   const declarations = [];
   const seenLower = /* @__PURE__ */ new Map();
   let numberFault;
-  const visit2 = (node2, path18, reachable) => {
+  const visit2 = (node2, path20, reachable) => {
     if (node2 === null || typeof node2 !== "object") return void 0;
     const schema = node2;
     if (X_MCP_HEADER_KEY in schema) {
-      if (!reachable || path18.length === 0) return `${pathName(path18)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
+      if (!reachable || path20.length === 0) return `${pathName(path20)}: x-mcp-header is only permitted on properties statically reachable via a chain of 'properties' keys (not under items, additionalProperties, oneOf/anyOf/allOf/not, if/then/else, or $ref)`;
       const raw = schema[X_MCP_HEADER_KEY];
-      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path18)}: x-mcp-header MUST be a non-empty string`;
-      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path18)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
+      if (typeof raw !== "string" || raw.length === 0) return `${pathName(path20)}: x-mcp-header MUST be a non-empty string`;
+      if (!RFC9110_TOKEN.test(raw)) return `${pathName(path20)}: x-mcp-header '${raw}' is not a valid RFC 9110 token (no spaces, control characters or HTTP delimiters)`;
       const type = typeof schema.type === "string" ? schema.type : void 0;
       if (type === void 0 || !PERMITTED_X_MCP_HEADER_TYPES.has(type)) {
-        const fault$1 = `${pathName(path18)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
+        const fault$1 = `${pathName(path20)}: x-mcp-header is only permitted on primitive-typed properties (string, integer, boolean); got ${type ?? "<none>"}`;
         if (type !== "number") return fault$1;
         numberFault ??= fault$1;
       }
@@ -23714,14 +23714,14 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (prior !== void 0) return `x-mcp-header '${raw}' is not case-insensitively unique (also declared as '${prior}')`;
       seenLower.set(lower, raw);
       declarations.push({
-        path: path18,
+        path: path20,
         headerName: raw,
         type
       });
     }
     const properties = schema.properties;
     if (properties !== null && typeof properties === "object") for (const [key, child] of Object.entries(properties)) {
-      const fault$1 = visit2(child, [...path18, key], reachable);
+      const fault$1 = visit2(child, [...path20, key], reachable);
       if (fault$1 !== void 0) return fault$1;
     }
     for (const k of NON_REACHABLE_SUBSCHEMA_KEYWORDS) {
@@ -23729,7 +23729,7 @@ function scanXMcpHeaderDeclarations(inputSchema) {
       if (sub === void 0) continue;
       const branches = Array.isArray(sub) ? sub : sub !== null && typeof sub === "object" && OBJECT_VALUED_SUBSCHEMA_KEYWORDS.has(k) ? Object.values(sub) : [sub];
       for (const branch of branches) {
-        const fault$1 = visit2(branch, [...path18, `<${k}>`], false);
+        const fault$1 = visit2(branch, [...path20, `<${k}>`], false);
         if (fault$1 !== void 0) return fault$1;
       }
     }
@@ -23748,8 +23748,8 @@ function scanXMcpHeaderDeclarations(inputSchema) {
     declarations
   };
 }
-function pathName(path18) {
-  return path18.length === 0 ? "<root>" : path18.join(".");
+function pathName(path20) {
+  return path20.length === 0 ? "<root>" : path20.join(".");
 }
 function mcpParamPrimitiveToString(value) {
   if (typeof value === "string") return value;
@@ -23776,9 +23776,9 @@ function decodeMcpParamValue(value) {
     return;
   }
 }
-function valueAtPath(root, path18) {
+function valueAtPath(root, path20) {
   let node2 = root;
-  for (const key of path18) {
+  for (const key of path20) {
     if (node2 === null || typeof node2 !== "object") return void 0;
     node2 = node2[key];
   }
@@ -24168,7 +24168,7 @@ function convertStandardElicitationSchema(schema) {
 function isAnnotationOnlyJsonSchemaKeyword(key) {
   return ANNOTATION_ONLY_JSON_SCHEMA_KEYWORDS.has(key) || key.startsWith("x-");
 }
-function walkProperty(node2, path18, vendor, unsupported) {
+function walkProperty(node2, path20, vendor, unsupported) {
   if (!isJsonObject(node2)) return node2;
   const allowedKeys = typeof node2.type === "string" && Object.hasOwn(PROPERTY_KEYS_BY_TYPE, node2.type) ? PROPERTY_KEYS_BY_TYPE[node2.type] : void 0;
   if (allowedKeys === void 0) return node2;
@@ -24176,8 +24176,8 @@ function walkProperty(node2, path18, vendor, unsupported) {
   for (const [key, value] of Object.entries(node2)) if (allowedKeys.has(key) || isAnnotationOnlyJsonSchemaKeyword(key)) pruned[key] = value;
   else if (key === "pattern" && node2.type === "string" && typeof node2.format === "string") {
     if (!SUPPORTED_STRING_FORMATS.has(node2.format)) pruned[key] = value;
-    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path18}.${key}`);
-  } else unsupported.push(`${path18}.${key}`);
+    else if (typeof value !== "string" || !isLibraryFormatPattern(node2.format, value, vendor)) unsupported.push(`${path20}.${key}`);
+  } else unsupported.push(`${path20}.${key}`);
   return pruned;
 }
 function walkRequestedSchema(converted, vendor) {
@@ -24194,11 +24194,11 @@ function describeUnsupportedProperties(pruned, fallback) {
   const offenders = Object.entries(pruned.properties).filter(([, node2]) => !parseSchema(PrimitiveSchemaDefinitionSchema, node2).success).map(([name]) => `properties.${name}`);
   return offenders.length > 0 ? offenders.join(", ") : fallback;
 }
-function findDroppedConstraintPaths(original, parsed, path18 = "") {
-  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path18}[${index}]`));
+function findDroppedConstraintPaths(original, parsed, path20 = "") {
+  if (Array.isArray(original) && Array.isArray(parsed)) return original.flatMap((item, index) => findDroppedConstraintPaths(item, parsed[index], `${path20}[${index}]`));
   if (!isJsonObject(original) || !isJsonObject(parsed)) return [];
   return Object.entries(original).flatMap(([key, value]) => {
-    const childPath = path18 ? `${path18}.${key}` : key;
+    const childPath = path20 ? `${path20}.${key}` : key;
     if (!Object.prototype.hasOwnProperty.call(parsed, key)) return isAnnotationOnlyJsonSchemaKeyword(key) ? [] : [childPath];
     return findDroppedConstraintPaths(value, parsed[key], childPath);
   });
@@ -24967,9 +24967,9 @@ var init_src_DdvbAHrR = __esm({
         });
         const parsed = buildSchemas2026().RequestMetaEnvelopeSchema.safeParse(meta3);
         if (!parsed.success) for (const issue2 of parsed.error.issues) {
-          const path18 = issue2.path.map(String);
-          const key = path18.length > 0 ? path18.join(".") : "_meta";
-          if (path18.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
+          const path20 = issue2.path.map(String);
+          const key = path20.length > 0 ? path20.join(".") : "_meta";
+          if (path20.length === 1 && issues.some((existing) => existing.key === key && existing.problem === "missing")) continue;
           issues.push({
             key,
             problem: issue2.message
@@ -29282,8 +29282,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         for (let i = 0; i < str.length; i++) if (str[i] === token) ind++;
         return ind;
       }
-      function removeDotSegments(path18) {
-        let input2 = path18;
+      function removeDotSegments(path20) {
+        let input2 = path20;
         const output2 = [];
         let nextSlash = -1;
         let len = 0;
@@ -29621,8 +29621,8 @@ var init_ajvProvider_DyjnscPj = __esm({
         }
         if (wsComponent.resourceName) {
           const queryIndex = wsComponent.resourceName.indexOf("?");
-          const path18 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-          wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
+          const path20 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+          wsComponent.path = path20 && path20 !== "/" ? path20 : void 0;
           wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
           wsComponent.resourceName = void 0;
         }
@@ -33725,11 +33725,11 @@ var init_ajvProvider_DyjnscPj = __esm({
         if (!f) throw new Error(`Unknown format "${name}"`);
         return f;
       };
-      function addFormats2(ajv, list, fs14, exportName) {
+      function addFormats2(ajv, list, fs15, exportName) {
         var _a3;
         var _b;
         (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 || (_b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`);
-        for (const f of list) ajv.addFormat(f, fs14[f]);
+        for (const f of list) ajv.addFormat(f, fs15[f]);
       }
       module.exports = exports = formatsPlugin;
       Object.defineProperty(exports, "__esModule", { value: true });
@@ -33870,14 +33870,14 @@ function protectedResourceMetadataPath(resourceServerUrl) {
   const rsPath = stripTrailingSlash(resourceServerUrl.pathname);
   return `/.well-known/oauth-protected-resource${rsPath === "/" ? "" : rsPath}`;
 }
-function stripTrailingSlash(path18) {
-  return path18.length > 1 && path18.endsWith("/") ? path18.slice(0, -1) : path18;
+function stripTrailingSlash(path20) {
+  return path20.length > 1 && path20.endsWith("/") ? path20.slice(0, -1) : path20;
 }
 function supportsScopeChallengeResolver(transport) {
   return typeof transport === "object" && transport !== null && "setScopeChallengeResolver" in transport && typeof transport.setScopeChallengeResolver === "function";
 }
-function assertScope(scope, location) {
-  if (typeof scope !== "string" || !/^[\u0021\u0023-\u005B\u005D-\u007E]+$/.test(scope)) throw new TypeError(`${location} must satisfy the OAuth scope-token grammar`);
+function assertScope(scope, location2) {
+  if (typeof scope !== "string" || !/^[\u0021\u0023-\u005B\u005D-\u007E]+$/.test(scope)) throw new TypeError(`${location2} must satisfy the OAuth scope-token grammar`);
 }
 function validateScopeChallenge(challenge) {
   if (challenge === null || typeof challenge !== "object" || !Array.isArray(challenge.scopes) || challenge.scopes.length === 0) throw new TypeError("scope challenge must contain at least one scope");
@@ -37244,7 +37244,7 @@ function instructions(remote, manage = true) {
     "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to. For a Roblox game connected to Roblox, it reads the Robux it earned (and what they'd be worth through DevEx), its daily active and new users and its D1, D7 and D30 retention, which the anonymous Roblox SDK can't count. For a game connected to its itch.io page with an API key, it reads its earnings there by day.",
     "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
     ...remote ? ["After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players."] : [
-      `Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. It plays a web game in Chrome, runs a Unity, Godot, Unreal or GameMaker build from its command (command, e.g. ["godot", "--path", "."]) with the game's autoplay flags, or plays a Roblox game (engine "roblox") in the open Roblox Studio, which needs Studio's MCP server on. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.`,
+      `Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. It plays a web game in Chrome, runs a Unity, Godot, Unreal or GameMaker build from its command (command, e.g. ["godot", "--path", "."]) with the game's autoplay flags, or plays a Roblox game (engine "roblox") in the open Roblox Studio, which needs Studio's MCP server on. With check_url it runs a game check: bots play any web game someone posted (an itch.io page, github.io, Vercel), with nothing installed in it, and make a report, a dashboard and a share link to send its maker. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.`,
       "If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool."
     ]
   ].join(" ");
@@ -37833,9 +37833,9 @@ Session properties: ${props.map((p) => p.identifier_like ? `${p.key} (an ID: too
 ${m.event} ${m.rate ? `rate of ${m.rate}` : `average ${m.avg}`}${m.by ? ` by ${m.by}` : ""}: ${m.empty ? m.why : m.rows ? `${m.rows.length} rows, overall ${m.overall}${m.rate ? "%" : ""}` : `${m.value}${m.unit === "%" ? "%" : ""} of ${m.events} events`}` : "";
         const dist = d.distribution ? `
 ${d.distribution.event} ${d.distribution.of}: ${d.distribution.empty ? d.distribution.why : `p50 ${d.distribution.p50}, p90 ${d.distribution.p90} of ${d.distribution.count}`}` : "";
-        const fs14 = d.first;
-        const firstLine = fs14 ? `
-${fs14.event}, first in a session: ${fs14.empty ? fs14.why : `${fs14.median_s == null ? "no session sent it" : `median ${fs14.median_s} s after the session started, p90 ${fs14.p90_s} s (${fs14.sessions} sessions)`}; ${fs14.never_pct == null ? "no session has ended yet" : `${fs14.never_pct}% of ${fs14.ended} ended sessions never sent it`}`}` : "";
+        const fs15 = d.first;
+        const firstLine = fs15 ? `
+${fs15.event}, first in a session: ${fs15.empty ? fs15.why : `${fs15.median_s == null ? "no session sent it" : `median ${fs15.median_s} s after the session started, p90 ${fs15.p90_s} s (${fs15.sessions} sessions)`}; ${fs15.never_pct == null ? "no session has ended yet" : `${fs15.never_pct}% of ${fs15.ended} ended sessions never sent it`}`}` : "";
         return reply(`Custom events for ${svc} (${hours || 24}h, ${d.sessions} sessions, ${d.hours ?? 0} hours played):
 ${brief || "None in this window. A game sends them with track(name, attrs), and streams with count(name, attrs)."}${propLine}${measured}${dist}${firstLine}${detail ? "" : "\n(Top 5 values of each attribute and property: detail: true gives them all.)"}`, {
           events: d.events.map(({ series, ...e }) => detail ? e : compactEvent(e)),
@@ -37844,7 +37844,7 @@ ${brief || "None in this window. A game sends them with track(name, attrs), and 
           ...d.funnel ? { funnel: d.funnel } : {},
           ...m ? { measure: (({ ts, series, ...x }) => x)(m) } : {},
           ...d.distribution ? { distribution: d.distribution } : {},
-          ...fs14 ? { first: fs14 } : {}
+          ...fs15 ? { first: fs15 } : {}
         }, { rows: !detail });
       }
     );
@@ -38015,7 +38015,7 @@ var init_skills = __esm({
       "plugin/glitchless/skills/instrument/references/threejs.md": "# Three.js\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game's own metrics and dashboard, and the report.\n\n\n## 1. Read the game first\n\nFind, and note file:line for each:\n- where the `THREE.WebGLRenderer` (or `WebGPURenderer`), `scene` and main `camera` are created\n- the game loop (`renderer.setAnimationLoop` / `requestAnimationFrame`)\n- level/stage load and unload, player death/respawn, level complete/win, pickups/power-ups, game over\n- anything spawned in bulk at runtime (particles, projectiles, enemies, debris): these become context gauges\n- where the version lives (`package.json` version or a constant); if none, create `src/version.js`\n\n## 2. Install and initialize (right after the renderer exists)\n\n```bash\nnpm install glitchless\n```\n\n```js\nimport * as THREE from 'three';\nimport { Glitchless, instrumentThree } from 'glitchless';\n\nconst glitchless = Glitchless.init({\n  service: '<game-id>',               // kebab-case, stable\n  version: GAME_VERSION,\n  env: import.meta.env?.MODE ?? 'dev',\n  intake: import.meta.env?.VITE_GLITCHLESS_INTAKE ?? 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',\n  sessionType: isBot ? 'synthetic' : 'user',\n});\ninstrumentThree(glitchless, { renderer, scene, camera, THREE });\n```\n\nNo bundler? Use `<script src=\"{GLITCHLESS_URL}/sdk/glitchless.js\"></script>` and `Glitchless.init(...)` / `Glitchless.instrumentThree(...)`.\n\n**Telemetry must never break the game.** Load the SDK through a small facade with try/catch and a no-op fallback\n(see `apps/zoomies/src/telemetry.js` in the Glitchless repo for the pattern) and support a `?nogd=1` kill switch.\n\n## 3. Wire game semantics\n\n| Game moment | Call |\n| --- | --- |\n| level/stage starts (incl. restarts) | `glitchless.levelStart('level-2')`; with what describes the attempt: `levelStart('rift', { mode: 'ranked', hero: 'ember' })` |\n| level beaten | `glitchless.levelComplete('level-2', { durationS, score })` |\n| game over: the player lost the level | `glitchless.levelFail('level-2', { cause })` |\n| the player leaves mid-level (back to the menu, a restart) | `glitchless.levelAbandon('level-2')`: never a fail. Closing the page or app mid-level sends one by itself |\n| player dies | `glitchless.death({ x, y, z, cause: 'fell' })`: short, low-cardinality causes |\n| pickups, power-ups, checkpoints | `glitchless.track('powerup', { kind: 'speed' })` |\n| something that happens many times a second: shots, hits, kills, gold, taps | `glitchless.count('kill', { monster: 'elite' })`, `glitchless.count('gold', { source: 'loot', amount: 35 })`: summed per 5 s window. Track a moment, count a stream |\n| what holds for the session: mode, rank tier, class, server region, input | `glitchless.setProperties({ mode: 'squads', rank: 'gold' })` where the game knows it (after sign-in, at the menu, at matchmaking). Bands, never exact numbers or anything about the person |\n| an open world: the region or room the player is in | `glitchless.setZone('westfall')` on each change (a zone has no start or end; a level does) |\n| a purchase the store confirmed | `glitchless.track('purchase', { amount: 4.99, currency: 'USD', item: 'gems_500' })` |\n| every frame | `glitchless.setPosition(player.position)` |\n| every frame | `glitchless.setContext({ particles, enemies, projectiles })`: counts of anything that scales |\n| after a level is built | `glitchless.captureMap(levelId, { axis: 'xy' /* side-scroller */ \\| 'xz' /* top-down */, bounds: { min: [a, b], max: [a, b] } })` |\n| handled errors worth knowing about | `glitchless.error(err, { where: 'save-game' })` |\n\n## 4. Give agents hands: register game tools (WebMCP)\n\nRegister 3\u20135 tools that let an agent reproduce problems. Handlers return a plain object or string and never throw.\n\n```js\nglitchless.registerTool('mygame_get_state', 'Current level, player position, score, enemy/particle counts', { type: 'object', properties: {} }, () => ({ ... }));\nglitchless.registerTool('mygame_load_level', 'Jump to a level', { type: 'object', properties: { level: { type: 'string' } }, required: ['level'] }, ({ level }) => { loadLevel(level); return `loaded ${level}`; });\n```\n\nGood candidates: load level, teleport player, trigger the expensive effect (explosion, power-up), toggle pause.\n\n## 4a. Multiplayer: matches, ping, disconnects and the game's server\n\nSkip this for a single-player game. Find the netcode first (`ws`, Socket.IO, Colyseus, WebRTC, or the game's own) and\nnote file:line for: joining a match or lobby and the ID the server gives it, the client's ping (or where one could\ngo), the disconnect and reconnect handlers, and the server's tick loop.\n\nOn the client:\n\n```js\nglitchless.setGroup('match', match.id);   // the ID the game's server made, shared by everyone in the match\nglitchless.setGroup('party', party.id);   // a party, until it breaks up. Never an account, guild or friends-list ID\nglitchless.setGroup('match', null);       // the match is over\nconst run = glitchless.setGroup('run');   // a roguelite run across levels: the SDK makes the ID\n```\n\nMatch and party IDs are hashed before they're sent, the same way in every Glitchless SDK and on the server, so the\nmatch lines up from every side; leave `hashGroupIds` on unless the user wants to match IDs against their server logs.\n\nPing, about once a second: a WebSocket has no round trip of its own, so time an app-level ping (Socket.IO: an emit\nwith an acknowledgement; `ws` or Colyseus: a ping message the server echoes) and pass it:\n\n```js\nglitchless.netSample({ rtt_ms, transport: 'socket.io' });    // loss_pct and jitter_ms too where the netcode knows them\nglitchless.disconnect({ reason: 'timeout' });                // timeout, connection_lost, kicked, server_closed, failed_to_connect, other\nglitchless.reconnect();                                      // back in the same game\n```\n\nCall `disconnect` only when the connection dropped, not when the player chose to leave (Socket.IO's\n`io client disconnect`, a close the game made itself). A disconnect mid-level ends it as an abandon with reason\n`disconnect`, never a fail. A WebRTC game: `import { instrumentNet } from 'glitchless/net'` and\n`instrumentNet(glitchless, { peer })` with its `RTCPeerConnection` does all of this from `getStats()`.\n\nOn a Node game server (in the same repo or the user's server project), add `glitchless/server`:\n\n```js\nimport { GlitchlessServer, instrumentWs } from 'glitchless/server'; // or instrumentSocketIO, glitchlessRoom\n\nconst server = GlitchlessServer.init({\n  service: '<game-id>',                 // the game's own id, not \"<game-id>.server\": intake files it apart\n  version: GAME_VERSION,\n  intake: process.env.GLITCHLESS_INTAKE ?? 'http://localhost:7777',\n  clientToken: 'gl_pub_dev',            // the game's client token\n  tickHz: 30,                           // the server's target tick rate\n  maxPlayers: 16,\n  region: process.env.REGION,           // in the game's words: 'eu-west'\n  sessionType: isLoadTest ? 'synthetic' : 'user',\n});\ninstrumentWs(server, wss);                           // ws: players, pings, how connections end\n// instrumentSocketIO(server, io);                   // Socket.IO\n// gameServer.define('battle', glitchlessRoom(server, BattleRoom)); // Colyseus: each room is a match\nsetInterval(server.measureTick(update), 1000 / 30); // the tick loop (Colyseus: done by glitchlessRoom)\nserver.setGroup('match', matchId);                   // the same ID the players get; server.match(id) when it hosts several at once\nprocess.on('SIGTERM', async () => { await server.close(); process.exit(0); });\n```\n\nUncaught errors are reported as crashes and the process still dies as before. It sends nothing to a Glitchless\nserver that doesn't read server sessions yet, so on an old one nothing shows: say so in the report.\n\n## 4b. Bug reports from players (ask first)\n\nFor playtests, jams and early access, players can flag a problem where it happens: a key (F8) or a button in the\noverlay opens a small form, and the note, a screenshot of the canvas, the level, the position (when positions are\non) and the last events go to Glitchless. They show under Bug Reports, in findings once a level has three, and in\n`glitchless_bug_reports`. The note is free text the player types, so ask the user before turning it on and tell\nthem to mention it in the game's privacy page (`packages/sdk/PRIVACY.md` in the Glitchless repo has the wording).\n\n```js\nconst glitchless = Glitchless.init({\n  // \u2026\n  bugReports: { hotkey: 'F8', onOpen: () => pauseGame(), onClose: () => resumeGame() },\n});\n```\n\nWhile the form is open the SDK holds keys, clicks and mouse movement back from the game; `onOpen`/`onClose` pause\nit (a game that reads a gamepad needs the pause). A game with its own pause menu can add \"Report a bug\" there with\n`glitchless.openBugReport()`, or send one from its own UI with `glitchless.reportBug({ note })`.\n\n## 4c. Readable errors from the production build (source maps)\n\nA minified build reports its errors as `e (index-3f2a.js:1:48213)`. With the build's source maps uploaded,\nGlitchless shows them as `fireShotgun (weapons.js:141)`, with the original stack and the failing line, in the\ndashboard and in `glitchless_get_error`, and an error keeps one fingerprint across builds. Most web games build\nwith Vite; add the plugin there:\n\n```bash\nnpm install -D glitchless-sourcemaps\n```\n\n```js\n// vite.config.js\nimport glitchlessSourcemaps from 'glitchless-sourcemaps/vite';\nimport { GAME_VERSION } from './src/version.js'; // wherever the version passed to Glitchless.init lives\n\nexport default defineConfig({\n  plugins: [glitchlessSourcemaps({ version: GAME_VERSION, service: '<game-id>', deleteMaps: true })],\n});\n```\n\n`version` and `service` must match what the game passes to `Glitchless.init` (the defaults are package.json's\n`version` and `name`). The plugin builds with `build.sourcemap: 'hidden'`; leave `build.sourcemap` unset or set it to\n`'hidden'`, because `true` points players' browsers at the maps. It uploads only when `GLITCHLESS_API_KEY` holds a\nsecret key that can upload source maps (tick \"Can upload source maps\" when creating it); put the key in CI secrets\nor the user's environment, never in the game or a committed file. `deleteMaps: true` keeps the maps out of `dist`.\nWithout a key the build works as before and uploads nothing.\n\nOther bundlers, or a CI step after the build (upload before deploying):\n\n```bash\nGLITCHLESS_API_KEY=\u2026 npx glitchless-sourcemaps upload dist --version 1.2.0 --service <game-id> --delete\n```\n\n`--url` (or `GLITCHLESS_URL`) is the Glitchless server, as for the MCP server.\n\n## 4d. A \"share performance data\" setting (offer it)\n\nIf the game has a settings or options screen, offer a toggle for it, so players can turn Glitchless off at any time and\nback on. `setEnabled(false)` stops measuring and sending at once, drops what was waiting and sends nothing more, not\neven a closing event; `setEnabled(true)` starts a new session. The SDK saves the choice in localStorage itself, so the\nnext visit sends nothing until the player turns it back on. Wire it next to the game's other settings:\n\n```js\n// where the settings load\nglitchless.setEnabled(settings.shareData !== false); // changes nothing when it already agrees\n// where the toggle changes\nsettings.shareData = checked;\nsaveSettings();\nglitchless.setEnabled(checked);\n```\n\nIf the user wants players to agree before anything is collected, add `optIn: true` to init and call\n`setEnabled(true)` when the player says yes. Tell them to mention the setting in the game's privacy page\n(`packages/sdk/PRIVACY.md` has a sentence for it).\n\n## 5. Verify\n\n1. Run the game, press `` ` ``: the Glitchless overlay shows fps, p95 frame time, draw calls, context gauges.\n2. Play a level and die once. Then confirm data arrived: call `glitchless_list_games`, or open the dashboard.\n3. If WebMCP is connected, call `glitchless_live_performance` and `glitchless_inspect_scene`.\n",
       "plugin/glitchless/skills/instrument/references/unity.md": '# Unity\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nThe `gg.glitchless.sdk` package, for Unity 6.0 LTS and later (6.3 and 6.5 included).\n\n## 1. Read the project\n\nNote: the Unity version (`ProjectSettings/ProjectVersion.txt`; 6000.0 or later: on an older Unity, such as 2022.3, say Glitchless needs Unity 6.0 LTS or later), the first scene\n(`ProjectSettings/EditorBuildSettings.asset`), which scenes are levels, the scripts for player death and respawn,\nlevel complete and fail, pickups, and anything spawned in bulk; where the version lives (`bundleVersion` in\n`ProjectSettings/ProjectSettings.asset` is `Application.version`).\n\n## 2. Install\n\nAdd one line to `dependencies` in `Packages/manifest.json`:\n\n```json\n"gg.glitchless.sdk": "https://github.com/glitchless-gg/glitchless.git?path=unity/Packages/gg.glitchless.sdk"\n```\n\nUnity resolves it the next time the Editor has focus. Pin a release by adding `#gg.glitchless.sdk/v0.7.4`.\n\n## 3. Initialize, without touching a scene file\n\nCreate `Assets/Scripts/GlitchlessSetup.cs`:\n\n```csharp\nusing GlitchlessSdk;\nusing UnityEngine;\n\nstatic class GlitchlessSetup\n{\n    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]\n    static void Init() => Glitchless.Init(new GlitchlessOptions\n    {\n        Service = "<game-id>",\n        Intake = "http://localhost:7777",\n        ClientToken = "gl_pub_dev",\n    });\n}\n```\n\nIt runs before the first scene loads, so no scene needs editing. (If the project has an assembly definition for\nits scripts, add `GlitchlessSdk` to its references.) The Editor and development builds send with `Env` `dev`;\nrelease builds with `prod`.\n\n## 4. Levels and game semantics\n\nScenes are levels on their own: each scene that becomes active is a level unless its name reads as a menu, loader,\noverlay or end screen (`Boot`, `Loading`, `MainMenu`, `UI`, `HUD`, `GameOver`\u2026). If one scene plays many levels,\ncall `Glitchless.LevelStart("world-1-2")` where a level begins (that turns scene levels off), or set\n`LevelForScene` in the options.\n\n| Game moment | Call |\n| --- | --- |\n| level beaten | `Glitchless.LevelComplete("level-2", score: 1200)` |\n| game over: the player lost the level | `Glitchless.LevelFail("level-2", "fell")` |\n| the player leaves mid-level (the menu, a restart) | `Glitchless.LevelAbandon("level-2")`: never a fail; quitting or going to the background mid-level sends one by itself |\n| player dies | `Glitchless.Death(player.position, "spikes")` |\n| pickups, checkpoints | `Glitchless.Track("powerup", "magnet")` |\n| a stream: shots, hits, kills, gold, taps | `Glitchless.Count("kill", "elite")`, `Glitchless.Count("gold", new Dictionary<string, object> { ["source"] = "loot", ["amount"] = 35 })` |\n| what holds for the session: mode, rank tier, class, server region | `Glitchless.SetProperty("rank", "diamond")`, or `Properties` in the options |\n| what kind of attempt a level is | `Glitchless.LevelStart("deadmines", new Dictionary<string, object> { ["difficulty"] = "heroic", ["party_size"] = 5 })` |\n| where the player is in an open world | `Glitchless.SetZone("westfall")` |\n| a purchase the store confirmed | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" })` |\n| counts of anything that scales, each frame | `Glitchless.SetContext("enemies", enemies.Count)` |\n| the player\'s place, each frame | `Glitchless.SetPosition(player.position)` (sent with `Positions = true` in the options, or Full mode) |\n| a level is built (its picture under the heatmaps) | `Glitchless.CaptureMap("level-2", new Rect(0, 0, width, height))`: 2D or a side view; a 3D level from above: `Glitchless.CaptureMap("arena", bounds)` |\n| a caught exception | `Glitchless.Error(e)` |\n\nUncaught exceptions, `Debug.LogError` and engine errors are reported without any code.\n\n**Heatmaps.** With positions on, call `CaptureMap` where a level is built, so the dashboard draws deaths and paths\nover a picture of it. Give it the level\'s area in world units: a tile room `new Rect(0, 0, room.Width, room.Height)`\n(a long stage whole, not the screen the camera shows); a 3D level its renderers\' bounds put together\n(`var b = renderers[0].bounds; foreach (var r in renderers) b.Encapsulate(r.bounds);`), whose top is where the camera\nlooks down from, so leave a roof above it out. Pass what shouldn\'t be in the picture:\n`new MapOptions { Exclude = new[] { player.gameObject, backdrop.gameObject } }` (a backdrop that follows the camera\nwould cover the level). Calling it every time the level starts is fine: each level\'s map goes once per version.\n\nTrack a moment, count a stream: anything that happens several times a second (each bullet, each coin) goes through\n`Count`, which adds it up on the device; a `Track` for each would fill the SDK\'s queue. Properties hold for the whole\nsession: set them where the game knows them (after sign-in, at the menu, at matchmaking), as bands (`"30-39"`) rather\nthan exact numbers, and never anything that says who the player is (the SDK drops `email`, `user_id`, IDs and links).\nWhat changes from match to match (hero, deck, map) goes on `LevelStart` or the event.\n\n## 4c. Multiplayer\n\nLook for the netcode first: `com.unity.netcode.gameobjects` in `Packages/manifest.json` (NGO, often with\n`com.unity.services.multiplayer`, Relay or Lobby), or a `Mirror` folder or package.\n\n- **NGO 2.x or Mirror:** nothing to add for ping and disconnects. The SDK finds them at run time and sends round trips,\n  jitter, Relay or not, and disconnects with their reason; a level going ends as an abandon with reason `disconnect`.\n- **Anything else** (Steam Networking Sockets, Photon, Fish-Net, EOS, the game\'s own): call\n  `Glitchless.NetSample(rttMs: ping, lossPct: loss)` once a second where the game reads its ping,\n  `Glitchless.Disconnect("timeout")` where it handles a drop (`timeout`, `connection_lost`, `kicked`, `server_closed`,\n  `failed_to_connect`, `other`), and `Glitchless.Reconnect()` when it\'s back.\n- **The match:** where every player joins one match or lobby, `Glitchless.SetGroup("match", id)` with an ID everyone in\n  it shares (a Lobby\'s `lobby.Id`, a Multiplayer Services `session.Id`, or the game server\'s match ID), and\n  `Glitchless.SetGroup("match", null)` when it ends. A party: `SetGroup("party", id)`, never a guild or friends list.\n  A roguelite run: `var run = Glitchless.SetGroup("run")`, saved with the run if it survives a restart. The SDK hashes\n  match and party IDs.\n- **A dedicated server:** a build with the Dedicated Server target reports as `<service>.server` by itself, with its\n  tick time, players and the players\' ping, and never counts as a player; for a headless server built otherwise, add\n  `--glitchless-server` to its command line or `Role = GlitchlessRole.Server` to its options. Set `ServerRegion` (in the\n  game\'s words) and `MaxPlayers`, and `SessionPerMatch = true` when a server process hosts one match at a time. Call\n  `Glitchless.SetPlayers(n)` only if the game counts players without NGO or Mirror. The server\'s code should set the\n  same match group as its players.\n\n## 4b. Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first): ask the user first, since the note is free text the\nplayer types, and point them at the privacy wording in the package\'s `PRIVACY.md`. Then add one line to the options:\n\n```csharp\nBugReports = new BugReportOptions(), // F8 opens the form; OnOpen / OnClose to pause, Hotkey to change the key\n```\n\nThe form is IMGUI, so the game needs no Canvas or EventSystem, and it works with the Input Manager and the Input\nSystem. While it\'s open, `Time.timeScale` is 0 and the Input System\'s actions are off (`PauseGame`). Input the game\nreads straight from `UnityEngine.Input` or a device isn\'t held back: guard it with `if (Glitchless.IsBugReportOpen)\nreturn;`. A pause menu can call `Glitchless.OpenBugReport()`, and the game\'s own form `Glitchless.ReportBug(note)`.\n\n## 4d. A "Share performance data" setting\n\nIf the game has a settings or options menu, offer the user a toggle there that the player can turn off (store privacy\nforms then count the data as optional). Add it next to the game\'s other settings, saved the way they are, and pass it\non as the game starts and on every change:\n\n```csharp\ntoggle.isOn = PlayerPrefs.GetInt("share_data", 1) == 1;   // the game\'s own saved setting\nGlitchless.SetEnabled(toggle.isOn);                       // changes nothing when it agrees\ntoggle.onValueChanged.AddListener(on => { PlayerPrefs.SetInt("share_data", on ? 1 : 0); Glitchless.SetEnabled(on); });\n```\n\nOff stops Glitchless at once and deletes what was waiting; the SDK saves the choice and reads it before anything else\nnext launch, so it holds even though Glitchless starts before the menu. Show the game\'s own setting on the toggle, not\n`Glitchless.Enabled` (false in a build that sends nothing). For a game that asks before collecting anything, add\n`OptIn = true` to the options and default the setting to off. Don\'t add a toggle without asking; a game with no\nsettings menu can go without.\n\n## 5. Bots and measuring\n\nIf the game has an autoplay or test mode, start it from the command line (`--autoplay --seed=N`): the SDK marks\nthose sessions synthetic. To measure a build before and after a change, run the player with\n`--glitchless-measure=10 --glitchless-out=measure.json` (add `-batchmode -nographics` on a machine without a\nscreen); it writes frame stats as JSON and quits. In a live Editor you can drive, `Glitchless.Measure(5, r => Debug.Log(Json.Serialize(r)))`\ndoes the same.\n\n`glitchless_playtest` does the before-and-after for you: build the player, then give the playtest the build, as the\ntool\'s `command` or in `glitchless.playtest.json` (`{"command": ["Builds/Game.app"]}`, `Builds/Game.exe` on Windows).\nEach run starts it with `--autoplay --seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure\nflags, and the run is compared with the saved baseline, including GPU time, physics and what grew over the run. The\ngame\'s autoplay mode has to read those flags and keep playing for the whole measure (10 seconds by default).\nRebuild before each playtest: it runs the build, not the Editor.\n\n## 6. Verify\n\nPress Play in the Editor, play a level and die once, then call `glitchless_list_games` or open the dashboard.\nFor an online game, play one match with the console open: in the Editor the SDK says there if it dropped a property or\na group ID, or if the server doesn\'t take counters or a game server\'s sessions yet.\nThe **Glitchless** GameObject under DontDestroyOnLoad shows the SDK is running.\n',
       "plugin/glitchless/skills/instrument/references/unreal.md": '# Unreal\n\nPart of the `instrument` skill. Apply its settings first (section 0 of [SKILL.md](../SKILL.md): the\nintake URL and client token, privacy, bots, testers and the version), and finish with its last two\nsections: the game\'s own metrics and dashboard, and the report.\n\n\nThe Glitchless plugin (`unreal/Plugins/Glitchless` in the Glitchless repo), for Unreal Engine 5.8 and the 5.9\nMegaJam Preview. It is C++ source: it times every frame on the game, render and RHI threads and the GPU, names each\nhitch\'s likely causes (pipeline states created on the spot, garbage collection, map loads, streamed levels, asset\nloads), and reports `UE_LOG` errors, ensures, Blueprint runtime errors and crashes. Maps are levels on their own.\n\nOn 5.9 everything below is the same (the engine is at `UE_5.9`), and its web target (WebAssembly and WebGPU) reports\ntoo: the plugin sends by the page\'s own fetch, and a web player is their browser. A web build needs an engine built\nfrom source (Epic\'s Mac launcher install can\'t make one) and BuildCookRun\'s `-package` step. On the developer\'s own\nmachine the page\'s address stands in for the command line: `?glitchless` sends from a Development build there. Every\n5.9 web build logs "Legacy http thread has been deprecated" as an error as it starts; it is Epic\'s, so mark it known\n(`glitchless_mark_known`) rather than chase it. On 5.8, which has no web platform, the build warns "Unknown platform\nWasm" about the plugin\'s descriptor: leave it, and don\'t edit the `.uplugin`.\n\n## 1. Read the project\n\nNote: `EngineAssociation` in the `.uproject` (5.8, or 5.9 for the MegaJam Preview), whether there is a `Source/` folder (a C++ project) or not\n(Blueprint only), `GameDefaultMap` in `Config/DefaultEngine.ini` and which maps are levels, the classes for player\ndeath and respawn, level complete and fail, pickups, and anything spawned in bulk (projectiles, enemies, effects);\nwhere the version lives (`ProjectVersion` under `[/Script/EngineSettings.GeneralProjectSettings]` in\n`Config/DefaultGame.ini`). Blueprints are binary `.uasset` files: you can\'t read them as text. If Unreal MCP is\nconnected (below), use it to look inside them; otherwise ask the user where those moments live.\n\n## 2. Install\n\nCopy the plugin into the project, so it builds with the game (from the agent kit, or the GitHub release zip):\n\n```bash\ncp -R ~/.glitchless/unreal/Plugins/Glitchless "<Project>/Plugins/Glitchless"\n```\n\nAdd it to the `.uproject`\'s `Plugins` list: `{ "Name": "Glitchless", "Enabled": true }`. The plugin is source, so a\nBlueprint-only project needs a C++ module once: ask the user to add one in the editor (**Tools \u2192 New C++ Class**,\nany class) or add a minimal `Source/` folder yourself (a module, `<Game>.Target.cs` and `<Game>Editor.Target.cs`).\nThen build the editor target: on a Mac `"/Users/Shared/Epic Games/UE_5.8/Engine/Build/BatchFiles/Mac/Build.sh"\n<Game>Editor Mac Development -project="<path>/<Game>.uproject"`, on Windows `Engine\\Build\\BatchFiles\\Build.bat\n<Game>Editor Win64 Development -project=...`. Add `-NoHotReload` if an editor has the project open. C++ code that\ncalls Glitchless adds `"Glitchless"` to `PublicDependencyModuleNames` in its `.Build.cs`. If the user installed it\nfrom Fab instead, it is an engine plugin that comes built: enabling it is all, and a Blueprint-only project needs no\nC++ module. `unreal/demo` in the Glitchless repo is a working example, with three planted problems and a script\nthat checks Glitchless finds them.\n\n## 3. Settings, without code\n\nAdd this to `Config/DefaultGame.ini` (or set it in **Project Settings \u2192 Plugins \u2192 Glitchless**); the game instance\nstarts Glitchless with it, so nothing calls Init:\n\n```ini\n[/Script/Glitchless.GlitchlessSettings]\nService=<game-id>\nIntake="http://localhost:7777"\nClientToken=gl_pub_dev\nPrivacy=Anonymous\nbSendInDevelopmentBuilds=True\n```\n\nKeep the quotes around the URL: Unreal\'s ini reads an unquoted `//` as the start of a comment, so\n`Intake=https://api.glitchless.gg` loads as `https:` and nothing reaches Glitchless. Project Settings writes the quotes\nitself; a line written by hand, or by an agent, needs them.\n\nPlay In Editor and Development builds send as env `dev`, Shipping builds as `prod`. The version is the project\'s\n`ProjectVersion` unless `Version=` is set here: bump it on every release. For a game jam, keep\n`bSendInDevelopmentBuilds=True`: jam submissions are Development builds.\n\n## 4. Levels and game semantics\n\nMaps are levels, except those that read as a menu, lobby, loader or end screen (`Entry`, `MainMenu`, `L_Frontend`,\n`Lobby`, `Loading`, `GameOver`\u2026). If one map plays many levels, call `LevelStart` where each begins; the first call\nturns map levels off.\n\n| Game moment | C++ (`#include "Glitchless.h"`) | Blueprint node |\n| --- | --- | --- |\n| level starts | `FGlitchless::LevelStart(TEXT("forest-2"))` | Level Start |\n| level beaten | `FGlitchless::LevelComplete(TEXT(""), Score)` (empty: the current level) | Level Complete |\n| game over: the player lost the level | `FGlitchless::LevelFail(TEXT(""), TEXT("timeout"))` | Level Fail |\n| the player leaves mid-level (the menu, a restart) | `FGlitchless::LevelAbandon(TEXT(""))`: never a fail; quitting or going to the background mid-level sends one by itself | Level Abandon |\n| player dies | `FGlitchless::Death(GetActorLocation(), TEXT("fell"))` | Death |\n| pickups, checkpoints | `FGlitchless::Track(TEXT("powerup"), TEXT("magnet"))` | Track Event (What), Track Event |\n| a purchase the store confirmed | `FGlitchless::Track(TEXT("purchase"), {{TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}}, {{TEXT("amount"), 4.99}})` | Track Event, `amount` in Numbers |\n| counts of anything that scales, each frame | `FGlitchless::SetContext(TEXT("enemies"), Enemies.Num())` | Set Context |\n| the player\'s place, each frame | `FGlitchless::SetPosition(GetActorLocation())` | Set Position |\n| a problem the game noticed | `FGlitchless::Error(TEXT("save failed"))` | Report Error |\n\nPass Unreal units: the plugin sends positions in metres with y up, like the other SDKs. Every call is safe before\nInit and from any thread.\n\n**Outcomes, decks and streams.** Track a moment, count a stream, and send outcomes as flags so boards can show a win\nrate. `FGlitchlessAttributes` takes words, numbers, flags and lists (in Blueprint: the **Glitchless Attributes**\nstruct, or the Add Word, Add Number, Add Flag and Add List nodes):\n\n| What | C++ | Blueprint node |\n| --- | --- | --- |\n| a match, run or battle ends | `FGlitchless::Track(TEXT("match_end"), FGlitchlessAttributes().Add(TEXT("won"), true).Add(TEXT("hero"), Hero).Add(TEXT("items"), Items))` (`Items` a `TArray<FString>`) | Track Event (Attributes) |\n| shots, kills, gold, taps: anything many times a second | `FGlitchless::Count(TEXT("gold"), FGlitchlessAttributes().Add(TEXT("source"), TEXT("loot")).Add(TEXT("amount"), 35.0))`: words and flags (4) say which, numbers (4) are summed, sent once every 5 s | Count Event |\n| what the attempt is | `FGlitchless::LevelStart(TEXT("nmd_ghoa"), FGlitchlessAttributes().Add(TEXT("tier"), TEXT("pit_80")).Add(TEXT("party_size"), 3))` | Level Start\'s Attributes pin |\n| what holds for the session: mode, rank tier, class, region | `FGlitchless::SetProperty(TEXT("rank"), TEXT("gold"))` (words, whole numbers, flags; a band like `"30-39"`, not an exact level), `ClearProperty` | Set Glitchless Property (and Number, Flag) |\n| a match or party from the game\'s server | `FGlitchless::SetGroup(EGlitchlessGroup::Match, MatchId)` when it starts, `ClearGroup(EGlitchlessGroup::Match)` when it ends: every event carries the ID, hashed | Set Group, Clear Group |\n| a roguelite run across levels | `FString Run = FGlitchless::SetGroup(EGlitchlessGroup::Run)`; save `Run` to resume it after a restart (Install and Full mode) | Set Group (Run) |\n| where the player is in an open world (a zone, a room) | `FGlitchless::SetZone(TEXT("westfall"))`, empty to leave | Set Zone |\n\nProperties and group IDs are checked: never a name, an account or platform ID, an email or a friends list. Match and\nparty IDs must be the ones the game\'s server made for that match (8 to 64 of `A-Z a-z 0-9 _ . : -`).\n\n**Multiplayer on Unreal\'s replication needs nothing more.** Once a second a client\'s frame windows carry its round\ntrip, packet loss, jitter and traffic from the net driver, and a lost connection sends a `disconnect` (and abandons\nthe level, never a fail). A **dedicated server** reports itself as the game\'s server (role `server`, filed under\n`<service>.server`): its tick time against `NetServerMaxTickRate`, players, their pings, CPU, memory and crashes. A\n**listen server** is a player (`net.host`) and, while it hosts, a server too. Set `ServerRegion` in the settings (or\n`-glitchless-region=eu-west` on each server\'s command line) to split ping by region, and `bServerSessionPerMatch` for\na server that hosts one match at a time. A game on another library (Steam Networking Sockets, EOS) calls\n`FGlitchless::NetSample(RttMs, LossPct)` once a second and `FGlitchless::Disconnect(TEXT("timeout"))` itself. Call\n`SetGroup(Match, \u2026)` on the server and every client with the same ID, so a match reads from every side. `UE_LOG` errors, ensures, Blueprint runtime errors (Accessed None\u2026) and crashes are\nreported without code; a crash is sent the next time the game starts. UObject and actor counts are sent as gauges\nalready; add the game\'s own counts with `SetContext`. To find a Blueprint-only game\'s moments, add the nodes in the\nBlueprints that handle them (with Unreal MCP, or by asking the user to).\n\n## 4b. Bug reports from players (ask first)\n\nAs for [Three.js](threejs.md#4b-bug-reports-from-players-ask-first): ask the user first, since the note is free text the\nplayer types, and point them at the privacy wording in the plugin\'s `PRIVACY.md`. Then add `BugReportKey=F8` to the\nsettings above: F8 opens a small Slate box over the game with a screenshot and a note. It takes the game\'s input\nand pauses the game while open (`bPauseForBugReport`, on by default; a game paused already stays paused). A pause\nmenu can call **Show Bug Report Dialog** (`FGlitchless::ShowBugReportDialog()`), the game\'s own form **Report Bug**\n(`FGlitchless::ReportBug(Note)`), and `FGlitchless::OnBugReportDialog()` (or the Glitchless subsystem\'s On Bug\nReport Dialog) says when the box opens and closes.\n\n## 4c. A "Share performance data" setting (where the game has a settings menu)\n\nIf the game has a settings or options menu, offer the user a toggle there that the player can turn off (ask before\nadding UI; a game with no settings menu can go without). Keep it with the game\'s other settings, saved the way they are\n(its SaveGame or `UGameUserSettings`), and pass it on as the game starts and on every change:\n\n```cpp\nFGlitchless::SetEnabled(Settings->bSharePerformanceData); // in UGameInstance::Init, and when the toggle changes\n```\n\nIn Blueprint: the Check Box\'s **On Check State Changed** \u2192 **Set Enabled** (Is Checked into On), and the same node with\nthe saved value where the game loads its settings. Off stops measuring and sending at once and drops what was waiting\n(the outbox on disk too); the plugin saves the choice in `Saved/Glitchless/enabled` and reads it before the first frame\nof the next launch, so it holds even though Glitchless starts from Project Settings before any menu. A call that\nchanges nothing does nothing. Show the game\'s own setting on the toggle, not **Is Enabled** (false in a build that\nsends nothing, such as a development build without `-glitchless`). For a game that asks before collecting anything,\nset `bOptIn=True` in the settings above and default the toggle to off. With a toggle, the store forms can answer that\ncollection is optional, and the privacy page gets a sentence about it (the plugin\'s `PRIVACY.md`).\n\n## 5. Bots and measuring\n\nPackage a Development build, then run it with flags:\n\n```bash\n"/Users/Shared/Epic Games/UE_5.8/Engine/Build/BatchFiles/RunUAT.sh" BuildCookRun -project="<path>/<Game>.uproject" -platform=Mac -clientconfig=Development -build -cook -stage -pak -unattended\n<Game> -glitchless-warmup=2 -glitchless-measure=10 -glitchless-out=measure.json\n```\n\n`-glitchless-measure=S` waits for the first map plus the warmup, measures S seconds, prints\n`{"glitchless_measure": {...}}` as one line on stdout and quits; the numbers are `glitchless_measure`\'s (frame_ms\npercentiles, fps, game/render/RHI/GPU ms, hitches with causes, memory, new errors) plus `session_id`. If the game has\nan autoplay or test mode, start it with `-autoplay`; that and `-glitchless-synthetic` mark the session synthetic.\n`-glitchless-intake=URL` sends to another server for one run. A Windows build has no console: read the\n`-glitchless-out` file. A UE 5.8 Mac build is sandboxed: it can write `-glitchless-out` only inside\n`~/Library/Containers/<bundle id>/Data` (its `tmp` is a good place), and stdout works anywhere. Don\'t start a build\nor cook while another Unreal build, cook or shader compile is running on the machine.\n\n`glitchless_playtest` does the before-and-after for you: give it the packaged build (under `Saved/StagedBuilds/`), as\nthe tool\'s `command` or in `glitchless.playtest.json` (`{"command": ["Saved/StagedBuilds/Mac/<Game>.app"]}`). Each run\nstarts it with `-autoplay -seed=N` (seeds 7 and 21 by default; `scenarios` sets your own) and the measure flags, and\nthe run is compared with the saved baseline, including the RHI thread and GPU time. The game\'s autoplay mode\n(`FParse::Param(FCommandLine::Get(), TEXT("autoplay"))`, the seed from `FParse::Value`) has to keep playing for the\nwhole measure (10 seconds by default). Package again before each playtest.\n\n## 6. Agents in the editor: Unreal MCP\n\nUE 5.8 and 5.9 ship Unreal MCP (Experimental), Epic\'s MCP server inside the editor: with it you can open maps, look inside\nBlueprints and actors, edit them and run Play In Editor. Glitchless doesn\'t replace it; the two split the work:\n\n- **Unreal MCP** is your hands in the editor: find where deaths and level ends happen in Blueprints, add the\n  Glitchless nodes there, change the scene or material a finding points at, and start Play In Editor.\n- **Glitchless** says what is wrong and whether a change fixed it: the `glitchless` MCP server reads what players and\n  bots sent (findings, hitches with causes, errors, sessions), and the optional **Glitchless Toolset** plugin\n  (`unreal/Plugins/GlitchlessToolset`) adds `Status` and `Measure` tools to Unreal MCP, so you can measure the game\n  while it plays in the editor, as `glitchless_measure` does for a web game.\n\nTo set it up, copy `GlitchlessToolset` next to `Glitchless` in `Plugins/`, enable **Unreal MCP**, **All Toolsets** (or\n**Toolset Registry**) and **Glitchless Toolset** in **Edit \u2192 Plugins** (or the `.uproject`), start the server\n(`ModelContextProtocol.StartServer` in the editor console, or Editor Preferences \u2192 Model Context Protocol \u2192 Auto\nStart Server), and run `ModelContextProtocol.GenerateClientConfig ClaudeCode` (or Cursor, Codex\u2026) for the client\nconfig. Start Play In Editor before calling `Measure`. Numbers from the editor run slower than a packaged build\n(shaders compile on first use there): confirm a fix with a packaged Development build and `-glitchless-measure`.\nIn Unreal MCP the toolset is `GlitchlessToolset.GlitchlessToolset`: `list_toolsets` lists it, `describe_toolsets`\n(`describe_toolset` on 5.8) shows `Status` and `Measure`, and `call_tool` runs them. If `list_toolsets` doesn\'t list\nit, the project has a copy from 0.5.4 or earlier, which never registered itself: copy the toolset again from the\nGlitchless repo. Older copies than 0.5.4 also don\'t compile on 5.9.\n\n## 7. Verify\n\nPress Play in the editor (or run a Development build), play a level and die once, then call `glitchless_list_games`\nor open the dashboard. The log shows `LogGlitchless` lines; `-glitchless-debug` logs each batch as it is sent.\n',
-      "plugin/glitchless/skills/dashboard/SKILL.md": '---\nname: dashboard\ndescription: Build a game\'s own Glitchless dashboard. Work out what this game\'s developer wants to know, add the collectors for it (custom events with track(), levels, gauges, positions, game tools agents can call), check the data arrives, then design the game\'s dashboard (its pages, which are boards of panels and the built-in views it needs) with the glitchless_set_dashboard MCP tool. Use when the user asks for a dashboard, metrics, KPIs or analytics for their game, wants to track or count something, asks "how many players\u2026", "which mode\u2026", "does the paywall convert", or wants a different view of their game in Glitchless.\n---\n\n# Build a game\'s own dashboard\n\nEvery game needs different numbers. A mobile game cares whether players come back, which mode they pick and\nwhether the paywall turns into purchases; a puzzle game, how long a puzzle takes and how often hints are used; a\nplatformer or shooter, where players die and whether frames hold up in a fight. Glitchless doesn\'t guess: you\nadd the collectors this game needs, and design its dashboard from them: its own pages, in its own words. The\ndeveloper then sees it in Glitchless, and you can read the same data back over MCP to debug.\n\nBefore this skill, the game should already send data (the `instrument` skill). If it doesn\'t, do that first.\n\n## 1. Find out what they want to know\n\nWrite down three to eight questions, in the developer\'s words. Ask if they haven\'t said; read the game to\nsuggest some (menus, modes, shops, level lists, settings, anything with a counter). Good questions are about\ndecisions: "Do players finish the tutorial?", "Which mode do they play?", "Does the paywall convert?", "Which\nstage is too hard?", "Does it stutter on phones?". Leave out what nobody would act on.\n\n## 2. Pick a collector for each question\n\n| The question is about | Collector | Shows on a board as |\n| --- | --- | --- |\n| how often something happens, or which option players choose | `track(name, attrs)` | `stat`, `series`, `breakdown` |\n| how much: revenue, coins, seconds | a number in `track`\'s attributes (`purchase` with `amount` and `currency`) | `stat` or `breakdown` with `sum` |\n| how many players do it at all (conversion) | `track(name)` | `stat` with `per: "$players"` |\n| how long until players first do something (leave the lobby, open the shop, first purchase), and how many never do | `track(name)` when it happens: nothing timed by hand | `stat` with `first: "hall_left"` (the median seconds from a session\'s start to its first one), `stat` with `never: "hall_left"` (the share of ended sessions that never sent it) |\n| a sequence (tutorial \u2192 first win, paywall \u2192 purchase) | one `track` per step | `funnel` |\n| progress or difficulty through stages, puzzles, waves, stops | `levelStart` / `levelComplete` / `levelFail` | `levels` |\n| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level, one zone, or the whole game), the Heatmaps view |\n| where players go in a hub, a lobby or an open world with no levels | `setPosition`, and `setZone` for its areas (never a pretend level: it would show up in the levels funnel) | `positions` with `zone`, or with neither level nor zone, over a background picture (below) |\n| smoothness, and what makes it worse | automatic frame times, plus `setContext` gauges (enemies, particles) | `frame_time`, `stat: frame_p95` |\n| crashes and errors | automatic, plus `error()` for handled ones | `errors`, `stat: crash_free_pct` |\n| whether players come back (D1, D7, D30) | install mode: privacy `install` in the SDK, a stored random player ID (ask the user first: the privacy page must say so) | `retention`, the Players view |\n| how many are playing right now | automatic | `stat: players_now` |\n| who wins: a hero, weapon, card, heat or difficulty that wins too often or too rarely | one event at the end of each match or run with the outcome as a boolean (`match_end` with `hero` and `won: true`) | `breakdown` by `hero` with `rate: "won"` (each row\'s win rate with its likely range, next to all of them), `stat` with `rate` |\n| how long, how far, how many: match length, time in queue, placement, floors reached, pulls to a top unit | a number on that one event (`duration_s`, `wait_s`, `floor`) | `distribution` (half under, 1 in 10 over, a histogram), `stat` with `of` and `quantile: 50` (the median) |\n| each run, match or day one by one: today\'s daily runs and their scores, the last matches with their seed | one `track` per run with what describes it (`daily_run` with `day_label`, `score`, `attempt`) | `table`: a row per event, grouped by `day_label`, best score first (below) |\n| what a match or run used: a deck, items, a build, boons | a list attribute (`deck: [...]`) | `breakdown` by the list (each card a row), with `rate` for the win rate of decks with each card |\n| how fast players earn or play: gold, XP or kills per hour, matches per hour | the event (with its `amount`) | `stat` or `breakdown` with `per: "$hours"` (per hour played), and a `versions` panel to catch an economy that jumps |\n| a stream: shots, hits, kills, gold pickups, taps (many a second) | `count(name, attrs)`: summed on the device, sent once every 5 s, never a `track` per hit | like any event by its name: `stat` per `$hours`, `breakdown` by its words, `sum` of its numbers (no distribution) |\n| who is playing: rank, class, region, mode, a graphics preset, a spender band | `setProperties({ rank: \'gold\' })`, set where the game knows it (after sign-in, the menu, matchmaking); name a graphics preset `graphics` (`setProperties({ graphics: \'high\' })`) so `$graphics` and the Performance view\'s graphics rows read it (a Roblox game has it without code) | `by: "$rank"` on any breakdown, series, rate, distribution, `levels`, `retention` or `versions`; a page with `where` (only the high ranks) |\n| clears and wipes by difficulty, tier, group size or build | `levelStart(id, { tier, party_size, build: [...] })` | `levels` with `by: "tier"` (one level\'s rows: `level`), `deaths` with `by` |\n| runs that cross several levels (a roguelite) | `setGroup(\'run\')` at the run\'s start | `levels` with `count: "runs"` (runs that reach each biome), `stat: runs` |\n| one match from every side, and whether the lobby or one player lagged | `setGroup(\'match\', id)` with the ID the game\'s server made (`\'party\'` for a party; its size goes on `levelStart` as `party_size`) | the Matches view (each match\'s page), the lobby finding; clears by group size: `levels` by `party_size` |\n| where the player is in an open world or a hub (an MMO zone, a room, a lobby hall), and how long they stay | `setZone(name)`; nothing else: time in a zone is the frames drawn there, so never send zone timing as events | `breakdown` with `by: "$zone"` and no `event` (each zone\'s share of play time, the sessions that went there, their median time in it), `stat` `zone_time_pct` or `zone_median_s` with `zone`, `frame_time` with `by: "$zone"` (frame time and hitches per zone), `by: "$zone"` on any breakdown or series (kept like levels: any range) |\n| lag, packet loss and dropped players | read from the netcode by the SDK, or `netSample` / `disconnect` (the `instrument` skill) | `net` (ping, loss, disconnects), `stat: ping_p95`, `disconnect_pct`, the Network section of Performance |\n| dedicated servers: tick rate under load, crashes that end matches, leaks | the SDK in server mode on the server build (the `instrument` skill) | `servers` panels, `stat: servers_now` / `server_tick_p95` / `server_crash_free_pct`, the Servers view |\n\nThe calls, per engine:\n\n| | Three.js or Phaser | Godot | Unity | Unreal (C++; the Blueprint nodes match) |\n| --- | --- | --- | --- | --- |\n| a game event | `glitchless.track(\'play\', { mode: \'endless\' })` | `Glitchless.track("play", "endless")` | `Glitchless.Track("play", "endless");` | `FGlitchless::Track(TEXT("play"), TEXT("endless"));` (Track Event (What)) |\n| several attributes | `glitchless.track(\'buy\', { step: \'done\', item: \'full_game\' })` | `Glitchless.track("buy", {"step": "done"})` | `Glitchless.Track("buy", new Dictionary<string, object> { ["step"] = "done" });` | `FGlitchless::Track(TEXT("buy"), TMap<FString, FString>{{TEXT("step"), TEXT("done")}});` (Track Event) |\n| a purchase | `glitchless.track(\'purchase\', { amount: 4.99, currency: \'USD\', item: \'gems_500\' })` | `Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})` | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` | `FGlitchless::Track(TEXT("purchase"), {{TEXT("amount"), TEXT("4.99")}, {TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}});` (Track Event) |\n| a level | `levelStart(id)`, `levelComplete(id, { score })`, `levelFail(id, { cause })`, `levelAbandon(id)` (left, not lost) | `level_start`, `level_complete`, `level_fail`, `level_abandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` (maps are levels on their own) |\n| a gauge | `glitchless.setContext({ enemies })` | `Glitchless.set_context({"enemies": n})` | `Glitchless.SetContext("enemies", n)` | `FGlitchless::SetContext(TEXT("enemies"), N)` |\n\nRules that keep the numbers useful:\n\n- One event name per moment, in the game\'s own words (`open`, `play`, `paywall`, `buy`), and keep names stable:\n  renaming an event splits its history.\n- Put the choice in an attribute, not the name: `play` with `mode: \'endless\'`, not `play_endless`. Godot, Unity\n  and Unreal turn one word into the attribute `what`.\n- Attributes are strings, numbers, booleans or lists of them, at most 12 per event; strings are cut to 64\n  characters. Keep their values to a small set (modes, places, outcomes): a value per player or per run makes a\n  useless breakdown.\n- Outcomes as booleans (`won: true`), amounts as numbers (`duration_s: 184`), what a match or run used as a list\n  (`deck: [...]`, its first 16 count), and one event at the end of each match or run carrying all of them, not one\n  per hit. What describes the player goes in bands (`level_band: \'30-39\'`), never exact levels or amounts.\n- Track a moment, count a stream: `count()` for anything that happens many times a second (shots, hits, kills,\n  gold); `track()` for a moment worth its own event (a match\'s end, a purchase).\n- A property is what holds for the session (rank tier, class, region, mode, preset), set again each session: bands\n  and words, never an ID, a name or an exact number (intake drops keys like `email` or `user_id` and values shaped\n  like one). What changes from match to match (hero, deck, map) goes on the event or the level start instead.\n- Never send anything that identifies a player: no names, emails, account ids or anything they typed.\n- Purchases: one `purchase` event when the store confirms it (not when the button is tapped), with `amount` (a\n  number, in the currency\'s units: 4.99, not 499), `currency` (the ISO code the store charged in) and `item`. A\n  Roblox game sells for Robux: `currency: "ROBUX"` and the price in Robux (`amount: 99`); Robux are kept apart and\n  never added to dollars. A game that also reports purchases that didn\'t go through sends them as the same event\n  with a `result` (`"done"`, `"cancelled"`) and the amount on each, and its revenue panels read\n  `"purchase:result=done"`. A number sent next to `currency` counts as money, so put other numbers (gems granted)\n  on an event of their own. Never send receipts, order ids or payment details. Taps are other events (`buy` with\n  `step`).\n\nAdd the calls where the moment happens in code, then run the game (or let the bots play it) and check with\n`glitchless_events` that every event arrives with the attributes you expect.\n\n## 3. Design the dashboard\n\nA dashboard is the game\'s pages, at most 20, in the order its sidebar shows them; the first opens first. Each page is a\nboard, panels you choose, or a built-in view the game keeps: `events` (every event, breakdowns, funnels),\n`performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on a level, in a zone or anywhere), `sessions`\n(each with its replay), `versions`, `live` (events as they arrive; `options.events` keeps only some), `reports`\n(bug reports players sent, with screenshots), `matches` (a multiplayer game\'s matches, each opening a page with every\nplayer\'s ping slot by slot and the server\'s ticks under it) and `servers` (a game whose dedicated servers run the SDK\nin server mode: ticks by map and players connected, crashes, memory). Give the game the pages its developer would open, named in the game\'s\nwords, and drop the views it has no data for: no Heatmaps for a puzzle or mobile game, no Performance for a game\nthat sends no frame times, no reports page for a game that doesn\'t turn bug reports on.\n\nStart from what is there: `glitchless_dashboard` returns the current pages (`spec`; an automatic dashboard until\nsomeone saves one). Then call `glitchless_set_dashboard` with every page. On a board: a row of stats, then the\ngame\'s own events and funnels, then levels, then frame time and errors. Title each panel with the question it\nanswers. Each panel takes `size`: `s` (a quarter row, for stats), `m` (half) or `l` (full width); and a `note`,\none line on why it matters. People see the note behind the info icon next to the title, so put what they must see\nin the title. Panels keep their order and pack under each other, so a short panel can sit next to a tall one.\nGive the game its own colour with `accent` ("#rrggbb", such as the main colour of its logo or key art) in\n`glitchless_set_dashboard`, alone or with the pages: it colours the links, the selected page, stats, the main chart\nseries and the map on its boards and share links. `logo` and `banner` (its key art, the header behind each board\'s\ntitle, cropped to a strip around its `focus`) take the game\'s own pictures, a file or base64, also alone; use what the\ngame already has (its icon, its store or itch.io art) and ask before making one. `glitchless_dashboard` says whether\nthe game has them. Through the hosted server (connected by URL, which can\'t read your files) a `file` is answered with\nan upload link: run the `curl` it gives (`curl -X PUT --data-binary @file \'<link>\'`, no key) within 10 minutes. The link\ntakes one picture for that slot and then stops working; curl\'s answer says what was saved, or what to fix (a picture\nrefused for its size or type can go to the same link again). Don\'t send a big picture as base64: a banner is about a\nquarter of a million characters. `upload: true` asks for a link from any server.\n\n| type | fields |\n| --- | --- |\n| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played, players_now: playing now, whatever the range; runs; for a multiplayer game ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct; with servers in server mode servers_now, server_tick_p95, server_crash_free_pct, players_per_server; with `zone` (a zone\'s name from `setZone`) zone_time_pct, its share of play time, and zone_median_s, the median time in it of the sessions that went there), or `event` with an optional `per`: another event (a percentage), `$players` / `$sessions` (the share of them that sent it: conversion) or `$hours` (per hour played: matches per hour; `deaths` and `errors` take it too). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player, `"$hours"` per hour played (gold per hour). `rate`: the share of the events where a flag holds (`"won"`) or a word is sent (`"result=win"`), with `expect` for a rate the game intends; `avg`: a numeric attribute\'s average; `of` with `quantile` (1 to 99) and `unit`: one percentile (the median match). Instead of `event`, `first` (an event: the median seconds from a session\'s start to its first one, or `quantile`) or `never` (an event: the share of ended sessions that never sent it), 31 days or less. A money stat in Robux takes `devex: true`: an estimate in dollars at Roblox\'s DevEx rate under it, always labelled one |\n| `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level` / `$zone`, or the sessions\' `$platform` / `$browser` / `$device_tier` / `$link` / `$graphics` / `$site` or a property, `$rank`), `limit`, `sum`, `rate` or `avg`, `per: "$hours"` |\n| `breakdown` | `event`, `by`, `limit`, `sum` (each value\'s sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026; a Roblox game\'s Computer, Phone, Tablet, Xbox, PlayStation, VR), `$browser` (Chrome, Safari, Firefox, Edge\u2026; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low), `$link` (Wi-Fi, Mobile data, Wired), `$graphics` (the graphics setting: a `graphics` property the game sets, else what the SDK read itself, Roblox\'s Graphics Quality as Automatic or 1 to 10; Automatic first, then low to high), `$site` (where a web game was played: itch.io, CrazyGames, Poki, Newgrounds, GX.games, localhost, or the game\'s own site; "(none)" for a native build, or a web build from an SDK that sends no page: GameMaker\'s, or a Godot, Unity or Unreal one too old to), or a property the game sets (`$rank`, `$class`; sessions without it are "(none)"). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Ranges of 31 days or less. With `rate` (`"won"`, `"result=win"`) or `avg`, each row\'s rate with its likely range (or its average) next to the overall one: `min` leaves out rows of fewer events (default 30 for a rate), `expect` draws the rate the game intends (a gacha\'s published odds, as a percentage: 0.6), `order` is `rate` (default), `count` or `value` (heat 0, 1, 2). Any breakdown takes `order: "value"` (the values\' own order: streak day 1, 2 \u2026 10) or `"count"`. `per: "$hours"` makes each row per hour played. By a list attribute (a deck), each element is a row. With `sum` in Robux, `devex: true` gives each row and the total an estimate in dollars. `by: "$zone"` without `event`: the time played in each zone, most first (share of play time, sessions that went there, their median time; time outside every zone is "(none)"), any range |\n| `distribution` | `event`, `of` (a numeric attribute), optional `by` (an attribute, `$version`, `$level`, a session split), `limit` (rows, up to 8), `bins` (bars, up to 40), `unit` (`"s"` shows minutes and hours; or the game\'s word, `"floors"`). How it spreads: half under, 1 in 10 over, and a histogram |\n| `funnel` | `steps`: events in order, comma-separated |\n| `levels` | `label`: what the game calls a level ("Stop", "Puzzle", "Wave"); shows each one\'s median clear time and the slowest 1 in 10, and the attempts a disconnect ended. `by` splits each level\'s attempts: an attribute of its `levelStart` (`"tier"`, `"party_size"`, a list such as `"build"`), a property (`"$class"`) or a split; `level` keeps one level; `count: "runs"` counts each run once at each level it reached |\n| `net` | `show`: `ping` (median and slowest 5% over time, and the share of play over 150 ms), `loss` or `disconnects` (per hour played, by reason); `by`: `$region` (a property), `$link`, `$platform`, `$level`, `$version` |\n| `servers` | `show`: `ticks` (tick time against its budget; `by`: `players` connected, `$level` or `$version`), `players` or `crashes` (with the matches and players each ended). Read from the game\'s servers in server mode |\n| `sessions` | `sent`: only sessions that sent this event ("buy=done"), `limit` |\n| `versions` | none: this board\'s stats, version by version; `by` a property (`$class`) compares its values instead |\n| `live` | `events`: only these names or types, as they arrive |\n| `frame_time` | none: p50 and p95 over time against players\' screens; `by: "$zone"` or `"$level"`: a row per zone or level with its p50, p95, frames over budget, hitches per minute and share of play time, most played first (`limit`, up to 20) |\n| `findings`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports; `by` and `level` for deaths, as on `levels`) |\n| `retention` | `limit`: how many of the latest first-seen days (default 14); `by` a property (`$spender`): each value\'s D1, D7 and D30. Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on, except a Roblox game connected to Roblox, whose panel shows Roblox\'s own retention |\n| `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat\'s `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe\'s `refunds`, `customers` (new paying customers) and `by_product`; Roblox\'s (in Robux) `installs` (new users), `active_users` (daily active users), `players_by_day` and `retention` (D1, D7, D30 by cohort day, size `m`), no `by_version`; itch.io\'s earnings: `revenue`, `per_player`, `by_day` only. `store`: `revenuecat`, `stripe`, `roblox` or `itch` (default: the first connected). Real revenue from RevenueCat or the game\'s own Stripe account, Roblox\'s Robux or itch.io\'s earnings, for a game connected to it in Glitchless Cloud |\n| `store_sales` | `store` (`steam`, `itch` or `microsoft_store`): what the store counted by day. Steam: units, returns and wishlists. The Microsoft Store: acquisitions of the game by kind (paid, free, trial, Xbox Game Pass) and of its add-ons. itch.io: its page as a funnel, page views \u2192 browser plays (the sessions Glitchless measured on itch.io) \u2192 downloads \u2192 purchases, with earnings; for a web game on itch.io, put it first on its itch.io page next to a `breakdown` by `$site` |\n| `store_score` | `store` (`app_store`, `google_play`, `steam`, `roblox` or `microsoft_store`): a store\'s rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple\'s own rating on the App Store and Microsoft\'s ratings in the window on the Microsoft Store. Google Play has no API for its overall rating, so its panel is the reviews\' average and says so. Roblox has no reviews: its thumbs up and down, favorites and visits |\n| `positions` | `level`, or `zone` (what the game passes to `setZone`), or neither: every position and death in the game, for a hub with no levels; `show`: `deaths` (default), `path` or `both`, `bin`: a bin\'s width in world units (default about a hundredth of the place). Where players died there, counted per bin, and where they went on a coarser grid, over the place\'s background: one panel per place |\n| `table` | `event` (required), `columns` (up to 12: attributes, `$time`, `$version`, `$platform`, `$level`, `$session`; `{ "key": "duration_s", "unit": "s" }` for a unit; default the event\'s own attributes, up to 8), `group_by` (an attribute, `$version`, `$level` or `$platform`), `sort` (`"-score"`: highest first; default newest first), `of` (a number whose lowest, average and highest each group shows), `limit` (rows a group, up to 100; default 20). The event\'s events one by one, size `l` |\n\nAn event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. A list matches when it\nhas the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_spirit` when it has all of them:\nask about any pair or trio this way. A filtered event can be added up by an attribute too: completed purchases by\nitem is `event: "purchase:result=done"`, `by: "item"`, `sum: "amount"`. A dashboard\'s `currency` is an ISO code or\n`"ROBUX"`.\n\nFor a game with heroes, decks or builds to balance, money, player properties, online play, or several platforms\nand devices, read [references/genres.md](references/genres.md): the panels each of those asks for.\n\nEvery panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a\ndeveloper can take any number to a spreadsheet: no export panel is needed.\n\nWhole dashboards to start from, a mobile game, a competitive game, a battle royale, a puzzle game and a platformer,\nare in [references/examples.md](references/examples.md). Take the shape, not the words: every page and panel uses\nthis game\'s own names.\n\n**A background for a heatmap.** A positions panel and the Heatmaps view draw a place over its picture: one an SDK\ncaptured (`captureMap`), or one you upload with `glitchless_set_dashboard`\'s `background` (it can be sent alone),\nwhich needs no game code. Give it\na top-down picture of the level, zone or whole hub (a screenshot from the editor\'s top view, or the level\'s own map\nart) as a PNG or JPEG of at most 256 KB, and the world coordinates its edges stand for: with `axis` `xz` (seen from\nabove) the left edge is `bounds.min[0]` (x), the right `bounds.max[0]`, the top `bounds.min[1]` (z) and the bottom\n`bounds.max[1]`. Read those from the level\'s own data (the floor\'s corners), never guess them; the tool says when\nthe picture\'s shape doesn\'t match the bounds. One picture of the whole hub (no level, no zone) serves its zones too:\na zone without a picture of its own is drawn over it, and one of its own gives a closer look. Through the hosted\nserver, which can\'t read your files, a `file` is answered with an upload link for that place and those bounds: run the\n`curl` it gives within 10 minutes, as for the logo and banner above.\n\n**A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], \u2026]` on the\nlevel\'s plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,\nand the game itself can poll that link to draw everyone\'s deaths without a backend of its own: one board, one\npositions panel per level (or zone), a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_\u2026&days=30`\nabout once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so\nevery player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.\n\n**Reading events one by one.** Every other panel adds events up. When the developer wants to read each run, match\nor day ("26 Oct was Ferrum, Downpour, Boosters, Slow Burn: 6 runs in 5 sessions, best 171,230"), send one event per\nrun with what describes it and give it a `table`:\n\n```json\n{ "type": "table", "title": "Daily runs by day", "event": "daily_run", "group_by": "day_label",\n  "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "limit": 20, "size": "l" }\n```\n\nEach day gets a header with its runs, the sessions they came from and the lowest, average and highest score, the\nnewest day first, and runs without a `day_label` go under "(none)". `glitchless_dashboard` returns the same groups\nand rows to read. Only `track()` events have rows (`count()` sends totals), a session keeps its first 16 of each\nevent, and in anonymous mode a session is a session, never a player: say so rather than calling them players. A\nshare link numbers sessions instead of showing them.\n\nSaving checks every page and answers with each panel as it looks over the last week; a panel without data says\nwhy ("No "buy" events in this window"), and `glitchless_dashboard` with `page` shows one board\'s numbers. Show the\ndeveloper, then change what they ask for: "split opens by version", "add the shop" is one more `track` call and one\nmore panel, "a page for the tutorial" one more board. People can rename, reorder, add and remove pages in the\ndashboard too (Edit pages), so read the current pages before saving over them.\n\n## 4. Use it to debug\n\nThe boards also decide what a release is judged on: the Versions view and `glitchless_compare_versions` compare\nthe stats on every board, version by version (purchases per paywall view, revenue per session, opens per session), so ship a change,\nbump the version, and read whether it moved the numbers this game cares about. For one event across versions on a\nboard, use `by: "$version"`; for a board\'s own stats, a `versions` panel.\n\nThe dashboard\'s numbers are what you read when something looks wrong: `glitchless_events` with a `funnel` finds\nwhere players drop off, `glitchless_triage` ranks performance, crash, difficulty, network and server problems (and\nnames a property when most of one falls on a value: "crashes are mostly class necromancer"),\n`glitchless_network`, `glitchless_match` and `glitchless_servers` read a multiplayer game, and in a browser game the\nWebMCP tools let you reproduce one in the running game. Add a panel for anything you find yourself\nchecking twice.\n\n## Report\n\nList the questions, the events and calls you added (file:line), and the dashboard\'s pages and panels, and say\nwhich panels will fill in only once players or bots send that data.\n',
+      "plugin/glitchless/skills/dashboard/SKILL.md": '---\nname: dashboard\ndescription: Build a game\'s own Glitchless dashboard. Work out what this game\'s developer wants to know, add the collectors for it (custom events with track(), levels, gauges, positions, game tools agents can call), check the data arrives, then design the game\'s dashboard (its pages, which are boards of panels and the built-in views it needs) with the glitchless_set_dashboard MCP tool. Use when the user asks for a dashboard, metrics, KPIs or analytics for their game, wants to track or count something, asks "how many players\u2026", "which mode\u2026", "does the paywall convert", or wants a different view of their game in Glitchless.\n---\n\n# Build a game\'s own dashboard\n\nEvery game needs different numbers. A mobile game cares whether players come back, which mode they pick and\nwhether the paywall turns into purchases; a puzzle game, how long a puzzle takes and how often hints are used; a\nplatformer or shooter, where players die and whether frames hold up in a fight. Glitchless doesn\'t guess: you\nadd the collectors this game needs, and design its dashboard from them: its own pages, in its own words. The\ndeveloper then sees it in Glitchless, and you can read the same data back over MCP to debug.\n\nBefore this skill, the game should already send data (the `instrument` skill). If it doesn\'t, do that first.\n\n## 1. Find out what they want to know\n\nWrite down three to eight questions, in the developer\'s words. Ask if they haven\'t said; read the game to\nsuggest some (menus, modes, shops, level lists, settings, anything with a counter). Good questions are about\ndecisions: "Do players finish the tutorial?", "Which mode do they play?", "Does the paywall convert?", "Which\nstage is too hard?", "Does it stutter on phones?". Leave out what nobody would act on.\n\n## 2. Pick a collector for each question\n\n| The question is about | Collector | Shows on a board as |\n| --- | --- | --- |\n| how often something happens, or which option players choose | `track(name, attrs)` | `stat`, `series`, `breakdown` |\n| how much: revenue, coins, seconds | a number in `track`\'s attributes (`purchase` with `amount` and `currency`) | `stat` or `breakdown` with `sum` |\n| how many players do it at all (conversion) | `track(name)` | `stat` with `per: "$players"` |\n| how long until players first do something (leave the lobby, open the shop, first purchase), and how many never do | `track(name)` when it happens: nothing timed by hand | `stat` with `first: "hall_left"` (the median seconds from a session\'s start to its first one), `stat` with `never: "hall_left"` (the share of ended sessions that never sent it) |\n| a sequence (tutorial \u2192 first win, paywall \u2192 purchase) | one `track` per step | `funnel` |\n| progress or difficulty through stages, puzzles, waves, stops | `levelStart` / `levelComplete` / `levelFail` | `levels` |\n| dying, and where | `death` (and `setPosition` for places) | `deaths`, `positions` (one level, one zone, or the whole game), the Heatmaps view |\n| where players go in a hub, a lobby or an open world with no levels | `setPosition`, and `setZone` for its areas (never a pretend level: it would show up in the levels funnel) | `positions` with `zone`, or with neither level nor zone, over a background picture (below) |\n| smoothness, and what makes it worse | automatic frame times, plus `setContext` gauges (enemies, particles) | `frame_time`, `stat: frame_p95` |\n| crashes and errors | automatic, plus `error()` for handled ones | `errors`, `stat: crash_free_pct` |\n| whether players come back (D1, D7, D30) | install mode: privacy `install` in the SDK, a stored random player ID (ask the user first: the privacy page must say so) | `retention`, the Players view |\n| how many are playing right now | automatic | `stat: players_now` |\n| who wins: a hero, weapon, card, heat or difficulty that wins too often or too rarely | one event at the end of each match or run with the outcome as a boolean (`match_end` with `hero` and `won: true`) | `breakdown` by `hero` with `rate: "won"` (each row\'s win rate with its likely range, next to all of them), `stat` with `rate` |\n| how long, how far, how many: match length, time in queue, placement, floors reached, pulls to a top unit | a number on that one event (`duration_s`, `wait_s`, `floor`) | `distribution` (half under, 1 in 10 over, a histogram), `stat` with `of` and `quantile: 50` (the median) |\n| each run, match or day one by one: today\'s daily runs and their scores, the last matches with their seed | one `track` per run with what describes it (`daily_run` with `day_label`, `score`, `attempt`) | `table`: a row per event, grouped by `day_label`, best score first (below) |\n| what a match or run used: a deck, items, a build, boons | a list attribute (`deck: [...]`) | `breakdown` by the list (each card a row), with `rate` for the win rate of decks with each card |\n| how fast players earn or play: gold, XP or kills per hour, matches per hour | the event (with its `amount`) | `stat` or `breakdown` with `per: "$hours"` (per hour played), and a `versions` panel to catch an economy that jumps |\n| a stream: shots, hits, kills, gold pickups, taps (many a second) | `count(name, attrs)`: summed on the device, sent once every 5 s, never a `track` per hit | like any event by its name: `stat` per `$hours`, `breakdown` by its words, `sum` of its numbers (no distribution) |\n| who is playing: rank, class, region, mode, a graphics preset, a spender band | `setProperties({ rank: \'gold\' })`, set where the game knows it (after sign-in, the menu, matchmaking); name a graphics preset `graphics` (`setProperties({ graphics: \'high\' })`) so `$graphics` and the Performance view\'s graphics rows read it (a Roblox game has it without code) | `by: "$rank"` on any breakdown, series, rate, distribution, `levels`, `retention` or `versions`; a page with `where` (only the high ranks) |\n| clears and wipes by difficulty, tier, group size or build | `levelStart(id, { tier, party_size, build: [...] })` | `levels` with `by: "tier"` (one level\'s rows: `level`), `deaths` with `by` |\n| runs that cross several levels (a roguelite) | `setGroup(\'run\')` at the run\'s start | `levels` with `count: "runs"` (runs that reach each biome), `stat: runs` |\n| one match from every side, and whether the lobby or one player lagged | `setGroup(\'match\', id)` with the ID the game\'s server made (`\'party\'` for a party; its size goes on `levelStart` as `party_size`) | the Matches view (each match\'s page), the lobby finding; clears by group size: `levels` by `party_size` |\n| where the player is in an open world or a hub (an MMO zone, a room, a lobby hall), and how long they stay | `setZone(name)`; nothing else: time in a zone is the frames drawn there, so never send zone timing as events | `breakdown` with `by: "$zone"` and no `event` (each zone\'s share of play time, the sessions that went there, their median time in it), `stat` `zone_time_pct` or `zone_median_s` with `zone`, `frame_time` with `by: "$zone"` (frame time and hitches per zone), `by: "$zone"` on any breakdown or series (kept like levels: any range) |\n| lag, packet loss and dropped players | read from the netcode by the SDK, or `netSample` / `disconnect` (the `instrument` skill) | `net` (ping, loss, disconnects), `stat: ping_p95`, `disconnect_pct`, the Network section of Performance |\n| dedicated servers: tick rate under load, crashes that end matches, leaks | the SDK in server mode on the server build (the `instrument` skill) | `servers` panels, `stat: servers_now` / `server_tick_p95` / `server_crash_free_pct`, the Servers view |\n\nThe calls, per engine:\n\n| | Three.js or Phaser | Godot | Unity | Unreal (C++; the Blueprint nodes match) |\n| --- | --- | --- | --- | --- |\n| a game event | `glitchless.track(\'play\', { mode: \'endless\' })` | `Glitchless.track("play", "endless")` | `Glitchless.Track("play", "endless");` | `FGlitchless::Track(TEXT("play"), TEXT("endless"));` (Track Event (What)) |\n| several attributes | `glitchless.track(\'buy\', { step: \'done\', item: \'full_game\' })` | `Glitchless.track("buy", {"step": "done"})` | `Glitchless.Track("buy", new Dictionary<string, object> { ["step"] = "done" });` | `FGlitchless::Track(TEXT("buy"), TMap<FString, FString>{{TEXT("step"), TEXT("done")}});` (Track Event) |\n| a purchase | `glitchless.track(\'purchase\', { amount: 4.99, currency: \'USD\', item: \'gems_500\' })` | `Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})` | `Glitchless.Track("purchase", new Dictionary<string, object> { ["amount"] = 4.99, ["currency"] = "USD", ["item"] = "gems_500" });` | `FGlitchless::Track(TEXT("purchase"), {{TEXT("amount"), TEXT("4.99")}, {TEXT("currency"), TEXT("USD")}, {TEXT("item"), TEXT("gems_500")}});` (Track Event) |\n| a level | `levelStart(id)`, `levelComplete(id, { score })`, `levelFail(id, { cause })`, `levelAbandon(id)` (left, not lost) | `level_start`, `level_complete`, `level_fail`, `level_abandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` | `LevelStart`, `LevelComplete`, `LevelFail`, `LevelAbandon` (maps are levels on their own) |\n| a gauge | `glitchless.setContext({ enemies })` | `Glitchless.set_context({"enemies": n})` | `Glitchless.SetContext("enemies", n)` | `FGlitchless::SetContext(TEXT("enemies"), N)` |\n\nRules that keep the numbers useful:\n\n- One event name per moment, in the game\'s own words (`open`, `play`, `paywall`, `buy`), and keep names stable:\n  renaming an event splits its history.\n- Put the choice in an attribute, not the name: `play` with `mode: \'endless\'`, not `play_endless`. Godot, Unity\n  and Unreal turn one word into the attribute `what`.\n- Attributes are strings, numbers, booleans or lists of them, at most 12 per event; strings are cut to 64\n  characters. Keep their values to a small set (modes, places, outcomes): a value per player or per run makes a\n  useless breakdown.\n- Outcomes as booleans (`won: true`), amounts as numbers (`duration_s: 184`), what a match or run used as a list\n  (`deck: [...]`, its first 16 count), and one event at the end of each match or run carrying all of them, not one\n  per hit. What describes the player goes in bands (`level_band: \'30-39\'`), never exact levels or amounts.\n- Track a moment, count a stream: `count()` for anything that happens many times a second (shots, hits, kills,\n  gold); `track()` for a moment worth its own event (a match\'s end, a purchase).\n- A property is what holds for the session (rank tier, class, region, mode, preset), set again each session: bands\n  and words, never an ID, a name or an exact number (intake drops keys like `email` or `user_id` and values shaped\n  like one). What changes from match to match (hero, deck, map) goes on the event or the level start instead.\n- Never send anything that identifies a player: no names, emails, account ids or anything they typed.\n- Purchases: one `purchase` event when the store confirms it (not when the button is tapped), with `amount` (a\n  number, in the currency\'s units: 4.99, not 499), `currency` (the ISO code the store charged in) and `item`. A\n  Roblox game sells for Robux: `currency: "ROBUX"` and the price in Robux (`amount: 99`); Robux are kept apart and\n  never added to dollars. A game that also reports purchases that didn\'t go through sends them as the same event\n  with a `result` (`"done"`, `"cancelled"`) and the amount on each, and its revenue panels read\n  `"purchase:result=done"`. A number sent next to `currency` counts as money, so put other numbers (gems granted)\n  on an event of their own. Never send receipts, order ids or payment details. Taps are other events (`buy` with\n  `step`).\n\nAdd the calls where the moment happens in code, then run the game (or let the bots play it) and check with\n`glitchless_events` that every event arrives with the attributes you expect.\n\n## 3. Design the dashboard\n\nA dashboard is the game\'s pages, at most 20, in the order its sidebar shows them; the first opens first. Each page is a\nboard, panels you choose, or a built-in view the game keeps: `events` (every event, breakdowns, funnels),\n`performance` (frame time and hitches), `errors`, `players`, `heatmaps` (positions on a level, in a zone or anywhere), `sessions`\n(each with its replay), `versions`, `live` (events as they arrive; `options.events` keeps only some), `reports`\n(bug reports players sent, with screenshots), `matches` (a multiplayer game\'s matches, each opening a page with every\nplayer\'s ping slot by slot and the server\'s ticks under it) and `servers` (a game whose dedicated servers run the SDK\nin server mode: ticks by map and players connected, crashes, memory). Give the game the pages its developer would open, named in the game\'s\nwords, and drop the views it has no data for: no Heatmaps for a puzzle or mobile game, no Performance for a game\nthat sends no frame times, no reports page for a game that doesn\'t turn bug reports on.\n\nStart from what is there: `glitchless_dashboard` returns the current pages (`spec`; an automatic dashboard until\nsomeone saves one). Then call `glitchless_set_dashboard` with every page. On a board: a row of stats, then the\ngame\'s own events and funnels, then levels, then frame time and errors. Title each panel with the question it\nanswers. Each panel takes `size`: `s` (a quarter row, for stats), `m` (half) or `l` (full width); and a `note`,\none line on why it matters. People see the note behind the info icon next to the title, so put what they must see\nin the title. Panels keep their order and pack under each other, so a short panel can sit next to a tall one.\nGive the game its own colour with `accent` ("#rrggbb", such as the main colour of its logo or key art) in\n`glitchless_set_dashboard`, alone or with the pages: it colours the links, the selected page, stats, the main chart\nseries and the map on its boards and share links. `logo` and `banner` (its key art, the header behind each board\'s\ntitle, cropped to a strip around its `focus`) take the game\'s own pictures, a file or base64, also alone; use what the\ngame already has (its icon, its store or itch.io art) and ask before making one. `glitchless_dashboard` says whether\nthe game has them. Through the hosted server (connected by URL, which can\'t read your files) a `file` is answered with\nan upload link: run the `curl` it gives (`curl -X PUT --data-binary @file \'<link>\'`, no key) within 10 minutes. The link\ntakes one picture for that slot and then stops working; curl\'s answer says what was saved, or what to fix (a picture\nrefused for its size or type can go to the same link again). Don\'t send a big picture as base64: a banner is about a\nquarter of a million characters. `upload: true` asks for a link from any server.\n\n| type | fields |\n| --- | --- |\n| `stat` | `metric` (sessions, players, avg_session_s, median_session_s, crash_free_pct, error_free_pct, frame_p95, avg_fps, hitches_per_min, errors, deaths, rage_quit_pct, hours_played, players_now: playing now, whatever the range; runs; for a multiplayer game ping_p50, ping_p95, loss_pct, disconnects_per_hour, disconnect_pct; with servers in server mode servers_now, server_tick_p95, server_crash_free_pct, players_per_server; with `zone` (a zone\'s name from `setZone`) zone_time_pct, its share of play time, and zone_median_s, the median time in it of the sessions that went there), or `event` with an optional `per`: another event (a percentage), `$players` / `$sessions` (the share of them that sent it: conversion) or `$hours` (per hour played: matches per hour; `deaths` and `errors` take it too). With `sum` (a numeric attribute), it adds that up instead, and `per: "$players"` gives it per player, `"$hours"` per hour played (gold per hour). `rate`: the share of the events where a flag holds (`"won"`) or a word is sent (`"result=win"`), with `expect` for a rate the game intends; `avg`: a numeric attribute\'s average; `of` with `quantile` (1 to 99) and `unit`: one percentile (the median match). Instead of `event`, `first` (an event: the median seconds from a session\'s start to its first one, or `quantile`) or `never` (an event: the share of ended sessions that never sent it), 31 days or less. A money stat in Robux takes `devex: true`: an estimate in dollars at Roblox\'s DevEx rate under it, always labelled one |\n| `series` | `event`, optional `by` (split by an attribute, or `$version` / `$level` / `$zone`, or the sessions\' `$platform` / `$browser` / `$device_tier` / `$link` / `$graphics` / `$site` or a property, `$rank`), `limit`, `sum`, `rate` or `avg`, `per: "$hours"` |\n| `breakdown` | `event`, `by`, `limit`, `sum` (each value\'s sum, largest first). `by` can split the sessions themselves: `$platform` (Windows, macOS, Linux, Steam Deck, iOS, Android, Web\u2026; a Roblox game\'s Computer, Phone, Tablet, Xbox, PlayStation, VR), `$browser` (Chrome, Safari, Firefox, Edge\u2026; a native build shows as "Godot app", a web build of an engine as "Unity web build") or `$device_tier` (High-end, Mid-range, Low-end GPU, Software rendering, high to low), `$link` (Wi-Fi, Mobile data, Wired), `$graphics` (the graphics setting: a `graphics` property the game sets, else what the SDK read itself, Roblox\'s Graphics Quality as Automatic or 1 to 10; Automatic first, then low to high), `$site` (where a web game was played: itch.io, CrazyGames, Poki, Newgrounds, GX.games, localhost, or the game\'s own site; "(none)" for a native build, or a web build from an SDK that sends no page: GameMaker\'s, or a Godot, Unity or Unreal one too old to), or a property the game sets (`$rank`, `$class`; sessions without it are "(none)"). Without `event` it counts the sessions in each, and their players when the game sends player IDs. Ranges of 31 days or less. With `rate` (`"won"`, `"result=win"`) or `avg`, each row\'s rate with its likely range (or its average) next to the overall one: `min` leaves out rows of fewer events (default 30 for a rate), `expect` draws the rate the game intends (a gacha\'s published odds, as a percentage: 0.6), `order` is `rate` (default), `count` or `value` (heat 0, 1, 2). Any breakdown takes `order: "value"` (the values\' own order: streak day 1, 2 \u2026 10) or `"count"`. `per: "$hours"` makes each row per hour played. By a list attribute (a deck), each element is a row. With `sum` in Robux, `devex: true` gives each row and the total an estimate in dollars. `by: "$zone"` without `event`: the time played in each zone, most first (share of play time, sessions that went there, their median time; time outside every zone is "(none)"), any range |\n| `distribution` | `event`, `of` (a numeric attribute), optional `by` (an attribute, `$version`, `$level`, a session split), `limit` (rows, up to 8), `bins` (bars, up to 40), `unit` (`"s"` shows minutes and hours; or the game\'s word, `"floors"`). How it spreads: half under, 1 in 10 over, and a histogram |\n| `funnel` | `steps`: events in order, comma-separated |\n| `levels` | `label`: what the game calls a level ("Stop", "Puzzle", "Wave"); shows each one\'s median clear time and the slowest 1 in 10, and the attempts a disconnect ended. `by` splits each level\'s attempts: an attribute of its `levelStart` (`"tier"`, `"party_size"`, a list such as `"build"`), a property (`"$class"`) or a split; `level` keeps one level; `count: "runs"` counts each run once at each level it reached |\n| `net` | `show`: `ping` (median and slowest 5% over time, and the share of play over 150 ms), `loss` or `disconnects` (per hour played, by reason); `by`: `$region` (a property), `$link`, `$platform`, `$level`, `$version` |\n| `servers` | `show`: `ticks` (tick time against its budget; `by`: `players` connected, `$level` or `$version`), `players` or `crashes` (with the matches and players each ended). Read from the game\'s servers in server mode |\n| `sessions` | `sent`: only sessions that sent this event ("buy=done"), `limit` |\n| `versions` | none: this board\'s stats, version by version; `by` a property (`$class`) compares its values instead |\n| `live` | `events`: only these names or types, as they arrive |\n| `frame_time` | none: p50 and p95 over time against players\' screens; `by: "$zone"` or `"$level"`: a row per zone or level with its p50, p95, frames over budget, hitches per minute and share of play time, most played first (`limit`, up to 20) |\n| `findings`, `errors`, `deaths`, `events`, `reports` | none (`limit` for findings, errors and reports; `by` and `level` for deaths, as on `levels`) |\n| `retention` | `limit`: how many of the latest first-seen days (default 14); `by` a property (`$spender`): each value\'s D1, D7 and D30. Needs player IDs: a game in anonymous mode gets a panel saying to turn install mode on, except a Roblox game connected to Roblox, whose panel shows Roblox\'s own retention |\n| `store_revenue` | `measure` (required): `revenue`, `per_player`, `by_day`, `by_version` or `by_country` (a world map of installs or revenue by country with the countries ranked: installs, revenue, purchases; `show: "revenue"` opens it on revenue; size `l`); RevenueCat\'s `installs`, `active_users`, `mrr`, `actives`, `trials`, `players_by_day` and `by_store` (revenue in the App Store and Google Play next to the iOS and Android sessions measured); Stripe\'s `refunds`, `customers` (new paying customers) and `by_product`; Roblox\'s (in Robux) `installs` (new users), `active_users` (daily active users), `players_by_day` and `retention` (D1, D7, D30 by cohort day, size `m`), no `by_version`; itch.io\'s earnings: `revenue`, `per_player`, `by_day` only. `store`: `revenuecat`, `stripe`, `roblox` or `itch` (default: the first connected). Real revenue from RevenueCat or the game\'s own Stripe account, Roblox\'s Robux or itch.io\'s earnings, for a game connected to it in Glitchless Cloud |\n| `store_sales` | `store` (`steam`, `itch` or `microsoft_store`): what the store counted by day. Steam: units, returns and wishlists. The Microsoft Store: acquisitions of the game by kind (paid, free, trial, Xbox Game Pass) and of its add-ons. itch.io: its page as a funnel, page views \u2192 browser plays (the sessions Glitchless measured on itch.io) \u2192 downloads \u2192 purchases, with earnings; for a web game on itch.io, put it first on its itch.io page next to a `breakdown` by `$site` |\n| `store_score` | `store` (`app_store`, `google_play`, `steam`, `roblox` or `microsoft_store`): a store\'s rating, one small panel per store. The average stars of the written reviews synced in the window and how many, next to Apple\'s own rating on the App Store and Microsoft\'s ratings in the window on the Microsoft Store. Google Play has no API for its overall rating, so its panel is the reviews\' average and says so. Roblox has no reviews: its thumbs up and down, favorites and visits |\n| `positions` | `level`, or `zone` (what the game passes to `setZone`), or neither: every position and death in the game, for a hub with no levels; `show`: `deaths` (default), `path` or `both`, `bin`: a bin\'s width in world units (default about a hundredth of the place). Where players died there, counted per bin, and where they went on a coarser grid, over the place\'s background: one panel per place |\n| `table` | `event` (required), `columns` (up to 12: attributes, `$time`, `$version`, `$platform`, `$level`, `$session`; `{ "key": "duration_s", "unit": "s" }` for a unit; default the event\'s own attributes, up to 8), `group_by` (an attribute, `$version`, `$level` or `$platform`), `sort` (`"-score"`: highest first; default newest first), `of` (a number whose lowest, average and highest each group shows), `limit` (rows a group, up to 100; default 20). The event\'s events one by one, size `l` |\n\nAn event is written `name`, `name=value` (any attribute has that value) or `name:key=value`. A list matches when it\nhas the value (`battle_end:deck=hog_rider`), and `battle_end:deck=hog_rider+ice_spirit` when it has all of them:\nask about any pair or trio this way. A filtered event can be added up by an attribute too: completed purchases by\nitem is `event: "purchase:result=done"`, `by: "item"`, `sum: "amount"`. A dashboard\'s `currency` is an ISO code or\n`"ROBUX"`.\n\nFor a game with heroes, decks or builds to balance, money, player properties, online play, or several platforms\nand devices, read [references/genres.md](references/genres.md): the panels each of those asks for.\n\nEvery panel and the tables of the Events, Errors, Sessions, Players and Versions views have a CSV button, so a\ndeveloper can take any number to a spreadsheet: no export panel is needed.\n\nWhole dashboards to start from, a mobile game, a competitive game, a battle royale, a puzzle game and a platformer,\nare in [references/examples.md](references/examples.md). Take the shape, not the words: every page and panel uses\nthis game\'s own names.\n\n**A background for a heatmap.** A positions panel and the Heatmaps view draw a place over its picture: one an SDK\ncaptured (`captureMap`), or one you upload with `glitchless_set_dashboard`\'s `background` (it can be sent alone),\nwhich needs no game code. Give it\na top-down picture of the level, zone or whole hub (a screenshot from the editor\'s top view, or the level\'s own map\nart) as a PNG or JPEG of at most 256 KB, and the world coordinates its edges stand for: with `axis` `xz` (seen from\nabove) the left edge is `bounds.min[0]` (x), the right `bounds.max[0]`, the top `bounds.min[1]` (z) and the bottom\n`bounds.max[1]`. Read those from the level\'s own data (the floor\'s corners), never guess them; the tool says when\nthe picture\'s shape doesn\'t match the bounds. One picture of the whole hub (no level, no zone) serves its zones too:\na zone without a picture of its own is drawn over it, and one of its own gives a closer look. Through the hosted\nserver, which can\'t read your files, a `file` is answered with an upload link for that place and those bounds: run the\n`curl` it gives within 10 minutes, as for the logo and banner above.\n\n**A game that reads its own board.** A `positions` panel is only counts per bin (`deaths: [[a, b, n], \u2026]` on the\nlevel\'s plane, `axis` xy or xz, `bounds`, `bin`, `total`, `truncated`), so it can go on a board shared with a link,\nand the game itself can poll that link to draw everyone\'s deaths without a backend of its own: one board, one\npositions panel per level (or zone), a share link, and the game fetches `https://api.glitchless.gg/v1/query/board?share=gl_share_\u2026&days=30`\nabout once a minute, always the same URL (no `from` or `to`, no header). The answer is cached for a minute, so\nevery player can poll it. Fix `bin` in the panel so the dead stay where they fell as more arrive.\n\n**Reading events one by one.** Every other panel adds events up. When the developer wants to read each run, match\nor day ("26 Oct was Ferrum, Downpour, Boosters, Slow Burn: 6 runs in 5 sessions, best 171,230"), send one event per\nrun with what describes it and give it a `table`:\n\n```json\n{ "type": "table", "title": "Daily runs by day", "event": "daily_run", "group_by": "day_label",\n  "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "limit": 20, "size": "l" }\n```\n\nEach day gets a header with its runs, the sessions they came from and the lowest, average and highest score, the\nnewest day first, and runs without a `day_label` go under "(none)". `glitchless_dashboard` returns the same groups\nand rows to read. Only `track()` events have rows (`count()` sends totals), a session keeps its first 16 of each\nevent, and in anonymous mode a session is a session, never a player: say so rather than calling them players. A\nshare link numbers sessions instead of showing them.\n\nSaving checks every page and answers with each panel as it looks over the last week; a panel without data says\nwhy ("No "buy" events in this window"), and `glitchless_dashboard` with `page` shows one board\'s numbers. Show the\ndeveloper, then change what they ask for: "split opens by version", "add the shop" is one more `track` call and one\nmore panel, "a page for the tutorial" one more board. People can rename, reorder, add and remove pages in the\ndashboard too (Edit pages), so read the current pages before saving over them.\n\n**A game that came from a game check.** `glitchless_playtest` with `check_url` plays a game with nothing installed\nand designs its dashboard from what its bots saw: a "Game check" page first (its numbers come from Glitchless\'s\ntest machine, its sessions are bots), then pages titled "\u2026 with Glitchless installed" whose notes name the levels,\nwaves, modes and inputs the bots found. Once the game sends its own data, add the collectors those notes name\n(`levelStart` for each wave or level the bots saw, a `mode` property for the modes, `track()` for the actions), drop\n"with Glitchless installed" from the titles, rewrite the notes for players, and keep the Game check page last or\nremove it: its link shows only the check\'s bot runs.\n\n## 4. Use it to debug\n\nThe boards also decide what a release is judged on: the Versions view and `glitchless_compare_versions` compare\nthe stats on every board, version by version (purchases per paywall view, revenue per session, opens per session), so ship a change,\nbump the version, and read whether it moved the numbers this game cares about. For one event across versions on a\nboard, use `by: "$version"`; for a board\'s own stats, a `versions` panel.\n\nThe dashboard\'s numbers are what you read when something looks wrong: `glitchless_events` with a `funnel` finds\nwhere players drop off, `glitchless_triage` ranks performance, crash, difficulty, network and server problems (and\nnames a property when most of one falls on a value: "crashes are mostly class necromancer"),\n`glitchless_network`, `glitchless_match` and `glitchless_servers` read a multiplayer game, and in a browser game the\nWebMCP tools let you reproduce one in the running game. Add a panel for anything you find yourself\nchecking twice.\n\n## Report\n\nList the questions, the events and calls you added (file:line), and the dashboard\'s pages and panels, and say\nwhich panels will fill in only once players or bots send that data.\n',
       "plugin/glitchless/skills/dashboard/references/examples.md": '# Example dashboards\n\nDashboards for the [dashboard skill](../SKILL.md) to start from, each in the form `glitchless_set_dashboard`\ntakes. Keep the shape and rename everything to the game\'s own words.\n\nA mobile game with modes, stops and a paywall:\n\n```json\n{\n  "currency": "USD",\n  "pages": [\n    { "title": "Overview", "icon": "overview", "panels": [\n      { "type": "stat", "metric": "players", "size": "s" },\n      { "type": "stat", "event": "open", "title": "App opens", "size": "s" },\n      { "type": "stat", "event": "buy=done", "per": "paywall", "title": "Paywall to purchase", "size": "s" },\n      { "type": "stat", "event": "purchase", "sum": "amount", "title": "Revenue", "size": "s" },\n      { "type": "findings", "limit": 3, "size": "l" },\n      { "type": "breakdown", "event": "play", "by": "what", "title": "Which modes they play", "size": "m" },\n      { "type": "series", "event": "open", "by": "what", "title": "Opens, free vs full", "size": "m" }\n    ] },\n    { "id": "paywall", "title": "Paywall", "icon": "bolt", "panels": [\n      { "type": "stat", "event": "purchase", "sum": "amount", "per": "$players", "title": "Revenue per player", "size": "s" },\n      { "type": "stat", "event": "purchase", "per": "$players", "title": "Players who bought", "size": "s" },\n      { "type": "breakdown", "event": "purchase", "sum": "amount", "by": "item", "title": "Revenue by item", "size": "m" },\n      { "type": "funnel", "steps": "paywall,buy=tapped,buy=done", "title": "Paywall to purchase", "size": "l" },\n      { "type": "breakdown", "event": "paywall", "by": "what", "title": "Where the paywall opens", "size": "m" },\n      { "type": "versions", "title": "Paywall numbers by version", "size": "m" },\n      { "type": "sessions", "sent": "buy=done", "title": "Sessions that bought", "size": "l" }\n    ] },\n    { "id": "stops", "title": "Stops", "icon": "flag", "panels": [\n      { "type": "levels", "label": "Stop", "title": "Stops won and lost", "size": "l" },\n      { "type": "breakdown", "event": "difficulty", "by": "what", "title": "Difficulty picked", "size": "m" }\n    ] },\n    { "id": "daily", "title": "Daily", "icon": "clock", "panels": [\n      { "type": "stat", "event": "daily_run", "title": "Daily runs", "size": "s" },\n      { "type": "stat", "event": "daily_run", "of": "score", "quantile": 50, "title": "Median daily score", "size": "s" },\n      { "type": "table", "event": "daily_run", "group_by": "day_label", "columns": ["score", "attempt", "$version", "$platform"], "sort": "-score", "of": "score", "title": "Daily runs by day", "size": "l" }\n    ] },\n    { "id": "purchases-live", "title": "Purchases, live", "view": "live", "options": { "events": ["paywall", "buy"] } },\n    { "view": "events" },\n    { "view": "sessions" },\n    { "view": "versions" },\n    { "view": "errors" }\n  ]\n}\n```\n\nA competitive game (a MOBA, a card battler, a roguelite: the same shape with its own words):\n\n```json\n{ "pages": [\n  { "id": "heroes", "title": "Heroes", "icon": "players", "panels": [\n    { "type": "stat", "event": "match_end", "rate": "won", "title": "Matches won", "size": "s", "note": "Should sit near 50%" },\n    { "type": "stat", "event": "match_end", "of": "duration_s", "quantile": 50, "unit": "s", "title": "Median match", "size": "s" },\n    { "type": "stat", "event": "match_end", "per": "$hours", "title": "Matches per hour played", "size": "s" },\n    { "type": "breakdown", "event": "match_end", "by": "hero", "rate": "won", "min": 100, "limit": 20, "title": "Win rate by hero", "size": "l" },\n    { "type": "breakdown", "event": "match_end", "by": "items", "rate": "won", "min": 100, "limit": 20, "title": "Win rate of builds with each item", "size": "m" },\n    { "type": "distribution", "event": "match_end", "of": "duration_s", "by": "mode", "unit": "s", "title": "Match length", "size": "m" },\n    { "type": "versions", "title": "Version by version", "size": "l" }\n  ] },\n  { "view": "performance" },\n  { "view": "errors" }\n] }\n```\n\nA battle royale or other online game, next to its own pages:\n\n```json\n{ "pages": [\n  { "id": "network", "title": "Network", "icon": "live", "panels": [\n    { "type": "stat", "metric": "ping_p95", "title": "Ping for the slowest 5%", "size": "s" },\n    { "type": "stat", "metric": "disconnect_pct", "title": "Matches ended by a disconnect", "size": "s" },\n    { "type": "net", "show": "ping", "by": "$region", "title": "Ping by server region", "size": "l" },\n    { "type": "net", "show": "disconnects", "title": "Disconnects and why", "size": "m" },\n    { "type": "findings", "limit": 5, "size": "m" }\n  ] },\n  { "id": "servers", "title": "Servers", "icon": "perf", "panels": [\n    { "type": "stat", "metric": "servers_now", "title": "Servers running", "size": "s" },\n    { "type": "stat", "metric": "server_tick_p95", "title": "Server tick, slowest 5%", "size": "s" },\n    { "type": "stat", "metric": "server_crash_free_pct", "title": "Server runs without a crash", "size": "s" },\n    { "type": "servers", "show": "ticks", "by": "players", "title": "Tick time by players connected", "size": "l" }\n  ] },\n  { "id": "endgame", "title": "Dungeons", "icon": "flag", "panels": [\n    { "type": "levels", "label": "Dungeon", "by": "tier", "title": "Clears by tier", "size": "l" },\n    { "type": "levels", "label": "Dungeon", "by": "$class", "title": "Clears by class", "size": "m" }\n  ] },\n  { "view": "matches" },\n  { "view": "performance" }\n] }\n```\n\nA puzzle game: an Overview with `stat` players and average session, `levels` with `"label": "Puzzle"` (completion\nand time), a `breakdown` of `hint` by `what` and a `funnel` of `tutorial=done,puzzle_solved`; then Events, Sessions\nand Errors. No Performance unless it\'s slow, no Heatmaps, no deaths.\n\nA platformer or shooter: an Overview with `stat` frame_p95 and crash_free_pct, `findings`, `frame_time`, `levels`,\n`deaths` and a `breakdown` of `weapon` or `powerup`; then Performance, Heatmaps, Errors, Sessions and Versions. A\nlevel whose deaths tell its story gets a `positions` panel (`"show": "both"` to see where players went too).\n\nAn avatar hub with puzzle levels (a Roblox experience): the lobby is no level, so the `levels` panel shows only the\npuzzles. A Lobby board has a `positions` panel with no level or zone (`"show": "path"`, over a background uploaded\nwith `glitchless_set_dashboard`\'s `background`), a `breakdown` of what players do there by `$zone`, and the hub\'s purchases;\nthe Heatmaps view picks a puzzle, a zone or Everywhere.\n',
       "plugin/glitchless/skills/dashboard/references/genres.md": '# Panels for each kind of game\n\nWhat the [dashboard skill](../SKILL.md) adds for a game with these features. Use the game\'s own names for\nevents, attributes and pages.\n\n**Balance, outcomes and economies.** A rate breakdown answers "which hero wins too often" with how sure it is: each\nrow\'s whisker is the range its rate likely sits in, and a row whose range misses the line (all heroes, or `expect`)\nis drawn in colour. Set `min` so rows of a handful of matches stay out (100 or more for a balance question), and say\nin the `note` what the line should be ("Should sit near 50%"). A game with published odds (a gacha banner\'s 0.6%) can\nput them in `expect` on a rate of its pulls: the board and a finding then say when what players got misses it, and the\ndeveloper decides what that means. Per-hour numbers (`per: "$hours"`) compare versions fairly when sessions get\nlonger or shorter, so put an economy\'s earn and spend rates in stats and add a `versions` panel; a sum per hour that\nmoves 50% between versions, or a distribution whose median moves 30%, becomes a finding. To check one combination\nthe board doesn\'t show, ask `glitchless_events` with `name`, `rate` and `by` (and a filter in `name`), or `of` for a\ndistribution.\n\n**Money.** A sum of events that carry a `currency` is money: the dashboard shows it with the currency\'s symbol and\ntwo decimals. A game has one currency, the dashboard\'s `currency` (`glitchless_set_dashboard` with\n`currency: "USD"`, sent again with every save) or else the one most purchases are sent in; purchases in another\ncurrency are listed on the panel as left out, never added in. If one shows up, fix the game (convert before\nsending, or send the store\'s price in one currency) rather than the board. Revenue is hidden on a shared board\nunless the link is made to show it. A game connected to RevenueCat (Glitchless Cloud: Settings \u2192 Integrations) gets a Revenue page of\n`store_revenue` panels by itself: that is the real revenue (RevenueCat counts production purchases only), with installs\nand active users next to the players Glitchless measures, so keep it, and read it with `glitchless_revenue`; the game\'s\nown `purchase` sums are for revenue by item, level or player. A game that sells through its own Stripe account gets a\nStripe one (refunds, fees, new paying customers, revenue by product). For its revenue by version, the game\'s server puts\nthe player\'s Glitchless session ID (`Glitchless.instance.sessionId` in a web game) in the Checkout Session\'s\n`client_reference_id`, or `glitchless_session` metadata on it or the PaymentIntent. A Roblox game connected to Roblox\ngets a Roblox page (thumbs up, daily active and new users, Roblox\'s retention, players now, Roblox\'s crash rate and\nframe rate by place version) and a Revenue page in Robux: keep both, since its SDK is anonymous and Roblox\'s retention\nis the only one it has.\n\n**A Roblox game\'s own money and lobby.** Its purchase events carry `currency: "ROBUX"` and the price in Robux, and its\ndashboard takes `currency: "ROBUX"`: the board shows Robux with \u2B21 and never adds them to dollars. `devex: true` on a\nRobux stat, breakdown or series adds what they\'d be worth through Roblox\'s Developer Exchange, always as an estimate\n(the price players paid at DevEx\'s standard rate; the experience earns less). Revenue of completed purchases by item,\nwhen cancelled ones carry their amount too: a breakdown with `event: "purchase:result=done"`, `by: "item"`, `sum:\n"amount"`. A hub with a lobby asks how long players stay in it and how many never leave: the game sends one event when\na player first leaves (`hall_left`, from the server for that player), and the board has a stat with `first:\n"hall_left"` (the median seconds from joining) and one with `never: "hall_left"` (the share of ended sessions that\nnever left). A streak or a step number reads best in its own order: a breakdown by `day` with `order: "value"`.\n\n**Who is playing.** A game that sets properties splits anything by them (`by: "$rank"`): win rate by hero at each\nrank is a page with `"where": { "$rank": ["diamond", "master"] }` and the same breakdown on it; retention by\n`$spender`, frame time by `$preset` (the Performance view\'s by-property table), versions by `$class`. A property with\nmore than 200 values a day is an ID and reads as "(too many values)": fix the game. These read the sessions, so\nranges of 31 days or less.\n\n**Multiplayer.** A game with online play gets a Network page: `stat` ping_p95 and disconnect_pct, a `net` panel by\n`$region` (or `$link` on mobile: Wi-Fi against mobile data) and one with `show: "disconnects"`, and `findings`; a\nwhole lobby lagging at once (the server) and one player lagging (their connection) are findings of their own. With\nmatch groups, keep the `matches` view. With dedicated servers in server mode, a Servers page (`servers_now`,\n`server_tick_p95`, `server_crash_free_pct`, a `servers` panel `by: "players"`) or the built-in `servers` view; the\nservers\' sessions are kept under `<game>.server`, never counted as players.\n\n**Open worlds and hubs.** A game with zones (an MMO\'s regions, a metroidvania\'s rooms, an avatar hub\'s hall and the\nzones around it) gets a Zones page: a `breakdown` by `$zone` without `event` (where play time goes, and how long the\nsessions that go to each zone stay), `stat` `zone_median_s` with `zone` for the zone that matters most (the hall),\n`frame_time` by `$zone` (which zone hitches), and its own events by `$zone` (purchases by zone). Levels inside zones\n(a puzzle in the garden) keep their `levels` panel; `frame_time` by `$level` reads them apart.\n\n**Platforms, browsers, devices.** A web game: `breakdown` by `$browser`. A game on PC, Mac and Steam Deck: by\n`$platform`. Any game whose frame times vary: by `$device_tier`, next to frame time. For a game on iOS and Android, put the split on its main page: `breakdown` by `$platform` (players or\nsessions on each), the same with `event: "purchase"` (purchases tracked on each), and with RevenueCat connected,\n`store_revenue` `by_store` (the money in each store) and `by_country` (where installs and money come from). Add a\n`store_score` per store the game is connected to.\n',
       "godot/addons/glitchless/README.md": '# Glitchless for Godot\n\nA Glitchless SDK for Godot 4.5 and later, built for 4.7 and the Mobile renderer. It sends the same events as the browser SDK (`packages/sdk`), so a Godot game shows up in the same Glitchless server, dashboard, findings, Datadog forwarding and MCP tools with no server changes beyond the small ones listed under [Limits](#limits).\n\nIt reports:\n\n- **Frame times.** Each 5 s window carries a mergeable 2% sketch, so the server\'s p95 and p99 cover every player. Slow frames are flagged the way the browser SDK flags them.\n- **Hitches with likely causes.** A pipeline (shader) compile, a burst of new nodes, a scene change, slow `_process` code, physics, rendering, or a frozen frame. Each hitch also carries the game\'s gauges and the events in the 1.5 s before it.\n- **Engine counts.** Draw calls, primitives, objects, nodes, orphan nodes, video memory, and static memory (debug builds only). They\'re the leak watch.\n- **Errors** through Godot 4.5\'s custom loggers, with script backtraces and the last game events as breadcrumbs.\n- **Play events:** the level funnel, deaths, game events and gauges.\n- **The device:** a coarse tier, renderer, screen size and the refresh rate the OS reports (the rate the game ran at is measured from its frames, in each frame window). The screen size also shows whether an iPhone Duo is open or closed. A [web export](#web-exports) names the player\'s browser and its OS, as the browser SDK does.\n- **Bug reports from players**, when the game turns them on: F8 (or the game\'s own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.\n- **Multiplayer:** ping, packet loss and disconnects from Godot\'s own MultiplayerAPI (ENet, and WebSocket for web exports), which match and party each event belongs to, and a dedicated server\'s tick time and players, kept apart from players\' sessions.\n- **Genre numbers:** counters for streams of events (shots, kills, gold), properties that hold for a session (mode, rank tier, class, region), level attributes (difficulty, party size) and zones in an open world.\n\nIt also has an agent flag, `--glitchless-measure=SECONDS`, which prints frame stats as JSON and quits. It\'s the native version of the browser SDK\'s `glitchless_measure` tool.\n\nAnonymous mode, the default, sends nothing that can be tied to a person. [PRIVACY.md](PRIVACY.md) lists every field each mode sends. [PORTING.md](PORTING.md) shows how a game that counts events with its own `Metrics.count(event, word)` moves over.\n\n## Install\n\n1. Copy `addons/glitchless/` into the game\'s `addons/`.\n2. Add the autoload. Either turn on the plugin under *Project Settings \u2192 Plugins*, or add this line under `[autoload]` in `project.godot`:\n\n   ```ini\n   Glitchless="*res://addons/glitchless/glitchless.gd"\n   ```\n\n3. Optional, for script lines on errors in release builds: *Project Settings \u2192 Debug \u2192 GDScript \u2192 Always Track Call Stacks* (`debug/settings/gdscript/always_track_call_stacks=true`). It makes every GDScript call do a little more work. Without it, a release build reports the engine\'s own file and function instead.\n\nThe addon uses no `class_name`, so it adds no global names and works in a project that has never been opened in the editor.\n\n## Use\n\n```gdscript\nfunc _ready() -> void:\n	Glitchless.init("starlift", "", "prod", "https://glitchless.example.com")  # "" = the Steam build, else application/config/version\n\nGlitchless.level_start("voyage_3")\nGlitchless.level_complete("voyage_3", score)          # duration measured since level_start\nGlitchless.level_fail("voyage_3", "lost")              # lost it: died, ran out of time\nGlitchless.level_abandon("voyage_3")                  # left it: home, restart, a menu. Never a fail\nGlitchless.death(pos.x, pos.y, "meteor")              # the place is sent only when positions are on\nGlitchless.track("play", "endless")                   # one word, a number, or a dictionary\nGlitchless.set_context({"blocks": blocks.size()})     # at the end of the frame\'s work\nGlitchless.set_position(player.position)              # ignored unless positions are on\nGlitchless.error("save slot unreadable", {"slot": 2}) # an error the game caught itself\nvar stats := await Glitchless.measure(5.0)            # what --glitchless-measure prints\nGlitchless.open_bug_report()                          # the bug report form, from a pause menu\nawait Glitchless.report_bug(note)                     # or a report from the game\'s own form\nGlitchless.count("kill", {"monster": "elite"})        # a stream of events: counted, sent once a window\nGlitchless.set_properties({"mode": "squads", "rank": "gold"})  # what holds for this session\nGlitchless.level_start("pit_80", {"tier": "pit_80", "party_size": 3})  # an attempt with its attributes\nGlitchless.set_group("match", match_id)               # every event until set_group("match", null) carries it\nGlitchless.set_zone("ashen_wastes")                   # where the player is in an open world\nGlitchless.set_enabled(on)                            # the player\'s "Share performance data" setting\nGlitchless.is_enabled()                               # true while this build sends and the player hasn\'t turned it off\n```\n\n**Leaving a level is not losing it.** Call `level_abandon()` when the player leaves a level before it ends (goes to the menu, restarts it), not `level_fail()`: the funnel counts abandons apart, they are never rage quits, and walls are judged only on the sessions that played a level to an end. When the game goes to the background or closes with a level started and not yet completed, failed or abandoned, Glitchless sends the abandon itself, before the session\'s end, and drops a `level_fail` or `level_abandon` the game sends for that level afterwards (from `_exit_tree`, say). Back from the background in the same session, the level carries on and the server takes the abandon back.\n\n`track` is for the game\'s own metrics, whatever they are: `track("open", "full")`, `track("play", "endless")`,\n`track("buy", {"step": "done"})`. One word becomes the attribute `what`. The dashboard\'s Events page counts each\nevent over time, breaks it down by attribute and builds funnels between events, and the game\'s own dashboard (its\npages designed by your coding agent with `glitchless_set_dashboard`) shows the ones that matter. Attributes are strings, numbers or\nbooleans, at most 12 per event.\n\nPurchases have one convention in every Glitchless SDK:\n`Glitchless.track("purchase", {"amount": 4.99, "currency": "USD", "item": "gems_500"})`. Send it when the store confirms the purchase, with `amount` a number in the currency\'s units (4.99, not 499) and `currency` the ISO code the store charged in. Boards add the amounts up into revenue, revenue per player and revenue by item, in the game\'s one currency: purchases in another are listed as left out, not added in. Never send receipts, order ids or payment details. A purchase made in a TestFlight or development install on iOS, or in an Android debug build, is a sandbox purchase: the SDK adds `sandbox: true` to it (to an event named `purchase`, or any with a `currency`), and boards count it but never add it into revenue. In an Android release build, pass `sandbox: true` yourself when the billing library says the purchase was a test one (RevenueCat\'s `isSandbox`).\n\n`init(service, version, env, intake, options)` options. Every one is optional.\n\n| option | default | |\n| --- | --- | --- |\n| `privacy` | `"anonymous"` | `"install"` adds a random player ID kept in `user://`, so retention can be counted; `"full"` that, device detail and positions. See [PRIVACY.md](PRIVACY.md) |\n| `positions` | on in full mode only | death places and 4 Hz position samples |\n| `client_token` | `"gl_pub_dev"` | the server\'s `GLITCHLESS_CLIENT_TOKENS` |\n| `sample_rate` | `1.0` | the share of sessions that send |\n| `flush_interval` | `5.0` | seconds between batches; the first goes 2 s after `init` |\n| `session_type` | `"user"` | `"synthetic"` is automatic with `--autoplay`, `--glitchless-synthetic`, `--glitchless-measure` or `--headless`, and on the phones Google Play\'s pre-launch report runs a new build on (the Android setting `firebase.test.lab`, or a GPU that draws in software, as theirs do). `"tester"` is automatic on a TestFlight or development install on iOS (a TestFlight build is a release build, so it reports `prod` like the App Store; the receipt Apple writes with every App Store install tells them apart), and on Android on a debug build or one installed outside a store (by adb, which Godot\'s one-click deploy uses, or from an APK file), from the app that installed it; a build from Google Play or another store stays a player\'s. It keeps testers out of the players\' numbers. A game sold as an APK outside the stores (on itch.io, say) passes `"user"` |\n| `session_timeout` | `300.0` | seconds in the background after which coming back starts a new session |\n| `engine_gauges` | `true` | put `nodes`, `orphan_nodes` and `objects` in `ctx` |\n| `measure_render_time` | `true` | renderer CPU (and GPU, where the driver reports it) time per frame |\n| `capture_warnings` | `false` | also report `push_warning` and engine warnings |\n| `rage_input` | off on phones | the same key or tap four times in a second; fast tapping is normal play in a phone game |\n| `enabled` | off in debug builds | force sending on or off. This is the build\'s switch, which the player\'s [off switch](#the-players-off-switch) can\'t override |\n| `opt_in` | `false` | `true`: each device starts off until the game calls `set_enabled(true)`, for a game that asks the player first. A choice the player already made wins. A dedicated server has no player to ask, so it starts on |\n| `debug` | `false` | print each batch |\n| `bug_reports` | `false` | `true`, or `{"hotkey": KEY_F8, "pause": true, "screenshot": true}`: F8 opens the [bug report form](#bug-reports) |\n| `properties` | `{}` | the session\'s [properties](#properties) from the start, as `set_properties` takes them |\n| `hash_group_ids` | `true` | send [match and party IDs](#matches-parties-and-runs) hashed; `false` sends them as the game\'s server made them |\n| `network` | `true` | read [ping, packet loss and disconnects](#multiplayer-ping-packet-loss-and-disconnects) from Godot\'s MultiplayerAPI |\n| `role` | `""` | `"server"` makes this a [dedicated server](#dedicated-servers); `"player"` stops a game\'s own `--server` flag from meaning one. `""`: a dedicated-server export, `--glitchless-server` or `--server` is a server |\n| `region` | `""` | a server\'s region, in the game\'s words (`"eu-west"`) |\n| `max_players` | `0` | the most players a server takes |\n| `session_per_match` | `false` | a server\'s session lasts one match, for a server that hosts one at a time |\n\nFrame times, errors and events are collected from the first frame. They wait in memory until `init()`, so a game can call it after loading its settings. A player who turned Glitchless off has nothing collected from the first frame on.\n\n### Retention needs install mode\n\nIn anonymous mode (the default) nothing is kept between launches, so the dashboard can\'t tell a returning player from a new one. `{"privacy": "install"}` keeps a random `p_\u2026` player ID in `user://glitchless/player_id` (the one full mode uses) and sends it with every batch; nothing else changes. The Players page and `retention` board panels then show D1, D7 and D30. `Glitchless.reset_install_id()` forgets it (for a "reset my ID" setting): this session keeps its ID, the next launch makes a new one. On a Steam Deck, `session_start` carries `steam_deck: true` and, on SteamOS, `os: "SteamOS"` (Linux builds and Windows builds under Proton).\n\n### Steam\n\nIf the game already uses [GodotSteam](https://godotsteam.com), every session also says which Steam build and beta branch it ran, whether on a Steam Deck (with GodotSteam 4.21, also a Steam Machine or Steam Frame, and Proton), in Big Picture mode, with which kind of controller, in which Steam language, and whether through Family Sharing or a timed trial. Nothing to set up and no dependency: the addon reads the `Steam` singleton only when the game has one (`Engine.has_singleton("Steam")`), and only once GodotSteam says Steam is initialised (`steamInitEx()`, initialising from the Project Settings, or `steamInit()` with your app ID), since its calls print engine errors before that. The facts are read when the first batch goes, so a game that initialises Steam after Glitchless still sends them. The controller is known once the game has called `inputInit()`. No Steam ID or name is ever read ([PRIVACY.md](PRIVACY.md#steam-facts) has a paragraph for your privacy page).\n\n**Versions are Steam builds.** Pass `""` as the version and a Steam build reports `steam-<build>` (`steam-18231`), so every upload to Steam is a version the Versions page and `glitchless_compare_versions` can compare. Outside Steam it falls back to `application/config/version`. A version you pass always wins.\n\n**Branches.** Filter any dashboard query with `steam_branch=beta`, split a breakdown panel by `$steam_branch`, or compare branches with a versions panel `by: "$steam_branch"` or `glitchless_compare_versions` with `by: "steam_branch"`.\n\n### Off in debug builds\n\nAs with the `Metrics` autoload in Linebreakers and Starlift, a debug build (the editor, or an export with debug on) sends nothing unless it is run with `--glitchless`. That keeps a developer\'s phone and the agents\' bot runs out of the players\' numbers. Release exports send by default.\n\nEvery run the editor starts is a debug build, so a game that only runs in the editor so far sends nothing. To send your own runs, put `--glitchless` in *Project Settings \u2192 Editor \u2192 Run \u2192 Main Run Args* (turn on Advanced Settings to see it). The editor adds it to every run it starts. In `project.godot`:\n\n```ini\n[editor]\n\nrun/main_run_args="--glitchless"\n```\n\nThose runs count as a player\'s sessions, so take it out once the game has players, or your own playtests mix with theirs.\n\n**Web exports** have no command line, and Godot\'s export dialog exports with debug on unless *Export With Debug* is unticked, so a game jam\'s entries are often debug builds. A web export therefore goes by where its page is. Played from anywhere but your own machine (itch.io, your site), it sends, debug build or not: players are playing it. On your own machine (the editor\'s *Run in Browser*, a local server, or another device on your network) a debug build follows the rule above, and `?glitchless` in the page\'s address stands in for `--glitchless`: `http://localhost:8060/tmp_js_export.html?glitchless`.\n\n### The player\'s off switch\n\nGive players a "Share performance data" toggle in the game\'s settings and wire it to `Glitchless.set_enabled()`. Turned off, Glitchless stops at once: nothing more is measured or sent, not even a check that the server is there, and what it hadn\'t sent yet is deleted, the outbox on the device included. The session just goes quiet: no `session_end` or `level_abandon` is sent, and the server doesn\'t count it as a crash. Turned back on, a new session starts in the same launch, as after a long time in the background, with the properties and groups the game had set.\n\n```gdscript\n# settings_menu.gd\n@onready var share: CheckButton = %SharePerformanceData\n\nfunc _ready() -> void:\n	share.button_pressed = Settings.share_performance_data  # the game\'s own saved setting\n	share.toggled.connect(_on_share_toggled)\n\nfunc _on_share_toggled(on: bool) -> void:\n	Settings.share_performance_data = on\n	Settings.save()\n	Glitchless.set_enabled(on)\n```\n\n- **The choice is kept on the device**, as `on` or `off` in `user://glitchless/enabled`, and the autoload reads it before the first frame of every launch. A player who turned it off sends nothing from the start of the next launch, even though the game reads its own settings after Glitchless starts, and a batch an earlier launch left in the outbox is deleted unread. The file is written only once the game calls `set_enabled`, in every privacy mode.\n- **A call that changes nothing does nothing**, so the game can also pass its own saved setting each time it starts: `Glitchless.set_enabled(Settings.share_performance_data)`.\n- **Show the game\'s own setting in the menu**, not `Glitchless.is_enabled()`. `is_enabled()` is true only while this build sends and the player hasn\'t turned it off, so it is false in a debug build without `--glitchless` whatever the player chose. `set_enabled(true)` never turns on a build that sends nothing; it still saves the choice.\n- **Asking first.** `{"opt_in": true}` starts each device off until the game calls `set_enabled(true)`, for a game that asks the player before collecting anything, such as a prompt on first launch. A choice the player already made wins over it, and what was collected before `init()` is dropped when `opt_in` leaves it off. A dedicated server has no player to ask, so `opt_in` leaves it on.\n- **While it is off**, every call is safe and does nothing. The F8 form doesn\'t open, `report_bug()` answers `{"sent": false, "reason": "off"}`, and `measure()` and `--glitchless-measure` return an `error` saying Glitchless is off. The level, properties, groups, zone and gauges stay in memory for the next session.\n- **Back on**, the attempt that was going when the player turned it off (or one started while it was off) gets no `level_complete`, `level_fail` or `level_abandon` until the next `level_start`, since its start was never sent in the new session. The load isn\'t sent again.\n- **The player ID stays** (install and full mode), so a player who turns it back on is still one player. `reset_install_id()` is the separate setting that forgets it.\n- A dedicated server follows the same switch, saved in the same file.\n- With the toggle, collection is optional for the store forms ([PRIVACY.md](PRIVACY.md#for-the-store-forms)).\n\n### Bug reports\n\nPlayers and playtesters flag a problem where they see it, and you (or your coding agent, with the `glitchless_bug_reports` MCP tool) see it in Glitchless\'s Bug Reports view with the screenshot and a link to the session\'s replay.\n\n```gdscript\nGlitchless.init("starlift", "", "prod", intake, {"bug_reports": true})   # F8 opens the form\nGlitchless.init("starlift", "", "prod", intake, {"bug_reports": {"hotkey": KEY_F1, "pause": false}})\nGlitchless.bug_report_opened.connect(_pause)          # bug_report_closed too; for games that pause themselves\nGlitchless.open_bug_report()                          # a pause menu\'s "Report a bug" (works without bug_reports)\nvar result := await Glitchless.report_bug(note)       # the game\'s own form: {"sent": true}, or {"sent": false, "reason": "offline" | "off" | "error"}\n```\n\n| `bug_reports` key | default | |\n| --- | --- | --- |\n| `hotkey` | `KEY_F8` | a `Key`, its name (`"F1"`), or `null` for none. It opens and closes the form |\n| `pause` | `true` | pause the tree while the form is open, so the game neither runs nor reads what the player types (nodes set to always process still do). The pause state the game had comes back on close. Use `false` and the signals if the game has its own pause |\n| `screenshot` | `true` | send a screenshot with each report |\n\n- **The screenshot** is the root viewport\'s last frame, read before the form shows, so the form is never in it. It is shrunk until it fits the server\'s 200,000-character limit: the longer side at most 960 px, then 800, 640, 480 and 320, at lower JPEG quality. The frames that read it back and draw the form aren\'t timed, so they never show as hitches. A headless run draws nothing, so its reports have no screenshot; `report_bug(note, image)` sends an `Image` you pass, and `report_bug(note, false)` none.\n- **The form** is a `CanvasLayer` on layer 128 with the note box, Send and Cancel. Esc cancels, Ctrl+Enter (Cmd+Enter) sends, and a captured mouse is set free while it is open.\n- **Sending:** a report goes on a request of its own straight away, from every session (`sample_rate` doesn\'t apply), with the last 20 game events and hitches, the last frame windows and the device. It waits in the outbox meanwhile, so a report made offline goes with a later batch, even on a later launch. A debug build without `--glitchless` sends nothing, and says so (`"offline"`). While the player has Glitchless [off](#the-players-off-switch), the form doesn\'t open and `report_bug()` takes no screenshot and answers `"off"`.\n- **The note is the player\'s own words.** [PRIVACY.md](PRIVACY.md#bug-reports-the-players-own-words) says what to tell players, and the dashboard can delete a report a player asks about.\n\n### Counters\n\n`track()` sends one event per call, and the SDK queues at most 2,000 events. A stream (shots, hits, kills, loot, gold, taps) would fill that in a minute and push out the frame windows. Count a stream instead:\n\n```gdscript\nGlitchless.count("kill", {"monster": "elite"})\nGlitchless.count("gold", {"source": "loot", "amount": 35})   # numbers are summed as passed\nGlitchless.count("shot", "bow", 3)                            # one word is "what"; 3 events at once\n```\n\nNothing is queued per call. Each window (every `flush_interval` seconds, and at each `level_start`, so counts keep their level) adds the calls up per name and per its words and booleans (up to 4), sums its numbers (up to 4), and sends one `counts` event. A window holds 64 entries: past that, a new group of a name already counted goes under `(other)`, and a new name is dropped and counted in `dropped`. Dashboards read a counter by its name like any event (`kill` per hour played, `gold` by `source`, summed by `amount`). A debug build warns once when a name is tracked more than 20 times a second. The rule: track a moment, count a stream.\n\n### Properties\n\nWhat holds for the session, in the game\'s words: its mode, the player\'s rank tier or class, the input they use, the region of the game\'s servers. Any panel can then split by one (`$rank`), and a dashboard page can show only some sessions.\n\n```gdscript\nGlitchless.init("arena", "", "prod", intake, {"properties": {"mode": "squads"}})\nGlitchless.set_property("rank", "gold")               # after sign-in, at the menu, at matchmaking\nGlitchless.set_properties({"class": "necromancer", "level_band": "30-39"})\nGlitchless.set_property("party", null)                # null removes one\n```\n\n- Keys are 1 to 32 of `a-z`, `0-9` and `_`, starting with a letter, at most 12 a session. Values are a word (trimmed, up to 64 characters), a boolean or a whole number from \u22121,000,000 to 1,000,000. Fractions are dropped: send a band (`"30-39"`), not an exact level.\n- The built-in splits can\'t be used as keys (`version`, `level`, `platform`, `zone`, the Steam facts\u2026). Keys that name a person (`name`, `email`, `user_id`, `steam_id`, `age`\u2026) and values shaped like an email, a link, a phone number, a long number or an ID are dropped, with a warning in a debug build. [PRIVACY.md](PRIVACY.md#properties-the-games-words-about-the-session) says why.\n- They go in `session_start` when the first batch goes, and a later change as one `props` event a window with only the keys that changed. A call that changes nothing sends nothing. Nothing is kept on the device: each launch sets them again.\n- What changes from match to match (hero, deck, map) belongs on the events or on `level_start`, not in a property.\n\n### Matches, parties and runs\n\n```gdscript\nGlitchless.set_group("match", match_id, {"mode": "squads", "players": 100})  # the ID the game\'s server made\nGlitchless.set_group("party", party_id)               # while the party lasts; never a guild or friends list\nvar run_id := Glitchless.set_group("run")             # Glitchless makes run IDs: save it with the run\nGlitchless.set_group("run", saved_run_id)             # a run that goes on after a restart\nGlitchless.set_group("match", null)                   # the match ended\n```\n\nEach sends a `group` event, and while it is set every event and window carries `"match": \u2026` (or `party`, `run`), as it carries the level. So everyone in one match can be lined up: the whole lobby lagging at minute 12 is the server; one player lagging is their connection.\n\n- IDs are 8 to 64 of `A-Z`, `a-z`, `0-9` and `_ . : -`. Anything else is dropped.\n- **Match and party IDs go hashed:** `h_` and the first 24 hex characters of SHA-1 over the game\'s service (lowercased), `:` and the ID, as every Glitchless SDK sends them. Everyone in the match sends the same hash, a server and its clients included, whatever engine each runs, but it can\'t be looked up in the game\'s own match logs. `"hash_group_ids": false` sends them as they are, to match them against your own server\'s logs.\n- **Runs:** in install and full mode a saved run ID resumes the run. In anonymous mode it gets a new ID (with `resumed: true`), so nothing ties two launches together.\n- Groups set before `init()` go out once it is called.\n\n### Level attributes and zones\n\n`level_start(level, attrs)` describes the attempt: `{"tier": "pit_80", "party_size": 3}`, `{"heat": 4, "weapon": "rail"}`. The level funnel can then split clears by difficulty or group size. Attributes follow the rules of `track()`\'s.\n\nA **zone** is where the player is in an open world (an MMO region, a metroidvania room), apart from levels, with no start or end. `Glitchless.set_zone("ashen_wastes")` stamps every event and window with it, as the level is, and dashboards split by `$zone`. A window never spans two zones, unless the player crosses back and forth within a second. `set_zone(null)` clears it.\n\n### Multiplayer: ping, packet loss and disconnects\n\nNothing to set up for a game on Godot\'s MultiplayerAPI. Once a second while connected, Glitchless reads the tree\'s `multiplayer.multiplayer_peer`:\n\n| | ENet (`ENetMultiplayerPeer`) | WebSocket (`WebSocketMultiplayerPeer`, web exports) |\n| --- | --- | --- |\n| round trip | `get_peer(1).get_statistic(PEER_ROUND_TRIP_TIME)` | none: pass the game\'s own ping with `net_sample()` |\n| jitter, packet loss | `PEER_ROUND_TRIP_TIME_VARIANCE`; `PEER_PACKET_LOSS` over `PACKET_LOSS_SCALE` | none |\n| bytes in and out | the ENet host\'s `pop_statistic` (which resets its counters: a game that reads them itself gets what is left since the last second) | none |\n| disconnects | `peer_disconnected(1)` then `server_disconnected` | the same, with the WebSocket\'s close code |\n\nEach frame window while connected gains `net`: a 5% sketch of the round trips, their p50, p95 and maximum, jitter, loss, kbps in and out, the transport, and `host: true` on a listen server\'s host (whose own round trip is zero).\n\n**Disconnects.** A `disconnect` event says why (`timeout`, `connection_lost`, `server_closed`, `failed_to_connect`, `kicked`, `other`), how long the player was connected, and the window\'s ping and loss. A server that closes the connection sends ENet\'s goodbye, which arrives with the drop; a connection that timed out brings nothing, so the two are told apart (a kick reads as `server_closed`: say `Glitchless.net_disconnect("kicked")` in your own `server_disconnected` handler and that wins). A player who closes the connection themselves (`multiplayer_peer.close()`) is leaving, not disconnected: Godot sends `server_disconnected` alone then, and Glitchless sends nothing. With a level open, the attempt ends as a `level_abandon` with reason `disconnect`, never a fail, and a fail or abandon the game sends for it afterwards is dropped. Connecting again within 5 minutes is a `reconnect` (`after_s`); a player back in the same level plays on in it. At most 20 disconnects a session.\n\n**Other netcode** (Steam Networking Sockets, Nakama, a WebSocket game\'s own ping): `Glitchless.net_sample(rtt_ms, loss_pct, jitter_ms)` about once a second while connected, `Glitchless.net_disconnect(reason)` and `Glitchless.net_reconnect()`. (`disconnect` is taken: every Godot object has one, for signals.) `"network": false` turns the reading off.\n\n### Dedicated servers\n\nA Godot dedicated-server export (`OS.has_feature("dedicated_server")`), a run with `--server` or `--glitchless-server`, or `{"role": "server"}` reports as the game\'s server, under its companion service `<game>.server`, and never as a player\'s session. A headless server is a live session (`user`), not a bot\'s; `--autoplay` or `--glitchless-synthetic` marks a load test.\n\n```gdscript\nGlitchless.init("arena", "", "prod", intake, {"region": "eu-west", "max_players": 100})\nGlitchless.level_start("island")                      # the map it hosts\nGlitchless.set_group("match", match_id)               # the same ID its players set\nGlitchless.set_players(n)                             # only for netcode other than the MultiplayerAPI\n```\n\n- Every 5 s a `server_window`: each physics tick\'s time (from Glitchless\'s first `_physics_process` to the next tick or the frame\'s `_process`, so the physics step is in it) against the budget, 1000 / `Engine.physics_ticks_per_second`, the ticks over it (`late`), the tick rate reached, the players connected (`multiplayer.get_peers()`) and their round trips, kbps in and out, and on Linux the process\'s memory and CPU (percent of one core). No frame windows, hitches, positions or bug reports.\n- `session_start` says the tick rate, `max_players`, the build (`dedicated` or `headless`), `region` and the host\'s OS, cores and memory. Never its address or host name.\n- Envelopes carry `role: "server"` and no player ID. A server session lasts as long as its process, cut every 6 hours (`session_end` reason `max_duration`), or one match with `"session_per_match": true` (reason `match_end`).\n- A server sends nothing until the Glitchless server says it takes server sessions (`features` in `GET /v1/health`): to an older one it sends nothing at all and says so, so its sessions never land among players\'. Unsent batches wait in `user://glitchless/server_outbox.json`, apart from a player build\'s.\n- `--server` is the flag Godot\'s docs suggest for starting a game as its server. If your game\'s `--server` means something else, pass `{"role": "player"}`.\n\n### Older servers\n\nGlitchless asks the server what it takes when `init()` runs (`GET /v1/health`). A server that predates counters gets none (the game is told once, in the log), and one that predates server mode gets nothing from a dedicated server. Properties, groups, level attributes, zones and network fields go to any server: an older one keeps them in the stored events unread.\n\n### Flags\n\nThese go after `--` on the command line, like the games\' own debug flags. A web export takes `--glitchless`, `--glitchless-debug` and `--glitchless-synthetic` from its page\'s address too (`?glitchless`), and only those: a link can\'t point a player\'s data at another server.\n\n| flag | |\n| --- | --- |\n| `--glitchless` | send from a debug build too |\n| `--glitchless-intake=URL` | send to this server instead of the one in `init()`, and turn sending on |\n| `--glitchless-measure=SECONDS` | print frame stats as one line of JSON, `{"glitchless_measure": {...}}`, then quit |\n| `--glitchless-warmup=SECONDS` | with `--glitchless-measure`: wait this long before measuring |\n| `--glitchless-out=PATH` | with `--glitchless-measure`: write the line to this file too |\n| `--glitchless-synthetic` | mark the session as a bot\'s (`--autoplay` does too) |\n| `--glitchless-server` | report as the game\'s [dedicated server](#dedicated-servers) (a bare `--server` does too) |\n| `--glitchless-debug` | print what is sent |\n\n## For agents: `--glitchless-measure`\n\n```bash\ngodot --path . -- --autoplay --seed=7 --glitchless-measure=10 | grep \'^{"glitchless_measure"\'\n```\n\nIt works in any build, sends nothing unless sending is on, and quits when done. On a device where the player turned Glitchless off it measures nothing, and the JSON holds only an `error` that says so. The fields match the browser SDK\'s `glitchless_measure`:\n\n| field | |\n| --- | --- |\n| `frame_ms` | `p50`, `p95`, `p99`, `worst` |\n| `fps`, `frame_budget_ms`, `refresh_hz`, `pct_frames_over_budget` | the budget is the refresh rate the game actually runs at (60/90/120 Hz, or its own cap), read from the fast frames (their 20th percentile); `refresh_hz` is the screen\'s rate as the OS reports it |\n| `hitches`, `hitch_count` | up to 10 hitches: `ms`, `causes`, `ctx`, `recent` events |\n| `render_cpu_ms`, `gpu_ms` | the renderer\'s time per frame; `gpu_ms` is null where the driver doesn\'t report it (Metal) |\n| `process_ms` | all the game\'s `_process` code per frame |\n| `draw_calls`, `triangles_avg` | |\n| `peak_context` | the highest value of each gauge |\n| `memory`, `memory_delta` | objects, nodes, orphan nodes, resources, video MB and static MB, now and change over the run |\n| `new_errors`, `errors` | errors during the run, grouped, with locations |\n| `level_start`, `level_end`, `headless` | under `--headless` nothing is drawn and frames run uncapped, so frame times mean little there |\n\nRun the same seed before and after a change to compare.\n\n## What it measures\n\n**Frame times** are the wall-clock time between frames, read in `_process`. The `delta` Godot passes in is smoothed (`application/run/delta_smoothing` is on by default) and scaled by `Engine.time_scale`, either of which would hide a stutter. These rules follow `packages/sdk/src/core.js`:\n\n- A **hitch** is a frame over 50 ms *and* over twice the median of the last 60.\n- **Jank** is a frame over 33.4 ms.\n- A **frozen** frame is over 700 ms.\n- A run of long frames is the OS throttling a hidden window, so it is dropped.\n- Time spent in the background is never counted as a frame.\n\n**Hitch causes** come from what the slow frame measured:\n\n| cause | when |\n| --- | --- |\n| `shader_compile` | the engine\'s pipeline-compile counters went up |\n| `scene_change` | `current_scene` changed |\n| `node_spawn` | 50 or more nodes were added |\n| `script` | `_process` code took 40% of the frame. Glitchless runs first in each frame and has a child node that runs last, so the gap between them is every other node\'s `_process` |\n| `physics` | physics steps took 40% of the frame |\n| `render` | the renderer\'s CPU and GPU time took 40% of the frame |\n| `gpu_or_os` | none of the above, and everything measured in the game (`_process`, physics, the renderer\'s CPU and GPU time) adds up to less than 40% of the frame: the time went to the GPU (Godot times it only on Vulkan and Direct3D 12, so on iPhones and the Compatibility renderer it lands here), to presenting the frame, or to the OS |\n| `frozen` | over 700 ms |\n\n**Engine counts** go in each frame window, and with `engine_gauges` they also go in `ctx`. The two say different things: the window\'s own `nodes`, `orphan_nodes` and `objects` are the counts when it closed, and `ctx` holds each gauge\'s highest value in the window. That is where the findings compare a slow level with the smoothest one: *"`orphan_nodes` sits at 2,500 for this whole level vs 0 on level_1, so objects created earlier are never cleaned up"*. Orphan nodes are nodes that were taken out of the tree and never freed, the commonest Godot leak.\n\nA frame window never spans two levels: `level_start` closes the current one.\n\n## Errors\n\nA custom `Logger` (Godot 4.5+) hears every engine and script error, on any thread. Glitchless groups them with the browser SDK\'s fingerprint, made from the kind, the message with long numbers blanked, and the function. Each error event also carries the last six game events (`recent`). The server adds breadcrumbs from the session\'s stored events.\n\n| kind | what |\n| --- | --- |\n| `script` | a GDScript runtime error, which stops the function part way. Counted as unhandled, like an uncaught JS exception |\n| `engine` | an error from the engine\'s own code, usually a bad call from a script (a missing node, a failed load). The engine\'s C++ location is the first stack line, the script lines follow |\n| `push_error` | the game\'s own `push_error()` |\n| `shader` | a shader compile error |\n| `manual` | `Glitchless.error()` |\n| `warning` | only with `capture_warnings` |\n\nPaths on the device are cut out of messages before they\'re sent: the user-data folder becomes `user://`, the user-name part of `/Users/\u2026` or `C:\\Users\\\u2026` becomes `~`, and iOS container IDs become `<id>`. Errors raised inside the addon are never reported, so a failing send can\'t feed itself. Each kind of error is sent at most 25 times per session.\n\n**Release builds catch fewer errors than debug builds.** Godot leaves most GDScript runtime checks out of release exports. This was measured with a macOS release export of Godot 4.7.2, with *Always Track Call Stacks* on:\n\n| in the game\'s code | debug build | release export |\n| --- | --- | --- |\n| `get_node()` on a missing path, `load()` of a missing file, a null argument to an engine call | `engine`, with script line | `engine`, with script line |\n| `push_error()` | `push_error` | `push_error` |\n| index out of range, missing dictionary key, missing method, call on an untyped null, divide by zero | `script` | **nothing**: the code carries on |\n| call on a *typed* null (`var n: Node = null; n.free()`) | `script` | **the game crashes** (SIGSEGV) |\n\nSo run the bots (`--autoplay --seed`) in debug builds with `--glitchless` to catch script mistakes, and let release builds report engine errors, `push_error` and performance. Native crashes are left to the platform: Xcode Organizer and App Store Connect on iOS, Android vitals in the Play Console. Glitchless sees a crash only as a session that stops without a `session_end`.\n\n## Phones: background, close, offline\n\n- **Going to the background ends the session.** iOS and Android usually stop a backgrounded app without warning, so on `NOTIFICATION_APPLICATION_PAUSED` Glitchless sends `session_end` (`reason: "background"`) at once. It waits up to 1.5 s on the network, then saves whatever didn\'t go.\n- **Coming back** within `session_timeout` carries on the same session with an `app_resume` event. A later `session_end` then replaces the first. Coming back later than that starts a new session with a new random ID.\n- **Closing** (the window\'s close button, Android\'s back button, or `get_tree().quit()`) sends `session_end` the same way.\n- **Offline**, batches are saved to `user://glitchless/outbox.json` and sent on a later launch. At most 4,000 events are kept, and anything over six days old is dropped. In anonymous mode the session ID is not saved: each earlier session\'s batches go out under a new random ID. Each batch keeps its own `batch_id` through every retry and launch, so the server stores it once even when an answer was lost on the way back.\n\n## Web exports\n\nA web export (Godot 4.5 or later, the Compatibility renderer) sends everything a desktop build does: sessions, frame windows, hitches, errors, the level funnel, bug reports with their screenshot, counters and properties (not `--glitchless-measure`: a page has no command line, so measure a desktop export). It works with *Thread Support* off, the default since Godot 4.3, and on (which needs a cross-origin-isolated page). Nothing to set up beyond the [Install](#install) steps; the differences:\n\n- **The device is the browser.** `session_start` names the player\'s browser and its major version (`Chrome`, `Safari`, `Firefox`, `Edge`, `Opera`), the OS it runs on, whether it is a phone, the page\'s screen and pixel ratio, and the GPU tier from the GPU the page names, read by the browser SDK\'s own rules, so a Godot web game splits by browser and OS like a Three.js one. Godot\'s version goes in `session_start.engine` (`{"name": "godot", "version": "4.7.2", "renderer": "webgl"}`).\n- **Where it was played.** `session_start.page` is the page\'s origin and path and the origin of the page that led there, as the browser SDK sends them (never a query string), so a board\'s `$site` and the itch.io funnel count the plays in itch.io\'s frame, a Reddit post or your own site.\n- **Hidden and closed.** Godot hears nothing as a tab is hidden or closed, and a web page can\'t wait for a request then. So Glitchless listens to the page itself: when it is hidden (another tab, the phone locked) what is waiting goes by `navigator.sendBeacon` and the session goes on; when it goes (closed, another page) the session ends with `session_end` and, with a level going, `level_abandon`, both `reason: "pagehide"`, sent by beacon too. `get_tree().quit()` sends its end the same way. A page back from the browser\'s back-forward cache carries on as a phone back from the background.\n- **Requests are `text/plain`**, as the browser SDK\'s are, so a batch needs no CORS preflight. The server reads the JSON whatever the type says.\n- **`user://` is the browser\'s IndexedDB.** The outbox, the player ID (install and full mode) and the player\'s off switch are kept there per site, so a player who turned Glitchless off stays off on their next visit, and batches a visit couldn\'t send go on the next.\n- **Debug builds** send from a page anywhere but your own machine; see [Off in debug builds](#off-in-debug-builds).\n- **The page is read without `eval`** (property by property, through `JavaScriptBridge.get_interface`), so a page whose Content-Security-Policy refuses `eval` still names the browser.\n- **In a Reddit post** (Devvit Web) the game sends to its app\'s own server, which relays to Glitchless: pass the path, `Glitchless.init("my-game", "1.0", "prod", "/api/glitchless")`, and Glitchless puts it on the page\'s origin. There what goes as the page is hidden or closed is sent by the page\'s own `fetch` with keepalive instead of a beacon, since only the page\'s fetches carry the app\'s token. The app\'s server side (`glitchless/devvit`, `devvit.json`) is in the instrument skill\'s Reddit steps and [SPEC \xA75g](../../../docs/SPEC.md#5g-games-in-a-reddit-post-devvit-web). Godot\'s export page has an inline script; if the post\'s policy refuses it, move it into a `.js` file next to the page.\n\n`npm run test:godot:web` plays the demo as a web export in Chromium, with thread support off and on, and in a Reddit-like page, and checks the above; [Limits](#limits) lists what it doesn\'t.\n\n## What it costs\n\nIt isn\'t a profiler: it hooks no functions and runs no engine profiler. Each frame it reads the frame\'s wall-clock time and a few counters Godot already keeps (draw calls, primitives, nodes, pipeline compiles, the renderer\'s time), and adds them to a fixed-size summary. Measured with [test/overhead.gd](../../test/overhead.gd) on Godot 4.7.2, a debug build on an Apple M3 Max:\n\n| | How often | Time on the main thread |\n| --- | --- | --- |\n| The frame\'s work | every frame | about 5.6 \xB5s, 0.03% of a 60 fps frame |\n| Closing a window into one summary | every 5 seconds | about 30 \xB5s |\n| A flush: the window and events become a batch | every 15 seconds | about 70 \xB5s (0.5 ms the first time) |\n| Saving the outbox with 3,900 events waiting, offline | every 15 seconds while offline | about 0.4 ms |\n\n- **The outbox file is written on a worker thread**, so no frame waits on the disk, and each batch is turned into JSON once, however many times the outbox is saved or the batch is sent. Closing and going to the background write it at once instead, since the OS may stop the game before a worker finishes. A web export writes it at once too: its `user://` is in memory, copied to IndexedDB after the frame.\n- **A phone is slower**, often several times per operation. Run the script on your own hardware: `godot --headless --path godot --script res://test/overhead.gd`.\n- `measure_render_time: false` turns off the renderer timing (Godot\'s own `viewport_set_measure_render_time`).\n\n## What goes on the wire\n\n`POST {intake}/v1/intake?token=\u2026` with the browser SDK\'s envelope and `sdk: "glitchless-godot/0.6.8"`. Event types and core fields are the same; see [docs/SPEC.md](../../../docs/SPEC.md#5-godot-sdk) for what the Godot SDK adds. The browser fields it can\'t fill (`geometries`, `textures`, `programs`, `page`, `loaf`) are sent as null or empty.\n\n## Limits\n\n- **Godot 4.5 or later.** The `Logger` class came in 4.5.\n- **The server:**\n  - GDScript runtime errors count as unhandled because `server/src/analytics.js` treats kind `script` like `js`.\n  - Deaths sent without a place, as anonymous mode sends them, are left off heatmaps and hotspot findings.\n  - The memory-leak finding still reads three.js geometry counts. Godot leaks show through the `orphan_nodes` and `nodes` gauges instead.\n  - Fix suggestions in findings are written for three.js.\n- **Web exports** are checked in Chromium on macOS (Godot 4.7.2, thread support off and on, `npm run test:godot:web`), with the page hidden by its `visibilitychange` event and left by navigating away. Not checked: Safari, Firefox, browsers on phones, closing a real tab, a page back from the back-forward cache, and itch.io\'s frame. WebSocket disconnects and their close codes were checked in desktop builds, not in a browser.\n- **A cross-origin-isolated page** (thread support on) logs a blocked answer for each beacon to a Glitchless server older than November 2026, which doesn\'t send `Cross-Origin-Resource-Policy`. The batch still arrives.\n- **Network:** Godot can\'t tell Wi-Fi from mobile data, so `net.link` is null. Only ENet gives a round trip; WebRTC and WebSocket need `net_sample()`.\n- **Dedicated servers:** a server\'s memory and CPU come from `/proc/self` on Linux; elsewhere memory is the engine\'s static memory (debug builds only) and CPU is null. `net_objects` is null: Godot doesn\'t count replicated objects.\n- Sending uses `HTTPRequest` while the game runs and a blocking `HTTPClient` for the last batch, which has no frames left to finish an `HTTPRequest` (a web export beacons it). A batch the server received just before a close can arrive twice.\n\n## Tests\n\nFrom the repo root:\n\n- `npm run test:godot` runs the demo game (`godot/demo`) headless against a fresh local server and checks everything above through `/v1/query`. It covers offline saving, anonymous and full mode, errors, background and resume, `--glitchless-measure`, and bug reports: one from code, one typed into the F8 form (key presses pushed into the viewport) and one sent offline. It first runs `test/bug_report_test.gd`, which checks the screenshot shrinking, the slimmed events and the hotkey names, `test/genre_test.gd` (counters, properties and their checks, groups and hashed IDs, level attributes and zones, network samples and disconnects, server windows) and `test/off_switch_test.gd` (the player\'s off switch). Then it plays `test/net/net_game.tscn` as an ENet server (`--server`) and a client against a fake intake: the server is frozen so the client times out, kicks it, and the client leaves, so every payload of the additions is checked, and once more against an intake that lists no features, as an older server does. Last, it plays the demo with the off switch (`--off-at`, `--on-at`, `--opt-in`) against a fake intake that keeps every request: off and back on mid-run, off while offline, a launch with the choice saved as off, `opt_in`, and a debug build.\n- `npm run test:godot` then runs `test/web.mjs` (`npm run test:godot:web` on its own; it needs Godot\'s Web export templates and Playwright\'s Chromium). It first checks that `web_page.gd` reads user agents, GPUs and Steam Decks as the browser SDK\'s `device.js` does (`test/web_page_test.gd`). Then it exports the demo for the web, debug, with thread support off and on, plays both in Chromium against a fresh local server and checks what arrives: the session as Chrome on its OS, frame windows, errors, a bug report, `text/plain` with no preflight, the beacon as the page is hidden and the session\'s end as it goes, `get_tree().quit()`, the debug rule on this machine and on a page elsewhere, and the off switch and the outbox kept in IndexedDB from one visit to the next.\n- `npm test` includes `server/test/godot.test.js`. It checks that the GDScript sketch buckets every frame time like the JavaScript one, and that the server merges the two.\n'
@@ -38962,24 +38962,37 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
     );
     act(
       "glitchless_share_links",
-      `A game's read-only share links to its boards: for a dev log, Discord, a publisher, or a game's own "Live stats" link. With page: makes one to that board page, which anyone with it sees, and nothing else, signed out; no expiry unless days is set; sums (revenue, totals) show only with sums: true; the link is shown once. With revoke: that link stops working at once, for everyone who has it. With neither: lists them, with the page each shows, when it expires, when it was last opened (to about ten minutes) and whether it's revoked. Ask the person before making or revoking one.`,
+      `A game's read-only share links to its boards: for a dev log, Discord, a publisher, or a game's own "Live stats" link. With page: makes one to that board page, which anyone with it sees, and nothing else, signed out; no expiry unless days is set; sums (revenue, totals) show only with sums: true; the link is shown once. A share link counts players' sessions only, never bots'. With page and claim: true: a claim link instead, for a game the team made for someone else (bots played a game they posted): its creator opens it, sees that board read only (bots' sessions counted, since they're all the game has) and, signed in or signed up, moves the game into a workspace of their own with its data and dashboard. It works once, expires after days (1, 7, 30 or 90; default 30), and at most 5 can be live per game; not for the demo game. Claiming revokes every key and link the game had, this workspace's keys too, and the game leaves this workspace; its creator gets a new client token. engine (the game's) picks the setup sentence the claim page shows them; promo (a running code such as JAM26) goes on their workspace when they sign up. With revoke: that link (share or claim) stops working at once, for everyone who has it. With neither: lists them all, with kind (share or claim), the page each shows, when it expires, when it was last opened (to about ten minutes) and whether it's revoked or claimed. Ask the person before making or revoking one.`,
       {
         page: external_exports.string().optional().describe("Make a link to this board page (glitchless_dashboard lists their ids)"),
         service: external_exports.string().optional().describe("With page: the game's service (default: its most recently active one)"),
         name: external_exports.string().optional().describe('With page: what the link is for, e.g. "Dev log"'),
-        days: external_exports.number().optional().describe("With page: expire after 1, 7, 30, 90 or 365 days"),
-        sums: external_exports.boolean().optional().describe("With page: show sums such as revenue"),
+        days: external_exports.number().optional().describe("With page: expire after 1, 7, 30, 90 or 365 days (a claim link: 1, 7, 30 or 90, default 30)"),
+        sums: external_exports.boolean().optional().describe("With page: show sums such as revenue (not on a claim link)"),
+        claim: external_exports.boolean().optional().describe("With page: make a claim link, which moves the game to its creator's own workspace"),
+        engine: external_exports.enum(ENGINES.map((e) => e.id)).optional().describe("With claim: the game's engine, for the setup sentence its creator is shown"),
+        promo: external_exports.string().optional().describe(`With claim: a running promo code, e.g. "JAM26", put on the creator's workspace when they sign up`),
         revoke: external_exports.string().optional().describe("Revoke the link with this id (from the list)")
       },
-      async ({ page, service, name, days, sums, revoke, game }) => {
+      async ({ page, service, name, days, sums, claim: claim2, engine, promo, revoke, game }) => {
         const pid = await projectFor(game);
         if (page && revoke) throw new Error("make a link (page) or revoke one (revoke), not both at once");
         if (revoke) {
           await agent("DELETE", `/games/${pid}/shares/${encodeURIComponent(revoke)}`);
           return reply(`Revoked ${revoke}: it stopped working for everyone who has it.`, {});
         }
-        if (!page) return reply("Share links:", (await agent("GET", `/games/${pid}/shares`)).shares);
+        if (!page) {
+          if (claim2 || engine || promo) throw new Error("a claim link needs the board page it shows: pass page (glitchless_dashboard lists their ids)");
+          return reply("Share links and claim links:", (await agent("GET", `/games/${pid}/shares`)).shares);
+        }
         const svc = await resolveService(service);
+        if (claim2) {
+          if (sums) throw new Error("a claim link shows no sums: leave sums out");
+          const out2 = await agent("POST", `/games/${pid}/shares`, { kind: "claim", service: svc, page, name, days, engine, promo });
+          return reply(`Claim link to ${svc}'s "${page}" page (shown once, works once, until ${out2.share.expiresAt.slice(0, 10)}). Whoever claims it takes the game into their own workspace, and this workspace loses it:
+${out2.url}`, out2.share);
+        }
+        if (engine || promo) throw new Error("engine and promo are for a claim link: add claim: true");
         const out = await agent("POST", `/games/${pid}/shares`, { service: svc, page, name, days, sums: sums === true });
         return reply(`Share link to ${svc}'s "${page}" page (shown once):
 ${out.url}`, out.share);
@@ -39784,9 +39797,9 @@ async function runScenarios(cfg, { scenarios = cfg.scenarios, game = cfg.game, l
       await page.waitForTimeout(1e3);
       await ctx.close();
       service ||= info.service;
-      const seconds = Math.round((Date.now() - t0) / 1e3);
-      results.push({ scenario: sc.name || null, params: sc.params, session_id: info.session, game_version: info.version, seconds, finished, events_failed: info.failed || 0 });
-      log(`  \u2192 ${info.session} \xB7 ${seconds}s${finished ? "" : " (hit the time cap)"}${info.failed ? ` \xB7 ${info.failed} events failed to send` : ""}`);
+      const seconds2 = Math.round((Date.now() - t0) / 1e3);
+      results.push({ scenario: sc.name || null, params: sc.params, session_id: info.session, game_version: info.version, seconds: seconds2, finished, events_failed: info.failed || 0 });
+      log(`  \u2192 ${info.session} \xB7 ${seconds2}s${finished ? "" : " (hit the time cap)"}${info.failed ? ` \xB7 ${info.failed} events failed to send` : ""}`);
     }
   } finally {
     await browser.close();
@@ -39975,9 +39988,9 @@ return if (${sc.done_when || cfg.done_when || ROBLOX_DONE_WHEN}) then ${MARK("tr
   }
   const output2 = await mcp.tool("get_console_output", { studio_id: studio.id }).catch(() => "");
   const glitchless = output2.split("\n").filter((l) => l.includes("[glitchless]")).slice(0, 12);
-  const seconds = Math.round((Date.now() - started) / 1e3);
-  log(`  \u2192 ${seconds}s${finished ? "" : " (hit the time cap)"}`);
-  return { scenario: sc.name || null, params, started, ended: Date.now(), seconds, finished, glitchless };
+  const seconds2 = Math.round((Date.now() - started) / 1e3);
+  log(`  \u2192 ${seconds2}s${finished ? "" : " (hit the time cap)"}`);
+  return { scenario: sc.name || null, params, started, ended: Date.now(), seconds: seconds2, finished, glitchless };
 }
 async function sessionsOf(cfg, service, from, to) {
   const base2 = cfg.server.replace(/\/$/, "");
@@ -40334,8 +40347,8 @@ function scenarioArgs(engine, base2, sc, { out } = {}) {
 }
 function engineScenario(sc, engine, cfg) {
   const warmup = sc.warmup ?? cfg.warmup ?? ENGINES2[engine]?.warmup ?? 1;
-  const seconds = sc.seconds ?? cfg.seconds ?? 10;
-  return { ...sc, seconds, warmup, max_s: sc.max_s ?? warmup + seconds + 120 };
+  const seconds2 = sc.seconds ?? cfg.seconds ?? 10;
+  return { ...sc, seconds: seconds2, warmup, max_s: sc.max_s ?? warmup + seconds2 + 120 };
 }
 function runBuild(argv, { cwd, timeoutMs }) {
   return new Promise((resolve2, reject) => {
@@ -40847,6 +40860,1516 @@ var init_runs = __esm({
   }
 });
 
+// ../playtest/src/check-page.js
+function checkInitScript({ sdk, init }) {
+  return `${sdk}
+;(${pageWatch.toString()})(${JSON.stringify(init)});`;
+}
+function pageWatch(init) {
+  if (window.top !== window || window.__GLITCHLESS_CHECK__) return;
+  const W = window.__GLITCHLESS_CHECK__ = { contexts: [], draws: 0, adapters: [], adapterErrors: [], three: { renderers: [], scenes: [], revision: null }, dts: [], labels: {}, buttons: {}, started: performance.now() };
+  let gd = null;
+  try {
+    gd = window.Glitchless.init(init.glitchless);
+  } catch (err) {
+    W.initError = String(err?.message || err);
+  }
+  const canvases = [];
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function(type, attrs) {
+    const ctx = getContext.call(this, type, attrs);
+    if (ctx && !canvases.some((c) => c.canvas === this)) canvases.push({ canvas: this, type: String(type).toLowerCase() });
+    return ctx;
+  };
+  for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+    if (!C) continue;
+    for (const name of ["drawArrays", "drawElements", "drawArraysInstanced", "drawElementsInstanced", "drawRangeElements"]) {
+      const fn = C.prototype[name];
+      if (typeof fn !== "function") continue;
+      C.prototype[name] = function() {
+        W.draws++;
+        return fn.apply(this, arguments);
+      };
+    }
+  }
+  if (navigator.gpu?.requestAdapter) {
+    const request = navigator.gpu.requestAdapter.bind(navigator.gpu);
+    navigator.gpu.requestAdapter = (...a) => {
+      W.webgpu = true;
+      return request(...a);
+    };
+  }
+  let last = 0;
+  let drawsAt = 0;
+  W.drawFrames = [];
+  const raf = (now) => {
+    if (last && !document.hidden) {
+      W.dts.push(now - last);
+      if (W.dts.length > 4e3) W.dts.splice(0, 2e3);
+      W.drawFrames.push(W.draws - drawsAt);
+      if (W.drawFrames.length > 4e3) W.drawFrames.splice(0, 2e3);
+    }
+    drawsAt = W.draws;
+    last = now;
+    requestAnimationFrame(raf);
+  };
+  requestAnimationFrame(raf);
+  const devtools = window.__THREE_DEVTOOLS__ instanceof EventTarget ? window.__THREE_DEVTOOLS__ : new EventTarget();
+  if (!window.__THREE_DEVTOOLS__) window.__THREE_DEVTOOLS__ = devtools;
+  devtools.addEventListener("register", (e) => W.three.revision = e.detail?.revision ?? W.three.revision);
+  devtools.addEventListener("observe", (e) => {
+    const o = e.detail;
+    if (o?.isScene) W.three.scenes.push(o);
+    else if (o && typeof o.render === "function" && o.domElement) W.three.renderers.push(o);
+    attach();
+  });
+  let phaser = window.Phaser;
+  const wrapPhaser = (P) => {
+    if (!P?.Game || P.Game.__glitchlessCheck) return;
+    try {
+      const Game = P.Game;
+      const wrapped = new Proxy(Game, {
+        construct(target, args, newTarget) {
+          const game = Reflect.construct(target, args, newTarget === wrapped ? target : newTarget);
+          W.phaserGame = game;
+          attach();
+          return game;
+        }
+      });
+      wrapped.__glitchlessCheck = true;
+      P.Game = wrapped;
+    } catch {
+    }
+  };
+  try {
+    Object.defineProperty(window, "Phaser", {
+      configurable: true,
+      enumerable: true,
+      get: () => phaser,
+      set: (v) => {
+        phaser = v;
+        wrapPhaser(v);
+      }
+    });
+  } catch {
+  }
+  const adapt = (name, fn) => {
+    if (init.adapters === false || !gd || W.adapters.includes(name)) return;
+    try {
+      fn();
+      W.adapters.push(name);
+    } catch (err) {
+      W.adapterErrors.push(`${name}: ${String(err?.message || err).slice(0, 160)}`);
+    }
+  };
+  function attach() {
+    const G = window.Glitchless;
+    if (W.three.renderers.length) adapt("three", () => G.instrumentThree(gd, { renderer: W.three.renderers[0], scene: W.three.scenes[0] }));
+    const game = W.phaserGame || (window.game?.scene && window.game?.events ? window.game : null);
+    if (game) adapt("phaser", () => G.instrumentPhaser(gd, { game, Phaser: phaser }));
+    const B = window.BABYLON;
+    const engine = B?.EngineStore?.Instances?.[0] || B?.Engine?.Instances?.[0];
+    if (engine?.scenes?.length) adapt("babylon", () => G.instrumentBabylon(gd, { engine, scene: engine.scenes[0], BABYLON: B }));
+    const pc = window.pc;
+    const app = pc?.app || pc?.Application?.getApplication?.() || pc?.AppBase?.getApplication?.();
+    if (app?.graphicsDevice) adapt("playcanvas", () => G.instrumentPlayCanvas(gd, { app, pc }));
+  }
+  let looks = 0;
+  const look = setInterval(() => {
+    attach();
+    if (++looks >= 30) clearInterval(look);
+  }, 1e3);
+  W.read = () => {
+    const engines = [];
+    const add2 = (name, version2) => engines.push({ name, version: version2 == null ? null : String(version2) });
+    const global = (name) => {
+      try {
+        return (0, eval)(`typeof ${name} === 'undefined' ? undefined : ${name}`);
+      } catch {
+        return void 0;
+      }
+    };
+    const has = (name) => global(name) !== void 0;
+    const scripts = [...document.scripts].map((s) => s.src || "").join(" ");
+    if (W.three.revision || window.__THREE__ || W.three.renderers.length) add2("three", W.three.revision || window.__THREE__ || null);
+    if (phaser?.VERSION) add2("phaser", phaser.VERSION);
+    if (window.BABYLON) add2("babylon", window.BABYLON.Engine?.Version);
+    if (window.pc?.Application || window.pc?.AppBase) add2("playcanvas", window.pc.version);
+    if (has("createUnityInstance") || window.unityInstance || has("UnityLoader") || /\.loader\.js|UnityLoader\.js|\.framework\.js/.test(scripts) || document.querySelector("#unity-canvas, #unity-container")) add2("unity", window.unityInstance?.Module?.unityVersion);
+    if (has("GODOT_CONFIG") || typeof global("Engine")?.isWebGLAvailable === "function") add2("godot", null);
+    if (has("GameMaker_Init") || /game\.js.*html5game|html5game\//.test(scripts)) add2("gamemaker", null);
+    if (window.C3_RuntimeInterface || has("cr_getC2Runtime") || /c3runtime|c2runtime/.test(scripts)) add2("construct", null);
+    if (window.gdjs) add2("gdevelop", null);
+    if (has("EngineLoader") || /dmloader\.js/.test(scripts)) add2("defold", null);
+    if (window.PIXI || window.__PIXI_APP__) add2("pixi", window.PIXI?.VERSION);
+    if (window.pico8_buttons) add2("pico-8", null);
+    if (window.kaplay || window.kaboom) add2("kaplay", null);
+    if (window.Utils?.RPGMAKER_NAME) add2(`rpg maker ${window.Utils.RPGMAKER_NAME}`, window.Utils.RPGMAKER_VERSION);
+    if (window.RufflePlayer) add2("ruffle", null);
+    if (!engines.length && window.Module?.HEAPU8) add2("emscripten", null);
+    const visible = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 2 && r.height > 2 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth && getComputedStyle(el).visibility !== "hidden";
+    };
+    const area = (el) => {
+      const r = el.getBoundingClientRect();
+      return Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+    };
+    const shown = canvases.filter((c) => document.contains(c.canvas) && visible(c.canvas)).sort((a, b) => area(b.canvas) - area(a.canvas));
+    const main = shown[0];
+    const rect = main ? main.canvas.getBoundingClientRect() : null;
+    const frames = [...document.querySelectorAll("iframe")].filter(visible).sort((a, b) => area(b) - area(a));
+    const frame = frames[0] && area(frames[0]) > innerWidth * innerHeight * 0.25 ? frames[0] : null;
+    const text2 = (document.body?.innerText || "").slice(0, 2e4);
+    const now = [];
+    for (const m of text2.matchAll(/\b(level|lvl|wave|stage|round|world|floor|day|chapter|act|zone|room)\s*:?\s*(\d{1,3})\b/gi)) {
+      const label3 = `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}`;
+      W.labels[label3] = (W.labels[label3] || 0) + 1;
+      if (!now.includes(label3)) now.push(label3);
+    }
+    for (const b of document.querySelectorAll("button, [role=button], input[type=button], input[type=submit], a")) {
+      const t = (b.innerText || b.value || "").trim().replace(/\s+/g, " ");
+      if (t && t.length <= 32 && visible(b)) W.buttons[t] = (W.buttons[t] || 0) + 1;
+    }
+    return {
+      title: document.title || null,
+      engines,
+      adapters: W.adapters,
+      adapter_errors: W.adapterErrors,
+      init_error: W.initError || null,
+      contexts: [...new Set(canvases.filter((c) => document.contains(c.canvas)).map((c) => c.type))],
+      webgpu: !!W.webgpu,
+      canvas: main ? { type: main.type, x: rect.left, y: rect.top, width: rect.width, height: rect.height, pixels: [main.canvas.width, main.canvas.height] } : null,
+      frame: frame && !main ? { src: frame.src, ...JSON.parse(JSON.stringify(frame.getBoundingClientRect())) } : null,
+      labels: W.labels,
+      screen_labels: now,
+      buttons: W.buttons,
+      heap_mb: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+      session: gd?.sessionId || null,
+      level: gd?.level ?? null,
+      sdk_engine: gd?.engine?.name || null,
+      sent: gd?.stats?.sent ?? 0,
+      failed: gd?.stats?.failed ?? 0
+    };
+  };
+  W.area = () => {
+    let best = null;
+    let size = 0;
+    for (const c of canvases) {
+      if (!c.canvas.isConnected) continue;
+      const r = c.canvas.getBoundingClientRect();
+      const a = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0));
+      if (a > size) [best, size] = [r, a];
+    }
+    return best ? { x: best.left, y: best.top, width: best.width, height: best.height } : null;
+  };
+  W.take = () => {
+    const xs = W.dts.splice(0).sort((a, b) => a - b);
+    const draws = W.drawFrames.splice(0);
+    const budget = gd?.budgetMs || 1e3 / 60;
+    const q = (p) => xs.length ? Math.round(xs[Math.min(xs.length - 1, Math.floor(p * xs.length))] * 10) / 10 : null;
+    const drawn = draws.filter((d) => d > 0);
+    return { n: xs.length, late: xs.filter((x) => x > budget * 1.15).length, p50: q(0.5), p95: q(0.95), max: xs.length ? Math.round(xs[xs.length - 1]) : null, draws: drawn.length ? Math.round(drawn.reduce((a, b) => a + b, 0) / drawn.length) : null };
+  };
+  W.step = (attrs) => {
+    try {
+      gd?.track("glitchless_check", attrs);
+    } catch {
+    }
+  };
+}
+var init_check_page = __esm({
+  "../playtest/src/check-page.js"() {
+  }
+});
+
+// ../playtest/src/check-site.js
+function itchPage(url2) {
+  try {
+    const u = new URL(url2);
+    return /^[a-z0-9-]+\.itch\.io$/i.test(u.hostname) && /^\/[^/]+\/?$/.test(u.pathname) ? u : null;
+  } catch {
+    return null;
+  }
+}
+function itchFrame(html, pageUrl) {
+  const title = decode3(html.match(/<h1[^>]*class="[^"]*game_title[^"]*"[^>]*>([^<]+)</)?.[1] || html.match(/<title>([^<]+?)(?: by [^<]+)?<\/title>/)?.[1] || "").trim() || null;
+  if (/class="[^"]*password_form|This page is password protected/i.test(html)) return { error: `the itch.io page ${pageUrl} is password-protected, so a bot can't open it`, title };
+  const frameRe = /(?:https?:)?\/\/html(?:-classic)?\.itch\.zone\/html\/\d+\/[^"'\s<>\\]+/;
+  const iframe = html.match(/<iframe[^>]+src="((?:https?:)?\/\/html(?:-classic)?\.itch\.zone\/[^"]+)"/)?.[1];
+  const placeholder = html.match(/data-iframe="([^"]+)"/)?.[1];
+  const inScript = decode3(html).match(frameRe)?.[0];
+  let src = iframe || placeholder && decode3(placeholder).match(frameRe)?.[0] || inScript;
+  if (!src) return { error: `the itch.io page ${pageUrl} has nothing that plays in a browser (its game is a download)`, title };
+  src = decode3(src);
+  if (src.startsWith("//")) src = `https:${src}`;
+  const frame = html.match(/<div[^>]*class="[^"]*game_frame[^"]*"[^>]*>/)?.[0] || "";
+  const num = (k) => Number(frame.match(new RegExp(`data-${k}="(\\d+)"`))?.[1] || html.match(new RegExp(`"${k}":\\s*(\\d+)`))?.[1]) || null;
+  return { frame_url: src, width: num("width"), height: num("height"), title };
+}
+function robotsAllow(text2, agent2, path20) {
+  const groups = [];
+  let current = null;
+  let lastWasAgent = false;
+  for (const raw of String(text2 || "").split(/\r?\n/)) {
+    const line = raw.replace(/#.*/, "").trim();
+    const m = line.match(/^([a-z-]+)\s*:\s*(.*)$/i);
+    if (!m) continue;
+    const [key, value] = [m[1].toLowerCase(), m[2].trim()];
+    if (key === "user-agent") {
+      if (!lastWasAgent) groups.push(current = { agents: [], rules: [] });
+      current.agents.push(value.toLowerCase());
+      lastWasAgent = true;
+    } else if ((key === "allow" || key === "disallow") && current) {
+      lastWasAgent = false;
+      if (value) current.rules.push({ allow: key === "allow", path: value });
+    } else lastWasAgent = false;
+  }
+  const name = agent2.toLowerCase();
+  const mine = groups.filter((g) => g.agents.some((a) => a !== "*" && name.includes(a)));
+  const rules = (mine.length ? mine : groups.filter((g) => g.agents.includes("*"))).flatMap((g) => g.rules);
+  const esc2 = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let best = null;
+  for (const r of rules) {
+    const anchored = r.path.endsWith("$");
+    const re = new RegExp(`^${(anchored ? r.path.slice(0, -1) : r.path).split("*").map(esc2).join(".*")}${anchored ? "$" : ""}`);
+    if (!re.test(path20)) continue;
+    if (!best || r.path.length > best.path.length || r.path.length === best.path.length && r.allow) best = r;
+  }
+  return best ? best.allow : true;
+}
+function refusal({ status: status2, headers: headers2 = {}, title = "", body: body2 = "" }) {
+  const h = (k) => headers2[k] ?? headers2[k.toLowerCase()];
+  if (status2 === 401 || status2 === 403) return `the site answered ${status2} (it refuses this visit)`;
+  if (status2 === 429) return "the site answered 429 (too many requests): it is limiting bots";
+  if (h("cf-mitigated") === "challenge") return "the site checks for a human first (a Cloudflare challenge)";
+  const words = `${title} ${String(body2).slice(0, 4e3)}`;
+  if (/just a moment\.\.\.|attention required|verify you are (a )?human|are you a robot|captcha|checking your browser/i.test(words)) return "the site checks for a human first (a challenge or CAPTCHA)";
+  return null;
+}
+async function robotsCheck(url2, { fetch: fetch2 = globalThis.fetch, ua, cache = /* @__PURE__ */ new Map() } = {}) {
+  const u = new URL(url2);
+  const at = `${u.origin}/robots.txt`;
+  if (!cache.has(at)) {
+    const text2 = await fetch2(at, { headers: { "user-agent": ua }, redirect: "follow", signal: AbortSignal.timeout(1e4) }).then(async (r) => r.ok && /text\/plain/.test(r.headers.get("content-type") || "text/plain") ? r.text() : "").catch(() => "");
+    cache.set(at, text2);
+  }
+  return { allowed: robotsAllow(cache.get(at), CHECK_AGENT, `${u.pathname}${u.search}`), rules_url: at };
+}
+async function resolveGame(url2, { fetch: fetch2 = globalThis.fetch, ua, log = () => {
+}, robots = /* @__PURE__ */ new Map() } = {}) {
+  let u;
+  try {
+    u = new URL(/^https?:\/\//i.test(url2) ? url2 : `https://${url2}`);
+  } catch {
+    throw new Error(`"${url2}" is not a web address: give the game's page, such as https://someone.itch.io/their-game`);
+  }
+  if (!["http:", "https:"].includes(u.protocol)) throw new Error(`only http and https addresses can be checked, not ${u.protocol}`);
+  const page = u.toString();
+  const robotsPage = await robotsCheck(page, { fetch: fetch2, ua, cache: robots });
+  if (!robotsPage.allowed) throw new Error(`${robotsPage.rules_url} asks bots not to visit ${u.pathname}, so the check stops here`);
+  const itch = itchPage(page);
+  if (!itch) return { page_url: page, play_url: page, title: null, size: null, site: siteOf(u.hostname), referer: null };
+  log(`reading the itch.io page ${page}`);
+  const res = await fetch2(page, { headers: { "user-agent": ua }, redirect: "follow", signal: AbortSignal.timeout(2e4) });
+  const html = await res.text();
+  const refused = refusal({ status: res.status, headers: Object.fromEntries(res.headers), body: html, title: html.match(/<title>([^<]*)/)?.[1] });
+  if (refused) throw new Error(`${page}: ${refused}, so the check stops here`);
+  if (res.status === 404) throw new Error(`there is no itch.io page at ${page} (404): is it public, or a draft that needs its secret link?`);
+  if (!res.ok) throw new Error(`${page} answered HTTP ${res.status}`);
+  const found = itchFrame(html, page);
+  if (found.error) throw new Error(found.error);
+  const robotsFrame = await robotsCheck(found.frame_url, { fetch: fetch2, ua, cache: robots });
+  if (!robotsFrame.allowed) throw new Error(`${robotsFrame.rules_url} asks bots not to load the game's frame, so the check stops here`);
+  return { page_url: page, play_url: found.frame_url, title: found.title, size: found.width && found.height ? { width: found.width, height: found.height } : null, site: "itch.io", referer: page };
+}
+function siteOf(host) {
+  const h = String(host).toLowerCase();
+  const sites = [
+    ["itch.zone", "itch.io"],
+    ["itch.io", "itch.io"],
+    ["github.io", "GitHub Pages"],
+    ["vercel.app", "Vercel"],
+    ["netlify.app", "Netlify"],
+    ["pages.dev", "Cloudflare Pages"],
+    ["web.app", "Firebase Hosting"],
+    ["firebaseapp.com", "Firebase Hosting"],
+    ["glitch.me", "Glitch"],
+    ["replit.app", "Replit"],
+    ["surge.sh", "Surge"],
+    ["newgrounds.com", "Newgrounds"],
+    ["crazygames.com", "CrazyGames"]
+  ];
+  if (h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h.endsWith(".localhost")) return "this computer";
+  return sites.find(([suffix]) => h === suffix || h.endsWith(`.${suffix}`))?.[1] ?? h.replace(/^www\./, "");
+}
+var CHECK_AGENT, CHECK_UA_SUFFIX, decode3;
+var init_check_site = __esm({
+  "../playtest/src/check-site.js"() {
+    CHECK_AGENT = "GlitchlessCheck";
+    CHECK_UA_SUFFIX = `${CHECK_AGENT}/1.0 (+https://www.glitchless.gg)`;
+    decode3 = (s) => String(s).replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/\\\//g, "/");
+  }
+});
+
+// ../playtest/src/check-bot.js
+import zlib from "node:zlib";
+import { createRequire as createRequire2 } from "node:module";
+import path10 from "node:path";
+import { pathToFileURL as pathToFileURL2 } from "node:url";
+function profileWords(p) {
+  if (p.name === "phone") return `a throttled phone: this computer with its CPU slowed ${p.cpu}\xD7, a ${p.viewport.width}\xD7${p.viewport.height} touch screen and a 4G-like connection (9 Mbps, 60 ms)`;
+  return `desktop Chrome on this computer's own GPU, at ${p.viewport.width}\xD7${p.viewport.height}`;
+}
+function random(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = a + 1831565813 >>> 0;
+    let t = a;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function decodePng(buf) {
+  if (!Buffer.isBuffer(buf) || buf.readUInt32BE(0) !== 2303741511) return null;
+  let off = 8;
+  let width = 0;
+  let height = 0;
+  let depth = 0;
+  let type = 0;
+  let interlace = 0;
+  const idat = [];
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off);
+    const kind = buf.toString("ascii", off + 4, off + 8);
+    const data = buf.subarray(off + 8, off + 8 + len);
+    if (kind === "IHDR") [width, height, depth, type, interlace] = [data.readUInt32BE(0), data.readUInt32BE(4), data[8], data[9], data[12]];
+    else if (kind === "IDAT") idat.push(data);
+    else if (kind === "IEND") break;
+    off += 12 + len;
+  }
+  const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[type];
+  if (!width || !height || depth !== 8 || !channels || interlace) return null;
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * channels;
+  const out = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? out[y * stride + x - channels] : 0;
+      const b = y ? out[(y - 1) * stride + x] : 0;
+      const c = x >= channels && y ? out[(y - 1) * stride + x - channels] : 0;
+      let v = line[x];
+      if (filter === 1) v += a;
+      else if (filter === 2) v += b;
+      else if (filter === 3) v += a + b >> 1;
+      else if (filter === 4) {
+        const p = a + b - c;
+        const [pa, pb, pc] = [Math.abs(p - a), Math.abs(p - b), Math.abs(p - c)];
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      out[y * stride + x] = v & 255;
+    }
+  }
+  const gray = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    const p = i * channels;
+    gray[i] = channels >= 3 ? (out[p] * 3 + out[p + 1] * 6 + out[p + 2]) / 10 : out[p];
+  }
+  return { width, height, gray };
+}
+function screenChange(a, b) {
+  if (!a || !b || a.width !== b.width || a.height !== b.height) return null;
+  let changed = 0;
+  for (let i = 0; i < a.gray.length; i++) if (Math.abs(a.gray[i] - b.gray[i]) > 12) changed++;
+  return Math.round(changed / a.gray.length * 1e4) / 1e4;
+}
+async function explore(page, { profile, seconds: seconds2, cdp, area, shot, ai = null, seed = 7, log = () => {
+} }) {
+  const rand = random(seed);
+  const touch = !!profile.touch;
+  const inputs = touch ? PHONE_INPUTS : DESKTOP_INPUTS;
+  const t0 = Date.now();
+  const elapsed = () => Math.round((Date.now() - t0) / 100) / 10;
+  const steps = [];
+  const notes = [];
+  const shots = [];
+  const tried = new Map(inputs.map((i) => [i.name, { tries: 0, moved: 0, change: 0 }]));
+  const small = async () => {
+    const r = await area();
+    if (!r || r.width < 4 || r.height < 4) return null;
+    const scale = Math.min(1, 192 / (r.width * (profile.deviceScaleFactor || 1)));
+    const { data } = await cdp.send("Page.captureScreenshot", { format: "png", clip: { x: r.x, y: r.y, width: r.width, height: r.height, scale }, captureBeyondViewport: false }).catch(() => ({}));
+    return data ? decodePng(Buffer.from(data, "base64")) : null;
+  };
+  const point = async (fx, fy) => {
+    const r = await area();
+    return { x: r.x + r.width * Math.min(0.97, Math.max(0.03, fx)), y: r.y + r.height * Math.min(0.97, Math.max(0.03, fy)) };
+  };
+  const tapAt = async (p) => touch ? page.touchscreen.tap(p.x, p.y) : page.mouse.click(p.x, p.y);
+  const touchDrag = async (a, b, ms) => {
+    const n = 8;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: a.x, y: a.y }] });
+    for (let i = 1; i <= n; i++) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }] });
+      await page.waitForTimeout(ms / n);
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  const io = {
+    keys: async (seq) => {
+      for (const [key, ms] of seq) {
+        if (ms) {
+          await page.keyboard.down(key);
+          await page.waitForTimeout(ms);
+          await page.keyboard.up(key);
+        } else await page.keyboard.press(key);
+        await page.waitForTimeout(120);
+      }
+    },
+    mouse: async (n) => {
+      for (let i = 0; i < n; i++) {
+        const p = await point(rand(), rand());
+        await page.mouse.move(p.x, p.y, { steps: 6 });
+        await page.mouse.click(p.x, p.y);
+        await page.waitForTimeout(250);
+      }
+    },
+    drags: async (n) => {
+      for (let i = 0; i < n; i++) {
+        const a = await point(0.3 + rand() * 0.4, 0.4 + rand() * 0.3);
+        const b = await point(rand(), rand());
+        if (touch) await touchDrag(a, b, 500);
+        else {
+          await page.mouse.move(a.x, a.y);
+          await page.mouse.down();
+          await page.mouse.move(b.x, b.y, { steps: 12 });
+          await page.mouse.up();
+        }
+        await page.waitForTimeout(200);
+      }
+    },
+    taps: async (n) => {
+      for (let i = 0; i < n; i++) {
+        await tapAt(await point(rand(), rand()));
+        await page.waitForTimeout(200);
+      }
+    },
+    holds: async () => {
+      for (const fx of [0.15, 0.85, 0.15, 0.85]) {
+        const p = await point(fx, 0.7);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: p.x, y: p.y }] });
+        await page.waitForTimeout(600);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForTimeout(100);
+      }
+    },
+    swipes: async () => {
+      for (const [a, b] of [[[0.5, 0.5], [0.1, 0.5]], [[0.5, 0.5], [0.9, 0.5]], [[0.5, 0.6], [0.5, 0.2]], [[0.5, 0.4], [0.5, 0.8]]]) {
+        await touchDrag(await point(...a), await point(...b), 250);
+        await page.waitForTimeout(150);
+      }
+    }
+  };
+  const start = async (why) => {
+    const button = await page.evaluate((source) => {
+      const re = new RegExp(source, "i");
+      const shown = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 4 && r.height > 4 && r.top < innerHeight && r.left < innerWidth && r.bottom > 0 && getComputedStyle(el).visibility !== "hidden";
+      };
+      for (const el of document.querySelectorAll("button, [role=button], input[type=button], input[type=submit], a, div, span")) {
+        const t = (el.innerText || el.value || "").trim().replace(/\s+/g, " ");
+        if (!t || t.length > 24 || !re.test(t) || !shown(el)) continue;
+        if (el.tagName === "A" && el.href && new URL(el.href, location.href).origin !== location.origin) continue;
+        if (el.children.length > 2) continue;
+        const r = el.getBoundingClientRect();
+        return { text: t, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+      return null;
+    }, START.source).catch(() => null);
+    const did = [];
+    if (button) {
+      await tapAt(button);
+      did.push(`pressed "${button.text}"`);
+      await page.waitForTimeout(600);
+    }
+    await tapAt(await point(0.5, 0.5));
+    did.push(touch ? "tapped the game" : "clicked the game");
+    if (!touch) {
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(300);
+      await page.keyboard.press("Space");
+      did.push("pressed Enter and Space");
+    }
+    await page.waitForTimeout(800);
+    log(`  ${why}: ${did.join(", ")}`);
+    return did.join(", ");
+  };
+  const idle = async () => {
+    const a = await small();
+    await page.waitForTimeout(700);
+    return screenChange(a, await small()) ?? 0;
+  };
+  const step = async (input2, run2, extra = {}) => {
+    const before = await small();
+    const t = elapsed();
+    await run2();
+    const after = await small();
+    const change2 = screenChange(before, after);
+    const stats = await page.evaluate(() => ({ frames: window.__GLITCHLESS_CHECK__?.take(), page: window.__GLITCHLESS_CHECK__?.read() })).catch(() => ({}));
+    const label3 = extra.label || stats.page?.screen_labels?.[0] || null;
+    const s = { t, input: input2.name, words: input2.words, change: change2, frames: stats.frames || null, heap_mb: stats.page?.heap_mb ?? null, level: stats.page?.level ?? null, ...extra, label: label3 };
+    steps.push(s);
+    const screen = change2 == null ? "unknown" : change2 < STILL ? "still" : change2 < 0.4 ? "moving" : "new screen";
+    await page.evaluate((a) => window.__GLITCHLESS_CHECK__?.step(a), { profile: profile.name, step: steps.length, input: input2.words.slice(0, 48), screen, ...label3 ? { label: String(label3).slice(0, 40) } : {} }).catch(() => {
+    });
+    return s;
+  };
+  const rest = { name: "idle", words: "nothing (the bot waited)", run: () => page.waitForTimeout(3e3) };
+  let base2 = await idle();
+  shots.push(await shot("loaded"));
+  const started = await start("starting");
+  notes.push(`To start, the bot ${started}.`);
+  let calm = (await step(rest, rest.run)).change ?? 0;
+  let still = 0;
+  let next = 0;
+  const end = t0 + seconds2 * 1e3;
+  let shotMid = false;
+  while (Date.now() < end) {
+    if (!shotMid && Date.now() > t0 + seconds2 * 500) {
+      shots.push(await shot("playing"));
+      shotMid = true;
+    }
+    let s;
+    if (ai) {
+      const choice = await ai.choose(page, { area: await area(), touch, recent: steps.slice(-3) }).catch((err) => {
+        notes.push(`The AI player stopped (${err.message.split("\n")[0]}); the explorer carried on.`);
+        return null;
+      });
+      if (!choice) {
+        ai = null;
+        continue;
+      }
+      s = await step({ name: "ai", words: choice.words }, () => ai.act(page, choice, { point, touch, touchDrag }), { screen: choice.screen, kind: choice.kind, label: choice.label || null });
+    } else {
+      const ranked = [...tried.entries()].sort((a, b) => b[1].change / Math.max(1, b[1].tries) - a[1].change / Math.max(1, a[1].tries));
+      const untried = inputs.find((i) => !tried.get(i.name).tries);
+      const pick2 = untried || (next++ % 4 === 3 ? inputs[Math.floor(rand() * inputs.length)] : inputs.find((i) => i.name === ranked[next % 2]?.[0]) || inputs[0]);
+      s = await step(pick2, () => pick2.run(io));
+      const st = tried.get(pick2.name);
+      st.tries++;
+      st.change += s.change ?? 0;
+      if ((s.change ?? 0) > calm * 1.3 + 2e-3) st.moved++;
+    }
+    if ((s.change ?? 1) < STILL) still++;
+    else still = 0;
+    if (still >= 2) {
+      s.carried_on = await start("the screen stopped changing");
+      still = 0;
+      calm = (await step(rest, rest.run)).change ?? calm;
+    }
+  }
+  shots.push(await shot("end"));
+  const worked = [...tried.entries()].filter(([, st]) => st.moved).sort((a, b) => b[1].change / b[1].tries - a[1].change / a[1].tries).map(([name]) => inputs.find((i) => i.name === name).words);
+  return { steps, notes, shots: shots.filter(Boolean), inputs: { tried: [...tried.entries()].filter(([, st]) => st.tries).map(([name]) => inputs.find((i) => i.name === name).words), worked }, idle_change: base2, calm_change: calm, elapsed_s: elapsed() };
+}
+async function loadAnthropic(cwd = process.cwd()) {
+  const unwrap = (mod) => mod?.default ?? mod;
+  for (const from of [path10.join(cwd, "noop.js"), import.meta.url]) {
+    try {
+      const req = createRequire2(from);
+      return unwrap(await import(pathToFileURL2(req.resolve("@anthropic-ai/sdk")).href));
+    } catch {
+    }
+  }
+  throw new Error("The AI player needs the Anthropic SDK: npm install @anthropic-ai/sdk (and ANTHROPIC_API_KEY set)");
+}
+async function aiPlayer({ model = AI_MODEL, maxCalls = 40, cwd, client = null } = {}) {
+  client ||= new (await loadAnthropic(cwd))();
+  let calls2 = 0;
+  return {
+    model,
+    get calls() {
+      return calls2;
+    },
+    async choose(page, { area, touch, recent }) {
+      if (calls2 >= maxCalls) return null;
+      calls2++;
+      const scale = Math.min(1, 768 / area.width);
+      const jpeg = await page.screenshot({ type: "jpeg", quality: 60, clip: area, scale: "css" });
+      const context = recent.map((s) => `t=${s.t}s ${s.screen ? `screen: ${s.screen}` : ""} did: ${s.words}${s.change != null ? ` (screen change ${s.change})` : ""}`).join("\n");
+      const res = await client.messages.create({
+        model,
+        max_tokens: 1024,
+        thinking: { type: "disabled" },
+        output_config: { effort: "low", format: { type: "json_schema", schema: AI_SCHEMA } },
+        system: `You are playtesting a web game for its developer, to see how it runs. Play it like a new player would: get past menus and title screens, then keep playing and moving, and try what the game offers. The game is played with ${touch ? "a touch screen (use click for a tap and drag for a swipe; no keys)" : "a keyboard and mouse"}. Never buy anything, sign in, type personal details, open links or leave the game. Answer with what is on screen and up to 6 inputs for the next 3 seconds.`,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: jpeg.toString("base64") } },
+              { type: "text", text: `The game's screen now (${Math.round(area.width * scale)} px wide).${context ? `
+The last steps:
+${context}` : ""}` }
+            ]
+          }
+        ]
+      });
+      if (res.stop_reason === "refusal") throw new Error("the model declined to play this game");
+      const text2 = res.content.find((b) => b.type === "text")?.text;
+      const out = JSON.parse(text2);
+      const actions = (out.actions || []).slice(0, 6).filter((a) => a.do !== "press" && a.do !== "hold" ? true : KEYS.test(normalKey(a.key)) && !touch);
+      return { screen: String(out.screen || "").slice(0, 120), kind: out.kind, label: String(out.label || "").slice(0, 40), actions, words: describe4(actions) };
+    },
+    async act(page, choice, { point, touch, touchDrag }) {
+      for (const a of choice.actions) {
+        const ms = Math.max(0, Math.min(2e3, a.ms | 0));
+        if (a.do === "press") await page.keyboard.press(normalKey(a.key));
+        else if (a.do === "hold") {
+          await page.keyboard.down(normalKey(a.key));
+          await page.waitForTimeout(ms || 400);
+          await page.keyboard.up(normalKey(a.key));
+        } else if (a.do === "click") {
+          const p = await point(a.x, a.y);
+          if (touch) await page.touchscreen.tap(p.x, p.y);
+          else await page.mouse.click(p.x, p.y);
+        } else if (a.do === "drag") {
+          const [p, q] = [await point(a.x, a.y), await point(a.x2, a.y2)];
+          if (touch) await touchDrag(p, q, 400);
+          else {
+            await page.mouse.move(p.x, p.y);
+            await page.mouse.down();
+            await page.mouse.move(q.x, q.y, { steps: 10 });
+            await page.mouse.up();
+          }
+        } else await page.waitForTimeout(Math.min(ms, 1500));
+        await page.waitForTimeout(120);
+      }
+    }
+  };
+}
+function normalKey(k) {
+  const s = String(k || "").trim();
+  if (/^space$/i.test(s) || s === " ") return "Space";
+  if (/^(enter|return)$/i.test(s)) return "Enter";
+  if (/^(esc|escape)$/i.test(s)) return "Escape";
+  if (/^shift$/i.test(s)) return "Shift";
+  if (/^(left|right|up|down)$/i.test(s)) return `Arrow${s[0].toUpperCase()}${s.slice(1).toLowerCase()}`;
+  if (/^arrow(up|down|left|right)$/i.test(s)) return `Arrow${s.slice(5, 6).toUpperCase()}${s.slice(6).toLowerCase()}`;
+  return s.length === 1 ? s.toLowerCase() : s;
+}
+function describe4(actions) {
+  const words = actions.map((a) => a.do === "press" ? `pressed ${normalKey(a.key)}` : a.do === "hold" ? `held ${normalKey(a.key)}` : a.do === "click" ? "clicked" : a.do === "drag" ? "dragged" : "waited");
+  return [...new Set(words)].join(", ") || "waited";
+}
+var PROFILES, DESKTOP_INPUTS, PHONE_INPUTS, STILL, START, AI_MODEL, AI_SCHEMA, KEYS;
+var init_check_bot = __esm({
+  "../playtest/src/check-bot.js"() {
+    PROFILES = {
+      desktop: { name: "desktop", viewport: { width: 1280, height: 720 }, cpu: 1, network: null, touch: false },
+      phone: { name: "phone", viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, touch: true, cpu: 4, network: { latency: 60, downloadThroughput: Math.round(9e6 / 8), uploadThroughput: Math.round(15e5 / 8) } }
+    };
+    DESKTOP_INPUTS = [
+      { name: "arrows", words: "the arrow keys and Space", run: (io) => io.keys([["ArrowRight", 900], ["Space", 0], ["ArrowUp", 300], ["ArrowLeft", 700], ["Space", 0], ["ArrowDown", 300], ["ArrowRight", 600]]) },
+      { name: "wasd", words: "W, A, S, D and Space", run: (io) => io.keys([["d", 900], ["Space", 0], ["w", 300], ["a", 700], ["Space", 0], ["s", 300], ["d", 600]]) },
+      { name: "mouse", words: "moving the mouse and clicking", run: (io) => io.mouse(6) },
+      { name: "drag", words: "clicking and dragging", run: (io) => io.drags(3) },
+      { name: "actions", words: "Z, X, C, J, K, E, F, Tab, Shift and Enter", run: (io) => io.keys([["z", 0], ["x", 0], ["c", 0], ["j", 0], ["k", 0], ["e", 0], ["f", 0], ["Tab", 0], ["Shift", 300], ["Enter", 0]]) }
+    ];
+    PHONE_INPUTS = [
+      { name: "taps", words: "tapping around the screen", run: (io) => io.taps(8) },
+      { name: "holds", words: "holding the left and right of the screen", run: (io) => io.holds() },
+      { name: "swipes", words: "swiping left, right, up and down", run: (io) => io.swipes() },
+      { name: "drag", words: "touching and dragging", run: (io) => io.drags(3) }
+    ];
+    STILL = 1e-3;
+    START = /^(play|play now|start|start game|new game|begin|go|let'?s go|continue|tap to (play|start)|click to (play|start)|press (any key|start)|ok|okay|got it|i understand|accept|enter|resume|retry|try again|play again|restart|next)!?$/i;
+    AI_MODEL = "claude-haiku-5-5";
+    AI_SCHEMA = {
+      type: "object",
+      additionalProperties: false,
+      required: ["screen", "kind", "label", "actions"],
+      properties: {
+        screen: { type: "string", description: "What is on screen now, in under 15 words" },
+        kind: { type: "string", enum: ["loading", "title", "menu", "playing", "paused", "game_over", "other"] },
+        label: { type: "string", description: 'The level, wave, stage or mode the screen shows (e.g. "Wave 3"), or ""' },
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["do", "key", "ms", "x", "y", "x2", "y2"],
+            properties: {
+              do: { type: "string", enum: ["press", "hold", "click", "drag", "wait"] },
+              key: { type: "string", description: 'For press and hold: ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Space, Enter, Escape, Shift or one letter or digit; else ""' },
+              ms: { type: "integer", description: "How long to hold or wait, 0 to 2000" },
+              x: { type: "number", description: "Where to click or start a drag, 0 (left) to 1 (right) across the game" },
+              y: { type: "number", description: "0 (top) to 1 (bottom)" },
+              x2: { type: "number", description: "Where a drag ends; else 0" },
+              y2: { type: "number" }
+            }
+          }
+        }
+      }
+    };
+    KEYS = /^(Arrow(Up|Down|Left|Right)|Space|Enter|Escape|Shift|[a-z0-9])$/;
+  }
+});
+
+// ../playtest/src/check-report.js
+function engineWords(page) {
+  if (!page) return null;
+  const e = page.engines?.[0];
+  const drawing = page.webgpu ? "WebGPU" : page.contexts?.includes("webgl2") || page.contexts?.includes("webgl") ? "WebGL" : page.contexts?.includes("2d") ? "a 2D canvas" : null;
+  if (e) {
+    const name = ENGINE_WORDS[e.name] || e.name.replace(/^rpg maker/, "RPG Maker");
+    const version2 = e.version && e.name !== "three" ? ` ${e.version}` : e.version ? ` r${String(e.version).replace(/^r/, "")}` : "";
+    return `${name}${version2}${drawing && !["unity", "godot", "gamemaker"].includes(e.name) ? ` on ${drawing}` : ""}`;
+  }
+  return drawing ? `${drawing === "a 2D canvas" ? "a 2D canvas" : drawing}, with no engine Glitchless recognises` : "an HTML page with no canvas";
+}
+function profileNumbers(run2, summary) {
+  const s = summary?.runs?.find((x) => x.session_id === run2.session_id) || null;
+  const steps = (run2.steps || []).filter((st) => st.frames?.n);
+  const frames = steps.map((st) => st.frames);
+  const worst = steps.reduce((w, st) => (st.frames.p95 ?? 0) > (w?.frames.p95 ?? 0) ? st : w, null);
+  const longest = steps.reduce((w, st) => (st.frames.max ?? 0) > (w?.frames.max ?? 0) ? st : w, null);
+  const heaps = (run2.steps || []).map((st) => st.heap_mb).filter(isNum);
+  const third = Math.max(1, Math.floor(heaps.length / 3));
+  const avg = (xs) => xs.reduce((a, b) => a + b, 0) / Math.max(1, xs.length);
+  const [h1, h2, h3] = [avg(heaps.slice(0, third)), avg(heaps.slice(third, third * 2)), avg(heaps.slice(-third))];
+  const heap = heaps.length >= 3 ? { start: heaps[0], end: heaps.at(-1), peak: Math.max(...heaps), climbing: heaps.at(-1) - heaps[0] >= 15 && h3 > h2 && h2 > h1 } : null;
+  const counted = frames.reduce((a, f) => a + f.n, 0);
+  const localSlow = counted ? r1(frames.reduce((a, f) => a + (f.late || 0), 0) / counted * 100) : null;
+  return {
+    profile: run2.profile,
+    played_s: run2.seconds_played ?? null,
+    ready_s: run2.load?.ready_s ?? null,
+    load_timed_out: !!run2.load?.timed_out,
+    bytes: run2.load?.bytes ?? null,
+    requests: run2.load?.requests ?? null,
+    late_pct: s?.pct_over_budget ?? localSlow,
+    budget_ms: s?.budget_ms ?? null,
+    p50: s?.p50 ?? median3(frames.map((f) => f.p50)),
+    p95: s?.p95 ?? median3(frames.map((f) => f.p95)),
+    hitches: s?.hitches ?? null,
+    errors: s?.errors ?? null,
+    gpu: s?.gpu ?? null,
+    draws: median3(frames.map((f) => f.draws)),
+    freeze: longest && longest.frames.max > 50 ? { t: longest.t, max: longest.frames.max, words: longest.words, label: longest.label || longest.level || null } : null,
+    worst: worst && worst.frames.p95 > 25 ? { t: worst.t, p95: worst.frames.p95, max: worst.frames.max, words: worst.words, label: worst.label || worst.level || null, screen: worst.screen || null } : null,
+    heap
+  };
+}
+function lateWords(pct) {
+  if (!isNum(pct)) return null;
+  if (pct < 0.5) return "fewer than 1 in 200 frames";
+  if (pct >= 40) return `${r0(pct)}% of frames`;
+  return `1 in ${r0(100 / pct)} frames`;
+}
+function errorList(result) {
+  const out = [];
+  const runs2 = result.profiles.filter((p) => p.session_id).length;
+  for (const e of result.summary?.errors || []) out.push({ message: e.message, location: e.location || null, count: e.count, runs: e.sessions, of: runs2, kind: e.kind });
+  for (const p of result.profiles)
+    for (const m of p.errors || []) {
+      const msg = m.replace(/^console: /, "");
+      if (out.some((e) => e.message && (msg.includes(e.message) || e.message.includes(msg)))) continue;
+      const have = out.find((e) => e.message === msg && !e.location);
+      if (have) have.runs = Math.min(runs2, (have.runs || 1) + 1);
+      else out.push({ message: msg, location: null, count: null, runs: 1, of: runs2, console: m.startsWith("console: ") });
+    }
+  return out.filter((e) => e.message);
+}
+function whatTheBotSaw(result) {
+  const labels = {};
+  const modes = /* @__PURE__ */ new Set();
+  const levels = /* @__PURE__ */ new Set();
+  for (const p of result.profiles) {
+    for (const [k, n] of Object.entries(p.page?.labels || {})) labels[k] = (labels[k] || 0) + n;
+    for (const b of Object.keys(p.page?.buttons || {})) if (MODE.test(b.trim())) modes.add(b.trim());
+    for (const st of p.steps || []) {
+      if (st.label) labels[st.label] = (labels[st.label] || 0) + 1;
+      if (st.level) levels.add(st.level);
+    }
+  }
+  for (const l of Object.keys(result.summary?.levels || {})) levels.add(l);
+  const order = (a, b) => a.localeCompare(b, void 0, { numeric: true });
+  const shown = Object.keys(labels).sort(order).slice(0, 12);
+  const worked = [...new Set(result.profiles.flatMap((p) => p.inputs?.worked || []))];
+  return { labels: shown, levels: [...levels].sort(order).slice(0, 12), modes: [...modes].slice(0, 8), worked };
+}
+function headlines(result) {
+  const out = [];
+  const nums = Object.fromEntries(result.profiles.map((p) => [p.profile, profileNumbers(p, result.summary)]));
+  const d = nums.desktop;
+  const ph = nums.phone;
+  const errors = errorList(result).filter((e) => !e.console);
+  if (errors.length) {
+    const e = errors[0];
+    const every = e.of > 1 && e.runs >= e.of;
+    const at = whereWords(e.location);
+    out.push({ weight: 100, text: `${every ? "every run hit" : e.of > 1 ? `${e.runs} of ${e.of} runs hit` : "the run hit"} an error${at ? ` in ${at}` : ""} ("${e.message.slice(0, 90)}")${errors.length > 1 ? `, one of ${errors.length} different errors` : ""}, so players ${every ? "likely" : "may"} hit it too` });
+  }
+  const loadOf = (n) => n?.load_timed_out ? `more than ${r0(n.ready_s)} seconds` : isNum(n?.ready_s) ? `about ${r0(Math.max(1, n.ready_s))} seconds` : null;
+  if (ph && isNum(ph.late_pct) && ph.late_pct >= 10) out.push({ weight: 80 + ph.late_pct / 5, text: `on a phone-speed CPU the game can't keep up: ${lateWords(ph.late_pct)} came late${d && isNum(d.late_pct) ? `, against ${lateWords(d.late_pct)} on a desktop` : ""}, so a player on a mid-range phone feels it stutter` });
+  if (d && isNum(d.late_pct) && d.late_pct >= 5) out.push({ weight: 85, text: `even on a fast desktop, ${lateWords(d.late_pct)} came late${d.worst ? `, worst ${r0(d.worst.t)} seconds in (${d.worst.label || d.worst.words}): frames took up to ${r0(d.worst.max || d.worst.p95)} ms` : ""}` });
+  for (const n of [d, ph].filter(Boolean)) {
+    const perMin = isNum(n.hitches) && n.played_s ? n.hitches / (n.played_s / 60) : 0;
+    if (perMin < 3) continue;
+    out.push({ weight: 75 + Math.min(10, perMin), text: `the game froze for a moment ${plural2(n.hitches, "time")} in ${seconds(n.played_s)} ${n.profile === "phone" ? "on the phone" : "on a desktop"}${n.freeze ? `, the longest for ${r0(n.freeze.max)} ms${n.freeze.label ? ` on ${n.freeze.label}` : ""}` : ""}` });
+    break;
+  }
+  const slowLoad = ph?.ready_s >= 15 ? ph : d?.ready_s >= 8 ? d : null;
+  if (slowLoad) out.push({ weight: 60 + Math.min(30, slowLoad.ready_s), text: `a player ${slowLoad === ph ? "on a phone over 4G" : "on a desktop"} waits ${loadOf(slowLoad)} before it's ready${isNum(slowLoad.bytes) ? `, while it downloads ${mb(slowLoad.bytes)}` : ""}` });
+  for (const n of [d, ph].filter(Boolean))
+    if (n.heap?.climbing) {
+      out.push({ weight: 70, text: `its memory kept climbing ${n.profile === "phone" ? "on the phone" : "on the desktop"}, from ${n.heap.start} to ${n.heap.end} MB in ${seconds(n.played_s || 60)}, so a long session may run out (phones close the tab)` });
+      break;
+    }
+  const missing = result.profiles.flatMap((p) => p.load?.missing || []);
+  const gone = new Set(missing.map((m) => m.url)).size;
+  if (gone) out.push({ weight: 40, text: `it asks for ${plural2(gone, "file")} that ${gone === 1 ? "isn't" : "aren't"} there (${missing[0].status})` });
+  if (!out.length && d) {
+    const fine = [`it ran smoothly on a desktop (${lateWords(d.late_pct) || "almost no frames"} late)`];
+    if (ph) fine.push(isNum(ph.late_pct) ? `on a phone-speed CPU ${lateWords(ph.late_pct)} came late` : "it held up on a phone-speed CPU");
+    if (isNum(d.ready_s)) fine.push(`it's ready to play in ${loadOf(d)}`);
+    out.push({ weight: 10, text: `good news: ${fine.join(", ")}, and the bots hit no errors` });
+  }
+  return out.sort((a, b) => b.weight - a.weight).map((h) => h.text);
+}
+function checkDm(result) {
+  const lead = headlines(result);
+  const link = result.share?.url || result.dashboard_url || "";
+  const name = result.game.name;
+  const where2 = result.profiles.some((p) => p.profile === "phone") ? result.profiles.some((p) => p.profile === "desktop") ? " on a desktop and on a throttled phone" : " on a throttled phone" : " on a desktop";
+  const first = `I had Glitchless's bots play ${name} for a few minutes${where2}, and ${link ? `made a dashboard of what they found: ${link}` : "wrote up what they found."}`;
+  const finding = lead.slice(0, 2).join("; ");
+  const close = `It's from our test machine, not your players: with Glitchless in the game, your coding agent gets the same from every player's session${link ? ", and the board is yours to keep" : ""}.`;
+  return `${first}
+
+${finding ? `${finding[0].toUpperCase()}${finding.slice(1)}. ` : ""}${close}`;
+}
+function checkReport(result) {
+  const { game, target } = result;
+  const runs2 = result.profiles;
+  const nums = runs2.map((p) => profileNumbers(p, result.summary));
+  const page = runs2.find((p) => p.page)?.page || runs2.find((p) => p.page_start)?.page_start;
+  const engine = engineWords(page);
+  const out = [`# Game check: ${game.name}`, ""];
+  out.push(`${target.page_url}${target.site ? ` (${target.site})` : ""} \xB7 checked ${result.checked_at.slice(0, 16).replace("T", " ")} UTC by Glitchless's bots${engine ? ` \xB7 made with ${engine}` : ""}`, "");
+  const lead = headlines(result);
+  if (lead.length) out.push(...lead.slice(0, 3).map((h) => `- ${h[0].toUpperCase()}${h.slice(1)}.`), "");
+  const link = result.share?.url || result.dashboard_url;
+  if (link) out.push(`The dashboard: ${link}${result.share?.url ? ` (unlisted, shows this check only, for 30 days)` : ""}`, "");
+  for (const n of result.notes || []) out.push(`> ${n}`, "");
+  out.push("## What the bots did", "");
+  for (const p of runs2) {
+    const label3 = p.profile === "phone" ? "On a phone" : "On a desktop";
+    if (p.stopped && !p.steps?.length) {
+      out.push(`- **${label3}** (${p.words}): ${p.stopped}.`);
+      continue;
+    }
+    const tried = p.inputs?.tried?.length ? ` It tried ${p.inputs.tried.join("; ")}.` : "";
+    const worked = p.inputs?.worked?.length ? ` The screen changed most with ${p.inputs.worked.slice(0, 2).join(", then ")}.` : p.inputs?.tried?.length ? " No input changed the screen more than waiting did, so the bot may not have got past the start." : "";
+    const carried = (p.steps || []).filter((s) => s.carried_on).length;
+    out.push(`- **${label3}** (${p.words}): played ${seconds(p.seconds_played || 0)}. ${(p.notes || []).filter((n) => n.startsWith("To start")).join(" ")}${tried}${worked}${carried ? ` The screen stopped changing ${plural2(carried, "time")} (a game over or a menu), and the bot carried on.` : ""}`);
+  }
+  if (result.ai) out.push(`- The inputs were picked by ${result.ai.model}, which looked at the screen ${plural2(result.ai.calls, "time")}.`);
+  out.push("");
+  const cols = nums.map((n) => n.profile === "phone" ? "Phone" : "Desktop");
+  const row = (label3, f2) => `| ${label3} | ${nums.map((n) => f2(n) ?? "\u2013").join(" | ")} |`;
+  out.push("## Loading and play", "", `| | ${cols.join(" | ")} |`, `| --- | ${cols.map(() => "---:").join(" | ")} |`);
+  out.push(row("Ready to play after", (n) => isNum(n.ready_s) ? `${n.load_timed_out ? "over " : ""}${r0(Math.max(1, n.ready_s))} s` : null));
+  out.push(row("Downloaded", (n) => isNum(n.bytes) ? mb(n.bytes) : null));
+  out.push(row("Late frames", (n) => lateWords(n.late_pct)));
+  out.push(row("A typical frame", (n) => isNum(n.p50) ? `${r1(n.p50)} ms` : null));
+  out.push(row("The slowest 1 in 20 frames", (n) => isNum(n.p95) ? `${r1(n.p95)} ms or more` : null));
+  out.push(row("Freezes (a frame over 50 ms)", (n) => isNum(n.hitches) ? String(n.hitches) : null));
+  out.push(row("Draw calls a frame", (n) => isNum(n.draws) ? String(n.draws) : null));
+  out.push(row("JavaScript memory", (n) => n.heap ? `${n.heap.start} \u2192 ${n.heap.end} MB${n.heap.climbing ? ", climbing" : ""}` : null));
+  out.push("");
+  const budget = nums.find((n) => n.budget_ms)?.budget_ms;
+  out.push(`A frame is late when it takes more than 1.15 times the screen's frame time${budget ? ` (${r1(budget)} ms)` : ""}; players feel late frames as stutter.`);
+  for (const n of nums)
+    if (n.freeze) out.push(`${n.profile === "phone" ? "On the phone" : "On the desktop"}, the longest freeze came ${r0(n.freeze.t)} seconds in${n.freeze.label ? `, on ${n.freeze.label}` : ""}: one frame took ${r0(n.freeze.max)} ms.`);
+  for (const n of nums)
+    if (n.worst) out.push(`${n.profile === "phone" ? "On the phone" : "On the desktop"}, the slowest moment came ${r0(n.worst.t)} seconds in${n.worst.label ? `, on ${n.worst.label}` : ""}, while the bot was ${n.worst.screen ? `playing (${n.worst.screen})` : `using ${n.worst.words}`}: frames took up to ${r0(n.worst.max || n.worst.p95)} ms.`);
+  const missing = [...new Map(runs2.flatMap((p) => p.load?.missing || []).map((m2) => [m2.url, m2])).values()];
+  if (missing.length) out.push("", `Files the game asks for that aren't there: ${missing.slice(0, 6).map((m2) => `\`${m2.url}\` (${m2.status})`).join(", ")}${missing.length > 6 ? ", \u2026" : ""}.`);
+  out.push("");
+  const errors = errorList(result);
+  out.push("## Errors", "");
+  if (!errors.length) out.push("The bots hit no errors.");
+  for (const e of errors.slice(0, 8)) out.push(`- \`${e.message.slice(0, 200)}\`${e.location ? ` at ${e.location}` : ""}${e.count ? `: ${plural2(e.count, "time")}` : ""}${e.of > 1 ? `, in ${e.runs} of ${e.of} runs` : ""}${e.console ? " (printed to the console)" : ""}`);
+  out.push("");
+  const saw = whatTheBotSaw(result);
+  out.push("## With Glitchless installed", "");
+  out.push("These numbers are from two bot runs. With Glitchless in the game, the same comes from every player's session, on their own phones and computers, and the dashboard's other pages fill in:");
+  out.push(`- Where players stop${saw.labels.length || saw.levels.length ? `: the bot saw ${listWords((saw.levels.length ? saw.levels : saw.labels).slice(0, 6))}` : ""}, and how many get through each.`);
+  if (saw.modes.length) out.push(`- Which modes keep players: ${listWords(saw.modes)}.`);
+  out.push(`- What players do${saw.worked.length ? ` with ${saw.worked.slice(0, 2).join(" and with ")}` : ""}: the game's own actions, counted per player, and who comes back the next day.`);
+  out.push("- Errors with the level, the device and what the player did just before.");
+  if (target.site === "itch.io") out.push("- With the itch.io page connected, its views, downloads and ratings next to the plays Glitchless counts.");
+  out.push("", 'To add it, paste this into your coding agent: "Add Glitchless (www.glitchless.gg) to this game, then make it a dashboard."', "");
+  out.push("## The fine print", "");
+  const m = result.machine || {};
+  out.push(`- Every number here comes from Glitchless's test machine (${[m.os, m.cpu, nums.find((n) => n.gpu)?.gpu, m.browser].filter(Boolean).join(", ")}), not from the game's players.${nums.some((n) => n.profile === "phone") ? " The phone is that same computer with its CPU slowed 4\xD7, a phone's screen and a 4G-like connection, not a real phone." : ""}`);
+  out.push("- The check is private: its game and dashboard are in the checker's own Glitchless workspace, nothing ranks games, and its bot runs are marked as bots, so they never count as players.");
+  out.push(`- It played a few minutes from one computer and asked the site's robots.txt first.${target.site === "itch.io" ? " itch.io's game frame was played on its own, at the size the page shows it." : ""}`);
+  out.push("");
+  out.push("## For your coding agent", "");
+  out.push(`Glitchless game "${game.in_glitchless || game.name}", service \`${game.service}\`${game.id ? ` (${game.id})` : ""}, version \`${game.version}\`, sessions ${runs2.map((p) => p.session_id && `\`${p.session_id}\` (${p.profile})`).filter(Boolean).join(", ") || "none"}; read them with glitchless_triage or glitchless_session.`);
+  const f = result.findings || [];
+  if (f.length) {
+    out.push("", "Findings:");
+    for (const x of f.slice(0, 8)) out.push(`- [${x.severity}] ${x.title} (\`${x.id}\`)`);
+  }
+  const adapters = [...new Set(runs2.flatMap((p) => p.page?.adapters || []))];
+  const adapterErrors = [...new Set(runs2.flatMap((p) => p.page?.adapter_errors || []))];
+  if (adapters.length) out.push("", `The check handed the game's ${listWords(adapters.map((a) => ENGINE_WORDS[a] || a))} engine to Glitchless's adapter, as installing Glitchless with its defaults would.`);
+  if (adapterErrors.length) out.push("", `Adapter problems: ${adapterErrors.join("; ")}.`);
+  const notes = runs2.flatMap((p) => (p.notes || []).filter((n) => !n.startsWith("To start")));
+  if (notes.length) out.push("", ...notes.map((n) => `- ${n}`));
+  return out.join("\n");
+}
+function whereWords(location2) {
+  if (!location2) return null;
+  const m = String(location2).match(/^(.+?) \((.*?):(\d+)(?::\d+)?\)$/);
+  if (m) return m[2] === "?" || !m[2] ? m[1] : `${m[1]} (${m[2].split(/[\\/]/).pop()}:${m[3]})`;
+  return String(location2).split(/[\\/]/).pop();
+}
+function listWords(xs) {
+  const a = [...xs];
+  return a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a.at(-1)}`;
+}
+function checkDashboard(result) {
+  const saw = whatTheBotSaw(result);
+  const where2 = (saw.levels.length ? saw.levels : saw.labels).slice(0, 4);
+  const bot = "From Glitchless's bots on its test machine, not players.";
+  const installed = "Fills in with Glitchless installed:";
+  const cut = (s) => s.length > 200 ? `${s.slice(0, 197)}\u2026` : s;
+  const check2 = {
+    id: CHECK_PAGE,
+    title: "Game check",
+    icon: "overview",
+    panels: [
+      { type: "stat", metric: "avg_fps", title: "Frames a second", size: "s", note: cut(`${bot} Desktop and phone runs together.`) },
+      { type: "stat", metric: "frame_p95", title: "Slowest 1 in 20 frames (ms)", size: "s", note: cut(`${bot} Over 1.15\xD7 the screen's frame time is a late frame.`) },
+      { type: "stat", metric: "hitches_per_min", title: "Freezes a minute", size: "s", note: cut(`${bot} A freeze is a frame over 50 ms, well above the frames around it.`) },
+      { type: "stat", metric: "errors", title: "Errors", size: "s", note: bot },
+      { type: "versions", by: "$profile", title: "Desktop and a throttled phone", size: "l", note: cut(`${bot} Phone: the same computer with its CPU slowed 4\xD7, a phone's screen and a 4G-like connection.`) },
+      { type: "frame_time", title: "Frame time while the bots played", size: "m", note: bot },
+      ...result.findings?.length ? [{ type: "findings", title: "What to fix first", size: "m", limit: 6 }] : [],
+      { type: "errors", title: "Errors the bots hit", size: "m", limit: 8, note: bot },
+      { type: "table", event: "glitchless_check", title: "What the bots did", size: "m", columns: ["profile", "step", "input", "screen", "label"], limit: 12, note: "Each step of the bots' play: the inputs they tried and whether the screen moved." },
+      { type: "levels", title: "Levels (with Glitchless installed)", size: "l", note: cut(`${installed} where players stop and how many get through${where2.length ? `. The bots saw ${listWords(where2)}` : ""}.`) }
+    ]
+  };
+  const players = {
+    id: "players",
+    title: "Players \xB7 with Glitchless installed",
+    icon: "players",
+    panels: [
+      { type: "stat", metric: "players", title: "Players", size: "s", note: cut(`${installed} people who played, never bots.`) },
+      { type: "stat", metric: "median_session_s", title: "A typical session (s)", size: "s", note: installed.replace(":", ".") },
+      { type: "stat", metric: "crash_free_pct", title: "Sessions without a crash (%)", size: "s", note: installed.replace(":", ".") },
+      { type: "stat", metric: "rage_quit_pct", title: "Quit in frustration (%)", size: "s", note: cut(`${installed} players who left right after dying or failing.`) },
+      { type: "retention", title: "Players coming back", size: "l", note: cut(`${installed} who comes back the next day and the next week (with player IDs on).`) },
+      { type: "deaths", title: "Where players die", size: "m", note: cut(`${installed} deaths by level and cause.`) },
+      { type: "levels", title: "Levels", size: "m", note: cut(`${installed} starts, clears and fails per level${where2.length ? ` (the bots saw ${listWords(where2)})` : ""}.`) }
+    ]
+  };
+  const play = {
+    id: "play",
+    title: "How they play \xB7 with Glitchless",
+    icon: "events",
+    panels: [
+      { type: "events", title: "The game's own events", size: "l", note: cut(`${installed} what the game counts with track(): ${saw.worked.length ? `the actions behind ${saw.worked.slice(0, 2).join("; ")}` : "its actions"}, picks and purchases.`) },
+      { type: "versions", by: "$mode", title: "Modes side by side", size: "l", note: cut(`${installed} each mode's numbers, with the mode set as a session property${saw.modes.length ? `. The bots saw ${listWords(saw.modes)}` : ""}.`) },
+      { type: "reports", title: "Bug reports from players", size: "m", note: cut(`${installed} players send a bug report from the game (F8), with a screenshot.`) }
+    ]
+  };
+  return [check2, players, play, { id: "performance", title: "Performance", view: "performance" }, { id: "errors", title: "Errors", view: "errors" }, { id: "sessions", title: "The bots' runs", icon: "sessions", view: "sessions" }];
+}
+var CHECK_PAGE, isNum, r0, r1, mb, median3, plural2, seconds, ENGINE_WORDS, MODE;
+var init_check_report = __esm({
+  "../playtest/src/check-report.js"() {
+    CHECK_PAGE = "check";
+    isNum = (v) => typeof v === "number" && Number.isFinite(v);
+    r0 = (v) => Math.round(v);
+    r1 = (v) => Math.round(v * 10) / 10;
+    mb = (b) => b >= 1048576 ? `${r1(b / 1048576)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+    median3 = (xs) => {
+      const s = xs.filter(isNum).sort((a, b) => a - b);
+      return s.length ? s[Math.floor(s.length / 2)] : null;
+    };
+    plural2 = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+    seconds = (s) => s >= 90 ? `${r1(s / 60)} minutes` : `${r0(s)} seconds`;
+    ENGINE_WORDS = { three: "Three.js", phaser: "Phaser", babylon: "Babylon.js", playcanvas: "PlayCanvas", unity: "Unity", godot: "Godot", gamemaker: "GameMaker", construct: "Construct", gdevelop: "GDevelop", defold: "Defold", pixi: "PixiJS", "pico-8": "PICO-8", kaplay: "KAPLAY", ruffle: "Flash (played with Ruffle)", emscripten: "WebAssembly (Emscripten)" };
+    MODE = /^(easy|normal|medium|hard|expert|insane|endless|story|arcade|survival|classic|versus|vs\.?|co-?op|multiplayer|single ?player|1 ?player|2 ?players?|practice|tutorial|daily( challenge)?|challenge|campaign|online|local|time attack|zen|casual|ranked|sandbox|creative|level select|free play|puzzle|speedrun)$/i;
+  }
+});
+
+// ../playtest/src/check.js
+import fs7 from "node:fs";
+import os6 from "node:os";
+import path11 from "node:path";
+import { createRequire as createRequire3 } from "node:module";
+import { fileURLToPath } from "node:url";
+function slugify2(s) {
+  return String(s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "game";
+}
+async function gameCheck({ url: url2, server = process.env.GLITCHLESS_URL || "http://localhost:7777", apiKey: apiKey2 = process.env.GLITCHLESS_API_KEY || "", name, seconds: seconds2 = CHECK_SECONDS, profiles = ["desktop", "phone"], ai = false, aiModel, headed = false, channel = "chrome", adapters = true, outDir, cwd = process.cwd(), share = true, log = () => {
+} } = {}) {
+  if (!url2) throw new Error("A game check needs the game's address (url).");
+  const base2 = String(server).replace(/\/$/, "");
+  const want = profiles.filter((p) => PROFILES[p]);
+  if (!want.length) throw new Error(`profiles are ${Object.keys(PROFILES).join(" and ")}`);
+  const desktopS = Math.max(15, Math.min(MAX_PLAY_S, Number(seconds2) || CHECK_SECONDS));
+  const playS = { desktop: desktopS, phone: Math.max(15, Math.round(desktopS * 2 / 3)) };
+  const notes = [];
+  const { chromium } = await loadPlaywright(cwd);
+  const launch2 = (ch) => chromium.launch({ headless: !headed, channel: ch, args: [...CHROME_ARGS, "--mute-audio", "--autoplay-policy=no-user-gesture-required"] });
+  const browser = await launch2(channel === "chromium" ? void 0 : channel).catch((err) => {
+    if (channel === "chromium") throw err;
+    log(`Could not launch ${channel} (${err.message.split("\n")[0]}); using Playwright's Chromium.`);
+    return launch2(void 0);
+  });
+  try {
+    const probe = await browser.newPage();
+    const chromeUa = (await probe.evaluate(() => navigator.userAgent)).replace("HeadlessChrome", "Chrome");
+    await probe.close();
+    const major = chromeUa.match(/Chrome\/(\d+)/)?.[1] || "140";
+    const ua = { desktop: `${chromeUa} ${CHECK_UA_SUFFIX}`, phone: `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Mobile Safari/537.36 ${CHECK_UA_SUFFIX}` };
+    const robots = /* @__PURE__ */ new Map();
+    const target = await resolveGame(url2, { ua: ua.desktop, log, robots });
+    if (!target.title) target.title = await pageTitle(target.play_url, ua.desktop);
+    const gameName = String(name || target.title || new URL(target.page_url).hostname).trim().slice(0, 80);
+    log(`Game check: ${gameName} (${target.play_url})`);
+    const dest = await checkDestination({ base: base2, apiKey: apiKey2, name: gameName, log });
+    const sdk = await sdkScript(base2, cwd);
+    const version2 = `check-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`;
+    const dir = outDir ? path11.resolve(cwd, outDir) : path11.join(cwd, ".glitchless", "checks", `${slugify2(gameName)}-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace(/[-:T]/g, "")}`);
+    fs7.mkdirSync(dir, { recursive: true });
+    const player = ai ? await aiPlayer({ model: aiModel || AI_MODEL, cwd }) : null;
+    const started = Date.now();
+    const runs2 = [];
+    let landscape = target.size ? target.size.width > target.size.height * 1.1 : null;
+    for (const p of want) {
+      const profile = { ...PROFILES[p] };
+      if (p === "desktop" && target.size) profile.viewport = { width: target.size.width, height: target.size.height };
+      if (p === "phone" && landscape) profile.viewport = { width: profile.viewport.height, height: profile.viewport.width };
+      log(`${p}: ${profileWords(profile)}`);
+      const run2 = await playProfile(browser, { profile, target, dest, sdk, version: version2, seconds: playS[p], ua: ua[p], dir, adapters, ai: player, robots, log });
+      runs2.push(run2);
+      if (run2.stopped) {
+        notes.push(run2.stopped);
+        if (run2.refused) break;
+      }
+      if (landscape == null && run2.page?.canvas) landscape = run2.page.canvas.width > run2.page.canvas.height * 1.1;
+    }
+    const ids = runs2.map((r) => r.session_id).filter(Boolean);
+    const read = readerFor(base2, apiKey2, dest);
+    let summary = null;
+    let findings = [];
+    if (ids.length) {
+      log(`reading what Glitchless made of ${ids.length} run(s) \u2026`);
+      summary = await waitForSummary(read, dest.service, ids, started, { log, timeoutMs: dest.cloud ? 18e4 : 3e4 }).catch((err) => {
+        notes.push(`Glitchless's summary of the runs couldn't be read: ${err.message}`);
+        return null;
+      });
+      findings = await read("findings", { service: dest.service, sessions: ids.join(","), from: started - 6e4, to: Date.now() + 6e4 }).then((b) => b.findings || []).catch(() => []);
+      const localHost = (u) => /^(localhost|127\.|\[::1\]|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local(host)?(:\d+)?$/.test(safeHost(u) || "");
+      if (!summary?.runs?.length && localHost(base2) && !localHost(target.play_url)) notes.push(`Nothing the bots measured reached ${base2}: Chrome keeps a public page like this one from sending to a server on this computer (Local Network Access). Check public games against Glitchless Cloud; the numbers below are the bots' own.`);
+    }
+    const result = {
+      checked_at: new Date(started).toISOString(),
+      url: url2,
+      target,
+      game: { name: gameName, in_glitchless: dest.name || gameName, id: dest.game_id, service: dest.service, cloud: dest.cloud, version: version2 },
+      machine: { os: `${os6.type()} ${os6.release()}`, cpu: os6.cpus()[0]?.model || null, gpu: summary?.runs?.find((r) => r.gpu)?.gpu || null, browser: `Chrome ${browser.version()}` },
+      ai: player ? { model: player.model, calls: player.calls } : null,
+      profiles: runs2,
+      summary,
+      findings,
+      notes,
+      dir
+    };
+    if (ids.length && !summary?.runs?.length) notes.push(`No dashboard or share link: ${summary ? "nothing the bots measured reached Glitchless" : "Glitchless's summary of the runs couldn't be read"}, so they would show nothing.`);
+    if (summary?.runs?.length) {
+      const pages = checkDashboard(result);
+      await write2(base2, apiKey2, dest, "PUT", `/v1/dashboard?service=${encodeURIComponent(dest.service)}`, { pages }).then(() => result.dashboard = { pages: pages.map((p) => p.title) }).catch((err) => notes.push(`The dashboard wasn't saved: ${err.message}`));
+      const picture2 = runs2.find((r) => r.profile === "desktop")?.shots?.find((s) => /playing/.test(s)) || runs2.flatMap((r) => r.shots || []).find((s) => /playing|end/.test(s));
+      if (picture2 && fs7.statSync(picture2).size <= 3e5) {
+        await upload2(base2, apiKey2, dest, `/v1/brand/banner?service=${encodeURIComponent(dest.service)}`, fs7.readFileSync(picture2), "image/jpeg").catch((err) => notes.push(`The board's banner wasn't set: ${err.message}`));
+      }
+      result.dashboard_url = dest.dashboard ? `${dest.dashboard}#/${CHECK_PAGE}` : `${base2}/?service=${encodeURIComponent(dest.service)}#/${CHECK_PAGE}`;
+      if (share && dest.cloud) {
+        result.share = await shareLink(base2, apiKey2, dest, { from: started - 6e4, to: Date.now() + 12e4 }).catch((err) => {
+          notes.push(`No share link: ${err.message}`);
+          return null;
+        });
+      } else if (share) notes.push("No share link: share links are a Glitchless Cloud feature (sign in with a workspace key, gl_ws_\u2026). The dashboard is on this server.");
+    }
+    result.report = checkReport(result);
+    result.dm = checkDm(result);
+    const files2 = { report: path11.join(dir, "report.md"), dm: path11.join(dir, "message.txt"), json: path11.join(dir, "check.json") };
+    fs7.writeFileSync(files2.report, `${result.report}
+`);
+    fs7.writeFileSync(files2.dm, `${result.dm}
+`);
+    fs7.writeFileSync(files2.json, `${JSON.stringify({ ...result, report: void 0, dm: void 0 }, null, 2)}
+`);
+    result.files = { ...files2, shots: runs2.flatMap((r) => r.shots || []) };
+    return result;
+  } finally {
+    await browser.close();
+  }
+}
+async function playProfile(browser, { profile, target, dest, sdk, version: version2, seconds: seconds2, ua, dir, adapters, ai, robots, log }) {
+  const ctx = await browser.newContext({
+    viewport: profile.viewport,
+    deviceScaleFactor: profile.deviceScaleFactor || 1,
+    isMobile: !!profile.isMobile,
+    hasTouch: !!profile.touch,
+    userAgent: ua,
+    // The SDK sends to Glitchless from inside the game's page: a page whose CSP lists only its own hosts would block it.
+    bypassCSP: true
+  });
+  const run2 = { profile: profile.name, words: profileWords(profile), viewport: profile.viewport, url: target.play_url, load: null, errors: [], shots: [], steps: [], notes: [], held_back: 0 };
+  const intakeHost = safeHost(dest.intake);
+  const ours = (u) => safeHost(u) === intakeHost && /\/v1\//.test(u);
+  await ctx.route(/\/v1\/intake(\?|$)/, (route) => {
+    let token = null;
+    try {
+      token = new URL(route.request().url()).searchParams.get("token");
+    } catch {
+    }
+    if (token === dest.client_token) return route.continue();
+    run2.held_back++;
+    return route.abort("blockedbyclient");
+  });
+  const page = await ctx.newPage();
+  ctx.on("page", (p) => p !== page && p.close().catch(() => {
+  }));
+  page.on("dialog", (d) => d.dismiss().catch(() => {
+  }));
+  const cdp = await ctx.newCDPSession(page);
+  if (profile.cpu > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: profile.cpu });
+  if (profile.network) {
+    await cdp.send("Network.enable");
+    await cdp.send("Network.emulateNetworkConditions", { offline: false, ...profile.network });
+  }
+  await page.addInitScript({
+    content: checkInitScript({
+      sdk,
+      init: {
+        adapters,
+        glitchless: { service: dest.service, version: version2, env: "check", intake: dest.intake, clientToken: dest.client_token, sessionType: "synthetic", overlay: false, webmcp: false, privacy: "anonymous", properties: { profile: profile.name } }
+      }
+    })
+  });
+  const net2 = { bytes: 0, requests: 0, missing: /* @__PURE__ */ new Map(), failed: /* @__PURE__ */ new Map(), inflight: /* @__PURE__ */ new Set(), lastActivity: Date.now() };
+  page.on("request", (r) => {
+    if (ours(r.url())) return;
+    net2.requests++;
+    net2.inflight.add(r);
+    net2.lastActivity = Date.now();
+  });
+  const done = (r) => {
+    net2.inflight.delete(r);
+    net2.lastActivity = Date.now();
+  };
+  page.on("requestfinished", (r) => {
+    done(r);
+    if (ours(r.url())) return;
+    r.sizes().then((s) => net2.bytes += s.responseBodySize + s.responseHeadersSize).catch(() => {
+    });
+  });
+  page.on("requestfailed", (r) => {
+    done(r);
+    if (/BLOCKED_BY_CLIENT/.test(r.failure()?.errorText || "")) return;
+    if (ours(r.url())) {
+      run2.failed_sends = (run2.failed_sends || 0) + 1;
+      return;
+    }
+    const why = r.failure()?.errorText || "failed";
+    if (!/ERR_ABORTED/.test(why)) net2.failed.set(shortUrl(r.url()), why);
+  });
+  page.on("response", (res) => {
+    if (res.status() >= 400 && !ours(res.url())) net2.missing.set(shortUrl(res.url()), res.status());
+  });
+  page.on("pageerror", (err) => run2.errors.length < 50 && run2.errors.push(String(err?.message || err).split("\n")[0].slice(0, 300)));
+  const aboutUs = (t) => intakeHost && t.includes(intakeHost) && /\/v1\//.test(t) || /\/v1\/intake\?token=/.test(t);
+  page.on("console", (m) => m.type() === "error" && run2.errors.length < 50 && !/Failed to load resource/.test(m.text()) && !aboutUs(m.text()) && run2.errors.push(`console: ${m.text().split("\n")[0].slice(0, 300)}`));
+  const origin = new URL(target.play_url).origin;
+  let wentAway = null;
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame() && f.url() !== "about:blank" && safeOrigin(f.url()) !== origin) wentAway = f.url();
+  });
+  const t0 = Date.now();
+  try {
+    let res;
+    try {
+      res = await page.goto(target.play_url, { waitUntil: "commit", referer: target.referer || void 0, timeout: 6e4 });
+    } catch (err) {
+      run2.stopped = `${profile.name}: the game didn't load (${err.message.split("\n")[0]})`;
+      return run2;
+    }
+    await page.waitForLoadState("domcontentloaded", { timeout: 6e4 }).catch(() => {
+    });
+    const refused = refusal({ status: res?.status(), headers: res ? await res.allHeaders().catch(() => ({})) : {}, title: await page.title().catch(() => ""), body: await page.evaluate(() => document.body?.innerText?.slice(0, 4e3) || "").catch(() => "") });
+    if (refused) {
+      run2.stopped = `${target.play_url}: ${refused}, so the check stopped without playing`;
+      run2.refused = true;
+      return run2;
+    }
+    if (res && res.status() >= 400) {
+      run2.stopped = `${target.play_url} answered HTTP ${res.status()}`;
+      return run2;
+    }
+    const cap = (LOAD_CAP_S[profile.name] || 60) * 1e3;
+    await page.waitForLoadState("load", { timeout: cap }).catch(() => {
+    });
+    while (Date.now() - t0 < cap && (net2.inflight.size > 0 || Date.now() - net2.lastActivity < 2e3)) await page.waitForTimeout(250);
+    let info = await readPage(page);
+    if (!info?.canvas && info?.frame?.src && /^https?:/.test(info.frame.src) && safeOrigin(info.frame.src) !== origin) {
+      const robotsFrame = await robotsCheck(info.frame.src, { ua, cache: robots });
+      if (robotsFrame.allowed) {
+        run2.notes.push(`The game runs in a frame from ${safeHost(info.frame.src)}: the check played that frame.`);
+        run2.url = info.frame.src;
+        await page.goto(info.frame.src, { waitUntil: "load", referer: target.play_url, timeout: cap }).catch(() => {
+        });
+        while (Date.now() - t0 < cap && (net2.inflight.size > 0 || Date.now() - net2.lastActivity < 2e3)) await page.waitForTimeout(250);
+        info = await readPage(page);
+      }
+    }
+    run2.load = { ready_s: round1((net2.lastActivity - t0) / 1e3), timed_out: Date.now() - t0 >= cap, bytes: net2.bytes, requests: net2.requests };
+    run2.page_start = info;
+    if (!info) {
+      run2.stopped = `${profile.name}: the page never answered`;
+      return run2;
+    }
+    if (info.init_error || !info.session) {
+      run2.stopped = `${profile.name}: Glitchless didn't start in the page (${info.init_error || "no session"})`;
+      return run2;
+    }
+    run2.session_id = info.session;
+    log(`  loaded in ${run2.load.ready_s} s, ${mb2(net2.bytes)} MB${info.engines.length ? `, ${info.engines.map((e) => e.name).join(" + ")}` : ""}`);
+    const area = async () => {
+      const r = await page.evaluate(() => window.__GLITCHLESS_CHECK__?.area?.() ?? null).catch(() => null);
+      if (r && r.width >= 40 && r.height >= 40) return { x: Math.max(0, r.x), y: Math.max(0, r.y), width: Math.min(r.width, profile.viewport.width), height: Math.min(r.height, profile.viewport.height) };
+      return { x: 0, y: 0, width: profile.viewport.width, height: profile.viewport.height };
+    };
+    const shot = async (name) => {
+      const file2 = path11.join(dir, `${profile.name}-${name}.jpg`);
+      await page.screenshot({ path: file2, type: "jpeg", quality: 70 }).catch(() => null);
+      return fs7.existsSync(file2) ? file2 : null;
+    };
+    const guard = setInterval(() => {
+      if (!wentAway) return;
+      run2.notes.push(`A click led away from the game (${safeHost(wentAway)}); the bot went back.`);
+      wentAway = null;
+      page.goto(run2.url, { waitUntil: "load", timeout: 3e4 }).catch(() => {
+      });
+    }, 500);
+    try {
+      const played = await explore(page, { profile, seconds: seconds2, cdp, area, shot, ai, log });
+      Object.assign(run2, { steps: played.steps, inputs: played.inputs, shots: played.shots, idle_change: played.idle_change, seconds_played: played.elapsed_s });
+      run2.notes.push(...played.notes);
+    } finally {
+      clearInterval(guard);
+    }
+    run2.page = await readPage(page);
+    await page.evaluate(() => window.dispatchEvent(new Event("pagehide"))).catch(() => {
+    });
+    await page.waitForTimeout(1500);
+  } finally {
+    run2.load ||= { ready_s: null, bytes: net2.bytes, requests: net2.requests };
+    run2.load.missing = [...net2.missing].slice(0, 12).map(([url2, status2]) => ({ url: url2, status: status2 }));
+    run2.load.failed = [...net2.failed].filter(([url2]) => !/\/v1\/intake/.test(url2)).slice(0, 12).map(([url2, why]) => ({ url: url2, why }));
+    if (run2.failed_sends) run2.notes.push(`${run2.failed_sends} of the check's sends to Glitchless failed.`);
+    if (run2.held_back) run2.notes.push(`The game already sends to Glitchless itself: its ${run2.held_back} send${run2.held_back === 1 ? " was" : "s were"} held back during the check, so the bots never counted as its players.`);
+    run2.errors = [...new Set(run2.errors)];
+    await ctx.close().catch(() => {
+    });
+  }
+  return run2;
+}
+async function pageTitle(url2, ua) {
+  try {
+    const html = await fetch(url2, { headers: { "user-agent": ua }, signal: AbortSignal.timeout(15e3) }).then((r) => r.text());
+    const t = html.match(/<title[^>]*>([^<]{1,120})<\/title>/i)?.[1]?.trim();
+    return t ? t.replace(/&amp;/g, "&").replace(/&#39;|&#x27;/g, "'").replace(/&quot;/g, '"') : null;
+  } catch {
+    return null;
+  }
+}
+async function checkDestination({ base: base2, apiKey: apiKey2, name, log = () => {
+}, fetchImpl = fetch }) {
+  const taken = async (service2, project, hasData) => {
+    const headers2 = { "x-glitchless-client": "game-check", ...apiKey2 ? { "x-glitchless-api-key": apiKey2 } : {}, ...project ? { "x-glitchless-project": project } : {} };
+    const saved = await fetchImpl(`${base2}/v1/dashboard?service=${encodeURIComponent(service2)}`, { headers: headers2 }).then((r) => r.ok ? r.json() : null).catch(() => null);
+    const pages = saved?.dashboard?.pages;
+    return pages?.length ? pages[0].id !== CHECK_PAGE : hasData;
+  };
+  if (apiKey2?.startsWith("gl_ws_")) {
+    const agent2 = async (method, p, body2) => {
+      const res = await fetchImpl(`${base2}/v1/agent${p}`, { method, headers: { "x-glitchless-api-key": apiKey2, ...body2 ? { "content-type": "application/json" } : {} }, ...body2 ? { body: JSON.stringify(body2) } : {} });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`Glitchless ${method} /v1/agent${p}: ${data.error || `HTTP ${res.status}`}`);
+      return data;
+    };
+    const { games, intake } = await agent2("GET", "/games");
+    const find2 = (n) => games.find((g) => g.name.toLowerCase() === n.toLowerCase());
+    const serviceOf = (g, n) => g?.services?.find((s) => !s.server_of)?.service || slugify2(n);
+    let gameName2 = name;
+    let game = find2(gameName2);
+    if (game && await taken(serviceOf(game, gameName2), game.id, !!game.services?.length)) {
+      log(`"${game.name}" is a game of its own in your workspace, with its own data: the check goes to "${name} (game check)"`);
+      gameName2 = `${name} (game check)`;
+      game = find2(gameName2);
+    }
+    let token = game?.client_token;
+    let dashboard = game?.dashboard;
+    if (!game) {
+      log(`making the game "${gameName2}" in your workspace`);
+      const made = await agent2("POST", "/games", { name: gameName2 }).catch((err) => {
+        throw new Error(`${err.message} A check makes a game of its own: make room in the workspace, or check into a game an earlier check made, by its name (check_name, or --name).`);
+      });
+      game = made.game;
+      token = made.client_token;
+      dashboard = made.dashboard;
+    } else log(`using the game "${game.name}" an earlier check made`);
+    return { cloud: true, game_id: game.id, name: game.name, service: serviceOf(game, gameName2), client_token: token, intake: intake || base2, dashboard };
+  }
+  const services = await fetchImpl(`${base2}/v1/query/services`, { headers: { "x-glitchless-client": "game-check", ...apiKey2 ? { "x-glitchless-api-key": apiKey2 } : {} } }).then((r) => r.ok ? r.json() : null).then((b) => new Set((b?.services || []).map((x) => x.service))).catch(() => /* @__PURE__ */ new Set());
+  let service = slugify2(name);
+  let gameName = name;
+  if (await taken(service, null, services.has(service))) {
+    log(`"${service}" is a game of its own on this server: the check goes to "${service}-check"`);
+    service = `${service}-check`;
+    gameName = `${name} (game check)`;
+  }
+  return { cloud: false, game_id: null, name: gameName, service, client_token: process.env.GLITCHLESS_CLIENT_TOKEN || "gl_pub_dev", intake: base2, dashboard: null };
+}
+function headersFor(apiKey2, dest) {
+  return { "x-glitchless-client": "game-check", ...apiKey2 ? { "x-glitchless-api-key": apiKey2 } : {}, ...apiKey2?.startsWith("gl_ws_") && dest.game_id ? { "x-glitchless-project": dest.game_id } : {} };
+}
+function readerFor(base2, apiKey2, dest) {
+  return async (name, params) => {
+    const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
+    const res = await fetch(`${base2}/v1/query/${name}?${qs}`, { headers: headersFor(apiKey2, dest) });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${name}: ${(await res.text()).slice(0, 200)}`);
+    const body2 = await res.json();
+    if (body2.error) throw new Error(body2.error);
+    return body2;
+  };
+}
+async function write2(base2, apiKey2, dest, method, p, body2) {
+  const res = await fetch(`${base2}${p}`, { method, headers: { ...headersFor(apiKey2, dest), "content-type": "application/json" }, body: JSON.stringify(body2) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+async function upload2(base2, apiKey2, dest, p, bytes, type) {
+  const res = await fetch(`${base2}${p}`, { method: "PUT", headers: { ...headersFor(apiKey2, dest), "content-type": type }, body: bytes });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+async function waitForSummary(read, service, ids, started, { log, timeoutMs }) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (true) {
+    const body2 = await read("playtest", { service, sessions: ids.join(","), from: started - 6e4, to: Date.now() + 6e4 });
+    last = body2.summary;
+    const ended = new Set((last?.runs || []).filter((r) => r.ended).map((r) => r.session_id));
+    if (ids.every((id) => ended.has(id))) return last;
+    if (Date.now() > deadline) {
+      log(`  ${ids.filter((id) => !ended.has(id)).length} run(s) not complete in Glitchless yet; using what arrived`);
+      return last;
+    }
+    await new Promise((r) => setTimeout(r, 3e3));
+  }
+}
+async function shareLink(base2, apiKey2, dest, { from, to }) {
+  const res = await fetch(`${base2}/v1/agent/games/${dest.game_id}/shares`, {
+    method: "POST",
+    headers: { "x-glitchless-api-key": apiKey2, "content-type": "application/json" },
+    body: JSON.stringify({ service: dest.service, page: CHECK_PAGE, name: "Game check", days: 30, from, to, bots: true })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (data.share?.bots !== true) {
+    await fetch(`${base2}/v1/agent/games/${dest.game_id}/shares/${data.share?.id}`, { method: "DELETE", headers: { "x-glitchless-api-key": apiKey2 } }).catch(() => {
+    });
+    throw new Error("this Glitchless server makes share links that show players only, so a link would show an empty board (it needs the share links that show a game check's bot runs)");
+  }
+  return { url: data.url, id: data.share.id, expires_at: data.share.expiresAt };
+}
+async function sdkScript(base2, cwd = process.cwd()) {
+  try {
+    const res = await fetch(`${base2}/sdk/glitchless.js`, { signal: AbortSignal.timeout(15e3) });
+    if (res.ok && /javascript/.test(res.headers.get("content-type") || "")) return await res.text();
+  } catch {
+  }
+  const candidates = [path11.resolve(HERE, "../../sdk/dist/glitchless.js")];
+  for (const from of [path11.join(cwd, "noop.js"), import.meta.url]) {
+    try {
+      candidates.push(path11.resolve(path11.dirname(createRequire3(from).resolve("glitchless")), "../dist/glitchless.js"));
+    } catch {
+    }
+  }
+  const found = candidates.find((f) => fs7.existsSync(f));
+  if (found) return fs7.readFileSync(found, "utf8");
+  throw new Error(`No Glitchless browser SDK to add to the page: ${base2}/sdk/glitchless.js didn't answer and no built copy was found (in the Glitchless repo: npm run build -w glitchless).`);
+}
+var HERE, CHECK_SECONDS, MAX_PLAY_S, LOAD_CAP_S, readPage, round1, mb2, safeHost, safeOrigin, shortUrl;
+var init_check = __esm({
+  "../playtest/src/check.js"() {
+    init_run();
+    init_check_page();
+    init_check_site();
+    init_check_bot();
+    init_check_report();
+    HERE = path11.dirname(fileURLToPath(import.meta.url));
+    CHECK_SECONDS = 90;
+    MAX_PLAY_S = 240;
+    LOAD_CAP_S = { desktop: 60, phone: 120 };
+    readPage = (page) => page.evaluate(() => window.__GLITCHLESS_CHECK__?.read?.() ?? null).catch(() => null);
+    round1 = (v) => Math.round(v * 10) / 10;
+    mb2 = (b) => Math.round(b / 1048576 * 10) / 10;
+    safeHost = (u) => {
+      try {
+        return new URL(u).host;
+      } catch {
+        return null;
+      }
+    };
+    safeOrigin = (u) => {
+      try {
+        return new URL(u).origin;
+      } catch {
+        return null;
+      }
+    };
+    shortUrl = (u) => {
+      try {
+        const x = new URL(u);
+        return `${x.host}${x.pathname}`.slice(0, 120);
+      } catch {
+        return String(u).slice(0, 120);
+      }
+    };
+  }
+});
+
 // ../playtest/src/index.js
 async function playtest({ saveAs, compareTo, baselineUrl, baselineCommand, quick = false, maxSeconds, config: config2 = {}, cwd = process.cwd(), log = () => {
 } } = {}) {
@@ -40923,6 +42446,9 @@ var init_src = __esm({
     init_run();
     init_engine();
     init_roblox();
+    init_check();
+    init_check_report();
+    init_check_site();
   }
 });
 
@@ -40936,7 +42462,7 @@ var init_playtest = __esm({
     define(
       "glitchless_playtest",
       {
-        description: `Playtest the game with its autoplay bot and compare against a saved baseline. Call with save_as "baseline" BEFORE changing code, then without arguments AFTER the change; a FAIL lists the regressions, warnings and improvements are listed too. Web games (Three.js, Phaser, Babylon.js, PlayCanvas): bots play fixed-seed scenarios in real Chrome, one at a time, against the running game (game_url); this needs the Glitchless server running and Playwright installed in the project, and takes 1\u20135 minutes (quick: about 1). Unity, Godot, Unreal and GameMaker: give command (or "command" in glitchless.playtest.json), what starts the build, such as ["godot", "--path", "."] or an exported build; each scenario starts it with the game's own autoplay flags (by default two runs: --autoplay --seed=7, then --seed=21) plus --glitchless-measure, and the Glitchless SDK in the build measures 10 seconds per run (a scenario's "seconds") and quits; no server or browser is needed. The game needs an autoplay mode that reads those flags and keeps playing for the whole measure: if it quits sooner, or never starts a level with the default scenarios, the error says how to fix it. Roblox: give engine "roblox" (or "engine": "roblox" in glitchless.playtest.json); it plays the place open in Roblox Studio, which needs Studio open with its MCP server on (Assistant \u2192 \u2026 \u2192 Manage MCP Servers \u2192 Enable Studio as MCP server) and Allow HTTP Requests on, and studio (part of the place's name) when several Studios are open. Each scenario sets its params as Workspace attributes (by default autoplay = true, seed = 7, then seed = 21) for the game's bot to read, plays until workspace:GetAttribute("GlitchlessPlaytestDone") is true or 90 seconds pass, stops, and puts the attributes back; the play test's sessions are read back from the Glitchless server this tool reads, so the game's Glitchless.init has to send there. All compare slow frames, frame time p95 and p99, render and update CPU, draw calls, hitches, errors and crashes, overall and per level (an engine build also GPU time and what grew over a run, run by run). A headless build, or runs on different frame budgets, only warn on frame times. Runs are saved in .glitchless/playtest/ in the project.`,
+        description: `Playtest the game with its autoplay bot and compare against a saved baseline. Call with save_as "baseline" BEFORE changing code, then without arguments AFTER the change; a FAIL lists the regressions, warnings and improvements are listed too. Web games (Three.js, Phaser, Babylon.js, PlayCanvas): bots play fixed-seed scenarios in real Chrome, one at a time, against the running game (game_url); this needs the Glitchless server running and Playwright installed in the project, and takes 1\u20135 minutes (quick: about 1). Unity, Godot, Unreal and GameMaker: give command (or "command" in glitchless.playtest.json), what starts the build, such as ["godot", "--path", "."] or an exported build; each scenario starts it with the game's own autoplay flags (by default two runs: --autoplay --seed=7, then --seed=21) plus --glitchless-measure, and the Glitchless SDK in the build measures 10 seconds per run (a scenario's "seconds") and quits; no server or browser is needed. The game needs an autoplay mode that reads those flags and keeps playing for the whole measure: if it quits sooner, or never starts a level with the default scenarios, the error says how to fix it. Roblox: give engine "roblox" (or "engine": "roblox" in glitchless.playtest.json); it plays the place open in Roblox Studio, which needs Studio open with its MCP server on (Assistant \u2192 \u2026 \u2192 Manage MCP Servers \u2192 Enable Studio as MCP server) and Allow HTTP Requests on, and studio (part of the place's name) when several Studios are open. Each scenario sets its params as Workspace attributes (by default autoplay = true, seed = 7, then seed = 21) for the game's bot to read, plays until workspace:GetAttribute("GlitchlessPlaytestDone") is true or 90 seconds pass, stops, and puts the attributes back; the play test's sessions are read back from the Glitchless server this tool reads, so the game's Glitchless.init has to send there. All compare slow frames, frame time p95 and p99, render and update CPU, draw calls, hitches, errors and crashes, overall and per level (an engine build also GPU time and what grew over a run, run by run). A headless build, or runs on different frame budgets, only warn on frame times. Runs are saved in .glitchless/playtest/ in the project. A game check (check_url): Glitchless's bots play any web game someone posted, with nothing installed in it, so its maker can see what Glitchless would do for their game: an itch.io page (its game frame is found and played at the page's size), a github.io, Vercel or Netlify page, or any address. The browser SDK is added to the page before it runs (bot sessions are synthetic, never players), and the engine is told where it can be (Three.js, Phaser, Babylon.js and PlayCanvas get their adapters; Unity, Godot, GameMaker, Construct, GDevelop, Defold, PixiJS or plain canvas and WebGL are named). It plays twice in real Chrome on this computer: desktop on its GPU (default 90 s of play, max_seconds sets it, at most 240), then a throttled phone (CPU slowed 4\xD7, a phone's touch screen and a 4G-like connection, two thirds as long); with loading, about 3 to 6 minutes. A heuristic explorer clicks to start and tries the common controls; with ai true, a Claude model (Haiku) picks the inputs from screenshots instead (needs ANTHROPIC_API_KEY and @anthropic-ai/sdk where the MCP server runs; at most 40 screenshots a profile). It reads the site's robots.txt first and stops where bots are asked to stay out, on 401, 403 or 429, or on a page that checks for a human. It makes a game named after the page (check_name to choose; a game an earlier check made is reused, and a real game by that name is left alone: the check goes to "<name> (game check)"), designs its dashboard (a Game check page first, then pages that fill in with Glitchless installed), puts a screenshot of the game on it as its banner, and on Glitchless Cloud (a workspace key) makes an unlisted share link to the check page for 30 days, which shows the check's bot runs only; an open-source server gets the dashboard and no link. It returns the report, three sentences to send the game's maker with the link, and where the report and screenshots are saved (.glitchless/checks/ in the project). The numbers come from this computer, not the game's players, and the report says so; keep a check private and never rank games with it.`,
         inputSchema: {
           save_as: external_exports.string().optional().describe('Save this run under a name, e.g. "baseline" before a change'),
           compare_to: external_exports.string().optional().describe('Saved run to compare with (default "baseline" when saved)'),
@@ -40945,11 +42471,15 @@ var init_playtest = __esm({
           engine: external_exports.enum(["roblox", "unity", "godot", "unreal", "gamemaker"]).optional().describe(`"roblox" plays the place open in Roblox Studio; the others are told from command, so only needed when its name doesn't say (default: "engine" in glitchless.playtest.json)`),
           studio: external_exports.string().optional().describe("Roblox: which open Studio to play in, part of its place's name (needed when several are open)"),
           command: external_exports.array(external_exports.string()).optional().describe('Unity, Godot, Unreal or GameMaker: the command that starts the build, e.g. ["godot", "--path", "."], ["./build/MyGame.x86_64"] or ["builds/MyGame.app"]; paths are from the project folder (default: "command" in glitchless.playtest.json)'),
-          max_seconds: external_exports.number().min(10).max(600).optional().describe("Cap each run at this many seconds (an engine build: the seconds it measures)")
+          max_seconds: external_exports.number().min(10).max(600).optional().describe("Cap each run at this many seconds (an engine build: the seconds it measures; a game check: seconds of desktop play, default 90, at most 240)"),
+          check_url: external_exports.string().optional().describe("A game check: the address of any web game to play with nothing installed in it (an itch.io page, a github.io, Vercel or Netlify page). Makes its report, dashboard and, on Glitchless Cloud, a share link"),
+          check_name: external_exports.string().optional().describe("A game check: the game's name in Glitchless (default: its page's title)"),
+          ai: external_exports.boolean().optional().describe("A game check: a Claude model picks the inputs from screenshots instead of the explorer (needs ANTHROPIC_API_KEY)")
         },
-        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+        // A game check (check_url) plays a game on the open web.
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
       },
-      async ({ save_as, compare_to, quick, game_url, engine, studio, command, max_seconds } = {}, ctx) => {
+      async ({ save_as, compare_to, quick, game_url, engine, studio, command, max_seconds, check_url, check_name, ai } = {}, ctx) => {
         const token = ctx?.mcpReq._meta?.progressToken;
         let step = 0;
         const log = (message) => {
@@ -40957,6 +42487,18 @@ var init_playtest = __esm({
           });
         };
         try {
+          if (check_url) {
+            const r2 = await gameCheck({ url: check_url, name: check_name, server: base(), apiKey: apiKey() || "", seconds: max_seconds, ai: ai === true, log });
+            const where2 = [r2.share?.url && `Share link (unlisted, 30 days, shows this check only): ${r2.share.url}`, r2.dashboard_url && `Dashboard: ${r2.dashboard_url}`, `Saved: ${r2.files.report} (report), ${r2.files.dm} (the message), ${r2.files.shots.length} screenshots in ${r2.dir}`].filter(Boolean).join("\n");
+            return { content: [{ type: "text", text: `${r2.report}
+
+---
+To send the game's maker (the link and three sentences):
+
+${r2.dm}
+
+${where2}` }] };
+          }
           const r = await playtest({
             saveAs: save_as,
             compareTo: compare_to,
@@ -40982,17 +42524,17 @@ ${files2}` }] };
 });
 
 // ../../node_modules/glitchless-deck/src/util.js
-import fs7 from "node:fs";
-import path10 from "node:path";
+import fs8 from "node:fs";
+import path12 from "node:path";
 import { spawn as spawn4 } from "node:child_process";
 function which(name, { platform = process.platform, env = process.env } = {}) {
   const exts = platform === "win32" ? ["", ...(env.PATHEXT || ".EXE;.CMD;.BAT").split(";").map((e) => e.toLowerCase())] : [""];
-  for (const dir of (env.PATH || env.Path || "").split(path10.delimiter)) {
+  for (const dir of (env.PATH || env.Path || "").split(path12.delimiter)) {
     if (!dir) continue;
     for (const ext of exts) {
-      const file2 = path10.join(dir, name + ext);
+      const file2 = path12.join(dir, name + ext);
       try {
-        if (fs7.statSync(file2).isFile()) return file2;
+        if (fs8.statSync(file2).isFile()) return file2;
       } catch {
       }
     }
@@ -41056,15 +42598,15 @@ var init_util2 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/checks.js
-import fs8 from "node:fs";
-import path11 from "node:path";
+import fs9 from "node:fs";
+import path13 from "node:path";
 function inspectBinary(file2) {
   let head;
   try {
-    const fd = fs8.openSync(file2, "r");
+    const fd = fs9.openSync(file2, "r");
     head = Buffer.alloc(512);
-    const n = fs8.readSync(fd, head, 0, 512, 0);
-    fs8.closeSync(fd);
+    const n = fs9.readSync(fd, head, 0, 512, 0);
+    fs9.closeSync(fd);
     head = head.subarray(0, n);
   } catch {
     return { kind: "missing" };
@@ -41082,9 +42624,9 @@ function inspectBinary(file2) {
     let arch = "unknown";
     try {
       const buf = Buffer.alloc(6);
-      const fd = fs8.openSync(file2, "r");
-      fs8.readSync(fd, buf, 0, 6, pe);
-      fs8.closeSync(fd);
+      const fd = fs9.openSync(file2, "r");
+      fs9.readSync(fd, buf, 0, 6, pe);
+      fs9.closeSync(fd);
       if (buf.readUInt32BE(0) === 1346699264) arch = { 34404: "x86_64", 332: "x86", 43620: "arm64" }[buf.readUInt16LE(4)] || "unknown";
     } catch {
     }
@@ -41098,25 +42640,25 @@ function inspectBinary(file2) {
 }
 function checkFolder(game) {
   const folder = game._folder;
-  const rel = path11.relative(folder, game._root);
-  if (!rel || !rel.startsWith("..") && !path11.isAbsolute(rel)) {
+  const rel = path13.relative(folder, game._root);
+  if (!rel || !rel.startsWith("..") && !path13.isAbsolute(rel)) {
     throw new Problem(`${game.id}'s folder is the project itself (${folder}). Send only the build: set "folder" to where the build goes, such as build/deck.`);
   }
-  if (!fs8.existsSync(folder) || !fs8.statSync(folder).isDirectory() || !fs8.readdirSync(folder).length) {
+  if (!fs9.existsSync(folder) || !fs9.statSync(folder).isDirectory() || !fs9.readdirSync(folder).length) {
     throw new Problem(`Nothing to send: ${folder} is missing or empty. Build it first.`);
   }
-  const entries = fs8.readdirSync(folder);
+  const entries = fs9.readdirSync(folder);
   const marker = entries.find((f) => PROJECT_MARKERS.includes(f) || f.endsWith(".uproject") || f === "node_modules" && entries.includes("package.json"));
   if (marker) throw new Problem(`${folder} holds ${marker}, so it looks like a project, not a build. Send only the build folder.`);
 }
 function checkStart(game, argv, { kiosk = false } = {}) {
   if (kiosk) {
-    if (!fs8.existsSync(path11.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
+    if (!fs9.existsSync(path13.join(game._folder, "index.html"))) throw new Problem(`${game._folder} has no index.html, so it is not a web build. Build it first (or set "folder").`);
     return { kind: "web" };
   }
-  const start = path11.resolve(game._folder, argv[0]);
-  const rel = path11.relative(game._folder, start);
-  if (rel.startsWith("..") || path11.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
+  const start = path13.resolve(game._folder, argv[0]);
+  const rel = path13.relative(game._folder, start);
+  if (rel.startsWith("..") || path13.isAbsolute(rel)) throw new Problem(`"run" has to start a file inside the folder (${argv[0]}).`);
   const what = inspectBinary(start);
   const where2 = `${argv[0]} (in ${game._folder})`;
   if (what.kind === "missing") throw new Problem(`${argv[0]} is not in ${game._folder}; check the game's "run" in ${game._file}.`);
@@ -41143,21 +42685,21 @@ var init_checks3 = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/engines.js
-import fs9 from "node:fs";
-import os6 from "node:os";
-import path12 from "node:path";
+import fs10 from "node:fs";
+import os7 from "node:os";
+import path14 from "node:path";
 function readPackage(root) {
   try {
-    return JSON.parse(fs9.readFileSync(path12.join(root, "package.json"), "utf8"));
+    return JSON.parse(fs10.readFileSync(path14.join(root, "package.json"), "utf8"));
   } catch {
     return null;
   }
 }
 function uprojectIn(game, root) {
-  if (game.unreal?.project) return path12.resolve(root, game.unreal.project);
+  if (game.unreal?.project) return path14.resolve(root, game.unreal.project);
   try {
-    const found = fs9.readdirSync(root).find((f) => f.endsWith(".uproject"));
-    return found ? path12.join(root, found) : null;
+    const found = fs10.readdirSync(root).find((f) => f.endsWith(".uproject"));
+    return found ? path14.join(root, found) : null;
   } catch {
     return null;
   }
@@ -41169,7 +42711,7 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
       return { folder: "build/deck", run: `./${game.id}.x86_64` };
     case "unreal": {
       const uproject = uprojectIn(game, root);
-      const name = uproject ? path12.basename(uproject, ".uproject") : game.id;
+      const name = uproject ? path14.basename(uproject, ".uproject") : game.id;
       return unrealTarget(game, platform) === "win64" ? { folder: "build/deck", run: `./Windows/${name}.exe`, proton: true } : { folder: "build/deck", run: `./Linux/${name}.sh` };
     }
     case "web": {
@@ -41184,14 +42726,14 @@ function engineDefaults(game, { root = ".", platform = process.platform } = {}) 
 }
 function resolveArgv(game) {
   const argv = [...game._argv];
-  const there = (rel) => fs9.existsSync(path12.resolve(game._folder, rel));
+  const there = (rel) => fs10.existsSync(path14.resolve(game._folder, rel));
   if (there(argv[0]) || game.run !== engineDefaults(game, { root: game._root }).run) return argv;
   if (game.engine === "unreal") {
     const alt = argv[0].replace(/^\.\/(Windows|Linux)\//, (_, p) => `./${p}NoEditor/`);
     if (there(alt)) argv[0] = alt;
-  } else if (game.engine === "web" && webMode(game) === "electron" && fs9.existsSync(game._folder)) {
+  } else if (game.engine === "web" && webMode(game) === "electron" && fs10.existsSync(game._folder)) {
     const skip = /^(chrome-sandbox|chrome_crashpad_handler)$|\.so(\.|$)/;
-    const bins = fs9.readdirSync(game._folder).filter((f) => !skip.test(f) && fs9.statSync(path12.join(game._folder, f)).isFile() && inspectBinary(path12.join(game._folder, f)).kind === "elf");
+    const bins = fs10.readdirSync(game._folder).filter((f) => !skip.test(f) && fs10.statSync(path14.join(game._folder, f)).isFile() && inspectBinary(path14.join(game._folder, f)).kind === "elf");
     if (bins.length === 1) argv[0] = `./${bins[0]}`;
   }
   return argv;
@@ -41223,7 +42765,7 @@ async function shellBuild(game, command, log) {
 }
 function tail2(file2, lines = 15) {
   try {
-    return fs9.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
+    return fs10.readFileSync(file2, "utf8").trimEnd().split("\n").slice(-lines).join("\n");
   } catch {
     return "";
   }
@@ -41231,7 +42773,7 @@ function tail2(file2, lines = 15) {
 function godotPresets(root) {
   let text2;
   try {
-    text2 = fs9.readFileSync(path12.join(root, "export_presets.cfg"), "utf8");
+    text2 = fs10.readFileSync(path14.join(root, "export_presets.cfg"), "utf8");
   } catch {
     return [];
   }
@@ -41258,9 +42800,9 @@ function godotBinary(game, platform) {
   if (given) return given;
   const found = which("godot", { platform }) || which("godot4", { platform });
   if (found) return found;
-  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path12.join(os6.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
+  const mac3 = ["/Applications/Godot.app/Contents/MacOS/Godot", "/Applications/Godot_mono.app/Contents/MacOS/Godot", path14.join(os7.homedir(), "Applications/Godot.app/Contents/MacOS/Godot")];
   if (platform === "darwin") {
-    for (const p of mac3) if (fs9.existsSync(p)) return p;
+    for (const p of mac3) if (fs10.existsSync(p)) return p;
   }
   throw new Problem('Godot was not found. Put it on the PATH as godot, or set GODOT=/path/to/godot (or "godot": { "binary": ... } in the game entry).');
 }
@@ -41273,8 +42815,8 @@ async function buildGodot(game, log, platform) {
   }
   if (preset.arch && preset.arch !== "x86_64") throw new Problem(`The "${preset.name}" preset builds for ${preset.arch}; the Deck needs x86_64 (Export > Linux > Binary Format > Architecture).`);
   const bin = godotBinary(game, platform);
-  const out = path12.resolve(game._folder, game._argv[0]);
-  fs9.mkdirSync(path12.dirname(out), { recursive: true });
+  const out = path14.resolve(game._folder, game._argv[0]);
+  fs10.mkdirSync(path14.dirname(out), { recursive: true });
   const logFile = logFileFor(game);
   const started = Date.now();
   log(`Godot: importing, then exporting with the "${preset.name}" preset`);
@@ -41284,15 +42826,15 @@ async function buildGodot(game, log, platform) {
     const r = await run(bin, args, { cwd: game._root });
     text2 += r.stdout + r.stderr;
   }
-  fs9.writeFileSync(logFile, text2);
+  fs10.writeFileSync(logFile, text2);
   let made = null;
   try {
-    made = fs9.statSync(out);
+    made = fs10.statSync(out);
   } catch {
   }
   if (!made || !made.size || made.mtimeMs < started - 2e3) {
     const hint = /export template/i.test(text2) ? "\nInstall the export templates: Editor > Manage Export Templates > Download and Install." : "";
-    throw new Problem(`The Godot export did not make ${path12.basename(out)} (log: ${logFile}).${hint}
+    throw new Problem(`The Godot export did not make ${path14.basename(out)} (log: ${logFile}).${hint}
 ${tail2(logFile)}`);
   }
 }
@@ -41301,35 +42843,35 @@ function unityEditor(game, root, platform) {
   if (given) return { editor: given };
   let version2;
   try {
-    version2 = fs9.readFileSync(path12.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
+    version2 = fs10.readFileSync(path14.join(root, "ProjectSettings", "ProjectVersion.txt"), "utf8").match(/m_EditorVersion:\s*(\S+)/)[1];
   } catch {
     throw new Problem(`${root} doesn't look like a Unity project (no ProjectSettings/ProjectVersion.txt).`);
   }
   const hub = {
     darwin: [`/Applications/Unity/Hub/Editor/${version2}/Unity.app/Contents/MacOS/Unity`, `/Applications/Unity/Hub/Editor/${version2}/PlaybackEngines/LinuxStandaloneSupport`],
     win32: [`C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Unity.exe`, `C:\\Program Files\\Unity\\Hub\\Editor\\${version2}\\Editor\\Data\\PlaybackEngines\\LinuxStandaloneSupport`],
-    linux: [path12.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path12.join(os6.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
+    linux: [path14.join(os7.homedir(), `Unity/Hub/Editor/${version2}/Editor/Unity`), path14.join(os7.homedir(), `Unity/Hub/Editor/${version2}/Editor/Data/PlaybackEngines/LinuxStandaloneSupport`)]
   }[platform] || [];
-  if (!hub[0] || !fs9.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
-  if (platform !== "linux" && !fs9.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
+  if (!hub[0] || !fs10.existsSync(hub[0])) throw new Problem(`Unity ${version2} (the project's version) is not installed where Unity Hub puts it. Install it with Unity Hub, or set UNITY=/path/to/Unity.`);
+  if (platform !== "linux" && !fs10.existsSync(hub[1])) throw new Problem(`Unity ${version2} has no Linux Build Support. Unity Hub > Installs > ${version2} > Add modules > Linux Build Support (Mono).`);
   return { editor: hub[0], version: version2 };
 }
 async function buildUnity(game, log, platform) {
   const { editor } = unityEditor(game, game._root, platform);
-  const out = path12.resolve(game._folder, game._argv[0]);
+  const out = path14.resolve(game._folder, game._argv[0]);
   const logFile = logFileFor(game);
-  fs9.rmSync(game._folder, { recursive: true, force: true });
-  fs9.mkdirSync(game._folder, { recursive: true });
+  fs10.rmSync(game._folder, { recursive: true, force: true });
+  fs10.mkdirSync(game._folder, { recursive: true });
   log("Unity: Linux64 build in batch mode (the Editor must be closed on this project)");
   const r = await run(editor, ["-batchmode", "-quit", "-nographics", "-projectPath", game._root, "-buildTarget", "Linux64", "-buildLinux64Player", out, "-logFile", logFile], { cwd: game._root });
-  if (r.code !== 0 || !fs9.existsSync(out)) {
+  if (r.code !== 0 || !fs10.existsSync(out)) {
     const text2 = tail2(logFile, 400);
     const hint = /another Unity instance is running/i.test(text2) ? "\nClose the Unity Editor on this project first: batch mode cannot open a project that is already open." : "";
     throw new Problem(`The Unity build failed (log: ${logFile}).${hint}
 ${tail2(logFile)}`);
   }
-  for (const f of fs9.readdirSync(game._folder)) {
-    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs9.rmSync(path12.join(game._folder, f), { recursive: true, force: true });
+  for (const f of fs10.readdirSync(game._folder)) {
+    if (/_BurstDebugInformation_DoNotShip$|_BackUpThisFolder_ButDontShipIt$/.test(f)) fs10.rmSync(path14.join(game._folder, f), { recursive: true, force: true });
   }
 }
 function unrealEngine(game) {
@@ -41337,8 +42879,8 @@ function unrealEngine(game) {
   if (given) return given;
   const base2 = "C:\\Program Files\\Epic Games";
   try {
-    const versions = fs9.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
-    if (versions.length) return path12.join(base2, versions.at(-1));
+    const versions = fs10.readdirSync(base2).filter((d) => /^UE_\d/.test(d)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true }));
+    if (versions.length) return path14.join(base2, versions.at(-1));
   } catch {
   }
   throw new Problem('Unreal Engine was not found. Set UE_ROOT to the engine folder (the one with Engine/ in it), or "unreal": { "engine": ... } in the game entry.');
@@ -41354,9 +42896,9 @@ async function buildUnreal(game, log, platform) {
   const uproject = uprojectIn(game, game._root);
   if (!uproject) throw new Problem(`No .uproject in ${game._root} (or set "unreal": { "project": ... }).`);
   const engine = unrealEngine(game);
-  const uat = path12.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
-  if (!fs9.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
-  fs9.rmSync(game._folder, { recursive: true, force: true });
+  const uat = path14.join(engine, "Engine", "Build", "BatchFiles", platform === "win32" ? "RunUAT.bat" : "RunUAT.sh");
+  if (!fs10.existsSync(uat)) throw new Problem(`${uat} is not there: is UE_ROOT the engine folder?`);
+  fs10.rmSync(game._folder, { recursive: true, force: true });
   const args = ["BuildCookRun", `-project=${uproject}`, "-noP4", `-platform=${target === "win64" ? "Win64" : "Linux"}`, `-clientconfig=${game.unreal?.config || "Development"}`, "-build", "-cook", "-stage", "-pak", "-archive", `-archivedirectory=${game._folder}`, "-utf8output", "-unattended"];
   log(`Unreal: BuildCookRun for ${target === "win64" ? "Win64" : "Linux"} (this takes a while the first time)`);
   const q = (a) => platform === "win32" && /\s/.test(a) ? `"${a}"` : a;
@@ -41378,28 +42920,28 @@ var init_engines = __esm({
     KIOSK_RUN = "./.glitchless-kiosk.sh";
     webMode = (game) => game.web?.mode === "electron" ? "electron" : "kiosk";
     unrealTarget = (game, platform = process.platform) => (game.unreal?.target || (platform === "win32" ? "win64" : "linux")).toLowerCase();
-    logFileFor = (game) => path12.join(path12.dirname(game._folder), `${path12.basename(game._folder)}-build.log`);
+    logFileFor = (game) => path14.join(path14.dirname(game._folder), `${path14.basename(game._folder)}-build.log`);
   }
 });
 
 // ../../node_modules/glitchless-deck/src/config.js
-import fs10 from "node:fs";
-import os7 from "node:os";
-import path13 from "node:path";
+import fs11 from "node:fs";
+import os8 from "node:os";
+import path15 from "node:path";
 function configDir() {
-  return process.env.GLITCHLESS_DECK_HOME || path13.join(os7.homedir(), ".config", "glitchless-deck");
+  return process.env.GLITCHLESS_DECK_HOME || path15.join(os8.homedir(), ".config", "glitchless-deck");
 }
 function readJson(file2, fallback) {
   try {
-    return JSON.parse(fs10.readFileSync(file2, "utf8"));
+    return JSON.parse(fs11.readFileSync(file2, "utf8"));
   } catch (err) {
     if (err.code === "ENOENT") return fallback;
     throw new Problem(`${file2} is not valid JSON: ${err.message}`);
   }
 }
 function writeJson(file2, value) {
-  fs10.mkdirSync(path13.dirname(file2), { recursive: true });
-  fs10.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
+  fs11.mkdirSync(path15.dirname(file2), { recursive: true });
+  fs11.writeFileSync(file2, `${JSON.stringify(value, null, 1)}
 `);
 }
 function loadDecks() {
@@ -41417,7 +42959,7 @@ function saveDeck(deck, { makeCurrent = true } = {}) {
 }
 function pairedDeck(which2) {
   const { current, decks } = loadDecks();
-  if (!decks.length || !fs10.existsSync(files().key)) {
+  if (!decks.length || !fs11.existsSync(files().key)) {
     throw new Problem("Not paired with a Deck yet. On the Deck: Settings > Developer > Pair new host. Then run: glitchless-deck pair");
   }
   if (which2) {
@@ -41430,17 +42972,17 @@ function pairedDeck(which2) {
 }
 function projectFileIn(dir) {
   for (const name of PROJECT_FILES) {
-    const file2 = path13.join(dir, name);
-    if (fs10.existsSync(file2)) return file2;
+    const file2 = path15.join(dir, name);
+    if (fs11.existsSync(file2)) return file2;
   }
   return null;
 }
 function listedProjects() {
-  return readJson(files().projects, []).filter((f) => fs10.existsSync(f));
+  return readJson(files().projects, []).filter((f) => fs11.existsSync(f));
 }
 function projectFiles(cwd = process.cwd()) {
   const here = projectFileIn(cwd);
-  const out = here ? [path13.resolve(here)] : [];
+  const out = here ? [path15.resolve(here)] : [];
   for (const f of listedProjects()) if (!out.includes(f)) out.push(f);
   return out;
 }
@@ -41481,12 +43023,12 @@ function normalizeGame(raw, file2) {
   }
   if (id.endsWith(MEASURE_SUFFIX)) throw new Problem(`${file2}: ids ending in ${MEASURE_SUFFIX} are kept for measuring (${id}).`);
   if (raw.engine && !ENGINES3.includes(raw.engine)) throw new Problem(`${file2}: ${id} has engine ${JSON.stringify(raw.engine)}; known engines: ${ENGINES3.join(", ")}.`);
-  const root = path13.resolve(path13.dirname(file2), raw.root || ".");
+  const root = path15.resolve(path15.dirname(file2), raw.root || ".");
   const game = { ...engineDefaults({ ...raw, id }, { root }), ...raw, id, _file: file2, _root: root };
   for (const key of ["folder", "run"]) {
     if (!game[key]) throw new Problem(`${file2}: ${id} needs a "${key}"${raw.engine ? "" : ' (or an "engine" that fills it in)'}.`);
   }
-  game._folder = path13.resolve(root, game.folder);
+  game._folder = path15.resolve(root, game.folder);
   game._argv = Array.isArray(game.run) ? game.run.map(String) : shellWords(String(game.run));
   if (!game._argv.length) throw new Problem(`${file2}: ${id} has an empty "run".`);
   return game;
@@ -41495,7 +43037,7 @@ function readProject(file2) {
   const data = readJson(file2, null);
   if (!data) throw new Problem(`${file2} does not exist.`);
   const games = Array.isArray(data.games) ? data.games : [];
-  return games.map((g) => normalizeGame(g, path13.resolve(file2)));
+  return games.map((g) => normalizeGame(g, path15.resolve(file2)));
 }
 function loadGames({ cwd = process.cwd() } = {}) {
   const games = [];
@@ -41534,11 +43076,11 @@ var init_config2 = __esm({
       const dir = configDir();
       return {
         dir,
-        key: path13.join(dir, "devkit_rsa"),
-        decks: path13.join(dir, "decks.json"),
-        projects: path13.join(dir, "projects.json"),
-        knownHosts: path13.join(dir, "known_hosts"),
-        hashes: path13.join(dir, "hashes")
+        key: path15.join(dir, "devkit_rsa"),
+        decks: path15.join(dir, "decks.json"),
+        projects: path15.join(dir, "projects.json"),
+        knownHosts: path15.join(dir, "known_hosts"),
+        hashes: path15.join(dir, "hashes")
       };
     };
   }
@@ -41546,7 +43088,7 @@ var init_config2 = __esm({
 
 // ../../node_modules/glitchless-deck/src/mdns.js
 import dgram from "node:dgram";
-import os8 from "node:os";
+import os9 from "node:os";
 function encodeName(name) {
   const parts = [];
   for (const label3 of name.replace(/\.$/, "").split(".")) {
@@ -41632,7 +43174,7 @@ function decodeMessage(buf) {
 }
 function localAddresses() {
   const out = [];
-  for (const list of Object.values(os8.networkInterfaces())) {
+  for (const list of Object.values(os9.networkInterfaces())) {
     for (const a of list || []) if ((a.family === "IPv4" || a.family === 4) && !a.internal) out.push(a);
   }
   return out;
@@ -42451,8 +43993,8 @@ var init_glitchless = __esm({
 
 // ../../node_modules/glitchless-deck/src/transfer.js
 import crypto3 from "node:crypto";
-import fs11 from "node:fs";
-import path14 from "node:path";
+import fs12 from "node:fs";
+import path16 from "node:path";
 import { spawn as spawn5 } from "node:child_process";
 function transferMode(given, { platform = process.platform } = {}) {
   if (given === "tar" || given === "rsync") return given;
@@ -42462,15 +44004,15 @@ function transferMode(given, { platform = process.platform } = {}) {
 function walk(root) {
   const out = { files: [], links: [], dirs: [] };
   const visit2 = (dir) => {
-    for (const entry of fs11.readdirSync(dir, { withFileTypes: true })) {
-      const full = path14.join(dir, entry.name);
-      const rel = path14.relative(root, full).split(path14.sep).join("/");
-      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs11.readlinkSync(full) });
+    for (const entry of fs12.readdirSync(dir, { withFileTypes: true })) {
+      const full = path16.join(dir, entry.name);
+      const rel = path16.relative(root, full).split(path16.sep).join("/");
+      if (entry.isSymbolicLink()) out.links.push({ rel, full, target: fs12.readlinkSync(full) });
       else if (entry.isDirectory()) {
-        out.dirs.push({ rel, full, mtime: fs11.statSync(full).mtimeMs });
+        out.dirs.push({ rel, full, mtime: fs12.statSync(full).mtimeMs });
         visit2(full);
       } else if (entry.isFile()) {
-        const st = fs11.statSync(full);
+        const st = fs12.statSync(full);
         out.files.push({ rel, full, size: st.size, mtime: st.mtimeMs, mode: st.mode & 511 });
       }
     }
@@ -42481,14 +44023,14 @@ function walk(root) {
 function sha1File(file2) {
   return new Promise((resolve2, reject) => {
     const h = crypto3.createHash("sha1");
-    fs11.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve2(h.digest("hex")));
+    fs12.createReadStream(file2).on("data", (c) => h.update(c)).on("error", reject).on("end", () => resolve2(h.digest("hex")));
   });
 }
 async function hashFiles(id, list) {
-  const cacheFile = path14.join(files().hashes, `${id}.json`);
+  const cacheFile = path16.join(files().hashes, `${id}.json`);
   let cache = {};
   try {
-    cache = JSON.parse(fs11.readFileSync(cacheFile, "utf8"));
+    cache = JSON.parse(fs12.readFileSync(cacheFile, "utf8"));
   } catch {
   }
   const fresh = {};
@@ -42564,27 +44106,27 @@ function tarHeader(entry) {
 }
 async function writeTar(out, { send: sendFiles = [], links = [], dirs = [] }, { platform = process.platform, onBytes = () => {
 } } = {}) {
-  const write2 = (buf) => new Promise((resolve2, reject) => {
+  const write3 = (buf) => new Promise((resolve2, reject) => {
     if (out.destroyed) return reject(new Error("the connection closed"));
     if (out.write(buf)) resolve2();
     else out.once("drain", resolve2);
   });
-  for (const d of dirs) await write2(tarHeader({ name: `${d.rel}/`, type: "5", mode: 493, mtime: d.mtime / 1e3 }));
+  for (const d of dirs) await write3(tarHeader({ name: `${d.rel}/`, type: "5", mode: 493, mtime: d.mtime / 1e3 }));
   for (const f of sendFiles) {
-    await write2(tarHeader({ name: f.rel, size: f.size, mode: modeFor(f, platform), mtime: f.mtime / 1e3 }));
+    await write3(tarHeader({ name: f.rel, size: f.size, mode: modeFor(f, platform), mtime: f.mtime / 1e3 }));
     let sent = 0;
-    for await (const chunk of fs11.createReadStream(f.full)) {
+    for await (const chunk of fs12.createReadStream(f.full)) {
       const piece = sent + chunk.length > f.size ? chunk.subarray(0, f.size - sent) : chunk;
-      await write2(piece);
+      await write3(piece);
       sent += piece.length;
       onBytes(piece.length);
       if (sent >= f.size) break;
     }
-    if (sent < f.size) await write2(Buffer.alloc(f.size - sent));
-    await write2(pad(f.size));
+    if (sent < f.size) await write3(Buffer.alloc(f.size - sent));
+    await write3(pad(f.size));
   }
-  for (const l of links) await write2(tarHeader({ name: l.rel, type: "2", linkname: l.target, mode: 511 }));
-  await write2(Buffer.alloc(1024));
+  for (const l of links) await write3(tarHeader({ name: l.rel, type: "2", linkname: l.target, mode: 511 }));
+  await write3(Buffer.alloc(1024));
 }
 async function transfer(deck, game, { mode: mode2, log = () => {
 }, platform = process.platform } = {}) {
@@ -42667,8 +44209,8 @@ var init_transfer = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/send.js
-import fs12 from "node:fs";
-import path15 from "node:path";
+import fs13 from "node:fs";
+import path17 from "node:path";
 async function install(deck, game, { gameid = game.id, argv, extra = [], linkTo } = {}) {
   const kiosk = isKiosk(game);
   const files2 = {};
@@ -42694,12 +44236,12 @@ function readArtwork(game) {
   for (const [key, rel] of Object.entries(game.artwork || {})) {
     const kind = ART_KINDS[key];
     if (!kind) throw new Problem(`${game._file}: unknown artwork "${key}". Use capsule (600x900), wide (920x430), hero (3840x1240), logo or icon.`);
-    const file2 = path15.resolve(game._root, rel);
-    const ext = path15.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
+    const file2 = path17.resolve(game._root, rel);
+    const ext = path17.extname(file2).slice(1).toLowerCase().replace("jpeg", "jpg");
     if (!["png", "jpg"].includes(ext)) throw new Problem(`${rel}: artwork has to be a .png or .jpg.`);
-    if (!fs12.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
-    if (fs12.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
-    images[kind] = { ext, b64: fs12.readFileSync(file2).toString("base64") };
+    if (!fs13.existsSync(file2)) throw new Problem(`${rel} (the ${key} artwork) is not there.`);
+    if (fs13.statSync(file2).size > 15 * 1048576) throw new Problem(`${rel} is over 15 MB; Steam artwork should be far smaller.`);
+    images[kind] = { ext, b64: fs13.readFileSync(file2).toString("base64") };
   }
   return images;
 }
@@ -42741,9 +44283,9 @@ async function send2(game, { which: which2, build: build2 = true, transfer: mode
       log(String(err.message));
     }
   }
-  const seconds = Math.round((Date.now() - started) / 1e3);
-  log(`Done in ${seconds}s. On the Deck: Library > Non-Steam > Devkit Game: ${game.id}`);
-  return { game: game.id, deck: { name: deck.name, address: deck.address }, seconds, kind: kind.kind, transfer: moved, steam: installed.success, argv: installed.argv, intake: glitch?.url || null, artwork };
+  const seconds2 = Math.round((Date.now() - started) / 1e3);
+  log(`Done in ${seconds2}s. On the Deck: Library > Non-Steam > Devkit Game: ${game.id}`);
+  return { game: game.id, deck: { name: deck.name, address: deck.address }, seconds: seconds2, kind: kind.kind, transfer: moved, steam: installed.success, argv: installed.argv, intake: glitch?.url || null, artwork };
 }
 var isKiosk, ART_KINDS;
 var init_send = __esm({
@@ -42795,23 +44337,23 @@ var init_play = __esm({
 });
 
 // ../../node_modules/glitchless-deck/src/measure.js
-import fs13 from "node:fs";
-import path16 from "node:path";
+import fs14 from "node:fs";
+import path18 from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 function saveRun2(game, name, run2) {
   if (!NAME2.test(name)) throw new Problem(`Run name "${name}" must be 1-64 letters, digits, dots, dashes or underscores.`);
-  fs13.mkdirSync(runsDir(game), { recursive: true });
-  const file2 = path16.join(runsDir(game), `${name}.json`);
-  fs13.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
+  fs14.mkdirSync(runsDir(game), { recursive: true });
+  const file2 = path18.join(runsDir(game), `${name}.json`);
+  fs14.writeFileSync(file2, JSON.stringify({ ...run2, name }, null, 2));
   return file2;
 }
 function loadRun2(game, nameOrFile) {
-  const file2 = nameOrFile.endsWith(".json") ? path16.resolve(nameOrFile) : path16.join(runsDir(game), `${nameOrFile}.json`);
-  return fs13.existsSync(file2) ? JSON.parse(fs13.readFileSync(file2, "utf8")) : null;
+  const file2 = nameOrFile.endsWith(".json") ? path18.resolve(nameOrFile) : path18.join(runsDir(game), `${nameOrFile}.json`);
+  return fs14.existsSync(file2) ? JSON.parse(fs14.readFileSync(file2, "utf8")) : null;
 }
 function listRuns2(game) {
   try {
-    return fs13.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
+    return fs14.readdirSync(runsDir(game)).filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5));
   } catch {
     return [];
   }
@@ -42884,7 +44426,7 @@ function measureReport(saved, comparison, baseline) {
   }
   return out.join("\n");
 }
-async function measure(game, { which: which2, seconds = 10, warmup = 3, saveAs, compareTo, args = [], glitchless = false, intake, log = console.log } = {}) {
+async function measure(game, { which: which2, seconds: seconds2 = 10, warmup = 3, saveAs, compareTo, args = [], glitchless = false, intake, log = console.log } = {}) {
   if (isKiosk(game)) throw new Problem("A web game measures itself in the browser, not from the command line: use glitchless-playtest, or the glitchless_measure tool over WebMCP.");
   if (compareTo && !loadRun2(game, compareTo)) throw new Problem(`No saved run called ${compareTo}. Saved: ${listRuns2(game).join(", ") || "none"}.`);
   const deck = await reach(which2, { log });
@@ -42894,15 +44436,15 @@ async function measure(game, { which: which2, seconds = 10, warmup = 3, saveAs, 
   const gameid = game.id + MEASURE_SUFFIX;
   const out = `${hello.home}/.local/share/glitchless-deck/measure/${game.id}.json`;
   const glitch = glitchless || intake ? await intakeFlags(deck, { intake, log }) : null;
-  const flags = [...args, ...glitch?.flags || [], `--glitchless-measure=${seconds}`, `--glitchless-warmup=${warmup}`, `--glitchless-out=${out}`];
+  const flags = [...args, ...glitch?.flags || [], `--glitchless-measure=${seconds2}`, `--glitchless-warmup=${warmup}`, `--glitchless-out=${out}`];
   const stopped = await helper(deck, { do: "stop", gameid: game.id });
   if (stopped.stopped) log(`Closed the ${game.id} that was running.`);
   await helper(deck, { do: "clear", paths: [out] });
   await install(deck, game, { gameid, argv: resolveArgv(game), extra: flags, linkTo: game.id });
-  log(`Measuring ${game.id} on ${deck.name} for ${seconds}s after ${warmup}s warm-up (it opens on the Deck as ${gameid}).`);
+  log(`Measuring ${game.id} on ${deck.name} for ${seconds2}s after ${warmup}s warm-up (it opens on the Deck as ${gameid}).`);
   const started = await helper(deck, { do: "steam", command: "run-game/", params: { gameid }, wait: 20 });
   if (started.error) throw new Problem(`Steam did not start ${gameid}: ${started.error}`);
-  const got = await helper(deck, { do: "wait_file", path: out, timeout: warmup + seconds + 90, gameid, watch: !game.proton }, { timeout: (warmup + seconds + 120) * 1e3 });
+  const got = await helper(deck, { do: "wait_file", path: out, timeout: warmup + seconds2 + 90, gameid, watch: !game.proton }, { timeout: (warmup + seconds2 + 120) * 1e3 });
   if (got.error || !got.content) {
     await helper(deck, { do: "stop", gameid: game.id });
     const why = got.error === "quit" ? "quit without writing a measurement" : "did not write a measurement";
@@ -42937,7 +44479,7 @@ var init_measure = __esm({
     init_ssh();
     init_util2();
     NAME2 = /^[A-Za-z0-9._-]{1,64}$/;
-    runsDir = (game) => path16.join(game._root, ".glitchless", "deck", game.id);
+    runsDir = (game) => path18.join(game._root, ".glitchless", "deck", game.id);
     p502 = (x) => x && typeof x === "object" ? x.p50 ?? null : x ?? null;
     round3 = (n, d = 1) => n == null ? null : Math.round(n * 10 ** d) / 10 ** d;
     errorType2 = (e) => `${e.kind || ""}|${String(e.message || "").replace(/\d+/g, "#")}|${String(e.location || "").replace(/:\d+/g, "")}`;
@@ -42971,7 +44513,7 @@ var init_src2 = __esm({
 
 // src/tools/deck.js
 var deck_exports = {};
-import path17 from "node:path";
+import path19 from "node:path";
 function progress(ctx) {
   const token = ctx?.mcpReq._meta?.progressToken;
   let step = 0;
@@ -42984,7 +44526,7 @@ function progress(ctx) {
   return { log, lines };
 }
 function find(game, project) {
-  return gameNamed(game, { cwd: path17.resolve(project || process.cwd()) });
+  return gameNamed(game, { cwd: path19.resolve(project || process.cwd()) });
 }
 var common2, problem;
 var init_deck2 = __esm({
@@ -43019,12 +44561,12 @@ var init_deck2 = __esm({
         },
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
       },
-      async ({ game, project, measure: measuring, build: build2, launch: start, intake, glitchless, seconds, warmup, save_as, compare_to, args } = {}, ctx) => {
+      async ({ game, project, measure: measuring, build: build2, launch: start, intake, glitchless, seconds: seconds2, warmup, save_as, compare_to, args } = {}, ctx) => {
         const { log, lines } = progress(ctx);
         try {
           const g = find(game, project);
           if (measuring) {
-            const r2 = await measure(g, { seconds: seconds ?? 10, warmup: warmup ?? 3, saveAs: save_as, compareTo: compare_to, args: args || [], glitchless: !!glitchless, log });
+            const r2 = await measure(g, { seconds: seconds2 ?? 10, warmup: warmup ?? 3, saveAs: save_as, compareTo: compare_to, args: args || [], glitchless: !!glitchless, log });
             const files2 = Object.entries(r2.files || {}).map(([k, f]) => `${k}: ${f}`).join("\n");
             return { content: [{ type: "text", text: `${r2.report}
 

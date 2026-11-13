@@ -197,6 +197,14 @@ developer, then change what they ask for: "split opens by version", "add the sho
 more panel, "a page for the tutorial" one more board. People can rename, reorder, add and remove pages in the
 dashboard too (Edit pages), so read the current pages before saving over them.
 
+**A game that came from a game check.** `glitchless_playtest` with `check_url` plays a game with nothing installed
+and designs its dashboard from what its bots saw: a "Game check" page first (its numbers come from Glitchless's
+test machine, its sessions are bots), then pages titled "… with Glitchless installed" whose notes name the levels,
+waves, modes and inputs the bots found. Once the game sends its own data, add the collectors those notes name
+(`levelStart` for each wave or level the bots saw, a `mode` property for the modes, `track()` for the actions), drop
+"with Glitchless installed" from the titles, rewrite the notes for players, and keep the Game check page last or
+remove it: its link shows only the check's bot runs.
+
 ## 4. Use it to debug
 
 The boards also decide what a release is judged on: the Versions view and `glitchless_compare_versions` compare

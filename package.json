@@ -21,6 +21,7 @@
     "test:godot": "node godot/test/warnings.mjs && node godot/test/e2e.mjs && node godot/test/web.mjs",
     "test:godot:web": "node godot/test/web.mjs",
     "test:devvit": "node packages/sdk/test/devvit-webview.mjs",
+    "test:check": "node packages/playtest/test/check.e2e.mjs",
     "test:unreal:web": "node unreal/test/web.mjs",
     "test:unity": "node unity/test/e2e.mjs",
     "test:unity:map": "node unity/test/map.mjs",
