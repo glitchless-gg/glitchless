@@ -1,6 +1,6 @@
 {
   "name": "glitchless-playtest",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Playtest bots for game observability: your game's autoplay bot plays a Unity, Godot, Unreal or GameMaker build, a Roblox game in Roblox Studio, or a web game (Three.js, Phaser, Babylon.js, PlayCanvas) in Chrome, on the current code and on a saved baseline, and Glitchless flags what got slower or started breaking.",
   "keywords": [
     "playtesting",
