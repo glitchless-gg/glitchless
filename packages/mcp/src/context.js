@@ -142,11 +142,51 @@ export async function agent(method, p, body) {
   return data;
 }
 
+// A read the server refused (SPEC §3): it took too long and was stopped (503), or the server is busy with other large
+// reads (429). Told apart by the body's `reason`, since a 429 is also a rate limit. → what to tell the agent, with what
+// to do next in a tool's own terms, or null for any other answer.
+const SMALLER = 'Call again with a smaller hours (for example 168, a week), then widen it if you need more.';
+function refusal(res, text) {
+  if (res.status !== 503 && res.status !== 429) return null;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (data?.reason === 'deadline') {
+    const after = String(data.error).match(/[\d.]+ seconds?/)?.[0];
+    return `This window was too big to read: Glitchless stopped the read${after ? ` after ${after}` : ''}. ${SMALLER}`;
+  }
+  if (data?.reason === 'busy') {
+    const wait = Number(res.headers.get('retry-after')) || 5;
+    return `Glitchless is busy with other large reads right now. Nothing is wrong with the call: make it again in ${wait} second${wait === 1 ? '' : 's'}, or now with a smaller hours.`;
+  }
+  return null;
+}
+
+// The hosted server answers a tool call within one web request, however many reads the tool makes, and each read has
+// the server's 25 seconds of its own. So a call that has used this long gives up the read it is waiting on and says
+// why, where the agent would otherwise get a dropped connection. (The read itself stops at the server's deadline.)
+export const CALL_LIMITS = { ms: 27_000 };
+function withinCall(read) {
+  const call = calls.getStore();
+  if (!call?.remote) return read;
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`This window was too big to read: its reads took more than ${Math.round(CALL_LIMITS.ms / 100) / 10} seconds together, so the call was stopped. ${SMALLER}`)), Math.max(0, CALL_LIMITS.ms - (Date.now() - call.startedAt)));
+  });
+  return Promise.race([read, late]).finally(() => clearTimeout(timer));
+}
+
 export async function query(name, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') qs.set(k, String(v));
-  const res = await conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() });
-  if (!res.ok) throw new Error(`Glitchless API ${name} → HTTP ${res.status}: ${(await res.text()).slice(0, 200)}${signInHint(res.status)}`);
+  const res = await withinCall(conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() }));
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(refusal(res, text) ?? `Glitchless API ${name} → HTTP ${res.status}: ${text.slice(0, 200)}${signInHint(res.status)}`);
+  }
   const data = await res.json();
   const call = calls.getStore();
   if (call && data?.meta) Object.assign(call, { meta: data.meta, from: params.from });
@@ -231,7 +271,7 @@ export const common = {
     .min(0.25)
     .max(9600)
     .optional()
-    .describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day."),
+    .describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day. A window that takes more than 25 seconds to read is stopped and the tool says so: ask again with fewer hours. When Glitchless is busy with other large reads the tool says to try again in a few seconds. On Glitchless Cloud an answer reads at most 100,000 raw events in all (session_type, props, matches and positions read them), the latest ones, and its note says from when."),
   version: z.string().optional().describe('Only include sessions from this game version'),
   steam_branch: z.string().optional().describe('Only include sessions that ran this Steam branch ("public", or a beta\'s name); games that use Steamworks send it'),
   env: z.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
@@ -300,7 +340,7 @@ export function createServer({ remote = false, scopes = null, connection: c = nu
     const { inputSchema = {}, ...config } = t.config;
     server.registerTool(t.name, { ...config, title: titleOf(t), inputSchema: z.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
       const run = () =>
-        calls.run({ game: args.game, server, remote, scopes }, async () => {
+        calls.run({ game: args.game, server, remote, scopes, startedAt: Date.now() }, async () => {
           try {
             return await t.handler(args, ctx);
           } catch (err) {

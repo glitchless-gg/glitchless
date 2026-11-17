@@ -105,7 +105,11 @@ tool(
     // by_prop gives its network rows in the same call).
     const key = by ? by.replace(/^\$/, '') : (ev.properties || []).some((p) => p.key === 'region') ? 'region' : null;
     const prop = key && (ev.properties || []).find((p) => p.key === key);
-    const [perf, worst, found] = await Promise.all([query('performance', { ...ask, ...(prop && !prop.identifier_like ? { by_prop: key } : {}) }), query('matches', { ...ask, sort: 'lag', limit: 5 }), query('findings', ask)]);
+    // One after another: each may read raw events, which Glitchless Cloud reads one at a time per caller, so asked
+    // together the last would spend its own time waiting in line for the first two.
+    const perf = await query('performance', { ...ask, ...(prop && !prop.identifier_like ? { by_prop: key } : {}) });
+    const worst = await query('matches', { ...ask, sort: 'lag', limit: 5 });
+    const found = await query('findings', ask);
     const net = perf.network;
     if (!net) return reply(`No network data from ${svc} in this window: the SDKs read it from the game's netcode, or the game calls netSample about once a second while connected (the instrument skill says how for each engine)`, {});
     const byProp = net.by_prop ? net.by_prop.rows.map(netRow) : null;
@@ -131,7 +135,9 @@ tool(
   async ({ service, hours, ...f }) => {
     const svc = gameOf(await resolveService(service));
     const ask = { service: svc, ...filters(f), ...range(hours) };
-    const [d, found] = await Promise.all([query('servers', ask), query('findings', ask)]);
+    // One after another, as glitchless_network's: both may read raw events.
+    const d = await query('servers', ask);
+    const found = await query('findings', ask);
     const now = d.servers_now != null ? `${d.servers_now} running now with ${d.players_on_servers} players connected` : null;
     if (!d.kpis) return reply(`${d.why || `No server of ${svc} sent anything in this window.`}${now ? ` (${now})` : ''}`, {});
     const k = d.kpis;

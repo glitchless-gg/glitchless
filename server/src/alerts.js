@@ -105,8 +105,8 @@ export function alertRules(saved = {}) {
 
 // The context the rules read: what query `name` gets from app.js, with no drill-downs, and versions in release order
 // (the store's first sighting of each, analytics.js releaseOrder), so "the newest" is the newest whatever the day.
-// Every session type unless q.type says one: on Glitchless Cloud a session-type filter reads raw events, which only its
-// web function can (when an error is resolved), never its alerts check, which reads players with playersView instead.
+// Every session type unless q.type says one: on Glitchless Cloud a session-type filter reads raw events, which the
+// alerts check and resolving an error never do: they read players with playersView instead.
 // q.testers: the game's testers (testers.js testerIndex), whose sessions aren't players'.
 export async function contextFor(store, projectId, q) {
   const query = { service: q.service, from: q.from, to: q.to, env: q.env || null, version: null, type: q.type || 'all', sessions: null, plan: q.plan ?? null, ...(q.testers ? { testers: q.testers } : {}) };

@@ -32,7 +32,12 @@ export async function api(name, params = {}) {
     throw new Error(`${name}: HTTP 401`);
   }
   if (res.status === 401 && askForKey()) return api(name, params);
-  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  if (!res.ok) {
+    // A read the server refused (busy with other large reads, a 429, or too long to read, a 503: SPEC §3) says what to
+    // do in its own words: try again shortly, or pick a shorter range.
+    const refused = res.status === 503 || res.status === 429 ? await res.json().catch(() => null) : null;
+    throw new Error(refused?.reason && refused.error ? refused.error : `${name}: HTTP ${res.status}`);
+  }
   const data = await res.json();
   if (data?.meta) for (const fn of metaListeners) fn(name, data.meta);
   return data;
@@ -86,26 +91,47 @@ export async function health() {
 
 // Fetch a query, re-run when params change, optionally poll. Keeps the previous data while
 // reloading so charts don't flash empty on every refresh.
+// A poll waits for the answer still on its way: asking the same question again (a refresh, or Live sliding the window
+// forward, which keeps its length) while a slow read is out would only start another one on top of it on the server.
+// The newest is asked once that answer is in. A different question (another range, filter or page) starts at once, and
+// so does reload() (after a change is saved, the answer on its way may be from before it).
 export function useQuery(name, params, { refreshMs = 0, enabled = true } = {}) {
   const [state, setState] = useState({ data: null, error: null, loading: true });
   const key = JSON.stringify([name, params]);
+  const question = JSON.stringify([name, { ...params, from: undefined, to: undefined }, (params?.to ?? 0) - (params?.from ?? 0)]);
   const seq = useRef(0);
-  const load = useCallback(() => {
+  const out = useRef(null); // the question of the request on its way, if any
+  const asked = useRef(false); // a poll came while it was
+  const latest = useRef(null);
+  const load = useCallback((now = false) => {
     if (!enabled) return;
+    if (now !== true && out.current === question) {
+      asked.current = true;
+      return;
+    }
     const id = ++seq.current;
+    out.current = question;
+    asked.current = false;
     setState((s) => ({ ...s, loading: true }));
     api(name, params)
       .then((data) => id === seq.current && setState({ data, error: null, loading: false }))
-      .catch((error) => id === seq.current && setState((s) => ({ ...s, error, loading: false })));
+      .catch((error) => id === seq.current && setState((s) => ({ ...s, error, loading: false })))
+      .finally(() => {
+        if (id !== seq.current) return;
+        out.current = null;
+        if (asked.current) latest.current?.();
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled]);
+  latest.current = load;
   useEffect(() => {
     load();
     if (!refreshMs) return;
     const t = setInterval(load, refreshMs);
     return () => clearInterval(t);
   }, [load, refreshMs]);
-  return { ...state, reload: load };
+  const reload = useCallback(() => load(true), [load]);
+  return { ...state, reload };
 }
 
 export function useLive(service, onEvents) {

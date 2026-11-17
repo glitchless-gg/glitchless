@@ -27,10 +27,13 @@ import { mapUpload, mapBody, mapImage, placeParam, MapError, MAP_UPLOAD } from '
 import { memoryUploads, uploadTarget, uploadBody, savedLine, isUploadToken, slotLimits, UploadError, UPLOAD_LINKS } from './upload-links.js';
 import { placeOf, placeKey, mapId, mapSortKey } from './places.js';
 import { testerIndex } from './testers.js';
+import { newBudget, runWithin, deadlineFrom, ReadRefused } from './query-budget.js';
 
 const MAX_BODY = 1_000_000;
 const DAY = 86_400_000;
 const MINUTE = 60_000;
+// Ranges up to this long are answered by the minute, with each error's sessions; longer ones by day (§3).
+const MINUTE_RANGE_DAYS = 31;
 // How long a share link's answer may be reused, here and by any cache in front (its Cache-Control): a game
 // polling a link gets the same answer for a minute, whatever arrives meanwhile.
 export const SHARE_MAX_AGE_S = 60;
@@ -97,10 +100,14 @@ const MIME = {
 // without them answers /v1/rooms with 404. handle.rooms is then the rooms themselves (for the host's sweep).
 // uploads: where upload links are kept (upload-links.js: { create, peek, claim, origin? }); the default keeps them in
 // this process.
-export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, testers = null, rooms = null, uploads = memoryUploads(), clientAddress = (req) => req.socket?.remoteAddress }) {
+// queryDeadlineMs: how long a query may take before it is stopped and answered 503 (query-budget.js); 0 for no limit.
+// GLITCHLESS_QUERY_DEADLINE_MS sets the default (25 s).
+export function createApp({ store, forwarder = null, auth = defaultAuth(), staticRoutes = [], logger = console, maxUploadBytes = MAX_UPLOAD_BYTES, stores = null, known = null, resolved = null, testers = null, rooms = null, uploads = memoryUploads(), clientAddress = (req) => req.socket?.remoteAddress, queryDeadlineMs = deadlineFrom(process.env.GLITCHLESS_QUERY_DEADLINE_MS) }) {
   const subscribers = new Set();
   const activity = [];
   const cache = new Map();
+  // Queries being worked out now, by cache key: a request for the same answer waits for that one, not its own run.
+  const flights = new Map();
   const limiter = new RateLimiter();
   const readLimiter = new RateLimiter();
   const uploadLimiter = new RateLimiter();
@@ -297,12 +304,31 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         const key = `${projectId}\n${share}${p}?${withoutKey(url.searchParams)}`;
         const hit = cache.get(key);
         if (hit && Date.now() - hit.at < (share ? SHARE_MAX_AGE_S * 1000 : 4000)) return json(res, 200, hit.body, share ? SHARE_CACHE : undefined);
-        if (share && limited(res, reader)) return;
-        const body = await query(projectId, name, url.searchParams, reader);
+        // The same query already being worked out answers this request too (its answer, or its refusal): a board opened
+        // in ten tabs, or asked again by a client that gave up waiting, is read once.
+        let flight = flights.get(key);
+        const shared = Boolean(flight);
+        if (!flight) {
+          if (share && limited(res, reader)) return;
+          // Who asked, so a store shares its heavy reads out fairly (query-budget.js): the key, the person signed in, or
+          // the share link; a key that names neither, its game.
+          flight = fly(key, () => query(projectId, name, url.searchParams, reader), reader.keyId ?? reader.person ?? `project ${projectId}`);
+        }
+        let body;
+        try {
+          body = await flight.answer;
+        } finally {
+          const { gate_ms: waited, raw_rows: rows, cut, busy } = flight.budget.notes;
+          if (waited) timing(res, `gate;dur=${waited}`);
+          if (rows) timing(res, `raw;desc=${rows}`);
+          if (cut) timing(res, 'cut');
+          if (busy) timing(res, 'partial');
+          if (shared) timing(res, 'shared');
+        }
         if (body === undefined) return json(res, 404, { error: `unknown query: ${name}` });
-        cache.set(key, { at: Date.now(), body });
-        if (cache.size > 200) cache.delete(cache.keys().next().value);
-        return json(res, 200, body, share ? SHARE_CACHE : undefined);
+        // An answer short of a part for want of a turn at a heavy read (meta.partial) isn't kept anywhere: asked again, it
+        // may be whole.
+        return json(res, 200, body, share && !flight.budget.notes.busy ? SHARE_CACHE : undefined);
       }
 
       // A web build's source maps (sourcemaps.js), one per POST: the body is the .map file (or its gzip), `file` the
@@ -413,9 +439,35 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       return json(res, 404, { error: 'not found' });
     } catch (err) {
       if (err instanceof IntakeError || err instanceof AuthError || err instanceof BoardError || err instanceof QueryError || err instanceof RoomError) return json(res, err.status, { error: err.message });
+      // A read refused (query-budget.js): the server is busy with other large reads, or this one took too long.
+      if (err instanceof ReadRefused) {
+        if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
+        timing(res, `refused;desc=${err.reason}`);
+        return json(res, err.status, { error: err.message, reason: err.reason });
+      }
       logger.error('[glitchless]', err);
       return json(res, 500, { error: err.message });
     }
+  }
+
+  // Starts a query's run under `key`, within its deadline (query-budget.js), for `caller`. Its answer is kept for the
+  // cache's few seconds unless it was refused, stopped, short of a part because the store was busy, or what it read
+  // changed meanwhile (clearCache drops it from `flights`).
+  function fly(key, run, caller = null) {
+    const flight = { budget: newBudget({ deadlineMs: queryDeadlineMs, caller }) };
+    flight.answer = runWithin(flight.budget, run)
+      .then((body) => {
+        if (body !== undefined && flights.get(key) === flight && !flight.budget.notes.busy) {
+          cache.set(key, { at: Date.now(), body });
+          if (cache.size > 200) cache.delete(cache.keys().next().value);
+        }
+        return body;
+      })
+      .finally(() => {
+        if (flights.get(key) === flight) flights.delete(key);
+      });
+    flights.set(key, flight);
+    return flight;
   }
 
   // Every read goes through projectId; `service` only picks a game within that project.
@@ -477,6 +529,8 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     let dashboardSaved;
     let knownSaved;
     let resolvedSaved;
+    let recentRead;
+    let playersCut;
     const contextFor = async (q) => {
       let ctx;
       if (store.context) {
@@ -510,8 +564,21 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       // A read of every session type on the players' env (or every env) has them already (playersView); else, or when
       // its facts keep no session IDs (day rollups), they're read.
       if ((name === 'errors' || (RESOLVED_QUERIES.has(name) && ctx.resolved)) && !(q.type === 'user' && q.env === playersQuery.env)) {
-        const view = q.type === 'all' && (!q.env || q.env === playersQuery.env) ? playersView(ctx, playersQuery.env) : null;
-        ctx.playerErrors = errorFacts(view ?? (await playersContext()));
+        const everyone = q.type === 'all' && (!q.env || q.env === playersQuery.env);
+        let view = everyone ? playersView(ctx, playersQuery.env) : null;
+        // A range answered by day keeps no session IDs, but the minutes of its last 31 days do, and those are the days
+        // a players-only read of it covers. A store that keeps summaries answers them without reading a raw event
+        // (read as a jam room's numbers are, with no drill-downs), where the players-only read folds every one.
+        if (!view && everyone && ctx.daily && store.context) view = playersView(await (recentRead ??= store.context(projectId, { ...q, from: Math.max(q.from, q.to - MINUTE_RANGE_DAYS * DAY), positions: undefined }, 'versions', params)), playersQuery.env);
+        if (!view) {
+          // A players' read that stopped at the store's row total (meta.cut, §3) holds only the latest of their events:
+          // it can't say which errors no player hit, or which resolved ones they brought back, so the errors are read
+          // without it (as every session hit them) and the answer says why.
+          const players = await playersContext();
+          playersCut = players.meta?.cut?.find((c) => c.what === 'events');
+          if (!playersCut) view = players;
+        }
+        if (view) ctx.playerErrors = errorFacts(view);
       }
       // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
       // sessions aren't players': the same env and session type, never the players' property filters.
@@ -533,6 +600,18 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     const meta = { service, from: ctx.from, to: ctx.to, env: q.env, version: q.version, ...(q.type !== 'all' ? { type: q.type } : {}), ...(where ? { where } : {}), bucket_ms: ctx.bucketMs, ...(ctx.drill?.failed?.length ? { partial: ctx.drill.failed } : {}), ...(ctx.meta || {}) };
     // A game in anonymous mode sends no player IDs, so every players count in the answer is a count of sessions.
     if (playersAreSessions(ctx)) Object.assign(meta, { players_are_sessions: true, note: [meta.note, PLAYERS_ARE_SESSIONS].filter(Boolean).join('; ') });
+    const utc = (ts) => `${new Date(ts).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+    if (playersCut) {
+      meta.cut = [...(meta.cut || []), { what: 'players', from: playersCut.from, limit: playersCut.limit }];
+      meta.note = [meta.note, `which errors players hit isn't marked: their raw events are more than one answer reads (${playersCut.limit.toLocaleString('en-US')}), so it read only those from ${utc(playersCut.from)} on`].filter(Boolean).join('; ');
+    }
+    // The game's servers' read draws on the same row total as the rest of the answer: cut, it covers their latest events.
+    const serversCut = ctx.server?.meta?.cut;
+    if (serversCut?.length) {
+      const from = Math.max(...serversCut.map((c) => c.from));
+      meta.cut = [...(meta.cut || []), { what: 'servers', from, limit: serversCut[0].limit }];
+      meta.note = [meta.note, `the game's servers are read from their latest raw events, from ${utc(from)} on`].filter(Boolean).join('; ');
+    }
     // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
     // production sessions of players (not dev builds, bots or testers) when it has any, and meta says which they read.
     const findingsContext = async () => {
@@ -541,9 +620,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       const players = await playersContext();
       players.stores = ctx.stores;
       const n = sessionCount(players);
-      if (!n || n === sessionCount(ctx)) return ctx;
-      meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx) };
-      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range`].filter(Boolean).join('; ');
+      // A players' read that stopped at the store's row total (meta.cut, §3) covers the latest part of the range, and
+      // says so even when it found none of them there.
+      const cut = players.meta?.cut?.find((c) => c.what === 'events');
+      if (!cut && (!n || n === sessionCount(ctx))) return ctx;
+      meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx), ...(cut ? { from: cut.from } : {}) };
+      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range${cut ? `, from ${new Date(cut.from).toISOString().slice(0, 10)} on (the latest ${cut.limit.toLocaleString('en-US')} raw events)` : ''}`].filter(Boolean).join('; ');
       return players;
     };
     switch (name) {
@@ -794,8 +876,12 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     };
   }
 
+  // A change to what answers are made from (a dashboard, branding, a map, cleared data: `shares` true) also lets go
+  // of the queries being worked out, which began before it: nobody new waits on them and their answers aren't kept.
+  // New events leave them be, or a busy game's identical queries would never share a run.
   function clearCache(projectId, { shares = true } = {}) {
     for (const key of cache.keys()) if (key.startsWith(`${projectId}\n`) && (shares || !key.startsWith(`${projectId}\nshare `))) cache.delete(key);
+    if (shares) for (const key of flights.keys()) if (key.startsWith(`${projectId}\n`)) flights.delete(key);
   }
 
   // 429 with Retry-After once a reader has used its rate (per keyId, per process); false while it hasn't.
@@ -917,6 +1003,17 @@ function setCors(res) {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-glitchless-api-key, x-glitchless-client, x-glitchless-voter');
+}
+
+// What a query's answer says about how it was made, for the host's request log and a browser's network panel
+// (Server-Timing): `gate;dur=<ms>` it waited that long for its turn at a heavy read, `raw;desc=<rows>` it read that
+// many raw events, `cut` its raw reads stopped at the store's row total (meta.cut), `partial` it went out without a
+// part that got no turn at a heavy read in time (meta.partial), `shared` it took the answer of the same query already
+// running, `refused;desc=busy|deadline` why it was refused (a 429 or a 503).
+function timing(res, entry) {
+  if (res.headersSent) return;
+  const have = res.getHeader?.('Server-Timing');
+  res.setHeader('Server-Timing', have ? `${have}, ${entry}` : entry);
 }
 
 // API answers are never cached unless they say so (a share link's, SHARE_CACHE).

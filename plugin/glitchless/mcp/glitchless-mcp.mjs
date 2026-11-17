@@ -37021,6 +37021,7 @@ var init_zod = __esm({
 // src/context.js
 var context_exports = {};
 __export(context_exports, {
+  CALL_LIMITS: () => CALL_LIMITS,
   CREDENTIALS_FILE: () => CREDENTIALS_FILE,
   SETUP_URL: () => SETUP_URL,
   VERSION: () => VERSION,
@@ -37129,11 +37130,41 @@ async function agent(method, p, body2) {
   if (!res.ok) throw new Error(`${data.error || `HTTP ${res.status}`}`);
   return data;
 }
+function refusal(res, text2) {
+  if (res.status !== 503 && res.status !== 429) return null;
+  let data;
+  try {
+    data = JSON.parse(text2);
+  } catch {
+    return null;
+  }
+  if (data?.reason === "deadline") {
+    const after = String(data.error).match(/[\d.]+ seconds?/)?.[0];
+    return `This window was too big to read: Glitchless stopped the read${after ? ` after ${after}` : ""}. ${SMALLER}`;
+  }
+  if (data?.reason === "busy") {
+    const wait = Number(res.headers.get("retry-after")) || 5;
+    return `Glitchless is busy with other large reads right now. Nothing is wrong with the call: make it again in ${wait} second${wait === 1 ? "" : "s"}, or now with a smaller hours.`;
+  }
+  return null;
+}
+function withinCall(read) {
+  const call2 = calls.getStore();
+  if (!call2?.remote) return read;
+  let timer;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`This window was too big to read: its reads took more than ${Math.round(CALL_LIMITS.ms / 100) / 10} seconds together, so the call was stopped. ${SMALLER}`)), Math.max(0, CALL_LIMITS.ms - (Date.now() - call2.startedAt)));
+  });
+  return Promise.race([read, late]).finally(() => clearTimeout(timer));
+}
 async function query(name, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v != null && v !== "") qs.set(k, String(v));
-  const res = await conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() });
-  if (!res.ok) throw new Error(`Glitchless API ${name} \u2192 HTTP ${res.status}: ${(await res.text()).slice(0, 200)}${signInHint(res.status)}`);
+  const res = await withinCall(conn().fetch(`${base()}/v1/query/${name}?${qs}`, { headers: await headers() }));
+  if (!res.ok) {
+    const text2 = await res.text();
+    throw new Error(refusal(res, text2) ?? `Glitchless API ${name} \u2192 HTTP ${res.status}: ${text2.slice(0, 200)}${signInHint(res.status)}`);
+  }
   const data = await res.json();
   const call2 = calls.getStore();
   if (call2 && data?.meta) Object.assign(call2, { meta: data.meta, from: params.from });
@@ -37219,7 +37250,7 @@ function createServer({ remote = false, scopes = null, connection: c = null } = 
     if (remote && t.local || scopes && !scopes.includes(t.scope)) continue;
     const { inputSchema = {}, ...config2 } = t.config;
     server.registerTool(t.name, { ...config2, title: titleOf(t), inputSchema: external_exports.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
-      const run2 = () => calls.run({ game: args.game, server, remote, scopes }, async () => {
+      const run2 = () => calls.run({ game: args.game, server, remote, scopes, startedAt: Date.now() }, async () => {
         try {
           return await t.handler(args, ctx);
         } catch (err) {
@@ -37260,7 +37291,7 @@ function noPlayersLine(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, canManage, setupSteps, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
+var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, canManage, setupSteps, SMALLER, CALL_LIMITS, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
@@ -37288,11 +37319,13 @@ var init_context = __esm({
       return !scopes || scopes.includes("manage");
     };
     setupSteps = () => canManage() ? "glitchless_create_game with the game's name and its engine (or files: what's in the game's folder) returns the steps for that engine" : `the setup steps are at ${SETUP_URL}`;
+    SMALLER = "Call again with a smaller hours (for example 168, a week), then widen it if you need more.";
+    CALL_LIMITS = { ms: 27e3 };
     calls = new AsyncLocalStorage();
     isRemote = () => !!calls.getStore()?.remote;
     common = {
       service: external_exports.string().optional().describe("Game service name (defaults to the most recently active game)"),
-      hours: external_exports.number().min(0.25).max(9600).optional().describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day."),
+      hours: external_exports.number().min(0.25).max(9600).optional().describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day. A window that takes more than 25 seconds to read is stopped and the tool says so: ask again with fewer hours. When Glitchless is busy with other large reads the tool says to try again in a few seconds. On Glitchless Cloud an answer reads at most 100,000 raw events in all (session_type, props, matches and positions read them), the latest ones, and its note says from when."),
       version: external_exports.string().optional().describe("Only include sessions from this game version"),
       steam_branch: external_exports.string().optional().describe(`Only include sessions that ran this Steam branch ("public", or a beta's name); games that use Steamworks send it`),
       env: external_exports.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),
@@ -38759,7 +38792,9 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
         const ev = await query("events", ask);
         const key = by ? by.replace(/^\$/, "") : (ev.properties || []).some((p) => p.key === "region") ? "region" : null;
         const prop = key && (ev.properties || []).find((p) => p.key === key);
-        const [perf, worst, found] = await Promise.all([query("performance", { ...ask, ...prop && !prop.identifier_like ? { by_prop: key } : {} }), query("matches", { ...ask, sort: "lag", limit: 5 }), query("findings", ask)]);
+        const perf = await query("performance", { ...ask, ...prop && !prop.identifier_like ? { by_prop: key } : {} });
+        const worst = await query("matches", { ...ask, sort: "lag", limit: 5 });
+        const found = await query("findings", ask);
         const net2 = perf.network;
         if (!net2) return reply(`No network data from ${svc} in this window: the SDKs read it from the game's netcode, or the game calls netSample about once a second while connected (the instrument skill says how for each engine)`, {});
         const byProp = net2.by_prop ? net2.by_prop.rows.map(netRow) : null;
@@ -38784,7 +38819,8 @@ ${brief || 'None in this window: the game marks a match with setGroup("match", i
       async ({ service, hours, ...f }) => {
         const svc = gameOf(await resolveService(service));
         const ask = { service: svc, ...filters(f), ...range(hours) };
-        const [d, found] = await Promise.all([query("servers", ask), query("findings", ask)]);
+        const d = await query("servers", ask);
+        const found = await query("findings", ask);
         const now = d.servers_now != null ? `${d.servers_now} running now with ${d.players_on_servers} players connected` : null;
         if (!d.kpis) return reply(`${d.why || `No server of ${svc} sent anything in this window.`}${now ? ` (${now})` : ""}`, {});
         const k = d.kpis;
@@ -41138,7 +41174,7 @@ function robotsAllow(text2, agent2, path20) {
   }
   return best ? best.allow : true;
 }
-function refusal({ status: status2, headers: headers2 = {}, title = "", body: body2 = "" }) {
+function refusal2({ status: status2, headers: headers2 = {}, title = "", body: body2 = "" }) {
   const h = (k) => headers2[k] ?? headers2[k.toLowerCase()];
   if (status2 === 401 || status2 === 403) return `the site answered ${status2} (it refuses this visit)`;
   if (status2 === 429) return "the site answered 429 (too many requests): it is limiting bots";
@@ -41173,7 +41209,7 @@ async function resolveGame(url2, { fetch: fetch2 = globalThis.fetch, ua, log = (
   log(`reading the itch.io page ${page}`);
   const res = await fetch2(page, { headers: { "user-agent": ua }, redirect: "follow", signal: AbortSignal.timeout(2e4) });
   const html = await res.text();
-  const refused = refusal({ status: res.status, headers: Object.fromEntries(res.headers), body: html, title: html.match(/<title>([^<]*)/)?.[1] });
+  const refused = refusal2({ status: res.status, headers: Object.fromEntries(res.headers), body: html, title: html.match(/<title>([^<]*)/)?.[1] });
   if (refused) throw new Error(`${page}: ${refused}, so the check stops here`);
   if (res.status === 404) throw new Error(`there is no itch.io page at ${page} (404): is it public, or a draft that needs its secret link?`);
   if (!res.ok) throw new Error(`${page} answered HTTP ${res.status}`);
@@ -42123,7 +42159,7 @@ async function playProfile(browser, { profile, target, dest, sdk, version: versi
     }
     await page.waitForLoadState("domcontentloaded", { timeout: 6e4 }).catch(() => {
     });
-    const refused = refusal({ status: res?.status(), headers: res ? await res.allHeaders().catch(() => ({})) : {}, title: await page.title().catch(() => ""), body: await page.evaluate(() => document.body?.innerText?.slice(0, 4e3) || "").catch(() => "") });
+    const refused = refusal2({ status: res?.status(), headers: res ? await res.allHeaders().catch(() => ({})) : {}, title: await page.title().catch(() => ""), body: await page.evaluate(() => document.body?.innerText?.slice(0, 4e3) || "").catch(() => "") });
     if (refused) {
       run2.stopped = `${target.play_url}: ${refused}, so the check stopped without playing`;
       run2.refused = true;

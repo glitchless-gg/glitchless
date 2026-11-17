@@ -488,6 +488,37 @@ values (`prop.rank=diamond,master`; `(none)`: those without it), and `meta.where
 the sessions, so over 31 days or less (Glitchless Cloud reads a longer range's last 31 days and says so in
 `meta.note`).
 
+**Shared, stopped and refused queries.** A query that arrives while the same one (same project, path and parameters)
+is being worked out waits for that answer instead of running again; the answer is then kept for 4 s (a share link's
+for a minute, §3c). Saving a dashboard, branding or a background, or clearing data, lets go of the answers being
+worked out, so the next read is made after the change.
+
+- **Too long:** a query has `GLITCHLESS_QUERY_DEADLINE_MS` to answer (default `25000`; `0`: no limit). Past it the
+  work stops, nothing is kept, and it answers 503 `{error, reason: "deadline"}`; `error` says to ask for a shorter
+  range. Work that never yields to the server (a long fold of events in one go) is stopped at its next step.
+- **Busy:** a store may limit its heavy reads. Glitchless Cloud takes two reads of raw events at once in a process
+  (what session-type, Steam and property filters, matches, heatmaps and paths read, and a session still in
+  progress), one of them at most for one caller (a key, a person signed in to the dashboard, a share link). A query
+  keeps its turn until its answer is made and the rest wait in line: one waiting on its own caller's reads waits for
+  as long as it has time, one waiting on others' for 5 s. Then it answers 429 `{error, reason: "busy"}` with
+  `Retry-After` (seconds): the server working as it should, so not a 5xx. A raw read that only adds to an answer
+  (recent hitches, breadcrumbs, a board's paths) is left out instead, and `meta.partial` names it; that answer is
+  not kept, not even for a share link. Intake never waits on any of it. Clients tell this 429 from a rate limit by
+  its `reason`.
+- **Cut:** every read of raw events one answer makes on Glitchless Cloud draws on one total of 100,000 rows, and one
+  that reaches it answers from the latest rows it read. A board's paths take at most half of it, shared evenly by
+  place, so the reads its answer makes after them (players', the game's servers') have rows too. `meta.cut` lists `{what, from, limit}`:
+  `what: "events"` is the whole answer, which then covers `from` on (`meta.from` says the same); `"session"` a
+  session still in progress, shown from `from` on; `"positions"` the samples a heatmap or a board's paths draw;
+  `"breadcrumbs"` the events before the sample errors; `"players"` the players' read that says which errors no
+  player hit (then left unmarked, and resolved errors judged by every session); `"servers"` the game's servers (A9).
+  Findings that read players say so in `meta.findings_from.from`. `meta.note` says it in words.
+
+An answer says how it was made in its `Server-Timing` header: `gate;dur=<ms>` (it waited that long for its turn at
+a heavy read), `raw;desc=<rows>` (the raw events it read), `cut` (its reads stopped at the total), `partial` (a
+part was left out for want of a turn), `shared` (it took the answer of a query already running),
+`refused;desc=busy|deadline`.
+
 | name | returns |
 | --- | --- |
 | `services` | `{services:[{service, versions[], envs[], last_seen, server?}], max_range_days}`: the longest range this store answers for the reader (the plan's retention on Glitchless Cloud; `null`: no limit). A game's servers (its companion service, A9) go under it as `server: {service, versions, envs, last_seen}`; a companion whose game sent nothing yet is listed with `server_of`. Without `service=`, queries read the game that sent last, never a companion |
@@ -1362,10 +1393,11 @@ all_sessions?}`:
 
 - `fingerprint` is the issue's (resolving takes the start of one, 4 characters or more, when only one issue has it).
 - `note` (optional) says why, in 200 characters at most; `by` and `at` are who resolved it and when.
-- `version` is the newest version players had hit the issue in when it was resolved, over the last 90 days of every
-  service of the game, in release order (§4: the store's first sighting of each version, else their numbers); null when
-  no player had, or it came with none. With `all_sessions`, the newest any session had hit it in. Resolving one again
-  (one that came back) starts it over: a new `at` and `version`.
+- `version` is the newest version players had hit the issue in when it was resolved, over the last 31 days (the days
+  whose summaries keep each error's sessions, so no raw event is read and the version is never one read from part of
+  the range) of every service of the game, in release order (§4: the store's first sighting of each version, else
+  their numbers); null when no player had, or it came with none. With `all_sessions`, the newest any session had hit
+  it in over the last 90 days. Resolving one again (one that came back) starts it over: a new `at` and `version`.
 - `any: true` brings it back if it fires again in any version, the old builds included.
 - `all_sessions: true` lets any session bring it back. Without it, only players' sessions do: session type `user`, on
   the game's `prod` env when it has one, as findings read them (§3a). Store test phones (Google Play runs each upload
@@ -3351,8 +3383,9 @@ The file store rebuilds rollups from its event files at startup.
 
 Every answer carries `meta`: the range answered (`from`, `to`, `bucket_ms`), the filters, and from a store that
 keeps day rollups (§7) `resolution: 'day'` for ranges of more than 31 days, `approximate` (the parts estimated
-from sketches or samples), `note` (a view answered over less of the range) and `retention_days` (the reader's
-plan, when the host has plans).
+from sketches or samples), `note` (a view answered over less of the range), `cut` (a read of raw events that
+stopped at the store's limit, §3), `partial` (drill-downs left out: they failed, or got no turn at a heavy read in
+time, §3) and `retention_days` (the reader's plan, when the host has plans).
 
 ## 7. Other stores
 
