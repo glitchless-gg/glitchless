@@ -288,7 +288,7 @@ export const common = {
     .min(0.25)
     .max(9600)
     .optional()
-    .describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day. A window that takes more than 25 seconds to read is stopped and the tool says so: ask again with fewer hours. When Glitchless is busy with other large reads the tool says to try again in a few seconds. On Glitchless Cloud an answer reads at most 100,000 raw events in all (session_type, props, matches and positions read them), the latest ones, and its note says from when."),
+    .describe("Look-back window in hours (default 24), as far back as the workspace keeps data on Glitchless Cloud (the answer says when it starts later than asked). Past 744 (31 days) answers are by day. A window that takes more than 25 seconds to read is stopped and the tool says so: ask again with fewer hours. When Glitchless is busy with other large reads the tool says to try again in a few seconds. On Glitchless Cloud an answer reads at most 100,000 raw events in all (props, Steam filters, matches and positions read them, and session_type only over data stored before it was kept by type), the latest ones, and its note says from when."),
   version: z.string().optional().describe('Only include sessions from this game version'),
   steam_branch: z.string().optional().describe('Only include sessions that ran this Steam branch ("public", or a beta\'s name); games that use Steamworks send it'),
   env: z.string().optional().describe('Only include sessions from this environment, e.g. "prod" (what the game passes to init; builds a developer runs usually send "dev")'),

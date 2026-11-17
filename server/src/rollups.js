@@ -86,17 +86,22 @@ export function newCell(env = null, version = null, level = null, zone = null) {
   };
 }
 
-// Fold events into minutes: Map<minute ts, Map<cell key, cell>>.
-export function rollup(events, minutes = new Map()) {
+// Fold events into minutes: Map<minute ts, Map<cell key, cell>>. `tagOf(e)` (optional) splits each cell further: a
+// store that keeps cells per session type passes the event's session's type, and each cell carries it as `t`.
+export function rollup(events, minutes = new Map(), tagOf = null) {
   for (const e of events) {
     if (e.type === 'map') continue;
     const m = minuteOf(e.ts);
     let cells = minutes.get(m);
     if (!cells) minutes.set(m, (cells = new Map()));
     const level = e.level ?? null;
-    const key = cellKey(e.env, e.version, level, e.zone);
+    const t = tagOf ? tagOf(e) : undefined;
+    const key = tagOf ? JSON.stringify([t, cellKey(e.env, e.version, level, e.zone)]) : cellKey(e.env, e.version, level, e.zone);
     let c = cells.get(key);
-    if (!c) cells.set(key, (c = newCell(e.env ?? null, e.version ?? null, level, e.zone ?? null)));
+    if (!c) {
+      cells.set(key, (c = newCell(e.env ?? null, e.version ?? null, level, e.zone ?? null)));
+      if (tagOf) c.t = t;
+    }
     addEvent(c, e);
   }
   return minutes;

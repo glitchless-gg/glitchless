@@ -485,7 +485,13 @@ its key belongs to (§6); `service` picks a game inside that project. `type` kee
 `synthetic`, `simulated`; `all`, the default, keeps every session; `session_type` is the same filter): `type=tester` finds
 the TestFlight testers that players' numbers leave out, and the players and sessions the game's team marked as its own
 play (§3e Testers), whose `user` sessions read as `tester` in every query, before this filter. Another type answers 400, rather than every session, and
-`meta.type` says which type was kept. Each Steam fact (§4c: `steam_branch`,
+`meta.type` says which type was kept. A session's type is its latest `session_start`'s over its whole life, so a range
+that begins part way through a bot's session still counts it as a bot's; a session that sends no start is a player's.
+Glitchless Cloud answers a type filter from its summaries, which keep each session's type: it reads raw events only for
+hours summed before it kept types (until the game's summaries are rebuilt) and for the minutes the team's marked play
+touched, behind the limits below. Past 31 days it reads each day's rollups of that type (a range with a day summed
+before types reads its last 31 days and says so in `meta.note`), where a marked session counts as the type its SDK
+sent (`meta.approximate` lists `testers`). Each Steam fact (§4c: `steam_branch`,
 `steam_build`, `steam_hardware`, `steam_controller`, `steam_language`, `proton`, `big_picture`, `family_shared`,
 `timed_trial`) is a filter too: `steam_branch=beta` keeps only the sessions that ran the beta (`meta.where` says so).
 So is each session property (§2 `props`): `prop.<key>=<value>[,<value>…]` keeps the sessions with one of those
@@ -502,8 +508,8 @@ worked out, so the next read is made after the change.
   work stops, nothing is kept, and it answers 503 `{error, reason: "deadline"}`; `error` says to ask for a shorter
   range. Work that never yields to the server (a long fold of events in one go) is stopped at its next step.
 - **Busy:** a store may limit its heavy reads. Glitchless Cloud takes two reads of raw events at once in a process
-  (what session-type, Steam and property filters, matches, heatmaps and paths read, and a session still in
-  progress), one of them at most for one caller (a key, a person signed in to the dashboard, a share link). A query
+  (what Steam and property filters, matches, heatmaps and paths read, a session-type filter over hours summed before
+  types were kept or minutes of the team's marked play, and a session still in progress), one of them at most for one caller (a key, a person signed in to the dashboard, a share link). A query
   keeps its turn until its answer is made and the rest wait in line: one waiting on its own caller's reads waits for
   as long as it has time, one waiting on others' for 5 s. Then it answers 429 `{error, reason: "busy"}` with
   `Retry-After` (seconds): the server working as it should, so not a 5xx; `behind: "own"` when what held it up was
@@ -515,17 +521,20 @@ worked out, so the next read is made after the change.
   that reaches it answers from the latest rows it read. The game's servers (A9) are read first, with half of what is
   left, and a board's paths take at most half of it, shared evenly by place, so the reads after them have rows too.
   `meta.cut` lists `{what, from, limit, under_way?}`:
-  - `"events"`: the whole answer, which then covers the sessions that started from `from` on (`meta.from` says the
-    same). A session's type and properties come with its start, so the `under_way` sessions already going at `from`
-    are left out rather than read as players'.
-  - `"session"`: a session still in progress, shown from `from` on, with its type `null` (its start wasn't read); a
-    list of sessions keeps every row of those read whole.
+  - `"events"`: the whole answer, which then covers `from` on (`meta.from` says the same), its sessions and its frame
+    numbers alike. A session already going at `from` keeps the type Glitchless Cloud noted for it; one whose type
+    nothing says (its start not read, in hours summed before types were kept), and with a Steam or property filter
+    any one already going (those come with its start), is left out and counted in `under_way`.
+  - `"session"`: a session still in progress, shown from `from` on, with the type Glitchless Cloud noted for it, or
+    `null` when nothing says (its start wasn't read); a list of sessions keeps every row of those read whole.
   - `"positions"`: the samples a heatmap or a board's paths draw; `"breadcrumbs"`: the events before the sample errors.
   - `"players"`: the players' read that says which errors no player hit (they are then left unmarked, and resolved
     errors judged by every session).
-  - `"servers"`: the game's servers, with `under_way` the runs already going at `from` (left out, as above).
+  - `"servers"`: the game's servers, with `under_way` the runs already going at `from` whose type nothing says (left
+    out, as above).
 
-  Findings that read players say so in `meta.findings_from.from` (and `under_way`); when the latest rows hold no players' session at
+  Findings read players from the summaries, so their read is cut only over hours summed before types were kept. One
+  that was says so in `meta.findings_from.from` (and `under_way`); when the latest rows hold no players' session at
   all, findings read every session, as for a game no player has played, and `meta.note` says why. `meta.note` says
   every cut in words.
 
@@ -1449,8 +1458,8 @@ session they match that its SDK sent as `user` reads as `tester`, with `marked_t
 store test phone's stays `synthetic`. So the queries' `type=user` (and `type=tester`), findings (players' production
 sessions, §3a), share links, the alert rules, the weekly summary and the version kept when an error is resolved all read
 them as testers, retroactively, and unmarking one reads its sessions as sent again; changing them answers afresh at once.
-Day rollups (ranges past 31 days of every session type) count session types as they were sent. A self-hosted server
-keeps none.
+Day rollups (ranges past 31 days) count each session as the type its SDK sent: a type filter over them says
+`testers` in `meta.approximate` when the game has marks. A self-hosted server keeps none.
 
 **Glitchless Cloud.** Settings → Alerts, per game: a webhook URL, email to every active member of the workspace,
 which rules, the weekly summary, an env, and the known findings (each saved at once, its finding suggested from the
@@ -3482,7 +3491,8 @@ files (a database, object storage). To check one, run the server's tests on it:
 ([`server/test/helpers/stores.js`](../server/test/helpers/stores.js) says what that module exports).
 
 A store may keep precomputed state instead of raw events: session states and facts merge exactly, so a store that
-keeps them per minute or hour answers as the raw events of the range would. For long ranges it may keep **daily
+keeps them per minute or hour answers as the raw events of the range would. One that keeps them per session type, and
+each session's type as its whole life gives it (its latest `session_start`'s), answers a type filter the same way. For long ranges it may keep **daily
 rollups** ([`server/src/daily.js`](../server/src/daily.js)), and then answers ranges of more than 31 days in whole
 days (`meta.resolution: 'day'`):
 
@@ -3498,8 +3508,8 @@ days (`meta.resolution: 'day'`):
   31 days (a uniform sample of 512 players a day), medians of per-session values, levels' clear times and time in each zone (3 then 2
   significant digits past 512 values), ordered funnels (256 sessions a day, weighted), GPUs past the top 30 a day, difficulty hotspots past
   100 deaths per level a day.
-- **Over the last 31 days of the range** (`meta.note`): heatmaps and session-type filters, which read raw rows;
-  recent hitches.
+- **Over the last 31 days of the range** (`meta.note`): heatmaps, which read raw rows, and recent hitches; a
+  session-type filter too, when a day of the range was summed without types apart.
 
 Glitchless Cloud runs its own store of this kind, with retention set by each workspace's plan; it is not part of
 this repo.

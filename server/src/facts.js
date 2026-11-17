@@ -33,8 +33,9 @@ export function newFacts(env = null, version = null, level = null) {
   };
 }
 
-// Fold events into minutes: Map<minute ts, Map<cell key, facts>>.
-export function foldFacts(events, minutes = new Map()) {
+// Fold events into minutes: Map<minute ts, Map<cell key, facts>>. `tagOf(e)`: as rollup()'s, each facts cell carries
+// its tag as `t`.
+export function foldFacts(events, minutes = new Map(), tagOf = null) {
   const windows = new Map(); // a session's window start → its frame window's facts cell and hitches, or its counters
   for (const e of events) {
     if (e.type === 'map') continue;
@@ -42,9 +43,13 @@ export function foldFacts(events, minutes = new Map()) {
     let cells = minutes.get(m);
     if (!cells) minutes.set(m, (cells = new Map()));
     const level = e.level ?? null;
-    const key = factsKey(e.env, e.version, level);
+    const t = tagOf ? tagOf(e) : undefined;
+    const key = tagOf ? JSON.stringify([t, factsKey(e.env, e.version, level)]) : factsKey(e.env, e.version, level);
     let f = cells.get(key);
-    if (!f) cells.set(key, (f = newFacts(e.env ?? null, e.version ?? null, level)));
+    if (!f) {
+      cells.set(key, (f = newFacts(e.env ?? null, e.version ?? null, level)));
+      if (tagOf) f.t = t;
+    }
     addFact(f, e);
     if (e.type === 'frame_window' || e.type === 'counts') pairWindow(windows, f, e);
   }

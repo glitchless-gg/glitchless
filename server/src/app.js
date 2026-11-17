@@ -580,7 +580,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         let view = everyone ? playersView(ctx, playersQuery.env) : null;
         // A range answered by day keeps no session IDs, but the minutes of its last 31 days do, and those are the days
         // a players-only read of it covers. A store that keeps summaries answers them without reading a raw event
-        // (read as a jam room's numbers are, with no drill-downs), where the players-only read folds every one.
+        // (read as a jam room's numbers are, with no drill-downs).
         if (!view && everyone && ctx.daily && store.context) view = playersView(await (recentRead ??= store.context(projectId, { ...q, from: Math.max(q.from, q.to - MINUTE_RANGE_DAYS * DAY), positions: undefined }, 'versions', params)), playersQuery.env);
         if (!view) {
           // A players' read that stopped at the store's row total (meta.cut, §3) holds only the latest of their events:
@@ -642,7 +642,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (!n && cut) meta.note = [meta.note, `findings read every session: no players' session started in the latest ${cut.limit.toLocaleString('en-US')} raw events, from ${utc(cut.from)} on`].filter(Boolean).join('; ');
       if (!n || (!cut && n === sessionCount(ctx))) return ctx;
       meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx), ...(cut ? { from: cut.from, ...(cut.under_way ? { under_way: cut.under_way } : {}) } : {}) };
-      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range${cut ? `, that started from ${new Date(cut.from).toISOString().slice(0, 10)} on (the latest ${cut.limit.toLocaleString('en-US')} raw events${cut.under_way ? `; ${cut.under_way} sessions already under way then left out` : ''})` : ''}`].filter(Boolean).join('; ');
+      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range${cut ? `, from ${new Date(cut.from).toISOString().slice(0, 10)} on (the latest ${cut.limit.toLocaleString('en-US')} raw events${cut.under_way ? `; ${cut.under_way} sessions already under way then left out` : ''})` : ''}`].filter(Boolean).join('; ');
       return players;
     };
     switch (name) {

@@ -89,7 +89,9 @@ export function foldDay(day, { cells = new Map(), facts = new Map(), sessions = 
   const out = { day, cells: new Map(), facts: new Map(), groups: new Map(), sample: { theta: null, list: [] } };
   const inDay = (m) => m >= day && m < day + DAY;
   const dayCells = new Map();
-  for (const m of [...cells.keys()].filter(inDay).sort((a, b) => a - b)) for (const c of cells.get(m).values()) addCell(dayCells, day, cellFromJSON(cellToJSON(c)));
+  // Copies all the way down: the first cell of each key takes the others' counts, and the inputs stay as they were (a
+  // store folds one day's summaries more than once: every session type together, then each on its own).
+  for (const m of [...cells.keys()].filter(inDay).sort((a, b) => a - b)) for (const c of cells.get(m).values()) addCell(dayCells, day, cellFromJSON(structuredClone(cellToJSON(c))));
   out.cells = dayCells.get(day) || new Map();
   const dayFacts = new Map();
   for (const m of [...facts.keys()].filter(inDay).sort((a, b) => a - b)) for (const f of facts.get(m).values()) addFactsCell(dayFacts, day, structuredClone(f));

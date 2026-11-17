@@ -46,9 +46,17 @@ export function buildContext(rawEvents, q, rollups = null) {
 }
 
 // The context every query takes, from finalized sessions (filtered here). Without raw events, the store
-// sets ctx.cells, ctx.facts and the drill-downs (ctx.drill) itself. q.testers (testers.js testerIndex): the players and
-// sessions the game's team marked as its own play, which read as testers' before the type filter.
+// sets ctx.cells, ctx.facts and the drill-downs (ctx.drill) itself. q.types (Map session ID → session type): what a store
+// knows of sessions' types from their whole lives, for sessions whose session_start lies outside what was folded (a
+// session already under way when the range began reads as a player's otherwise). q.testers (testers.js testerIndex):
+// the players and sessions the game's team marked as its own play, which read as testers' before the type filter.
 export function sessionContext(q, sessions) {
+  if (q.types) {
+    for (const s of sessions.values()) {
+      const t = q.types.get(s.session_id);
+      if (t) s.session_type = t;
+    }
+  }
   if (q.testers) for (const s of sessions.values()) markTester(s, q.testers);
   const keep = (s) => {
     if (q.env && s.env !== q.env) return false;
