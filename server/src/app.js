@@ -140,7 +140,14 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
 
   async function handle(req, res) {
     counters.requests++;
-    const url = new URL(req.url, 'http://local');
+    // A request line that isn't a URL ("//") is answered here: thrown, it would be a rejection nobody handles, and
+    // Node ends the process on one.
+    let url;
+    try {
+      url = new URL(req.url, 'http://local');
+    } catch {
+      return json(res, 400, { error: 'bad request' });
+    }
     const p = url.pathname;
     setCors(res);
     if (req.method === 'OPTIONS') return send(res, 204, '');
