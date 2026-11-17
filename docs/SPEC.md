@@ -1722,12 +1722,16 @@ the person who approved it, with their current role, and within its scopes:
 | --- | --- |
 | `read` | Every game's queries (always included) |
 | `dashboard` | Save a game's dashboard |
-| `manage` | Create games and their public keys, make and revoke share links |
+| `manage` | Create and rename games and their public keys, make and revoke share links |
 | `sourcemaps` | Upload a web game's source maps |
+| `delete_games` | Delete a whole game, its name typed again (§6b). Never a default: a key has it only when its person ticked "Delete games and their data, for good" making it in Settings, approving an agent's sign-in, or connecting an app (OAuth offers it, unticked), and only an Owner or Admin can. Keys made before it existed don't have it; a new key or connecting again gives it |
 
-A workspace key never deletes data and never touches billing or people. It stops working when it's revoked
-(Settings → Keys & access, or Agents & MCP) or when its person leaves the workspace, and loses `dashboard`, `manage`
-and `sourcemaps` if their role drops to Viewer.
+A workspace key never deletes a game's data piece by piece (`DELETE /v1/data` takes a secret key with `delete`, or a
+member's session; `delete_games` doesn't count on `/v1/`), never touches billing or people, and deletes a whole game
+only with `delete_games` and its name typed again (§6b): an agent reads what players write (bug reports, store
+reviews), so deleting is the person's to turn on. It stops working when it's revoked (Settings → Keys & access, or
+Agents & MCP) or when its person leaves the workspace, loses `dashboard`, `manage` and `sourcemaps` if their role
+drops to Viewer, and `delete_games` if it drops below Admin.
 
 **Keys & access.** Settings → Keys & access lists everything that can reach a game in one place: the workspace's
 keys (agents that signed in, apps connected over OAuth, keys made for CI), the game's ingest keys (`gl_pub_…`) and
@@ -1750,7 +1754,8 @@ Each server stamps a key at most once every ten minutes, so it's right to about 
    user_code, verification_url, expires_in, interval }`. The code lasts 10 minutes.
 2. It shows the person `verification_url` (`…/#/connect?code=XXXX-XXXX`). Signed in there, they check the code,
    pick the workspace and the scopes, and approve or decline. Anyone in the workspace can approve: a Viewer's
-   approval gives `read` only, and the other scopes take an Owner, Admin or Developer, as does making a key in
+   approval gives `read` only, and the other scopes take an Owner, Admin or Developer (`delete_games`, unticked
+   unless they tick it, an Owner or Admin), as does making a key in
    Settings → Keys & access. There, Owners, Admins and Developers see and revoke every key, and a Viewer the ones
    they approved.
 3. The agent polls `POST /v1/agent/connect/poll` with `{ device_code }` every `interval` seconds: `pending`,
@@ -1770,6 +1775,7 @@ says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this ser
 | `POST /v1/agent/games` | `{ name }` → the new game, its client token and the intake URL; `{ demo: true }` → the demo game (below) | manage |
 | `GET /v1/agent/games/{game}` | One game | read |
 | `PATCH /v1/agent/games/{game}` | `{ name }` (60 characters at most) renames it, as Settings does (`glitchless_create_game`'s `rename`): its client token, service and data stay; later calls find it by the new name → `{ game: {id, name} }` | manage |
+| `DELETE /v1/agent/games/{game}` | `{ name, id? }`, the game's name again, deletes it and everything stored for it, as Settings does (`glitchless_create_game`'s `delete`, §6b). Its person must be an Owner or Admin. When another game in the workspace has the name, `id` (this game's) must come too → `{ deleted: {id, name}, done }` | delete_games |
 | `GET /v1/agent/games/{game}/shares` | Its share links | manage |
 | `POST /v1/agent/games/{game}/shares` | `{ service, page, name?, days?, sums?, bots?, from?, to? }` → the link (shown once); `bots` for a game check (§5h) | manage |
 | `DELETE /v1/agent/games/{game}/shares/{id}` | Revoke one | manage |
@@ -3408,6 +3414,62 @@ keeps day rollups (§7) `resolution: 'day'` for ranges of more than 31 days, `ap
 from sketches or samples), `note` (a view answered over less of the range), `cut` (a read of raw events that
 stopped at the store's limit, §3), `partial` (drill-downs left out: they failed, or got no turn at a heavy read in
 time, §3) and `retention_days` (the reader's plan, when the host has plans).
+
+## 6b. Deleting a game (Glitchless Cloud)
+
+An Owner or Admin deletes a game in Settings → Game after typing its name again, or an agent does with
+`glitchless_create_game`'s `delete` and the name repeated back (a workspace key with `delete_games`, §3g, whose person
+is an Owner or Admin). It can't be undone. It's gone from Glitchless within the hour; backups, including old copies of
+its files, keep it up to 35 more days.
+
+| Route | What |
+| --- | --- |
+| `DELETE /api/projects/{p}` | `{name}`, the game's name again (any case, spaces as typed) → `{deleted: {id, name}, done, me}`: `done` when everything was gone before the answer, `me` as `/api/me` answers it, on another game. 400 `CONFIRM_NAME` when the name is missing or another game's (the answer never says the game's name), 403 `FORBIDDEN` for a Developer or Viewer, 404 for a game the person can't reach or that is being deleted, 409 `CHANGED` when it was claimed or changed at that moment |
+| `DELETE /v1/agent/games/{game}` | the same with a workspace key with `delete_games` (§3g) → `{deleted, done}`. 403 `SCOPE` for a key without it (the answer says where its person turns it on), 403 `FORBIDDEN` when its person is a Developer or Viewer. Two games can share a name, and an agent finds a game by name, so when another game in the workspace has this one's name it's 409 `SAME_NAME`, nothing deleted, with `games: [{id, name, created_at, has_data, last_seen}]` for each and the same in `error`; the agent asks the person which, and sends `{ name, id }` with that game's id (400 `CONFIRM_ID` for another id). Settings names the game it shows by its id, so it's never asked |
+
+**At once**, in one transaction, conditional on the game being where it was: it leaves its workspace, so the plan has
+room for another (Free's one game included); it is no longer found, so no session, workspace key, upload link or
+agent route reaches it (404, or 403 on `/v1/`); every live key's lookup becomes a tombstone and every share and claim
+link's lookup goes; the scheduled jobs stop visiting it (the alerts check, the store syncs). The server that deleted it
+stops honouring its keys and links at once, the others within their caches (a minute for a client token, 15 s for the
+rest). From then on intake answers its client token with 401 `this client token's game was deleted from Glitchless
+Cloud on <date>, so nothing it sends is kept: …`, and a secret key with 401 too, for 90 days; then as any unknown token.
+Every SDK drops a batch refused with 401, and the Roblox SDK stops sending.
+
+**Then** everything stored for the game goes, in steps that stop when their time runs out and go on from where they
+stopped: the request runs the first 10 seconds, and the alerts function's schedule (every 15 minutes) the rest, so a
+game of any size finishes and an interrupted delete carries on. A pass deletes, in order:
+
+1. which services the game has anything under (its registry, dashboards, branding, clear marks, source maps, bug
+   report screenshots, links and store connections), kept with the delete, since the passes delete what names them;
+2. its games in jam rooms (§3j), files and entries; an organiser's take-down record stays with its room, which goes a
+   day after the jam;
+3. its control-plane items: keys, links and when they were last used, exporters, alert settings, their state and log,
+   known, resolved and tester marks, store connections with their sealed credentials, sync state and synced data,
+   upload-link counts, players now, room plays and Glitchless's own once-only marks;
+4. its events and everything built from them: summaries, daily rollups, the session index, first-seen indexes,
+   versions, maps and backgrounds, bug reports and their screenshots, source maps, Parquet and session files,
+   dashboards and branding. First every service is marked cleared for good (an arrival time past any, kept 17 days),
+   so the compactor drops whatever raw data of the game arrives from then on.
+
+A second pass, 20 minutes after the first one ends, catches what other servers had in flight (a batch taken before
+their cache let the token go, a compactor run, a store sync); then the game's last record goes. So it's gone from
+Glitchless within the hour. The alerts check and the deletes run side by side in the alerts function, each unable to
+hold the other up; the deletes stop two minutes before its timeout, and the game touched longest ago goes first. A run
+that stops part way (an S3 delete it was refused, a timeout) logs `[deletions] failed <game> …`, keeps the reason on
+the delete, and the next run carries on.
+
+**What stays.** The workspace's usage counters, the game's play sessions among them: billing history, and the
+month's allowance, which deleting and making a game again mustn't reset (invoices are Stripe's). Glitchless's own
+counts of what happened, which name no person, game or key. What expires by itself and can't be listed by game: the
+per-session marks that keep a session from counting twice (3 days), batch IDs (7 days), upload links (minutes), the
+keys' tombstones (90 days) and the clear marks (17 days), which hold hashes and the game's id, no player data. Raw
+files, which the compactor skips, until their lifecycle ends them (3 days, and 14 for the few Firehose couldn't file by
+game). Backups: the control table's point-in-time recovery and the lake table's (35 days), and the lake bucket's old
+versions of its files (7 days: a file deleted there is hidden behind a marker until then). A dashboard session that last showed the game remembers its
+id until it ends, and opens on another game.
+
+Deleting a whole workspace isn't offered yet.
 
 ## 7. Other stores
 

@@ -24,8 +24,9 @@ npx -y glitchless-mcp login
 It prints a link and a code; you approve the code in the Glitchless dashboard, and it saves a workspace key in
 `~/.config/glitchless/credentials.json` (readable only by you). From then on the server reaches every game in that
 workspace: `glitchless_list_games` lists them, `glitchless_create_game` makes one and returns its client token, and
-every tool takes `game` (a name or id). The key acts as you, with your role in the workspace, and never deletes data
-or touches billing or people. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
+every tool takes `game` (a name or id). The key acts as you, with your role in the workspace, and never touches
+billing or people. It deletes data only if you ticked "Delete games and their data, for good" when approving it, and
+then only a whole game, with its name repeated back. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
 key, and Settings → Keys & access in the dashboard lists and revokes keys. An agent can also sign in from inside a
 chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
 approve. The saved key is only ever sent to the server it was saved for: point `GLITCHLESS_URL` at another one (a
@@ -92,7 +93,7 @@ above go in its environment.
 | --- | --- |
 | `glitchless_list_games` | Which games report to the server, with their versions and environments; signed in to a workspace, every game in it with its client token |
 | `glitchless_sign_in` | Connect to a Glitchless Cloud workspace: a link and a code for the person to approve |
-| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL (a name already there returns that game); with `engine`, or `files` (what's in the game's folder), also the steps that add Glitchless to the game's code for its engine, for a new game (`name`) or one already there (`game`): the instrument skill, for an agent without it; `demo: true` makes the demo game (a week of sample play); `rename` (with `game`) renames one instead, its client token, service and data unchanged |
+| `glitchless_create_game` | A new game in the workspace, with its client token and intake URL (a name already there returns that game); with `engine`, or `files` (what's in the game's folder), also the steps that add Glitchless to the game's code for its engine, for a new game (`name`) or one already there (`game`): the instrument skill, for an agent without it; `demo: true` makes the demo game (a week of sample play); `rename` (with `game`) renames one instead, its client token, service and data unchanged; `delete` (with `game`, and the game's name again) deletes it and everything Glitchless keeps for it, for good: a key with `delete_games` (off unless an Owner or Admin ticked it), and when two games share the name, `game` is its id; the client token is refused from then on |
 | `glitchless_share_links` | A read-only link to one board page, for a dev log, Discord or a game's "Live stats" link (`page`), or with `claim: true` a claim link that hands a game the team made to its creator, who moves it into their own workspace; lists them, and revokes one (`revoke`) |
 | `glitchless_triage` | The headline numbers (sessions, players, crash-free sessions, frame time, rage quits), then ranked findings: stutter per level and what it correlates with, leaks, top errors, difficulty spikes. Start here |
 | `glitchless_mark_known` | Mark a finding the game's owner accepts as known, so the weekly summary stops listing it (triage shows it last, with the note); with `player` or `session` instead, the team's own play, read as testers in every tool; `clear: true` removes the mark |

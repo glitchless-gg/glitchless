@@ -97,8 +97,9 @@ Use this for Claude (2,000 characters at most) and ChatGPT (4,000).
 > create a game and make a read-only share link to a board.
 >
 > You sign in with your Glitchless account and choose the workspace and what the assistant may do. It acts as you,
-> never deletes data and never touches billing or people, and you can disconnect it any time in Settings → Keys &
-> access. You need a Glitchless account (free) with at least one game sending data.
+> deletes data only if you turned that on and asked it to delete a whole game (it repeats the name first), never
+> touches billing or people, and you can disconnect it any time in Settings → Keys & access. You need a Glitchless account (free) with at least one
+> game sending data.
 
 ### Example prompts
 
@@ -135,11 +136,12 @@ tool.
 | `glitchless_network` | Network | yes | no | yes | no | Reads ping, packet loss and disconnects |
 | `glitchless_servers` | Servers | yes | no | yes | no | Reads the game's dedicated servers |
 | `glitchless_set_dashboard` | Save dashboard | no | yes | yes | no | Replaces the saved dashboard (reset: true deletes it); saving the same pages twice changes nothing |
-| `glitchless_create_game` | Create, set up or rename game | no | no | no | no | Adds a game inside the workspace (a new name adds another; a name already there returns that game), renames one, or with engine or files also returns the steps that add Glitchless to its code (text the server carries); removes nothing |
+| `glitchless_create_game` | Create, set up, rename or delete game | no | yes | no | no | Adds a game inside the workspace (a new name adds another; a name already there returns that game), renames one, or with engine or files also returns the steps that add Glitchless to its code (text the server carries); with delete and the game's name repeated back, deletes that game and everything stored for it (only with the delete_games scope, which an Owner or Admin ticks when connecting), which can't be undone |
 | `glitchless_share_links` | Share links | no | yes | no | yes | Publishes a board to anyone who has the link, signed out; lists them; revoking one ends it for everyone who has it |
 
 The four that write need the `dashboard` or `manage` scope, and so does listing share links; a person who grants only
-`read` gives the app the other 18 reads.
+`read` gives the app the other 18 reads. Deleting a game also needs `delete_games`, which is off unless the person
+ticks it.
 Tools that act on the computer the server runs on (`glitchless_sign_in`, `glitchless_playtest`,
 `glitchless_deck`) exist only in the stdio server and are never listed here.
 

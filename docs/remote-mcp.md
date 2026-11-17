@@ -35,14 +35,16 @@ If it can only send a fixed header, make a workspace key in Settings → Keys & 
 
 ## Signing in
 
-The app sends you to Glitchless. Sign in, pick the workspace, and choose what the app may do. It reads; the other two
-are yours to tick, and are never on by default:
+The app sends you to Glitchless. Sign in, pick the workspace, and choose what the app may do. It reads; designing
+dashboards and managing games are on unless you untick them (Change what it can do), and deleting games is off unless
+you tick it:
 
 | Scope | What the app may do |
 | --- | --- |
 | `read` | Read every game's data: findings, frame times, errors, players, events, dashboards, store reviews, revenue |
 | `dashboard` | Design and save game dashboards |
 | `manage` | Create games, and make and revoke read-only share links |
+| `delete_games` | Delete games and their data, for good, when you ask it to (it repeats the game's name first). Only an Owner or Admin can tick it |
 
 The page says who is asking. An app that publishes its details (Claude and ChatGPT do) shows the site that vouches
 for its name; an app that registered itself is flagged as one Glitchless can't check, and the page shows the whole
@@ -61,9 +63,12 @@ signed in to the same Claude account has the connection already. An agent withou
 connection may only read.
 
 It acts as you, with your role in the workspace (a Viewer's connection can only read, and a Viewer can have 5 at once),
-and it never deletes data or changes billing or people. The connection shows under the app's name in Agents & MCP and
-in Settings → Keys & access, with when it was last used; Disconnect there takes effect within 5 seconds everywhere. A connection the app stops using
-expires with its last refresh token, after 30 days. Connecting the same app again replaces its old connection.
+and it never changes billing or people. It deletes data only with `delete_games`, which you tick yourself, and then
+only a whole game you asked it to delete, with the game's name repeated back. A connection made before that scope
+existed doesn't have it: connect the app again to give it. The connection shows under the app's name in Agents & MCP
+and in Settings → Keys & access, with when it was last used; Disconnect there takes effect within 5 seconds
+everywhere. A connection the app stops using expires with its last refresh token, after 30 days. Connecting the same
+app again replaces its old connection.
 
 ## Tools
 
@@ -82,7 +87,7 @@ expires with its last refresh token, after 30 days. Connecting the same app agai
 | `glitchless_store` | Store | read | yes | no | yes | no |
 | `glitchless_revenue` | Revenue | read | yes | no | yes | no |
 | `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages, and removes a background, logo or banner | yes | no |
-| `glitchless_create_game` | Create, set up or rename game | manage | no | no | no | no |
+| `glitchless_create_game` | Create, set up, rename or delete game | manage | no | yes: `delete` deletes a game and everything stored for it (a connection with `delete_games`, an Owner's or Admin's, with the game's name again) | no | no |
 | `glitchless_share_links` | Share links | manage | no | yes: it revokes a link | no | yes: a share link is public |
 | `glitchless_mark_known` | Mark known | manage | no | yes: it replaces a note, clears one, and marks or unmarks a tester | yes | no |
 | `glitchless_resolve_error` | Resolve error | manage | no | yes: it hides an issue, and unresolves one | no: resolving again starts it over | no |
@@ -116,7 +121,7 @@ picture. The routes are in [SPEC §3b Upload links](SPEC.md#3b-dashboards-and-bo
 | Transport | Streamable HTTP, stateless: POST only (GET answers 405). 2026-07-28 requests get a JSON body; older clients get the answer as a one-event SSE stream |
 | Protocol versions | 2026-07-28, and 2025-11-25 and earlier through `initialize` |
 | Change notifications | None: the server never sends `notifications/tools/list_changed`, and says so (`tools.listChanged` is `false`), so there is no stream to hold open. A `subscriptions/listen` is acknowledged with an empty filter and ended at once with its result: a clean end, not a dropped connection to open again. `tools/list` answers carry `ttlMs: 0`: read the list again when you need it, or on reconnecting, and you get the tools of the latest release |
-| Protected resource metadata (RFC 9728) | `https://api.glitchless.gg/.well-known/oauth-protected-resource/mcp` (not at the root path, which would describe the origin); `resource` is `https://api.glitchless.gg/mcp`. A request without a token gets `401` with `WWW-Authenticate: Bearer resource_metadata="…", scope="read dashboard manage"` |
+| Protected resource metadata (RFC 9728) | `https://api.glitchless.gg/.well-known/oauth-protected-resource/mcp` (not at the root path, which would describe the origin); `resource` is `https://api.glitchless.gg/mcp`. A request without a token gets `401` with `WWW-Authenticate: Bearer resource_metadata="…", scope="read dashboard manage delete_games"` |
 | Authorization server metadata (RFC 8414) | `https://api.glitchless.gg/.well-known/oauth-authorization-server`, issuer `https://api.glitchless.gg` |
 | Client identification | Client ID Metadata Documents, preferred: an HTTPS `client_id` with a path and no query, on a host other than Glitchless's; fetched with no redirects, 5 KB at most, cached five minutes. Or Dynamic Client Registration at `/oauth/register` (RFC 7591): a name of 60 characters at most, 1 to 5 redirect URIs of 512 at most; a client that gets no token within a day is dropped, one in use lasts 90 days past its last token |
 | Rate limits | Per address, an IPv6 address by its /64: 30 authorizations and 30 metadata-document fetches an hour, 10 registrations an hour (1,000 accepted from everyone, not counting Anthropic's range), 120 token and revocation requests a minute. Anthropic's published range gets 20 times as many. Re-reading a metadata document that checked out in the last day isn't counted, and its last good copy is used while its host can't answer. Over the limit: `429` |

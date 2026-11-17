@@ -99,6 +99,13 @@ export const canManage = () => {
   return !scopes || scopes.includes('manage');
 };
 
+// Whether this call's connection may delete games: over HTTP, by the scopes its token carries (a token can carry fewer
+// than its key); on stdio, Glitchless Cloud decides by the key.
+export const canDeleteGames = () => {
+  const scopes = calls.getStore()?.scopes;
+  return !scopes || scopes.includes('delete_games');
+};
+
 // Where an agent gets the steps that add Glitchless to a game's code, as the end of a sentence: from
 // glitchless_create_game (setup-guide.js) where the connection has it, else the setup prompt.
 export const setupSteps = () =>
@@ -120,6 +127,12 @@ export async function projectFor(game) {
   return hit.id;
 }
 
+// After a game is deleted: later calls don't fall back to it.
+export function forgetGame(id) {
+  const c = conn();
+  if (c.game === id) c.game = null;
+}
+
 // A workspace key names the game in x-glitchless-project. A key for one game sends the game a call names (or
 // GLITCHLESS_GAME) as x-glitchless-game, so Glitchless Cloud refuses it when it isn't the key's game instead of
 // answering, or writing, for the key's own game.
@@ -138,7 +151,8 @@ export async function agent(method, p, body) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${data.error || `HTTP ${res.status}`}`);
+  // The answer's code and fields go with the error, for a tool that answers one of them its own way.
+  if (!res.ok) throw Object.assign(new Error(`${data.error || `HTTP ${res.status}`}`), { code: data.code ?? null, data });
   return data;
 }
 

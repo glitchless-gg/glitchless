@@ -114,6 +114,9 @@ test("tools that act on the server's computer never show, and scopes decide whic
   const all = await list();
   for (const write of ['glitchless_set_dashboard', 'glitchless_create_game', 'glitchless_share_links', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts']) assert.ok(all.includes(write), write);
   assert.equal(all.length, 22);
+  // Deleting games is a parameter of glitchless_create_game, so it shows no tool of its own.
+  scopes = ['read', 'dashboard', 'manage', 'delete_games'];
+  assert.deepEqual(await list(), all);
   await client.close();
 });
 
@@ -132,6 +135,7 @@ test('every tool has a title and all four annotation hints, true to what it does
   assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the pages, and removes a background or a logo');
   assert.equal(by.glitchless_set_alerts.openWorldHint, true, 'a test alert posts to Discord, Slack or email');
   assert.equal(by.glitchless_share_links.destructiveHint, true, 'it revokes a link');
+  assert.equal(by.glitchless_create_game.destructiveHint, true, 'it deletes a game');
   assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the saved dashboard');
   assert.equal(by.glitchless_share_links.openWorldHint, true, 'a share link is public');
   assert.deepEqual(tools.filter((t) => t.annotations.openWorldHint).map((t) => t.name).sort(), ['glitchless_set_alerts', 'glitchless_share_links']);

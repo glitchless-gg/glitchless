@@ -37028,6 +37028,7 @@ __export(context_exports, {
   agent: () => agent,
   apiKey: () => apiKey,
   base: () => base,
+  canDeleteGames: () => canDeleteGames,
   canManage: () => canManage,
   common: () => common,
   connection: () => connection,
@@ -37036,6 +37037,7 @@ __export(context_exports, {
   define: () => define,
   fail: () => fail,
   filters: () => filters,
+  forgetGame: () => forgetGame,
   isRemote: () => isRemote,
   isWorkspace: () => isWorkspace,
   noPlayersLine: () => noPlayersLine,
@@ -37114,6 +37116,10 @@ async function projectFor(game) {
   c.game = hit.id;
   return hit.id;
 }
+function forgetGame(id) {
+  const c = conn();
+  if (c.game === id) c.game = null;
+}
 async function headers(extra = {}) {
   const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || "mcp";
   const named2 = !isWorkspace() && (calls.getStore()?.game || conn().game);
@@ -37127,7 +37133,7 @@ async function agent(method, p, body2) {
     ...body2 ? { body: JSON.stringify(body2) } : {}
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${data.error || `HTTP ${res.status}`}`);
+  if (!res.ok) throw Object.assign(new Error(`${data.error || `HTTP ${res.status}`}`), { code: data.code ?? null, data });
   return data;
 }
 function refusal(res, text2) {
@@ -37294,7 +37300,7 @@ function noPlayersLine(i) {
 function slimGroup(g) {
   return { key: g.key, sessions: g.sessions, p50: g.p50, p95: g.p95, p99: g.p99, pct_over_budget: g.pct_over_budget, hitches_per_min: g.hitches_per_min, draw_calls: g.draw_calls };
 }
-var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, canManage, setupSteps, SMALLER, CALL_LIMITS, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
+var VERSION, CREDENTIALS_FILE, originOf, local, connections, conn, base, apiKey, defaultService, isWorkspace, workspaceIntake, SETUP_URL, canManage, canDeleteGames, setupSteps, SMALLER, CALL_LIMITS, calls, isRemote, common, tools, READS, titleOf, gameField, TEST_KINDS;
 var init_context = __esm({
   "src/context.js"() {
     init_dist();
@@ -37320,6 +37326,10 @@ var init_context = __esm({
     canManage = () => {
       const scopes = calls.getStore()?.scopes;
       return !scopes || scopes.includes("manage");
+    };
+    canDeleteGames = () => {
+      const scopes = calls.getStore()?.scopes;
+      return !scopes || scopes.includes("delete_games");
     };
     setupSteps = () => canManage() ? "glitchless_create_game with the game's name and its engine (or files: what's in the game's folder) returns the steps for that engine" : `the setup steps are at ${SETUP_URL}`;
     SMALLER = "Call again with a smaller hours (for example 168, a week), then widen it if you need more.";
@@ -38961,15 +38971,30 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
     text = (t) => ({ content: [{ type: "text", text: t }] });
     act(
       "glitchless_create_game",
-      "Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game.",
+      `Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_\u2026, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game. With delete (the game's name, repeated back as the person confirmed it, and game naming which one), deletes the game and everything Glitchless keeps for it: its data, dashboard, bug reports, keys, share links, alerts and store connections. It can't be undone. It needs a connection the person gave "Delete games and their data, for good", which is off unless they ticked it (a new key in Settings \u2192 Keys & access, or connecting again), and whose person is an Owner or Admin. When two games in the workspace share the name, nothing is deleted and the answer lists them (id, when made, whether they have data): ask the person which one, then call again with game set to its id. The game is gone from the workspace at once and frees its place in the plan; its client token is refused from then on; it's gone from Glitchless within the hour, and backups, including old copies of its files, keep it up to 35 more days. Only delete when the person asked for it in so many words, after telling them all of this.`,
       {
         name: external_exports.string().optional().describe("The game's name, as players know it (not needed with demo). One already in the workspace is returned, not made again"),
         demo: external_exports.boolean().optional().describe("Make the demo game, with a week of sample play"),
         rename: external_exports.string().optional().describe("Instead of making a game: the new name (60 characters at most) of the game that game names"),
+        delete: external_exports.string().optional().describe("Instead of making a game: delete the game that game names (by its id when two games share the name), for good. The game's name again, as the person confirmed it, any case"),
         engine: external_exports.enum(ENGINES.map((e) => e.id)).optional().describe(`Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker; reddit for a game in a Reddit post (with files: ["devvit.json"] and the engine of the game in it, Reddit's steps and that engine's come together)`),
         files: external_exports.array(external_exports.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, devvit.json for a game in a Reddit post, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)")
       },
-      async ({ name, demo, rename, engine, files: files2, game }) => {
+      async ({ name, demo, rename, delete: confirm, engine, files: files2, game }) => {
+        if (confirm != null) {
+          if (name || demo || rename != null || engine || files2) throw new Error("delete deletes the game that game names; leave out name, demo, rename, engine and files");
+          if (!game) throw new Error("name the game to delete with game, and its name again with delete");
+          if (!canDeleteGames()) throw new Error(`This connection can't delete games: deleting is off unless its person turns it on. They can delete the game themselves in Settings \u2192 Game, or connect this app again and tick "Delete games and their data, for good".`);
+          const pid = await projectFor(game);
+          const gone = await agent("DELETE", `/games/${pid}`, pid === game ? { name: confirm, id: pid } : { name: confirm }).catch((err) => {
+            if (err.code !== "SAME_NAME") throw err;
+            const games = err.data.games.map((g) => `${g.id} (made ${g.created_at.slice(0, 10)}, ${g.has_data === null ? "whether it has data isn't known just now" : g.has_data ? `last sent data ${g.last_seen.slice(0, 10)}` : "no data yet"})`);
+            throw new Error(`${games.length} games in this workspace are called "${confirm}": ${games.join("; ")}. Nothing was deleted. Ask the person which one they mean, then call this again with game set to that one's id.`);
+          });
+          forgetGame(pid);
+          await workspaceGames(true);
+          return reply(`Deleted ${gone.deleted.name}. It's gone from the workspace and its client token is refused from now on; it's gone from Glitchless within the hour, and backups, including old copies of its files, keep it up to 35 more days. Take Glitchless out of the game's code, or give it another game's client token.`, gone);
+        }
         if (rename != null) {
           if (name || demo || engine || files2) throw new Error("rename renames the game that game names; leave out name, demo, engine and files");
           const pid = await projectFor(game);
@@ -38997,7 +39022,7 @@ The code works for 10 minutes. This server switches to the workspace as soon as 
         if (demo) return reply(`Made the demo game, ${made.game.name}: a week of sample play from Zoomies, readable a few minutes from now. Then try glitchless_triage on it.`, made);
         return reply(`Created ${made.game.name}. Initialise Glitchless with this client token and intake (call again with game: "${made.game.name}" and engine, or files, for the steps for its engine):`, made);
       },
-      { title: "Create, set up or rename game", annotations: { destructiveHint: false, idempotentHint: false } }
+      { title: "Create, set up, rename or delete game", annotations: { destructiveHint: true, idempotentHint: false } }
     );
     act(
       "glitchless_share_links",
