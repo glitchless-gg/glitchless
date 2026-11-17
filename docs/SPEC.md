@@ -504,18 +504,28 @@ worked out, so the next read is made after the change.
   progress), one of them at most for one caller (a key, a person signed in to the dashboard, a share link). A query
   keeps its turn until its answer is made and the rest wait in line: one waiting on its own caller's reads waits for
   as long as it has time, one waiting on others' for 5 s. Then it answers 429 `{error, reason: "busy"}` with
-  `Retry-After` (seconds): the server working as it should, so not a 5xx. A raw read that only adds to an answer
-  (recent hitches, breadcrumbs, a board's paths) is left out instead, and `meta.partial` names it; that answer is
-  not kept, not even for a share link. Intake never waits on any of it. Clients tell this 429 from a rate limit by
-  its `reason`.
+  `Retry-After` (seconds): the server working as it should, so not a 5xx; `behind: "own"` when what held it up was
+  the same caller's other read (an agent's parallel calls, a person's other tab), whose `error` says so. A raw read
+  that only adds to an answer (recent hitches, breadcrumbs, a board's paths) waits 5 s at most, behind its own
+  caller too, and is then left out, and `meta.partial` names it; that answer is not kept, not even for a share link.
+  Intake never waits on any of it. Clients tell this 429 from a rate limit by its `reason`.
 - **Cut:** every read of raw events one answer makes on Glitchless Cloud draws on one total of 100,000 rows, and one
-  that reaches it answers from the latest rows it read. A board's paths take at most half of it, shared evenly by
-  place, so the reads its answer makes after them (players', the game's servers') have rows too. `meta.cut` lists `{what, from, limit}`:
-  `what: "events"` is the whole answer, which then covers `from` on (`meta.from` says the same); `"session"` a
-  session still in progress, shown from `from` on; `"positions"` the samples a heatmap or a board's paths draw;
-  `"breadcrumbs"` the events before the sample errors; `"players"` the players' read that says which errors no
-  player hit (then left unmarked, and resolved errors judged by every session); `"servers"` the game's servers (A9).
-  Findings that read players say so in `meta.findings_from.from`. `meta.note` says it in words.
+  that reaches it answers from the latest rows it read. The game's servers (A9) are read first, with half of what is
+  left, and a board's paths take at most half of it, shared evenly by place, so the reads after them have rows too.
+  `meta.cut` lists `{what, from, limit, under_way?}`:
+  - `"events"`: the whole answer, which then covers the sessions that started from `from` on (`meta.from` says the
+    same). A session's type and properties come with its start, so the `under_way` sessions already going at `from`
+    are left out rather than read as players'.
+  - `"session"`: a session still in progress, shown from `from` on, with its type `null` (its start wasn't read); a
+    list of sessions keeps every row of those read whole.
+  - `"positions"`: the samples a heatmap or a board's paths draw; `"breadcrumbs"`: the events before the sample errors.
+  - `"players"`: the players' read that says which errors no player hit (they are then left unmarked, and resolved
+    errors judged by every session).
+  - `"servers"`: the game's servers, with `under_way` the runs already going at `from` (left out, as above).
+
+  Findings that read players say so in `meta.findings_from.from` (and `under_way`); when the latest rows hold no players' session at
+  all, findings read every session, as for a game no player has played, and `meta.note` says why. `meta.note` says
+  every cut in words.
 
 An answer says how it was made in its `Server-Timing` header: `gate;dur=<ms>` (it waited that long for its turn at
 a heavy read), `raw;desc=<rows>` (the raw events it read), `cut` (its reads stopped at the total), `partial` (a

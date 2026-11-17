@@ -451,7 +451,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       if (err instanceof ReadRefused) {
         if (err.retryAfter) res.setHeader('Retry-After', String(err.retryAfter));
         timing(res, `refused;desc=${err.reason}`);
-        return json(res, err.status, { error: err.message, reason: err.reason });
+        return json(res, err.status, { error: err.message, reason: err.reason, ...(err.behind ? { behind: err.behind } : {}) });
       }
       logger.error('[glitchless]', err);
       return json(res, 500, { error: err.message });
@@ -540,6 +540,10 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     let recentRead;
     let playersCut;
     const contextFor = async (q) => {
+      // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
+      // sessions aren't players': the same env and session type, never the players' property filters. Read first, with
+      // half of what the query has left of a store's raw rows (rowShare), so the game's own events can't leave none.
+      const server = q.service === service && SERVER_QUERIES.has(name) && hasServers ? await contextFor({ ...q, service: companion, props: null, sessions: null, rowShare: 0.5 }) : null;
       let ctx;
       if (store.context) {
         // Stores that keep summaries build the context themselves (and answer in whole minutes).
@@ -588,9 +592,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         }
         if (view) ctx.playerErrors = errorFacts(view);
       }
-      // The game's servers (A9), filed under its companion service, for its server panels, findings and matches. Their
-      // sessions aren't players': the same env and session type, never the players' property filters.
-      if (SERVER_QUERIES.has(name) && hasServers) ctx.server = await contextFor({ ...q, service: companion, props: null, sessions: null });
+      if (server) ctx.server = server;
       return ctx;
     };
     // Players: session type user, on the game's prod env when it has one (no dev builds, bots, testers or store test
@@ -613,13 +615,18 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       meta.cut = [...(meta.cut || []), { what: 'players', from: playersCut.from, limit: playersCut.limit }];
       meta.note = [meta.note, `which errors players hit isn't marked: their raw events are more than one answer reads (${playersCut.limit.toLocaleString('en-US')}), so it read only those from ${utc(playersCut.from)} on`].filter(Boolean).join('; ');
     }
-    // The game's servers' read draws on the same row total as the rest of the answer: cut, it covers their latest events.
-    const serversCut = ctx.server?.meta?.cut;
-    if (serversCut?.length) {
-      const from = Math.max(...serversCut.map((c) => c.from));
-      meta.cut = [...(meta.cut || []), { what: 'servers', from, limit: serversCut[0].limit }];
-      meta.note = [meta.note, `the game's servers are read from their latest raw events, from ${utc(from)} on`].filter(Boolean).join('; ');
-    }
+    // The game's servers' read draws on the same row total as the rest of the answer: cut, it covers their latest events
+    // (and with none left, none of them). Findings read the players' servers, which say so too.
+    // Server runs already under way at the cut are left out, as any session is (their start, and type, weren't read).
+    const serversCut = (c) => {
+      const cuts = c?.server?.meta?.cut;
+      if (!cuts?.length || meta.cut?.some((x) => x.what === 'servers')) return;
+      const from = Math.max(...cuts.map((x) => x.from));
+      const underWay = cuts.reduce((n, x) => n + (x.under_way ?? 0), 0);
+      meta.cut = [...(meta.cut || []), { what: 'servers', from, limit: cuts[0].limit, ...(underWay ? { under_way: underWay } : {}) }];
+      meta.note = [meta.note, from >= c.server.to ? `the game's servers aren't read: the rest of the answer used the raw events one answer reads (${cuts[0].limit.toLocaleString('en-US')})` : `the game's servers are read from their latest raw events: the runs that started from ${utc(from)} on${underWay ? ` (${underWay} already running then left out)` : ''}`].filter(Boolean).join('; ');
+    };
+    serversCut(ctx);
     // Findings are about players: unless the query names an env, a session type or sessions, they read the range's
     // production sessions of players (not dev builds, bots or testers) when it has any, and meta says which they read.
     const findingsContext = async () => {
@@ -627,13 +634,15 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       const env = playersQuery.env;
       const players = await playersContext();
       players.stores = ctx.stores;
+      serversCut(players);
       const n = sessionCount(players);
-      // A players' read that stopped at the store's row total (meta.cut, §3) covers the latest part of the range, and
-      // says so even when it found none of them there.
+      // A players' read that stopped at the store's row total (meta.cut, §3) covers the latest part of the range. With
+      // no players' session in it, findings read every session, as for a game no player has played, and say why.
       const cut = players.meta?.cut?.find((c) => c.what === 'events');
-      if (!cut && (!n || n === sessionCount(ctx))) return ctx;
-      meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx), ...(cut ? { from: cut.from } : {}) };
-      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range${cut ? `, from ${new Date(cut.from).toISOString().slice(0, 10)} on (the latest ${cut.limit.toLocaleString('en-US')} raw events)` : ''}`].filter(Boolean).join('; ');
+      if (!n && cut) meta.note = [meta.note, `findings read every session: no players' session started in the latest ${cut.limit.toLocaleString('en-US')} raw events, from ${utc(cut.from)} on`].filter(Boolean).join('; ');
+      if (!n || (!cut && n === sessionCount(ctx))) return ctx;
+      meta.findings_from = { env, type: 'user', sessions: n, of: sessionCount(ctx), ...(cut ? { from: cut.from, ...(cut.under_way ? { under_way: cut.under_way } : {}) } : {}) };
+      meta.note = [meta.note, `findings read the ${n} ${env ? `${env} ` : ''}sessions of players (no ${env ? 'dev builds, ' : ''}bots or testers) of the ${sessionCount(ctx)} in the range${cut ? `, that started from ${new Date(cut.from).toISOString().slice(0, 10)} on (the latest ${cut.limit.toLocaleString('en-US')} raw events${cut.under_way ? `; ${cut.under_way} sessions already under way then left out` : ''})` : ''}`].filter(Boolean).join('; ');
       return players;
     };
     switch (name) {

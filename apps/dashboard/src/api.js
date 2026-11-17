@@ -93,24 +93,26 @@ export async function health() {
 // reloading so charts don't flash empty on every refresh.
 // A poll waits for the answer still on its way: asking the same question again (a refresh, or Live sliding the window
 // forward, which keeps its length) while a slow read is out would only start another one on top of it on the server.
-// The newest is asked once that answer is in. A different question (another range, filter or page) starts at once, and
-// so does reload() (after a change is saved, the answer on its way may be from before it).
+// The newest is asked once that answer is in, or once it has been out POLL_WAIT_MS (a little over the server's 25 s
+// for a query, so one that never comes back doesn't stop the polls). A different question (another range, filter or
+// page) starts at once, and so does reload() (after a change is saved, the answer on its way may be from before it).
+const POLL_WAIT_MS = 30_000;
 export function useQuery(name, params, { refreshMs = 0, enabled = true } = {}) {
   const [state, setState] = useState({ data: null, error: null, loading: true });
   const key = JSON.stringify([name, params]);
   const question = JSON.stringify([name, { ...params, from: undefined, to: undefined }, (params?.to ?? 0) - (params?.from ?? 0)]);
   const seq = useRef(0);
-  const out = useRef(null); // the question of the request on its way, if any
+  const out = useRef(null); // the request on its way, if any: { question, at }
   const asked = useRef(false); // a poll came while it was
   const latest = useRef(null);
   const load = useCallback((now = false) => {
     if (!enabled) return;
-    if (now !== true && out.current === question) {
+    if (now !== true && out.current?.question === question && Date.now() - out.current.at < POLL_WAIT_MS) {
       asked.current = true;
       return;
     }
     const id = ++seq.current;
-    out.current = question;
+    out.current = { question, at: Date.now() };
     asked.current = false;
     setState((s) => ({ ...s, loading: true }));
     api(name, params)

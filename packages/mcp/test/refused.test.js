@@ -54,6 +54,13 @@ test('a busy server says to make the same call again after its wait', async () =
   assert.equal(r.content[0].text, 'Glitchless error: Glitchless is busy with other large reads right now. Nothing is wrong with the call: make it again in 3 seconds, or now with a smaller hours.');
 });
 
+test('a read that waited on the same caller\'s other read says to make large calls one at a time', async () => {
+  answer = { status: 429, headers: { 'retry-after': '5' }, body: { error: 'Your other large read was still running, so this one waited for it and ran out of time. Ask again once that one is done, or ask for a shorter range.', reason: 'busy', behind: 'own' } };
+  const r = await local.callTool({ name: 'glitchless_triage', arguments: {} });
+  assert.equal(r.isError, true);
+  assert.equal(r.content[0].text, 'Glitchless error: Another large read of yours (a tool call running at the same time) was still running, so this one waited for it and ran out of time. Nothing is wrong with the call: make it again once the other call has answered, one call at a time, or with a smaller hours.');
+});
+
 test('any other failure keeps the status and the start of the body', async () => {
   answer = { status: 503, body: { error: 'Service Unavailable' } };
   assert.match((await local.callTool({ name: 'glitchless_triage', arguments: {} })).content[0].text, /^Glitchless error: Glitchless API findings → HTTP 503: \{"error":"Service Unavailable"\}/);
@@ -70,7 +77,7 @@ test("over HTTP a call whose reads together run past the call's limit stops with
     const started = Date.now();
     const r = await remote.callTool({ name: 'glitchless_dashboard', arguments: { hours: 2160 } });
     assert.equal(r.isError, true);
-    assert.equal(r.content[0].text, 'Glitchless error: This window was too big to read: its reads took more than 0.2 seconds together, so the call was stopped. Call again with a smaller hours (for example 168, a week), then widen it if you need more.');
+    assert.equal(r.content[0].text, 'Glitchless error: This window was too big to read in one call: its reads took more than 0.2 seconds together (waiting for any other large read of yours running at the same time included), so the call was stopped. Call again with a smaller hours (for example 168, a week), then widen it if you need more. Make large calls one at a time.');
     assert.ok(Date.now() - started < 700, 'stopped at the limit, not after both reads (800 ms)');
     // On stdio nothing holds the call to a web request's time: the same call answers.
     assert.notEqual((await local.callTool({ name: 'glitchless_dashboard', arguments: { hours: 2160 } })).isError, true);

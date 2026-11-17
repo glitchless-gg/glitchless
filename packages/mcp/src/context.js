@@ -158,6 +158,9 @@ function refusal(res, text) {
     const after = String(data.error).match(/[\d.]+ seconds?/)?.[0];
     return `This window was too big to read: Glitchless stopped the read${after ? ` after ${after}` : ''}. ${SMALLER}`;
   }
+  if (data?.reason === 'busy' && data.behind === 'own') {
+    return 'Another large read of yours (a tool call running at the same time) was still running, so this one waited for it and ran out of time. Nothing is wrong with the call: make it again once the other call has answered, one call at a time, or with a smaller hours.';
+  }
   if (data?.reason === 'busy') {
     const wait = Number(res.headers.get('retry-after')) || 5;
     return `Glitchless is busy with other large reads right now. Nothing is wrong with the call: make it again in ${wait} second${wait === 1 ? '' : 's'}, or now with a smaller hours.`;
@@ -174,7 +177,7 @@ function withinCall(read) {
   if (!call?.remote) return read;
   let timer;
   const late = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`This window was too big to read: its reads took more than ${Math.round(CALL_LIMITS.ms / 100) / 10} seconds together, so the call was stopped. ${SMALLER}`)), Math.max(0, CALL_LIMITS.ms - (Date.now() - call.startedAt)));
+    timer = setTimeout(() => reject(new Error(`This window was too big to read in one call: its reads took more than ${Math.round(CALL_LIMITS.ms / 100) / 10} seconds together (waiting for any other large read of yours running at the same time included), so the call was stopped. ${SMALLER} Make large calls one at a time.`)), Math.max(0, CALL_LIMITS.ms - (Date.now() - call.startedAt)));
   });
   return Promise.race([read, late]).finally(() => clearTimeout(timer));
 }

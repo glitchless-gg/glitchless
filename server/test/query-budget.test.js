@@ -179,7 +179,7 @@ test('an answer short of a part for want of a turn is not kept; out of time whil
   assert.deepEqual(callers, [`project ${P}`, `project ${P}`], 'a reader with no key or person of its own is its game');
   // A query still in line for a heavy read when its time runs out was kept waiting: not too big.
   const waiting = fakeStore(async () => {
-    budget().inLine = tooBusy(5);
+    budget().inLine = () => tooBusy(5);
     await sleep(300);
   });
   const late = await (await serve(t, waiting, { queryDeadlineMs: 40 })).get('/v1/query/sessions?service=game&from=1&to=2');
@@ -264,16 +264,21 @@ test('a budget: checkpoints, one hold a key given back when the work ends, and a
   await sleep(60);
   assert.equal(released, 3, 'given back after the grace, though the work has not ended');
   finish();
-  // A refused hold is every later ask's refusal too.
+  // A refused hold isn't kept: a later ask in the same query tries again (a read its answer needs, after one that only
+  // added to it got no turn in time).
   const refused = newBudget({ deadlineMs: 0 });
-  await assert.rejects(
-    runWithin(refused, async () => {
-      await refused.hold(key, async () => {
+  let asks = 0;
+  await runWithin(refused, async () => {
+    await assert.rejects(
+      refused.hold(key, async () => {
+        asks++;
         throw tooBusy(3);
-      }).catch(() => {});
-      await refused.hold(key, acquire);
-    }),
-    (err) => err.reason === 'busy' && err.retryAfter === 3,
-  );
-  assert.equal(taken, 3, 'the refused query never took one');
+      }),
+      (err) => err.reason === 'busy' && err.retryAfter === 3,
+    );
+    await refused.hold(key, acquire);
+    await refused.hold(key, acquire);
+  });
+  assert.equal(asks, 1);
+  assert.deepEqual([taken, released], [4, 4], 'the second ask took one, kept for the rest of the query, given back at its end');
 });

@@ -9,8 +9,8 @@
 //                  when its work has stopped
 //   notes          what the answer's Server-Timing header says about it (app.js)
 //   caller         who asked (a key, a person, a share link), so a store can share what is scarce out fairly
-//   inLine         set by a store while the query waits in line for a heavy read: the refusal it gets if its time runs
-//                  out there, since it was kept waiting, not too big
+//   inLine         set by a store while the query waits in line for a heavy read: → the refusal it gets if its time
+//                  runs out there, since it was kept waiting, not too big
 //
 // A read is refused in two ways (ReadRefused): `busy`, a 429 with Retry-After, the server is doing as many heavy reads
 // as it takes on at once, so try again shortly (the server working as designed, not a fault, so not a 5xx);
@@ -26,12 +26,14 @@ export const DEFAULT_QUERY_DEADLINE_MS = 25_000;
 const GRACE_MS = 5_000;
 
 export class ReadRefused extends Error {
-  // reason: 'busy' (429) or 'deadline' (503); retryAfter: seconds, when trying again soon is the thing to do.
-  constructor(reason, message, { retryAfter = null } = {}) {
+  // reason: 'busy' (429) or 'deadline' (503); retryAfter: seconds, when trying again soon is the thing to do; behind:
+  // 'own' when what it waited on was the same caller's other read (an agent's parallel calls, a person's other tab).
+  constructor(reason, message, { retryAfter = null, behind = null } = {}) {
     super(message);
     this.reason = reason;
     this.status = reason === 'busy' ? 429 : 503;
     this.retryAfter = retryAfter;
+    this.behind = behind;
   }
 }
 
@@ -44,6 +46,7 @@ export function seconds(ms) {
 
 export const tooLong = (deadlineMs) => new ReadRefused('deadline', `This took more than ${seconds(deadlineMs)} to read, so it was stopped. Ask for a shorter range.`);
 export const tooBusy = (retryAfter) => new ReadRefused('busy', `Glitchless is busy with other large reads. Try again in ${seconds(retryAfter * 1000)}, or ask for a shorter range.`, { retryAfter });
+export const ownBusy = (retryAfter) => new ReadRefused('busy', 'Your other large read was still running, so this one waited for it and ran out of time. Ask again once that one is done, or ask for a shorter range.', { retryAfter, behind: 'own' });
 
 const current = new AsyncLocalStorage();
 
@@ -78,17 +81,17 @@ export function newBudget({ deadlineMs = DEFAULT_QUERY_DEADLINE_MS, graceMs = GR
       if (!controller.signal.aborted && now() >= b.deadlineAt) b.stop();
       if (controller.signal.aborted) throw controller.signal.reason;
     },
-    // The query's one hold on `key`: `acquire()` → a function that gives it back, called at the first ask only. Every
-    // later ask in the same query waits on that one (or gets its refusal).
+    // The query's one hold on `key`: `acquire()` → a function that gives it back, called at the first ask. Every ask
+    // while that one is pending waits on it (or gets its refusal); a refusal isn't kept, so a later ask tries again
+    // (a read the answer needs, after one that only added to it was refused).
     hold(key, acquire) {
       if (!holds.has(key)) {
-        holds.set(
-          key,
-          acquire().then((release) => {
-            if (ended) release();
-            else ends.push(release);
-          }),
-        );
+        const held = acquire().then((release) => {
+          if (ended) release();
+          else ends.push(release);
+        });
+        holds.set(key, held);
+        held.catch(() => holds.get(key) === held && holds.delete(key));
       }
       return holds.get(key);
     },
@@ -109,7 +112,7 @@ export function runWithin(b, fn) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => {
-        const waiting = b.inLine;
+        const waiting = b.inLine?.();
         b.stop();
         reject(waiting ?? b.signal.reason);
         setTimeout(b.end, b.graceMs).unref?.();
