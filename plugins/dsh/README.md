@@ -56,7 +56,8 @@ Tested with DSH 0.2.1-rc.5 and DeepSeek V4.1 Flash on macOS.
 ## Permissions
 
 The tools read your games' data and can create a game, save a game's dashboard and make or revoke read-only share
-links. They act as you, with your role in the workspace, and never delete data or touch billing or people. Settings →
+links. They act as you, with your role in the workspace. They delete data only if you turned that on for the key and asked
+for a whole game to be deleted, and never touch billing or people. Settings →
 Keys & access in the dashboard lists and revokes the key. `glitchless_playtest` runs bots against a build on your
 computer, and the setup skill edits your game's code when you ask it to.
 
