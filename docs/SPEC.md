@@ -311,7 +311,10 @@ whenever it never saw the answer to an earlier try: the request timed out, the g
 it in flight, or the game closed with it still saved (engine SDKs send their saved batches on the next launch, in
 anonymous mode under a new session ID, so the ID is not derived from the session). Intake stores a batch ID once
 per project and game for 7 days: a repeat is answered `202 {"accepted": 0, "duplicate": true}` and nothing in it
-is stored, counted, forwarded or shown on the live tail again. An SDK clears a batch as soon as any 2xx comes back.
+is stored, counted, forwarded or shown on the live tail again. A batch the server failed to store (whatever failed
+before the store had it, the host's plan check too) is answered with an error and its ID is let go, so the retry is
+taken; once the store has it, nothing that fails after (an index, a count) lets the ID go, so a retry can't store it
+twice. An SDK clears a batch as soon as any 2xx comes back.
 A payload without `batch_id` (an older SDK) is stored every time it arrives. The ID names one batch, never the
 player or the session: engine SDKs save it with the batch in every privacy mode (§4b).
 
@@ -2221,7 +2224,9 @@ sweeps hourly; Glitchless Cloud every 15 minutes (the alerts function).
 templates under `ROOMTPL#<owner>` `TPL#<id>`) and games' files in the rooms bucket under `r/`. Its event lake runs a
 few minutes behind, so intake writes down each session_start of a game in an open room (`ROOMPLAY#<project>#<service>`
 `H#<hour>#<ts>#<session>`: version, session type and OS, kept an hour) for `liveStarts`: plays show on the big screen
-within its 15 s. Organisers are allow-listed (`GLITCHLESS_ROOM_ORGANISERS`:
+within its 15 s. Which games are in open rooms intake reads at most every 30 s per instance from the open rooms' own
+entries (`ROOMS#OPEN` `ROOM#<code>`: `closes_at`, written with the room and gone when it ends), so the read costs what
+is open, never every room made; the sweep (every 15 minutes) puts the entries right. Organisers are allow-listed (`GLITCHLESS_ROOM_ORGANISERS`:
 emails or workspace IDs; anyone on a laptop without one), by workspace key or dashboard session; a room belongs to the
 workspace. `GET /api/me` says `rooms.organiser`. The jam's pages are on their own host (`GLITCHLESS_JAM_ORIGIN`,
 jam.glitchless.gg; without one, `/jam/` on the app), which has no sign-in of its own: its pages send people to
@@ -3313,7 +3318,10 @@ activity feed and the query cache are all per project.
   `x-glitchless-api-key` or `?api_key=`), and must differ from every client token. No API key means open reads.
 - **Hosted**: a control plane implements the same hooks with hashed per-project keys and Auth0/Cognito sessions.
 - **Rate limit**: a token bucket per ingest key, per server process, of `rps` requests/s with bursts of 2 s
-  worth; 429 with `Retry-After` past it. `GLITCHLESS_INGEST_RPS` sets the default (1000; 0 turns it off). The
+  worth; 429 with `Retry-After` past it. A host's own batches sent in process (`handle.intake(token, payloads)`, the
+  app `createApp` returns: Glitchless Cloud's own analytics, several sessions in one store write) have no rate limit
+  and no batch claim, since nothing resends them over a network; it throws only when nothing was stored, so a caller
+  that tries again never stores them twice. `GLITCHLESS_INGEST_RPS` sets the default (1000; 0 turns it off). The
   payload caps still apply: 1 MB per request, 500 events, 4000-character strings.
 
 **Storage.** Every store method takes the `projectId`: `put`, `query`, `rollups`, `getMaps`, `reports`,
@@ -3328,7 +3336,11 @@ versions the game had then have no sighting). A store without it orders versions
 `claimBatch(projectId, service, id)` and `releaseBatch(...)` keep repeats of a batch out (§2 `batch_id`): `claimBatch`
 is true the first time an ID comes within 7 days and false after, across every server process the store serves (the
 file store keeps the IDs in `batches.jsonl`; Glitchless Cloud makes one conditional write per batch), and intake
-releases an ID whose events it failed to store, so the game's retry is taken. A store without them keeps every copy.
+releases an ID whose events it failed to store, so the game's retry is taken. So a store's `put` throws only when
+storing the batch again is harmless: what it can write twice first (Glitchless Cloud: maps and bug reports, keyed by
+what they are), what keeps every copy last (Firehose), and nothing after that fails it (the services index is tried
+again with the next batch). Glitchless Cloud can still keep a batch twice when Firehose takes part of it and fails, or
+takes it and answers too late. A store without them keeps every copy.
 Optionally `getBrand(projectId, service)`, `putBrand(…, brand)`, `getBrandImage(…, kind)` and `putBrandImage(…, kind,
 bytes)` keep a game's branding (§3b): what it is in one item and each image's bytes in one of their own (the file
 store: `brands.json` and `brand/<project>/<service>.<kind>`; Glitchless Cloud: items under `P#<project>#BRAND`, an

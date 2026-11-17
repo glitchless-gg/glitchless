@@ -8,6 +8,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
+import { defaultAuth } from '../src/auth.js';
 import { FileStore } from '../src/stores/file.js';
 import { parsePayload } from '../src/ingest.js';
 import { STORES } from './helpers/stores.js';
@@ -27,8 +28,8 @@ const first = (sid) => [
   { type: 'hitch', ts: t0 + 2000, level: null, duration_ms: 1610, causes: ['shader_compile', 'frozen'] },
 ];
 
-async function serve(store) {
-  const server = http.createServer(createApp({ store, logger: { warn() {}, error() {} } }));
+async function serve(store, { auth } = {}) {
+  const server = http.createServer(createApp({ store, ...(auth ? { auth } : {}), logger: { warn() {}, error() {} } }));
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const send = async (b) => {
@@ -90,6 +91,25 @@ for (const [kind, make] of Object.entries(STORES)) {
     const app = await serve(store);
     try {
       const b = body('s_retry000000000', 'b_retry000000000', first());
+      assert.equal((await app.send(b)).status, 500);
+      fail = false;
+      assert.deepEqual(await app.send(b), { status: 202, body: { accepted: 3 } });
+      assert.deepEqual((await app.send(b)).body, { accepted: 0, duplicate: true });
+    } finally {
+      await app.close();
+      await made.close?.();
+    }
+  });
+
+  // Anything that fails between taking the batch and storing it releases it, not only the store: here the host's
+  // plan check (a hosted service reads the plan from its database, which can fail).
+  test(`${kind}: a batch whose plan check failed can be sent again`, async () => {
+    const made = await make();
+    let fail = true;
+    const auth = { ...defaultAuth(), admitIntake: (writer, events) => (fail ? Promise.reject(new Error('plan unreadable')) : { events }) };
+    const app = await serve(made.store, { auth });
+    try {
+      const b = body('s_planfail000000', 'b_planfail000000', first());
       assert.equal((await app.send(b)).status, 500);
       fail = false;
       assert.deepEqual(await app.send(b), { status: 202, body: { accepted: 3 } });

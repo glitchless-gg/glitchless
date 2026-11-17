@@ -166,24 +166,25 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
         // answered as taken, and nothing in it is stored, counted or forwarded twice (SPEC §2 batch_id).
         const batch = payload.batch && store.claimBatch ? { service: payload.envelope.service, id: payload.batch } : null;
         if (batch && !(await store.claimBatch(writer.projectId, batch.service, batch.id))) return json(res, 202, { accepted: 0, duplicate: true });
-        // Google's pre-launch test phones are bots whatever the SDK says (test-lab.js); the address isn't kept.
-        const parsed = markTestLab(normalize(payload), clientAddress(req));
-        const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
-        const events = admitted.events;
-        if (events.length) {
-          await sourcemaps.refingerprint(writer.projectId, events);
-          try {
-            await store.put(writer.projectId, events, writer);
-          } catch (err) {
-            // Not stored, so the game's retry must not be taken for a repeat.
-            if (batch) await store.releaseBatch?.(writer.projectId, batch.service, batch.id).catch(() => {});
-            throw err;
+        let admitted;
+        try {
+          // Google's pre-launch test phones are bots whatever the SDK says (test-lab.js); the address isn't kept.
+          const parsed = markTestLab(normalize(payload), clientAddress(req));
+          admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
+          if (admitted.events.length) {
+            await sourcemaps.refingerprint(writer.projectId, admitted.events);
+            // The batch's ID goes with it, for a store that can tell a second copy of the batch by it.
+            await store.put(writer.projectId, admitted.events, batch ? { ...writer, batch: batch.id } : writer);
           }
-          counters.received += events.length;
-          presence?.record(writer.projectId, events);
-          clearCache(writer.projectId, { shares: false });
-          if (auth.recordIntake) await Promise.resolve(auth.recordIntake(writer, events)).catch((err) => logger.warn('[intake] record', err.message));
+        } catch (err) {
+          // Not stored, whatever failed on the way, the plan's check too (a store's put throws only when storing the
+          // batch again is harmless, SPEC §6): the game's retry must not be taken for a repeat. Nothing after the put
+          // releases it.
+          if (batch) await store.releaseBatch?.(writer.projectId, batch.service, batch.id).catch(() => {});
+          throw err;
         }
+        const events = admitted.events;
+        if (events.length) await afterIntake(writer, [events]);
         json(res, 202, { accepted: events.length, ...(admitted.dropped ? { dropped: admitted.dropped, reason: admitted.reason } : {}) });
         if (!events.length) return;
         broadcast(writer.projectId, events);
@@ -892,6 +893,45 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     json(res, 429, { error: 'rate limit exceeded' });
     return true;
   }
+
+  // What follows a store write at intake, batch by batch: the counters, players now, the query cache, and the host's
+  // own count (auth.recordIntake: a session's first batch counts against its plan), which never fails the write.
+  async function afterIntake(writer, batches) {
+    for (const events of batches) {
+      counters.received += events.length;
+      presence?.record(writer.projectId, events);
+    }
+    clearCache(writer.projectId, { shares: false });
+    if (auth.recordIntake) for (const events of batches) await Promise.resolve(auth.recordIntake(writer, events)).catch((err) => logger.warn('[intake] record', err.message));
+  }
+
+  // Intake from the host itself, in process (Glitchless Cloud's own analytics, which measure the service in a game of
+  // their own): payloads of one or more sessions under one client token, in one store write. It is the route's intake
+  // without what is there for games sending over a network: no rate limit, no batch claim (no game resends these)
+  // and no test-lab check. → { accepted }; it throws what the route would answer as an error (a bad token or payload,
+  // a store that failed), and then nothing was stored, and only then.
+  handle.intake = async (token, payloads) => {
+    const writer = checkIdentity(await auth.resolveIngest(token, null));
+    const batches = [];
+    for (const payload of payloads) {
+      const parsed = normalize(parsePayload(payload, { projectId: writer.projectId }));
+      const admitted = auth.admitIntake ? await auth.admitIntake(writer, parsed) : { events: parsed };
+      if (admitted.events.length) batches.push(admitted.events);
+    }
+    const events = batches.flat();
+    if (!events.length) return { accepted: 0 };
+    await sourcemaps.refingerprint(writer.projectId, events);
+    await store.put(writer.projectId, events, writer);
+    // Stored: nothing after this fails the call, or the caller would send it all again.
+    try {
+      await afterIntake(writer, batches);
+      broadcast(writer.projectId, events);
+      forwarder?.forward(events).catch((err) => logger.warn('[export]', err.message));
+    } catch (err) {
+      logger.warn('[intake] after storing', err.message);
+    }
+    return { accepted: events.length };
+  };
 
   // The host changed what this project's answers depend on (its known findings, resolved errors, testers): answer afresh.
   handle.forget = (projectId) => clearCache(projectId);
