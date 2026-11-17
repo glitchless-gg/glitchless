@@ -402,7 +402,10 @@ to, attrs}]`, at most 32): from the first event that carried one to the last. A 
 
 **`GET /v1/health`** answers `features`, the genre additions intake folds: `counts` (counters), `props`, `groups`,
 `zones`, `net` and `server_mode`. The SDKs send counters only to a server that lists `counts`, and a server-role
-SDK sends nothing at all to one that doesn't list `server_mode`; an older server answers without `features`.
+SDK sends nothing at all to one that doesn't list `server_mode`; an older server answers without `features`. The
+hosted service also answers `build`, `{commit, code, deployed_at}`: the commit, package and time of the deploy serving
+the request, so a deploy can check that its new build is the one answering. A server run from the open-source code has
+no `build`.
 
 **`custom`.** `attrs` are the game's own words and numbers: a string (counted up to 64 characters), a boolean, a
 finite number, or a **list** of them (`deck: ['hog_rider', 'fireball']`). A list counts its first 16 distinct elements
