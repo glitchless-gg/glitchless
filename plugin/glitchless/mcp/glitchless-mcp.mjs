@@ -37213,7 +37213,7 @@ function toolList({ remote = false, scopes = null } = {}) {
 function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
   const server = new McpServer(
     { name: "glitchless", title: "Glitchless", version: VERSION, websiteUrl: "https://www.glitchless.gg", icons: [{ src: "https://app.glitchless.gg/brand/glitchless-icon-512.png", mimeType: "image/png", sizes: ["512x512"] }] },
-    { instructions: instructions(remote, !scopes || scopes.includes("manage")) }
+    { instructions: instructions(remote, !scopes || scopes.includes("manage")), capabilities: { tools: { listChanged: false } } }
   );
   for (const t of tools) {
     if (remote && t.local || scopes && !scopes.includes(t.scope)) continue;

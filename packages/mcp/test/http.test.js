@@ -1,7 +1,8 @@
 // The MCP server over Streamable HTTP (http.js): one stateless server per request, reading with the connection the
 // host hands over. Clients of the 2026-07-28 protocol and older ones that open with initialize both work; tools that
-// act on the server's own computer never show; scopes decide which writes show; and every tool carries a title and
-// all four annotation hints, which the Claude and ChatGPT directories check.
+// act on the server's own computer never show; scopes decide which writes show; every tool carries a title and
+// all four annotation hints, which the Claude and ChatGPT directories check; and a connected client holds no request
+// open, since the server has no news to send it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -39,9 +40,33 @@ const { Client, StreamableHTTPClientTransport } = await import('@modelcontextpro
 const KEY = `gl_ws_${'k'.repeat(43)}`;
 const mcp = createHttpHandler();
 let scopes = ['read'];
-const host = http.createServer((req, res) => mcp.handle(req, res, { connection: connection({ base: apiUrl, apiKey: KEY, client: 'Claude' }), scopes }));
+// What the host was asked (a 2026-07-28 client names the method in Mcp-Method), and the requests it hasn't finished.
+const asked = [];
+const unfinished = new Set();
+const host = http.createServer((req, res) => {
+  asked.push(req.headers['mcp-method'] ?? req.method);
+  unfinished.add(res);
+  res.on('close', () => unfinished.delete(res));
+  return mcp.handle(req, res, { connection: connection({ base: apiUrl, apiKey: KEY, client: 'Claude' }), scopes });
+});
 await new Promise((r) => host.listen(0, '127.0.0.1', r));
 const endpoint = new URL(`http://127.0.0.1:${host.address().port}/mcp`);
+
+// A 2026-07-28 request as a client writes it by hand: the protocol version and the client ride in _meta.
+const META = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'test', version: '0' }, 'io.modelcontextprotocol/clientCapabilities': {} };
+const ask = (url, method, params = {}, id = 1) =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': '2026-07-28', 'mcp-method': method },
+    body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { _meta: META, ...params } }),
+    signal: AbortSignal.timeout(1000),
+  });
+// The JSON-RPC messages of an answer, whether it came as JSON or as an event stream. Reading waits for the answer to
+// end, so one the server holds open fails on ask()'s one-second limit.
+const messages = async (res) => {
+  const text = await res.text();
+  return /event-stream/.test(res.headers.get('content-type')) ? text.split('\n').filter((line) => line.startsWith('data: ')).map((line) => JSON.parse(line.slice(6))) : [JSON.parse(text)];
+};
 
 async function connect(versionNegotiation) {
   const client = new Client({ name: 'test', version: '0' }, versionNegotiation ? { versionNegotiation } : {});
@@ -49,9 +74,12 @@ async function connect(versionNegotiation) {
   return client;
 }
 
+// closeAllConnections: a test that failed may have left a client connected, and the run must still end.
 test.after(() => {
-  api.close();
-  host.close();
+  for (const server of [api, host]) {
+    server.close();
+    server.closeAllConnections();
+  }
 });
 
 test('an older client (initialize) and a 2026-07-28 client both list and call the tools', async () => {
@@ -111,6 +139,67 @@ test('every tool has a title and all four annotation hints, true to what it does
   assert.equal(serverInfo.name, 'glitchless');
   assert.ok(!/glitchless_sign_in|glitchless_playtest/.test(instructions), 'the remote instructions name no local tool');
   await client.close();
+});
+
+// The server used to say it sends tool-list changes, as McpServer does by default. Each connected 2026-07-28 client
+// then opened a subscriptions/listen stream and waited on it: behind a serverless function that is one request slot
+// per agent, held until the function's timeout cuts it, then opened again.
+test('a listen is acknowledged with nothing and ended at once, by the handler and by glitchless-mcp serve', async (t) => {
+  const served = await serve(['--port', '0']);
+  t.after(() => served.close().closeAllConnections());
+  for (const url of [endpoint, `http://127.0.0.1:${served.address().port}/mcp`]) {
+    const started = Date.now();
+    const res = await ask(url, 'subscriptions/listen', { notifications: { toolsListChanged: true, promptsListChanged: true, resourcesListChanged: true, resourceSubscriptions: ['glitchless://games'] } }, 'listen:0');
+    const [ack, end, ...more] = await messages(res);
+    assert.ok(Date.now() - started < 1000, 'the stream ends within a second');
+    assert.equal(res.status, 200);
+    assert.equal(ack.method, 'notifications/subscriptions/acknowledged');
+    assert.deepEqual(ack.params.notifications, {}, 'the client is told none of what it asked for will be sent');
+    assert.deepEqual([end.id, end.result?.resultType, end.error], ['listen:0', 'complete', undefined], "the listen's own result: the stream ended on purpose, so it isn't a dropped connection to open again");
+    assert.equal(more.length, 0);
+  }
+});
+
+test("a client that wants tool-list changes doesn't listen, one that listens anyway isn't left to ask again, and tools still list and call", async (t) => {
+  // Retries after 20 ms where the SDK's client waits a second, so a client that came back would show in this test.
+  const transport = () => new StreamableHTTPClientTransport(endpoint, { reconnectionOptions: { initialReconnectionDelay: 20, maxReconnectionDelay: 20, reconnectionDelayGrowFactor: 1, maxRetries: 5 } });
+  const settled = () => new Promise((r) => setTimeout(r, 300));
+  const listens = () => asked.filter((m) => m === 'subscriptions/listen').length;
+  scopes = ['read'];
+
+  for (const mode of [{ pin: '2026-07-28' }, undefined]) {
+    asked.length = 0;
+    const errors = [];
+    const client = new Client({ name: 'test', version: '0' }, { listChanged: { tools: { onChanged() {} } }, ...(mode && { versionNegotiation: { mode } }) });
+    client.onerror = (err) => errors.push(err.message);
+    t.after(() => client.close());
+    await client.connect(transport());
+    const era = mode ? '2026-07-28' : 'initialize';
+    assert.deepEqual(client.getServerCapabilities().tools, { listChanged: false }, `${era}: there are tools, and no news of the list changing`);
+    assert.equal(client.autoOpenedSubscription, undefined, `${era}: nothing to listen for`);
+
+    if (mode) {
+      // A client that listens all the same: one that read the capabilities before this server said no, for one.
+      const subscription = await client.listen({ toolsListChanged: true });
+      assert.deepEqual(subscription.honoredFilter, {}, 'told it will be sent nothing');
+      assert.equal(await subscription.closed, 'graceful', 'and that the server ended it on purpose');
+    }
+    assert.equal((await client.listTools()).tools.length, 16);
+    const r = await client.callTool({ name: 'glitchless_triage', arguments: { game: 'Zoomies' } });
+    assert.match(r.content[0].text, /Level 2 hitches on load/);
+
+    await settled();
+    assert.equal(listens(), mode ? 1 : 0, `${era}: no listen is opened again (asked: ${asked.join()})`);
+    assert.equal(unfinished.size, 0, `${era}: a connected, idle client holds no request open (asked: ${asked.join()})`);
+    assert.deepEqual(errors, [], era);
+  }
+});
+
+test("with no list-change news, the tool list says it is stale at once, so a client that asks again gets a release's new tools", async () => {
+  scopes = ['read'];
+  const [{ result }] = await messages(await ask(endpoint, 'tools/list'));
+  assert.equal(result.tools.length, 16);
+  assert.deepEqual([result.ttlMs, result.cacheScope], [0, 'private'], 'stale at once, and never shared: the list depends on the scopes the person gave');
 });
 
 test('glitchless-mcp serve: this computer only, unless a token guards it', async () => {

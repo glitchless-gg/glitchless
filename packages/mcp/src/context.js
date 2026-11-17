@@ -283,10 +283,17 @@ const gameField = z.string().optional().describe('The game, by name or id, when 
 
 // A server with the tools. remote: the HTTP server's set (no local tools, and instructions to match); scopes: show
 // only the tools these scopes allow; connection: what every call runs with (default: this process's own).
+//
+// The tools are all there before the server connects and never change while it runs, so it says it sends no
+// tool-list changes (McpServer would say it does). A client that is promised them opens a subscriptions/listen
+// stream and waits: over HTTP that is one request held open per connected agent, for news that never comes. Told
+// there are none, a client doesn't listen, and one that listens anyway is acknowledged with nothing and closed at
+// once. Every tools/list answer is marked stale straight away (ttlMs 0), so a client that asks again gets the
+// current list; one that stays connected through a release keeps the list it loaded until it reconnects.
 export function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
   const server = new McpServer(
     { name: 'glitchless', title: 'Glitchless', version: VERSION, websiteUrl: 'https://www.glitchless.gg', icons: [{ src: 'https://app.glitchless.gg/brand/glitchless-icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }] },
-    { instructions: instructions(remote, !scopes || scopes.includes('manage')) },
+    { instructions: instructions(remote, !scopes || scopes.includes('manage')), capabilities: { tools: { listChanged: false } } },
   );
   for (const t of tools) {
     if ((remote && t.local) || (scopes && !scopes.includes(t.scope))) continue;
