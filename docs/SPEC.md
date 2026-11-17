@@ -408,7 +408,9 @@ to, attrs}]`, at most 32): from the first event that carried one to the last. A 
 SDK sends nothing at all to one that doesn't list `server_mode`; an older server answers without `features`. The
 hosted service also answers `build`, `{commit, code, deployed_at}`: the commit, package and time of the deploy serving
 the request, so a deploy can check that its new build is the one answering. A server run from the open-source code has
-no `build`.
+no `build`. Behind its CDN the hosted service also answers `side`: `intake`, the instances that take games' events
+(`/v1/intake`, `/v1/health` and `/v1/live` go there), or `prod`, the ones serving everything else. Those other paths
+reached at the intake side's own address get a 404, and `/v1/health/prod` is the same answer from the `prod` side.
 
 **`custom`.** `attrs` are the game's own words and numbers: a string (counted up to 64 characters), a boolean, a
 finite number, or a **list** of them (`deck: ['hog_rider', 'fireball']`). A list counts its first 16 distinct elements
@@ -3324,6 +3326,7 @@ hooks passed to `createApp({ auth })` ([`server/src/auth.js`](../server/src/auth
 | --- | --- | --- | --- |
 | `resolveIngest(token, req)` | `POST /v1/intake?token=` | `{ projectId, keyId?, rps? }` | `AuthError(403)` |
 | `resolveReader(req)` | every other `/v1/` route but `/v1/health`, jam rooms' (§3j) and the `PUT` to an upload link (§3b, whose token is its credential) | `{ projectId, scopes, keyId?, rps?, share? }` (`read`: queries and live tail; `delete`: `DELETE /v1/data` and `DELETE /v1/report`; `dashboard`: save or reset a dashboard, its branding and backgrounds, and make upload links; `sourcemaps`: upload source maps). `rps` rate-limits the reader per `keyId`; `share: { service, page }` limits it to one board (§3c) | `AuthError(401 \| 403)` |
+| `openLive(req, reader)` (optional) | `GET /v1/live`, once the reader is known | `null` (nothing held), `{ release(), maxMs? }` (release is called when the stream ends; with `maxMs` the stream ends itself then, and the browser opens the next), or `{ refused: { status, error, retryAfter?, reason? } }`: answered as `{ error, busy: true, reason? }` with `Retry-After` (`reason`: `yours`, this person or key has its share open already; `busy`, the server has no room). Glitchless Cloud holds a few streams a person and an instance on its intake instances; a dashboard tries a busy or dropped stream again by itself, and stops on a 401 or 403 | — |
 
 Client tokens ship inside game builds, so they are write-only: a reader hook never accepts one. Intake
 stamps `project_id` on every event and stores it under that project; queries, the live tail, the agent

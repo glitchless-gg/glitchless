@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createLiveStreams } from './live-stream.js';
 
 export const API_BASE = (import.meta.env.VITE_GLITCHLESS_API || '').replace(/\/$/, '');
 
@@ -136,18 +137,20 @@ export function useQuery(name, params, { refreshMs = 0, enabled = true } = {}) {
   return { ...state, reload };
 }
 
+// One live tail stream per game for the whole page, shared by every live panel, tried again by itself when the server
+// is busy (live-stream.js). Answers the stream's state: 'connecting', 'live', 'busy', 'yours' (this person's share is
+// open elsewhere), 'offline' or 'refused' (signed out: the page's own handling takes over).
+const liveStreams = typeof fetch === 'undefined' ? null : createLiveStreams({ onUnauthorized: () => context.onUnauthorized?.() });
+
 export function useLive(service, onEvents) {
   const cb = useRef(onEvents);
   cb.current = onEvents;
+  const [state, setState] = useState('connecting');
   useEffect(() => {
-    if (!service) return;
+    if (!service || !liveStreams) return;
     const extra = new URLSearchParams(context.params).toString();
-    const es = new EventSource(`${API_BASE}/v1/live?service=${encodeURIComponent(service)}${apiKey() ? `&api_key=${apiKey()}` : ''}${extra ? `&${extra}` : ''}`);
-    es.onmessage = (m) => {
-      try {
-        cb.current(JSON.parse(m.data));
-      } catch {}
-    };
-    return () => es.close();
+    const url = `${API_BASE}/v1/live?service=${encodeURIComponent(service)}${apiKey() ? `&api_key=${apiKey()}` : ''}${extra ? `&${extra}` : ''}`;
+    return liveStreams.subscribe(url, { onEvents: (batch) => cb.current(batch), onState: setState });
   }, [service]);
+  return state;
 }

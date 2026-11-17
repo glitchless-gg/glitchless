@@ -440,7 +440,7 @@ function statValue(p) {
 function LivePanel({ p, span }) {
   const f = useFilters();
   const names = p.events;
-  const { events } = useLiveEvents(f.service, names);
+  const { events, state } = useLiveEvents(f.service, names);
   const shown = events.slice(0, 60);
   return (
     <Widget
@@ -455,7 +455,7 @@ function LivePanel({ p, span }) {
         </>
       }
     >
-      <LiveFeed events={shown} maxHeight={320} waiting={names?.length ? `Waiting for ${names.join(', ')}…` : undefined} />
+      <LiveFeed events={shown} maxHeight={320} state={state} waiting={names?.length ? `Waiting for ${names.join(', ')}…` : undefined} />
     </Widget>
   );
 }

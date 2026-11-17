@@ -215,7 +215,7 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
       }
       const allow = (scope) => reader.scopes?.includes(scope) || json(res, 403, { error: `this key lacks the ${scope} scope` });
 
-      if (p === '/v1/live') return allow('read') && live(req, res, url, reader.projectId);
+      if (p === '/v1/live') return allow('read') && live(req, res, url, reader);
 
       // A game's dashboard (board.js): read with the read scope, saved or reset to automatic with the dashboard scope.
       if (p === '/v1/dashboard') {
@@ -785,17 +785,31 @@ export function createApp({ store, forwarder = null, auth = defaultAuth(), stati
     return { saved, spec: saved || autoDashboard(ctx) };
   }
 
-  function live(req, res, url, projectId) {
+  // The live tail: an event stream of the project's events as this process takes them. A host may hold how many are open
+  // (auth.openLive(req, reader) → null, { release(), maxMs? }, or { refused: { status, error, retryAfter?, reason? } },
+  // answered as is). With maxMs the stream ends itself then, and the dashboard opens the next one.
+  function live(req, res, url, reader) {
+    const held = auth.openLive?.(req, reader) ?? null;
+    if (held?.refused) {
+      if (held.refused.retryAfter) res.setHeader('Retry-After', String(held.refused.retryAfter));
+      return json(res, held.refused.status, { error: held.refused.error, busy: true, ...(held.refused.reason ? { reason: held.refused.reason } : {}) });
+    }
+    const { projectId } = reader;
     const service = url.searchParams.get('service');
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.write(': glitchless live tail\n\n');
     const sub = { res, service, projectId };
     subscribers.add(sub);
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
-    req.on('close', () => {
+    const cut = held?.maxMs ? setTimeout(() => res.end(), held.maxMs) : null;
+    const done = () => {
       clearInterval(ping);
+      clearTimeout(cut);
       subscribers.delete(sub);
-    });
+      held?.release?.();
+    };
+    req.on('close', done);
+    res.on('close', done);
   }
 
   function broadcast(projectId, events) {

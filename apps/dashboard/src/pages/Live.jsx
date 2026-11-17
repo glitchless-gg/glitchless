@@ -38,22 +38,32 @@ export function matches(e, names) {
   return !names?.length || names.includes(e.type) || (e.type === 'custom' && names.includes(e.name));
 }
 
-// The events as they arrive, newest first (at most 500). `names` keeps only those events.
+// What a feed says while its stream isn't live (api.js useLive).
+const LIVE_STATES = {
+  busy: 'Live is busy right now. It reconnects by itself in a few seconds.',
+  yours: 'You have live open in other tabs or panels. This one starts by itself when one of them closes.',
+  offline: 'Live lost its connection. It reconnects by itself.',
+  refused: 'Live stopped: sign in again to see events as they arrive.',
+};
+
+// The events as they arrive, newest first (at most 500). `names` keeps only those events. `state` is the stream's:
+// 'busy' while the server has no room for it (it tries again by itself).
 export function useLiveEvents(service, names) {
   const [events, setEvents] = useState([]);
   const [paused, setPaused] = useState(false);
-  useLive(service, (batch) => {
+  const state = useLive(service, (batch) => {
     if (paused) return;
     const kept = batch.filter((e) => matches(e, names));
     if (kept.length) setEvents((prev) => [...kept.reverse(), ...prev].slice(0, 500));
   });
-  return { events, paused, setPaused, clear: () => setEvents([]) };
+  return { events, paused, setPaused, state, clear: () => setEvents([]) };
 }
 
-export function LiveFeed({ events, maxHeight, waiting = 'Waiting for events… open the game and play.' }) {
+export function LiveFeed({ events, maxHeight, state, waiting = 'Waiting for events… open the game and play.' }) {
   return (
     <div className="livefeed" style={{ maxHeight, overflowY: 'auto' }}>
-      {!events.length && <div className="empty">{waiting}</div>}
+      {LIVE_STATES[state] && <div className="empty">{LIVE_STATES[state]}</div>}
+      {!events.length && !LIVE_STATES[state] && <div className="empty">{waiting}</div>}
       {events.map((e, i) => (
         <div className="row" key={`${e.ts}-${i}`}>
           <span className="muted">{fmtTime(e.ts)}</span>
@@ -121,7 +131,7 @@ export function LiveTail({ page }) {
           </>
         }
       >
-        <LiveFeed events={shown} maxHeight="calc(100vh - 170px)" />
+        <LiveFeed events={shown} state={live.state} maxHeight="calc(100vh - 170px)" />
       </Widget>
     </div>
   );
