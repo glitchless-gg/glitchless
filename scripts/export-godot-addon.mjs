@@ -38,7 +38,8 @@ if (FIELDS) {
     tagged = git('rev-parse', `v${version}^{commit}`);
   } catch {}
   if (tagged !== commit) throw new Error(`the mirror's HEAD (${commit.slice(0, 7)}) isn't tagged v${version}: commit and tag it first`);
-  const remote = git('ls-remote', '--tags', `${MIRROR}.git`, `v${version}`);
+  // A lightweight tag lists its commit; an annotated one lists the tag object, and its commit under ^{}.
+  const remote = git('ls-remote', '--tags', `${MIRROR}.git`, `v${version}`, `v${version}^{}`);
   if (!remote.split('\n').some((line) => line.startsWith(commit))) {
     throw new Error(`push the mirror and its tag first: GitHub has no v${version} at ${commit.slice(0, 7)}`);
   }
