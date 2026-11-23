@@ -31,6 +31,7 @@ extends Node2D
 ##   --off-at=S           S seconds in, the player turns "Share performance data" off (Glitchless.set_enabled(false))
 ##   --on-at=S            S seconds in, the player turns it back on (Glitchless.set_enabled(true))
 ##   --opt-in             ask first: Glitchless is off until the player turns it on (the opt_in option)
+##   --crash-at=S         S seconds in, Godot itself crashes (OS.crash): the next launch reports it
 ##   --glitchless            send even though this is a debug build
 ## e.g. godot --path godot -- --autoplay --seed=3 --glitchless
 
@@ -55,6 +56,7 @@ var _bug_report_at := -1.0
 var _bug_form_at := -1.0
 var _off_at := -1.0
 var _on_at := -1.0
+var _crash_at := -1.0
 var _bonus_target = null  # untyped: in a release export a call on a typed null crashes the game outright
 
 
@@ -99,6 +101,8 @@ func _ready() -> void:
 			_on_at = float(a.get_slice("=", 1))
 		elif a == "--opt-in":
 			opt_in = true
+		elif a.begins_with("--crash-at="):
+			_crash_at = float(a.get_slice("=", 1))
 	print("user dir: ", OS.get_user_data_dir())
 	Glitchless.init("glitchless-godot-demo", "", "dev", intake, {"privacy": privacy, "session_timeout": timeout, "bug_reports": true, "opt_in": opt_in})
 	print("glitchless on: ", Glitchless.is_enabled())
@@ -118,6 +122,8 @@ func _ready() -> void:
 		_switch_at(_off_at, false)
 	if _on_at >= 0.0:
 		_switch_at(_on_at, true)
+	if _crash_at >= 0.0:
+		_crash_later()
 	_next_level()
 
 
@@ -186,6 +192,12 @@ func _burst(count: int) -> void:
 		spark.set_meta("v", Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(50.0, 300.0))
 		add_child(spark)
 		_sparks.append(spark)
+
+
+# The engine dying under the game, as a bad GDExtension or a driver would: no GDScript runs after this.
+func _crash_later() -> void:
+	await get_tree().create_timer(_crash_at).timeout
+	OS.crash("the planted crash")
 
 
 # What iOS and Android send when the player switches away and back.

@@ -282,6 +282,7 @@ export function findings(ctx, maps = []) {
     const also = loggedWith.get(issue.fingerprint);
     // Most of it on one value of a property (decision 5): "crashes are mostly class necromancer".
     const lean = propertyLean(ctx, errorSessions(ctx, issue.fingerprint));
+    const engine = engineIn(ctx, (s) => s.session_id === issue.sample_session);
     out.push({
       id: `error-${issue.fingerprint}`,
       severity,
@@ -292,7 +293,8 @@ export function findings(ctx, maps = []) {
         (also.length ? ` Each time it comes with ${also.map((a) => `"${a.message.slice(0, 60)}"${a.location ? ` at ${a.location}` : ''}`).join(' and ')}: one failure, logged ${also.length + 1} ways.` : '') +
         leanLine(lean),
       evidence: { fingerprint: issue.fingerprint, kind: issue.kind, location: issue.location, stack: issue.stack?.split('\n').slice(0, 6).join('\n'), count: issue.count, sessions: issue.sessions, versions: issue.versions, levels: issue.levels, breadcrumbs: issue.breadcrumbs, ...(also.length ? { logged_with: also.map((a) => ({ fingerprint: a.fingerprint, message: a.message, location: a.location })) } : {}), ...(lean ? { property: lean } : {}) },
-      suggestion: !issue.location ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engineIn(ctx, (s) => s.session_id === issue.sample_session), issue, crumbs, errorWhen(ctx, issue)),
+      // A Godot crash with no word has no location, and its advice needs none.
+      suggestion: !issue.location && !(issue.kind === 'crash' && engine === 'godot') ? 'Reproduce with the breadcrumbs above and guard the failing path.' : errorSuggestion(engine, issue, crumbs, errorWhen(ctx, issue)),
       link: { page: 'errors', fingerprint: issue.fingerprint },
       impact: share,
       ...(issue.came_back ? { came_back: { resolved: issue.fingerprint, note: issue.came_back.resolved.note ?? null, version: issue.came_back.version, why: cameBackLine(issue.came_back) } } : {}),
@@ -588,9 +590,15 @@ const FATAL_WORDS = {
   crash: 'The game crashed — written down as it died and sent on the next launch.',
 };
 
+// A Godot game can't write its crash down as it dies: the next launch finds the session never closed (SPEC §5).
+const ENGINE_FATAL_WORDS = {
+  'godot:crash': 'Godot itself stopped — found on the next launch, from a session that never closed.',
+};
+
 // The words for a fatal error, in the engine of the session it was seen in.
 function fatalWords(ctx, issue) {
-  return WEB_ENGINE_FATAL_WORDS[`${engineIn(ctx, (s) => s.session_id === issue.sample_session)}:${issue.kind}`] || FATAL_WORDS[issue.kind];
+  const key = `${engineIn(ctx, (s) => s.session_id === issue.sample_session)}:${issue.kind}`;
+  return WEB_ENGINE_FATAL_WORDS[key] || ENGINE_FATAL_WORDS[key] || FATAL_WORDS[issue.kind];
 }
 
 // When an issue fired, from its first occurrence: as the game started (in the first STARTUP_MS of its session,
@@ -620,6 +628,9 @@ function errorSuggestion(engine, issue, crumbs, when = 'play') {
       // C++ that a script call broke. Null-node advice is for GDScript errors.
       if (issue.kind === 'shader' || (issue.kind === 'engine' && GODOT_RENDERER.test(`${issue.source} ${issue.stack}`)))
         return `Start at ${issue.location}. ${WHEN_WORDS[when]}. It comes from Godot's renderer, not your scripts: a shader that this device's GPU or driver can't compile or link (the Compatibility renderer, on OpenGL, has the tightest limits). See which devices send it (renderer, GPU, screen) before changing the game, then simplify the shader or material it names (fewer uniforms, lights or texture slots) or give those devices a simpler one.`;
+      // Godot itself died (SPEC §5): the crash handler's signal and the script running then, or no word at all.
+      if (issue.kind === 'crash')
+        return `${issue.location ? `Start at ${issue.location}, the script function running when Godot's crash handler spoke. ` : ''}${WHEN_WORDS[when]}, on the path triggered by ${trigger}. "Program crashed with signal N" is the crash handler's (debug export templates have one); "The game stopped without closing" means no word came: a release build's crash, or the game killed (a force quit, the OS out of memory). Native crashes come from GDExtensions and native plugins (check they match this Godot version), the GPU driver (see which renderers and GPUs send it), memory on low-end devices, or threads changing the scene tree; in a release export a call on a freed object or a typed null crashes outright. For a backtrace, have testers play a debug export.`;
       if (issue.kind === 'engine') return `${where} the call that broke the engine check the message names, on the code path triggered by ${trigger}: usually a node used before it is in the tree or after it was freed (check is_inside_tree() and is_instance_valid()), or a resource that failed to load. The engine skips the call and carries on, so make the path fail safe and apply game state (score, pickups) before it.`;
       return `${where} a node that is null or already freed (a get_node() path that no longer exists, or a node freed earlier: check is_instance_valid()) or a missing dictionary key on the code path triggered by ${trigger}. Make it fail safe and apply game state (score, pickups) before anything that can fail: release exports skip most script errors silently, and a call on a typed null crashes the game.`;
     case 'unity':

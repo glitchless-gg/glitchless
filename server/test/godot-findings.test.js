@@ -168,6 +168,40 @@ test('Godot device-gap, slow-start and error findings give Godot advice', () => 
   assert.doesNotMatch(error.suggestion, /undefined/);
 });
 
+test("Godot's own crash, sent on the next launch, crashes its session and gets native-crash advice", () => {
+  // As the SDK sends it in anonymous mode (SPEC §5): the session's start again, continued, then the crash and its end.
+  const crash = (id, message, fn, fingerprint) =>
+    session({
+      id,
+      events: [
+        { type: 'level_start', ts: T0 + 100, level: 'level_2' },
+        { type: 'error', ts: T0 + 4000, kind: 'crash', message, fn, source: fn ? 'waves.gd' : null, line: fn ? 88 : null, fingerprint, level: 'level_2', recent: ['level_start', 'powerup'] },
+        { type: 'session_end', ts: T0 + 4000, reason: 'crash', level: 'level_2' },
+      ],
+    }).map((e) => (e.type === 'session_start' ? { ...e, continued: true, session_type: 'user' } : e));
+  const evs = [
+    ...crash('s_h1', 'Program crashed with signal 11', '_spawn_wave', 'gdc1'),
+    ...crash('s_h2', 'Program crashed with signal 11', '_spawn_wave', 'gdc1'),
+    ...crash('s_q1', 'The game stopped without closing', null, 'gdc2'),
+    ...crash('s_q2', 'The game stopped without closing', null, 'gdc2'),
+    ...session({ id: 's_ok', events: [{ type: 'session_end', ts: T0 + 60_000, reason: 'quit' }] }),
+  ];
+  const ctx = ctxOf(evs);
+  for (const id of ['s_h1', 's_q1']) assert.equal(ctx.sessions.get(id).crashed, true, id);
+  assert.equal(ctx.sessions.get('s_ok').crashed, false);
+  const fs = findings(ctx);
+  const handler = fs.find((f) => f.id === 'error-gdc1');
+  const quiet = fs.find((f) => f.id === 'error-gdc2');
+  assert.ok(handler && quiet, `findings: ${fs.map((f) => f.id)}`);
+  assert.equal(handler.severity, 'high');
+  assert.match(handler.summary, /Godot itself stopped — found on the next launch/);
+  assert.match(handler.suggestion, /^Start at _spawn_wave \(waves\.gd:88\), the script function running when Godot's crash handler spoke\./);
+  assert.match(handler.suggestion, /GDExtensions.*debug export/);
+  assert.doesNotMatch(handler.suggestion, /get_node\(\) path|written down as it died/);
+  assert.match(quiet.suggestion, /^The error fires during play, on the path triggered by level_start\./);
+  assert.match(quiet.suggestion, /a release build's crash, or the game killed/);
+});
+
 test('browser sessions keep their three.js findings, also next to Godot sessions', () => {
   const evs = [];
   const browserFrames = (level, ts, values, geometries) => {

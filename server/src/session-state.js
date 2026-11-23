@@ -18,8 +18,9 @@ import { pageHosts } from './sites.js';
 // 'script' is a Godot GDScript runtime error, an Unreal Blueprint runtime error, and 'exception' an
 // unhandled Unity exception: the function stops part way, like an uncaught JS exception.
 // 'game_loop_stopped' is a Phaser or Babylon.js game whose loop died on an uncaught error: the screen froze, so the
-// session crashed whatever the player did next. 'crash' is a game that died (the Unreal plugin writes it
-// down as the game goes and sends it on the next launch). An Unreal 'ensure' is an error, not fatal.
+// session crashed whatever the player did next. 'crash' is a game that died, sent on the next launch: the Unreal
+// plugin and GameMaker write it down as the game goes, and the Godot addon finds the session it left running (and
+// its crash handler's words, in a debug build). An Unreal 'ensure' is an error, not fatal.
 export const FATAL_KINDS = new Set(['js', 'promise', 'webgl_context_lost', 'script', 'exception', 'game_loop_stopped', 'crash']);
 const UNHANDLED_KINDS = new Set(['js', 'promise', 'script', 'exception', 'crash']);
 const HALT_KINDS = new Set(['game_loop_stopped', 'crash']);

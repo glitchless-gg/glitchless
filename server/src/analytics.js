@@ -822,6 +822,7 @@ export function crumbsOf(events, sessionId, ts) {
   for (const e of events) {
     if (e.session_id !== sessionId || e.ts > ts) continue;
     if (['frame_window', 'pos', 'error', 'map', 'load', 'server_window', 'props'].includes(e.type)) continue;
+    if (e.type === 'session_end' && e.ts === ts) continue; // the end a crash brought, sent with it at its time
     out.push({ ts: e.ts, type: e.type, name: e.type === 'counts' ? countsLine(e) : e.type === 'disconnect' ? e.reason : e.name || e.cause || null, level: e.level });
   }
   return out.slice(-6);

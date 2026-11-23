@@ -26,11 +26,14 @@
 //  12, 13.       multiplayer: an ENet server and a client against a fake intake, and against an older server
 //  14. off switch  the player turns Glitchless off and on (set_enabled), its choice holds on the next launch, opt_in
 //                starts a device off, and a debug build's own off holds, against a fake intake that keeps every request
+//  15. crash     Godot itself dies: OS.crash() (the crash handler speaks, as in a debug build) and a SIGKILL (no word,
+//                as a release build's crash or a force quit); each time the next launch sends the crash
 // It first runs test/bug_report_test.gd (screenshot fitting, slimmed events, hotkeys), test/device_test.gd
 // (Steam Deck detection from a Deck's, a desktop's and a Deck-like PC's files; Google Play's pre-launch phones),
 // test/frames_test.gd (the refresh rate read off the fast frames; hitch causes), test/steam_test.gd (Steam facts
 // from a fake GodotSteam), test/genre_test.gd, test/off_switch_test.gd (the player's off switch, without a server) and
-// test/outbox_test.gd (a session whose first batch went out before the game closed: its session_start again, continued).
+// test/outbox_test.gd (a session whose first batch went out before the game closed: its session_start again, continued)
+// and test/crash_test.gd (running.json while a session plays, and the crash the next launch sends from it).
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -215,6 +218,12 @@ try {
     assert.match(outboxUnit.stdout, /outbox tests: 0 failed/, outboxUnit.stdout + outboxUnit.stderr);
     assert.doesNotMatch(outboxUnit.stdout + outboxUnit.stderr, /SCRIPT ERROR/, outboxUnit.stdout + outboxUnit.stderr);
   });
+  const crashUnit = spawnSync(godot, ['--headless', '--path', PROJECT, '--script', 'res://test/crash_test.gd'], { encoding: 'utf8', timeout: 120_000 });
+  for (const m of crashUnit.stdout.matchAll(/^(ok|FAIL) (.+)$/gm)) results.push(m[1] === 'ok' ? ['ok', `crash unit: ${m[2]}`] : ['FAIL', `crash unit: ${m[2]}`]);
+  check('crash unit tests ran to the end, with no script error', () => {
+    assert.match(crashUnit.stdout, /crash tests: 0 failed/, crashUnit.stdout + crashUnit.stderr);
+    assert.doesNotMatch(crashUnit.stdout + crashUnit.stderr, /SCRIPT ERROR/, crashUnit.stdout + crashUnit.stderr);
+  });
   const outbox = path.join(userDir, 'glitchless/outbox.json');
   const playerFile = path.join(userDir, 'glitchless/player_id');
   fs.rmSync(path.join(userDir, 'glitchless'), { recursive: true, force: true });
@@ -299,7 +308,7 @@ try {
       assert.equal(s.n, w.frames);
       assert.equal(Math.round(s.quantile(0.5) * 100) / 100, w.ft_p50);
     }
-    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.6.8'));
+    assert.ok(windows.every((w) => w.sdk === 'glitchless-godot/0.7.0'));
   });
   check('load: stamped when the first frame was drawn, not when the first batch went', () => {
     for (const s of sessions) {
@@ -437,7 +446,7 @@ try {
     assert.ok(opened, 'no report from code');
     assert.match(opened.screenshot, /^data:image\/jpeg;base64,/);
     assert.ok(opened.screenshot.length <= 200_000);
-    assert.equal(opened.sdk, 'glitchless-godot/0.6.8');
+    assert.equal(opened.sdk, 'glitchless-godot/0.7.0');
     assert.equal(opened.level, 'level_1');
     assert.ok(opened.recent.some((e) => e.type === 'level_start' && e.level === 'level_1'), JSON.stringify(opened.recent));
     assert.ok(opened.recent.every((e) => typeof e.ts === 'number' && e.type), 'recent events need ts and type');
@@ -810,6 +819,87 @@ try {
     await off.close();
     fs.rmSync(enabledFile, { force: true });
   }
+
+  // 15. Godot itself dies (SPEC §5, error kind crash). The editor these tests run has Godot's crash handler, so
+  // OS.crash() is a debug build's crash, with the handler's words. A release export template has none, so its crash
+  // just stops the game, as a SIGKILL (a force quit) does. Levels run 1.5 s: the crash at 3.5 s is on level_3 (with
+  // room for level_2's planted hitch to delay it) and before its script error, after the first batch went at 2 s, so
+  // in anonymous mode the crash goes under a new ID after that session_start again.
+  const running = path.join(userDir, 'glitchless/running.json');
+  const crashLog = path.join(userDir, 'glitchless/crash.log');
+  const sessionsNow = async () => (await query(port, 'sessions')).sessions;
+  const beforeCrash = new Set((await sessionsNow()).map((s) => s.session_id));
+  const crashRun = spawnSync(godot, ['--headless', '--max-fps', '60', '--path', PROJECT, ...demo(['--seed=22', '--crash-at=3.5', intake])], { encoding: 'utf8', timeout: 120_000 });
+  check('crash: OS.crash() kills the game, leaving running.json and what the crash handler said', () => {
+    assert.notEqual(crashRun.status, 0, 'Godot exited cleanly');
+    assert.match(crashRun.stdout + crashRun.stderr, /Program crashed with signal \d+/);
+    assert.ok(fs.existsSync(running), 'no running.json');
+    assert.match(fs.readFileSync(crashLog, 'utf8'), /GDScript backtrace[\s\S]*_crash_later \(res:\/\/demo\/demo\.gd:\d+\)/);
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  const cut = (await sessionsNow()).filter((s) => !beforeCrash.has(s.session_id));
+  check('crash: until the next launch, the session that crashed is one that stopped without an end', () => {
+    assert.equal(cut.length, 1, `${cut.length} sessions`);
+    assert.equal(cut[0].ended, false);
+    assert.equal(cut[0].crashed, false);
+  });
+  cut.forEach((s) => beforeCrash.add(s.session_id));
+  runGodot(demo(['--seed=23', intake]), 'launch after the crash');
+  await new Promise((r) => setTimeout(r, 300));
+  const afterCrash = (await sessionsNow()).filter((s) => !beforeCrash.has(s.session_id));
+  const crashed = afterCrash.filter((s) => s.crashed);
+  const crashEvents = (id) => raw2().filter((e) => e.session_id === id);
+  check('crash: the next launch sends it, a crashed session in anonymous mode under a new ID, its start sent again', () => {
+    assert.equal(afterCrash.length, 2, `${afterCrash.length} sessions`);
+    assert.equal(crashed.length, 1, 'the launch after it did not crash');
+    const mine = crashEvents(crashed[0].session_id);
+    const start = mine.find((e) => e.type === 'session_start');
+    assert.ok(start?.continued === true && start.session_type === 'synthetic', JSON.stringify(start));
+    assert.equal(crashed[0].session_type, 'synthetic');
+    assert.notEqual(crashed[0].session_id, cut[0].session_id);
+    assert.ok(!fs.existsSync(running) && !fs.existsSync(crashLog), 'running.json or crash.log left');
+  });
+  check('crash: an error of kind crash with the handler\'s words and the script line, then session_end reason crash', () => {
+    const mine = crashEvents(crashed[0]?.session_id);
+    const err = mine.find((e) => e.type === 'error' && e.kind === 'crash');
+    assert.ok(err, JSON.stringify(mine.map((e) => e.type)));
+    assert.match(err.message, /^Program crashed with signal \d+$/);
+    assert.equal(err.fn, '_crash_later');
+    assert.equal(err.source, 'demo.gd');
+    assert.equal(err.level, 'level_3');
+    assert.match(err.stack, /^crash: Program crashed with signal \d+\n {4}at _crash_later \(res:\/\/demo\/demo\.gd:\d+\)/);
+    assert.match(err.stack, /ERROR: the planted crash/);
+    assert.ok(!err.stack.includes(os.userInfo().username), 'a user name in the stack');
+    const end = mine.find((e) => e.type === 'session_end');
+    assert.ok(end?.reason === 'crash' && end.level === 'level_3' && end.ts === err.ts, JSON.stringify(end));
+    assert.equal(mine.filter((e) => e.type === 'level_abandon').length, 0);
+  });
+  const crashIssues = (await query(port, 'errors')).issues.filter((i) => i.kind === 'crash');
+  check('crash: the errors view lists it as fatal, at the planted line', () => {
+    assert.equal(crashIssues.length, 1, JSON.stringify(crashIssues.map((i) => i.message)));
+    assert.equal(crashIssues[0].fatal, true);
+    assert.equal(crashIssues[0].fn, '_crash_later');
+  });
+
+  const beforeKill = new Set((await sessionsNow()).map((s) => s.session_id));
+  const killed = spawn(godot, ['--headless', '--max-fps', '60', '--path', PROJECT, ...demo(['--seed=24', '--level-seconds=3', intake])]);
+  const killedExit = new Promise((r) => killed.on('exit', r));
+  await waitFor(() => fs.existsSync(running));
+  await new Promise((r) => setTimeout(r, 2500)); // into level_2, which started at 3 s
+  killed.kill('SIGKILL');
+  await killedExit;
+  runGodot(demo(['--seed=25', intake]), 'launch after the kill');
+  await new Promise((r) => setTimeout(r, 300));
+  const afterKill = (await sessionsNow()).filter((s) => !beforeKill.has(s.session_id));
+  check('kill: a game that stops with no word (a release build\'s crash, a force quit) is a crash that says so', () => {
+    const k = afterKill.filter((s) => s.crashed);
+    assert.equal(k.length, 1, `${k.length} crashed of ${afterKill.length}`);
+    const err = crashEvents(k[0].session_id).find((e) => e.type === 'error' && e.kind === 'crash');
+    assert.equal(err?.message, 'The game stopped without closing');
+    assert.equal(err.level, 'level_2');
+    assert.equal(err.fn, null);
+    assert.ok(!fs.existsSync(running), 'running.json left');
+  });
 } finally {
   server?.kill();
   fs.rmSync(tmp, { recursive: true, force: true });

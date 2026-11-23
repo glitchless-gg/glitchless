@@ -37,6 +37,16 @@ If the game has no players yet, or the user asks for their own runs or playtests
 them to every run). Tell the user it's there, that it counts their runs as a player's, and to take it out once the game
 has players. Don't pass `"enabled": true` to `init` instead: that turns on every debug build for good.
 
+## Crashes
+
+Nothing to add: when Godot itself dies, the next launch sends an `error` of kind `crash` and the session counts as
+crashed (README, "Crashes"). The game must quit through `get_tree().quit()` or the window's close button, never
+`OS.kill()` on itself, or every quit counts as a crash. A debug build's crash has Godot's crash handler's words
+(`Program crashed with signal 11`, the script function running then); a release build's says only `The game stopped
+without closing`, which a force quit also sends, so for a backtrace suggest testers play a debug export. Runs from the
+editor send none (its Stop button kills the game), so to see one, run the game from a terminal with `--glitchless`,
+crash it (`OS.crash("test")`), and launch it again.
+
 ## Playtests
 
 `glitchless_playtest` runs the game with its autoplay bot before and after a change and compares the two. If the game

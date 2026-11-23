@@ -42,6 +42,11 @@ extends Node
 ## choice is saved in user://glitchless/enabled and read before the first frame
 ## of every later launch.
 ##
+## Godot itself dying (a native crash) can't be reported as it happens, so a
+## player build leaves user://glitchless/running.json while a session plays and
+## removes it on every normal quit and on the way to the background. A launch
+## that finds it there sends the last session's crash (_take_crash).
+##
 ## Flags (after "--" on the command line):
 ##   --glitchless                  send from a debug build too
 ##   --glitchless-intake=URL       send to this server instead (and turn sending on)
@@ -56,7 +61,7 @@ extends Node
 # that the two branches differ in type, which is the point, so that warning is off for this file.
 @warning_ignore_start("incompatible_ternary")
 
-const SDK_VERSION := "0.6.8"
+const SDK_VERSION := "0.7.0"
 const SDK := "glitchless-godot/" + SDK_VERSION
 
 const Sketch := preload("sketch.gd")
@@ -96,6 +101,8 @@ const PLAYER_PATH := "user://glitchless/player_id"  # install and full mode
 const LAUNCHED_PATH := "user://glitchless/launched"  # the game version that last ran here (first_launch)
 const SERVER_OUTBOX_PATH := "user://glitchless/server_outbox.json"  # a dedicated server's, apart from a player build's
 const ENABLED_PATH := "user://glitchless/enabled"  # "on" or "off": the player's choice (set_enabled), once the game has asked
+const RUNNING_PATH := "user://glitchless/running.json"  # while a player build's session plays (_save_running)
+const CRASH_LOG_PATH := "user://glitchless/crash.log"  # what Godot's crash handler printed as the game died (_on_crash)
 const ID_CHARS := "abcdefghijklmnopqrstuvwxyz0123456789"
 const MAX_COUNTS := 64  # count() entries a window
 const MAX_COUNT_GROUP := 4  # words and booleans that split a counter
@@ -200,6 +207,8 @@ var _next_batch_id := 1
 var _writing := -1  # the WorkerThreadPool task writing the outbox file (_write_outbox)
 var _write_next: Variant = null  # the newest outbox text, waiting for that write to finish ("" removes the file)
 var _write_at_once := false  # going to the background: the OS may stop the game before a worker finishes
+var _watch_crash := false  # this launch leaves running.json while it plays: a player build, not a web export or the editor's
+var _running_task := -1  # the WorkerThreadPool task writing running.json
 var _in_flight := -1  # id of the batch _http is sending
 var _http: HTTPRequest
 # text/plain in a web export: a request with it needs no CORS preflight, so a batch is one request, as the browser
@@ -427,6 +436,10 @@ func init(service: String, version: String = "", env: String = "prod", intake: S
 		_stop()  # what was kept before init() goes, and this role's outbox on the device goes unread
 	enabled = _build_sends and not _player_off
 	sampled = randf() < float(_opts.sample_rate)
+	# No running.json where its leftover says nothing: a web export's tab closes without a word, a dedicated server
+	# is stopped with SIGTERM (which Godot doesn't hear, so it would read as a crash), and the editor's Stop button
+	# kills its run.
+	_watch_crash = role != "server" and not OS.has_feature("web") and not EngineDebugger.is_active()
 	var bug: Variant = _opts.bug_reports
 	if role != "server" and (bug is Dictionary or (bug is bool and bug)):
 		_bug_opts = {"hotkey": KEY_F8, "pause": true, "screenshot": true}
@@ -520,6 +533,7 @@ func _stop() -> void:
 	_outbox.clear()
 	_wait_for_write()  # so a write on its way can't put the file back
 	_write_file(_outbox_path(), "")
+	_clear_running(true)  # an earlier launch's crash too: it goes unread
 	_win = _new_window()
 	_pending_hitches.clear()
 	_pending_long = {}
@@ -605,6 +619,7 @@ func level_start(level_id: Variant, attrs: Dictionary = {}) -> void:
 		e.attrs = attrs
 	_push(e)
 	_remember("level_start")
+	_save_running()  # a crash from here on names this level
 
 
 func level_complete(level_id: Variant = null, score: Variant = null, duration_s: float = -1.0) -> void:
@@ -1037,6 +1052,7 @@ func flush() -> void:
 		_add_batches(_queue)
 		_queue = []
 		_save_outbox()
+	_save_running()
 	if not _shut:
 		_send_next()  # while closing, _send_now() sends instead: HTTPRequest has left the tree
 
@@ -1052,6 +1068,9 @@ func _flush_into_outbox() -> void:
 # ───────────────────────────── frame timing ─────────────────────────────
 
 func _process(_delta: float) -> void:
+	if _running_task >= 0 and WorkerThreadPool.is_task_completed(_running_task):
+		WorkerThreadPool.wait_for_task_completion(_running_task)
+		_running_task = -1
 	if _writing >= 0 and WorkerThreadPool.is_task_completed(_writing):
 		WorkerThreadPool.wait_for_task_completion(_writing)
 		_writing = -1
@@ -1923,6 +1942,8 @@ func _notification(what: int) -> void:
 		NOTIFICATION_WM_GO_BACK_REQUEST:
 			if get_tree().quit_on_go_back:
 				_shutdown("close")
+		NOTIFICATION_CRASH:
+			_on_crash()
 
 
 # A web export's page (web_page.gd); Godot itself hears none of this. Hidden (another tab or app, the phone
@@ -1948,7 +1969,8 @@ func _on_page(what: int) -> void:
 # A phone app in the background is usually never seen again: iOS and Android
 # stop it without warning. So going to the background ends the session, and the
 # last batch goes out now, while the OS still allows it. A web export's page
-# going away (reason "pagehide") is the same.
+# going away (reason "pagehide") is the same. running.json goes too: the OS
+# stopping a game in the background is no crash.
 func _on_background(reason: String = "background") -> void:
 	_paused_at = Time.get_ticks_msec()
 	_last_us = 0
@@ -1959,6 +1981,7 @@ func _on_background(reason: String = "background") -> void:
 		_push({"type": "session_end", "reason": reason, "duration_s": snappedf((_now() - _started_at) / 1000.0, 0.1)})
 	if _inited and enabled:
 		_write_at_once = true
+		_clear_running()  # first: the OS may stop the game while the last batch is on its way
 		if OS.has_feature("web"):
 			_flush_into_outbox()  # a request started now would never finish: _send_now beacons it
 		else:
@@ -1971,17 +1994,20 @@ func _on_foreground() -> void:
 	_last_us = 0
 	if not _ended:
 		return
-	_ended = false
 	var away := (Time.get_ticks_msec() - _paused_at) / 1000.0
 	if away > float(_opts.session_timeout):
 		_left_level = null
-		_new_session()
+		_new_session()  # still ended while the last session's events go: running.json waits for the new one's start
+		_ended = false
+		_next_flush = Time.get_ticks_msec() + int(minf(2.0, float(_opts.flush_interval)) * 1000.0)
 	else:
 		# Back in the same session: the level goes on, and the server takes back the
 		# abandon sent on the way out once anything else happens on it.
+		_ended = false
 		_level_open = _left_level != null
 		_left_level = null
 		track("app_resume", {"away_s": snappedf(away, 0.1)})
+		_save_running()
 
 
 # Back after a long time away: a new session with a new random ID. In
@@ -2017,6 +2043,7 @@ func _shutdown(reason: String) -> void:
 	if _shut:
 		return
 	_shut = true
+	_clear_running()  # a normal quit: the next launch finds no crash, even if the game is stopped while it sends
 	if _inited and enabled and not _ended:
 		_end_level(reason)
 		_ended = true
@@ -2682,13 +2709,20 @@ func _outbox_path() -> String:
 
 
 func _load_outbox() -> void:
-	if not FileAccess.file_exists(_outbox_path()):
-		return
-	var text := FileAccess.get_file_as_string(_outbox_path())
-	if text.strip_edges() == "":
-		return  # a web export's emptied outbox (_write_file)
-	var data: Variant = JSON.parse_string(text)
+	var data: Variant = null
+	if FileAccess.file_exists(_outbox_path()):
+		var text := FileAccess.get_file_as_string(_outbox_path())
+		if text.strip_edges() != "":  # "" is a web export's emptied outbox (_write_file)
+			data = JSON.parse_string(text)
 	if not data is Dictionary or not data.get("batches") is Array:
+		data = {"v": 1, "batches": []}
+	# The last launch's crash joins its session's saved batches, so it goes out as they do.
+	var crash := _take_crash()
+	if not crash.is_empty():
+		data.batches.append(crash.batch)
+		if crash.has("start"):
+			data.starts = data.get("starts", []) + [{"group": crash.batch.group, "event": crash.start}]
+	if data.batches.is_empty():
 		return
 	var oldest := _now() - MAX_OUTBOX_AGE_MS
 	var fresh_ids := {}
@@ -2746,6 +2780,185 @@ func _load_outbox() -> void:
 		_next_batch_id += 1
 		_outbox.append(b)
 	_log("%d saved batches from earlier launches" % _outbox.size())
+	if not crash.is_empty():
+		# Saved at once, before running.json goes: a launch that stops now still has the crash to send.
+		_write_at_once = true
+		_save_outbox()
+		_write_at_once = false
+		_clear_running(true)
+		_log("the last launch crashed: %s" % crash.batch.events[0].message)
+
+
+# ───────────────────────────── crashes ─────────────────────────────
+
+# Godot itself dying (a segfault in the engine or a GDExtension, the OS stopping it for memory) runs no more
+# GDScript, so nothing can be sent as it happens. So a player build keeps running.json while a session plays:
+# written at every flush (on a worker thread, like the outbox), removed when the game quits or closes (_shutdown)
+# and on its way to the background (_on_background: a phone may stop it there, which is no crash), and written again
+# when it comes back. A launch that finds it there sends that session's crash (_take_crash).
+#
+# It holds what the crash goes out with: the session's group (when it started), its build, level, groups and last
+# events, and when it was last seen running. Anonymous mode saves no ID, as with the outbox: the session_start it
+# keeps holds none, and the crash goes under a new session ID on the next launch, after that session_start again
+# when it had gone (SPEC §2 session_start.continued). Install and full mode save the session and player IDs, as
+# their outbox does, so the crash joins the session it ended.
+func _save_running() -> void:
+	if not (_watch_crash and _inited and enabled and sampled and _session_start_sent) or _shut or _ended or _player_off:
+		return
+	var r := {
+		"v": 1, "group": _started_at, "alive": _now(), "service": _service, "env": _env, "version": _version,
+		"level": level, "recent": _recent_names(6),
+	}
+	if zone != null:
+		r.zone = zone
+	for kind: String in _groups:
+		r[kind] = _groups[kind]
+	if _privacy != "anonymous":
+		r.sid = session_id
+		r.pid = player_id
+	elif _starts.has(_started_at):
+		r.start = _starts[_started_at]
+	var text := JSON.stringify(r)
+	if _write_at_once or not is_inside_tree():
+		_wait_for_running()
+		_write_file(RUNNING_PATH, text)
+	elif _running_task < 0:
+		_running_task = WorkerThreadPool.add_task(_write_file.bind(RUNNING_PATH, text), false, "Glitchless running")
+	# else one is on its way: the next flush writes a newer one
+
+
+func _wait_for_running() -> void:
+	if _running_task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_running_task)
+		_running_task = -1
+
+
+# The session ended as it should (or the player turned Glitchless off: unread, an earlier launch's crash too). Only
+# a launch that writes running.json removes it, so a server or the editor's run on the same machine leaves a player
+# build's alone.
+func _clear_running(unread := false) -> void:
+	if not _watch_crash and not unread:
+		return
+	_wait_for_running()  # so a write on its way can't put it back
+	for path: String in [RUNNING_PATH, CRASH_LOG_PATH]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+
+
+# Godot's crash handler (in debug export templates and the editor's runs; release templates have none) tells the
+# scene tree the game is about to die, then prints what it knows: the signal, the engine's backtrace and the
+# script's. The logger writes that to crash.log as it comes, after the time, level and last events, and the errors
+# heard in this frame (the last one is often why), for the next launch to send. running.json stays as it is: a
+# worker may be writing it.
+func _on_crash() -> void:
+	if not (_watch_crash and _inited and enabled and sampled and _session_start_sent) or _shut or _ended or _player_off:
+		return  # no running.json to go with it
+	var f := FileAccess.open(CRASH_LOG_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_line(JSON.stringify({"at": _now(), "level": level, "recent": _recent_names(6)}))
+	for e: Dictionary in _logger.peek():
+		f.store_line("ERROR: %s (%s:%d)" % [e.rationale if e.rationale != "" else e.code, e.file, e.line])
+	f.close()
+	_logger.crash_path = CRASH_LOG_PATH
+
+
+# The last launch's crash, when it left running.json: its error (kind crash) and session_end (reason crash), as
+# one saved batch of that session (its group), so _load_outbox sends it as it sends the rest of the session. It is
+# timed when the crash handler spoke, else when the session was last seen running (up to a flush before). Without
+# the handler's words (a release build, or the game killed: a force quit, SIGTERM, a flat battery), it says the
+# game stopped without closing, a message of its own.
+func _take_crash() -> Dictionary:
+	if role == "server" or OS.has_feature("web"):
+		return {}
+	var r: Variant = JSON.parse_string(FileAccess.get_file_as_string(RUNNING_PATH)) if FileAccess.file_exists(RUNNING_PATH) else null
+	if not r is Dictionary or not r.get("group") is float or not r.get("alive") is float:
+		_clear_running(true)  # nothing to send: a crash.log alone is no session's
+		return {}
+	var said := _crash_report(FileAccess.get_file_as_string(CRASH_LOG_PATH) if FileAccess.file_exists(CRASH_LOG_PATH) else "", r.group)
+	var at := int(r.alive)
+	var lvl: Variant = r.get("level")
+	var recent: Variant = r.get("recent")
+	if said.has("at") and said.at > at:  # the handler's own word, from the moment it spoke
+		at = said.at
+		lvl = said.level
+		recent = said.recent
+	var message := _scrub(said.message)
+	var err := {
+		"type": "error", "ts": at, "level": lvl, "kind": "crash", "message": message,
+		"stack": _scrub(said.stack).substr(0, 4000), "source": said.source, "line": said.line, "col": null,
+		"fn": said.fn, "fingerprint": _fingerprint("crash", message, said.fn if said.fn != null else ""), "attrs": null,
+		"recent": recent if recent is Array else [],
+	}
+	# No level_abandon: the player didn't leave the level, the game did, and the crash says so.
+	var end := {"type": "session_end", "ts": at, "level": lvl, "reason": "crash", "duration_s": snappedf(maxf(0.0, at - r.group) / 1000.0, 0.1)}
+	for k: String in ["zone"] + GROUP_KINDS:
+		if r.get(k) != null:
+			err[k] = r[k]
+			end[k] = r[k]
+	var batch := {
+		"bid": _new_id("b_", 16), "service": str(r.get("service", _service)), "env": str(r.get("env", _env)),
+		"version": str(r.get("version", _version)), "group": r.group, "events": [err, end],
+	}
+	if r.get("sid") is String and r.sid != "":
+		batch.sid = r.sid
+		batch.pid = str(r.get("pid", ""))
+	var out := {"batch": batch}
+	if r.get("start") is Dictionary:
+		out.start = r.start
+	return out
+
+
+# What Godot's crash handler left in crash.log (_on_crash), read into the crash's message, its script's top frame
+# and a stack: the script's backtrace first, as other errors have it, then the errors just before and the engine's
+# own backtrace. Godot prints "handle_crash: Program crashed with signal 11" (macOS, Linux) or
+# "CrashHandlerException: Program crashed" (Windows); the message is what comes after the function's name. A
+# crash.log from before the session started (since) is an older crash's, so the session's says nothing.
+static func _crash_report(text: String, since: float) -> Dictionary:
+	var out := {"message": "The game stopped without closing", "fn": null, "source": null, "line": null}
+	var lines := text.split("\n")
+	var head: Variant = JSON.parse_string(lines[0]) if text != "" else null
+	if not head is Dictionary or not head.get("at") is float or head.at < since:
+		out.stack = "crash: The game stopped without closing\n    Godot's crash handler left no word: release export templates have none, and a game killed (a force quit, SIGTERM, a flat battery) looks the same"
+		return out
+	out.at = int(head.at)
+	out.level = head.get("level")
+	out.recent = head.get("recent")
+	out.message = "Program crashed"
+	var script_frame := RegEx.create_from_string("^\\s+\\[\\d+\\] (.+) \\((.+):(\\d+)\\)$")
+	var engine_frame := RegEx.create_from_string("^\\[\\d+\\] .+$")
+	var script: Array[String] = []
+	var before: Array[String] = []
+	var engine: Array[String] = []
+	var in_script := false
+	for i in range(1, lines.size()):
+		var line := lines[i].strip_edges(false, true)
+		if line.begins_with("ERROR: "):
+			before.append(line)
+		elif line.contains("Program crashed"):
+			out.message = line.substr(line.find(": ") + 2) if line.find(": ") >= 0 else line
+		elif line.begins_with("Engine version:"):
+			engine.push_front(line)
+		elif line.begins_with("GDScript backtrace"):
+			in_script = true
+		elif line.begins_with("-- END OF"):
+			in_script = false
+		elif in_script:
+			var m := script_frame.search(line)
+			if m:
+				if out.fn == null:
+					out.fn = m.get_string(1)
+					out.source = m.get_string(2).get_file()
+					out.line = int(m.get_string(3))
+				script.append("    at %s (%s:%s)" % [m.get_string(1), m.get_string(2), m.get_string(3)])
+		elif engine_frame.search(line) and engine.size() < 24:
+			engine.append("    " + line)
+	var stack: Array[String] = ["crash: " + out.message]
+	stack.append_array(script.slice(0, 20))
+	stack.append_array(before.slice(-3))
+	stack.append_array(engine)
+	out.stack = "\n".join(stack)
+	return out
 
 
 # Whether this is the first launch of this game version on this device. The

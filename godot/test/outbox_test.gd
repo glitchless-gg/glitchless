@@ -167,6 +167,8 @@ func _on_a_worker() -> void:
 # The autoload's script, out of the tree, as _ready() leaves it. It has no
 # HTTPRequest, so nothing is sent.
 func _game(opts: Dictionary = {}) -> Node:
+	if FileAccess.file_exists(Glitchless.RUNNING_PATH):
+		DirAccess.remove_absolute(Glitchless.RUNNING_PATH)  # the launch before closed as it should (crashes: crash_test.gd)
 	var g: Node = Glitchless.new()
 	g._win = g._new_window()
 	g._ring.resize(Glitchless.RING_SIZE)
@@ -180,7 +182,7 @@ func _game(opts: Dictionary = {}) -> Node:
 
 
 func _clean() -> void:
-	for p: String in [Glitchless.ENABLED_PATH, Glitchless.OUTBOX_PATH, Glitchless.SERVER_OUTBOX_PATH, Glitchless.PLAYER_PATH, Glitchless.LAUNCHED_PATH]:
+	for p: String in [Glitchless.ENABLED_PATH, Glitchless.OUTBOX_PATH, Glitchless.SERVER_OUTBOX_PATH, Glitchless.PLAYER_PATH, Glitchless.LAUNCHED_PATH, Glitchless.RUNNING_PATH, Glitchless.CRASH_LOG_PATH]:
 		if FileAccess.file_exists(p):
 			DirAccess.remove_absolute(p)
 

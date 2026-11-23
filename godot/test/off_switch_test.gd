@@ -139,9 +139,12 @@ func _saved_off() -> void:
 	_write(Glitchless.ENABLED_PATH, "off")
 	var batch := {"bid": "b_0123456789abcdef", "service": "starlift", "env": "prod", "version": "1.3.0", "group": "1", "events": [{"type": "session_start", "ts": Glitchless._now()}]}
 	_write(Glitchless.OUTBOX_PATH, JSON.stringify({"v": 1, "batches": [batch]}))
+	_write(Glitchless.RUNNING_PATH, JSON.stringify({"v": 1, "group": 1, "alive": Glitchless._now(), "service": "starlift", "version": "1.3.0"}))
+	_write(Glitchless.CRASH_LOG_PATH, "{}\nhandle_crash: Program crashed with signal 11\n")
 	var g := _new()
 	_check("a saved off is read as the autoload is made, before any frame", g._player_off and g._choice == "off")
 	_check("…and an earlier launch's outbox is deleted unread", not FileAccess.file_exists(Glitchless.OUTBOX_PATH) and g._outbox.is_empty())
+	_check("…and so is its crash", not FileAccess.file_exists(Glitchless.RUNNING_PATH) and not FileAccess.file_exists(Glitchless.CRASH_LOG_PATH))
 	g._process(0.016)
 	g._process(0.016)
 	g.track("menu")
@@ -155,7 +158,7 @@ func _saved_off() -> void:
 	_start(g)
 	g.flush()
 	_check("init(): nothing is sent, and is_enabled() is false", not g.is_enabled() and _all(g).is_empty() and not FileAccess.file_exists(Glitchless.OUTBOX_PATH))
-	_check("init(): nothing but the choice is written on the device", not FileAccess.file_exists(Glitchless.LAUNCHED_PATH))
+	_check("init(): nothing but the choice is written on the device", not FileAccess.file_exists(Glitchless.LAUNCHED_PATH) and not FileAccess.file_exists(Glitchless.RUNNING_PATH))
 	g.open_bug_report()
 	_check("the bug report form doesn't open", g._bug_form == null)
 	g.level_start("menu")
@@ -310,7 +313,7 @@ func _write(path: String, text: String) -> void:
 
 
 func _clean() -> void:
-	for p: String in [Glitchless.ENABLED_PATH, Glitchless.OUTBOX_PATH, Glitchless.SERVER_OUTBOX_PATH, Glitchless.PLAYER_PATH, Glitchless.LAUNCHED_PATH]:
+	for p: String in [Glitchless.ENABLED_PATH, Glitchless.OUTBOX_PATH, Glitchless.SERVER_OUTBOX_PATH, Glitchless.PLAYER_PATH, Glitchless.LAUNCHED_PATH, Glitchless.RUNNING_PATH, Glitchless.CRASH_LOG_PATH]:
 		if FileAccess.file_exists(p):
 			DirAccess.remove_absolute(p)
 

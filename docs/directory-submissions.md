@@ -63,7 +63,7 @@ These are the owner's to do, in this order.
 | --- | --- |
 | Name | Glitchless |
 | Short line (ChatGPT subtitle, 30 characters at most) | Find what's wrong in your game |
-| One-liner (Claude, 200 at most) | See how your game runs for real players: ranked findings, frame times, errors, where players die, store reviews and revenue, and a dashboard in your game's own terms. |
+| One-liner (Claude, 200 at most) | Let Claude understand your players: crashes, lag and stutters, where they quit, retention, Steam and store reviews and revenue, in Unity, Godot, Unreal, Three.js and other engines. |
 | Website | https://www.glitchless.gg |
 | Documentation | https://www.glitchless.gg/docs.html, and the connection guide (step 5 above) |
 | Privacy policy | https://www.glitchless.gg/privacy.html |
@@ -80,26 +80,30 @@ These are the owner's to do, in this order.
 
 Use this for Claude (2,000 characters at most) and ChatGPT (4,000).
 
-> Glitchless is observability for games made with Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal and
-> GameMaker. Connect it and ask about your games in plain words: what's wrong this week, where players die, which
-> error hits the most sessions, whether last night's build fixed the stutter on level 2.
+> Glitchless lets your assistant understand how players experience your game: where it crashes, lags or stutters,
+> where players quit, whether they come back, what they write in reviews and what they pay. It works with games made
+> in Unity, Godot, Unreal and Three.js, and in Roblox, GameMaker, Phaser, Babylon.js and PlayCanvas.
 >
-> Answers come from what your players' sessions actually measured. Triage ranks findings by how many players they
-> hit, each with its evidence and a suggested fix: frame-time spikes per level and what they correlate with, memory
-> leaks, top errors with their stack and the gameplay right before them, difficulty spikes and rage quits, and version
-> regressions. You can drill into frame times by level, GPU tier and browser, one error, one session's whole timeline,
-> the game's own events and funnels, and bug reports players sent from inside the game, with their screenshots.
+> Ask in plain words: what's wrong with my game this week, why players quit level 3, which error hits the most
+> players, whether last night's build fixed the stutter. Answers come from what play sessions measured, your own
+> playtests before launch included. Findings are ranked by how many players they hit, each with its evidence and a
+> suggested fix: stutters with their likely cause by level and device, errors with the gameplay right before them,
+> difficulty spikes and rage quits, and builds that made things worse. You can open one error, one session, the
+> game's own events and funnels, and bug reports testers sent from inside the game. For online games it reads ping,
+> packet loss and disconnects, and dedicated servers' tick time.
 >
-> For games connected to a store or a payments provider, it reads Steam, Google Play and App Store reviews and vitals
-> next to what Glitchless measured on each build, and RevenueCat or Stripe revenue next to the players who made it.
+> Connected to a store, it reads what players wrote on Steam, Google Play, the App Store, Roblox and itch.io next to
+> each build, with the store's own crash and performance numbers where it has them, and revenue from RevenueCat,
+> Stripe, Roblox and itch.io next to the players behind it.
 >
-> Each game has its own dashboard in its own terms, and the assistant can read it or design a new one. It can also
-> create a game and make a read-only share link to a board.
+> Each game gets a dashboard in its own terms that the assistant can read or design, read-only share links to a
+> board, and alerts. To add Glitchless to a game, the assistant creates it and gives the setup steps for its engine,
+> for your coding agent.
 >
 > You sign in with your Glitchless account and choose the workspace and what the assistant may do. It acts as you,
 > deletes data only if you turned that on and asked it to delete a whole game (it repeats the name first), never
-> touches billing or people, and you can disconnect it any time in Settings → Keys & access. You need a Glitchless account (free) with at least one
-> game sending data.
+> touches billing or people, and you can disconnect it any time in Settings → Keys & access. It's free to start, and
+> a new workspace can try it on a demo game.
 
 ### Example prompts
 
