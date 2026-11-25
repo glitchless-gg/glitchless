@@ -3494,7 +3494,7 @@ promises it within 30 days of asking; done here, it's at once, and its games' da
 | Route | What |
 | --- | --- |
 | `GET /api/me/account` | what closing would do, changing nothing → `{email, name, createdAt, workspaces: [{id, name, role, fate, others, games: [{id, name, demo}], plan, paid, periodEnd, pays}], blocked: [{workspaceId, name, code, tab, message}], backupDays}`. `fate` is `delete` for a workspace no one else is in and `leave` for one with other members (`others`); `paid` when it has a live subscription, which the close cancels at once instead of at `periodEnd` when the workspace goes; `pays` (a paid workspace they'd leave) whether its Stripe Customer's email is theirs, null where the server has no Stripe; a blocker's `tab` is the workspace's Settings tab that fixes it (`members`, `billing`) |
-| `DELETE /api/me/account` | `{email}`, the account's email again (any case) → `{deleted: {workspaces: [{name, games}], left, keys, cancelled: [{workspace, plan}], signIn}, backupDays, authenticated: false, logoutUrl?}`, and the session asking ends with it (its cookie cleared; `logoutUrl` ends the sign-in provider's too). `keys` counts the ones that still worked. 400 `CONFIRM_EMAIL` when the email is missing or another; 409 with a blocker's code (below) and nothing changed; 409 `CHANGED` when a team changed since the survey (someone joined, left or changed roles) or a game was added at that moment (look again, then try again: it carries on); 503 `SIGNIN_UNAVAILABLE` with nothing changed (below); 404 `ACCOUNT_NOT_FOUND` |
+| `DELETE /api/me/account` | `{email}`, the account's email again (any case) → `{deleted: {workspaces: [{name, games}], left, keys, cancelled: [{workspace, plan}], signIn, auth0}, backupDays, authenticated: false, logoutUrl?}`, and the session asking ends with it (its cookie cleared; `logoutUrl` ends the sign-in provider's too). `keys` counts the ones that still worked. `signIn` is `deleted` or `gone` for the Cognito user; `auth0` is `deleted` or `gone` for the Auth0 user, `removing` when Auth0 couldn't delete it and the operator is doing it by hand, and null with no Auth0 user to delete, or where the server has no Management API credentials (then Auth0 keeps it). 400 `CONFIRM_EMAIL` when the email is missing or another; 409 with a blocker's code (below) and nothing changed; 409 `CHANGED` when a team changed since the survey (someone joined, left or changed roles) or a game was added at that moment (look again, then try again: it carries on); 503 `SIGNIN_UNAVAILABLE` when Cognito can't be reached (nothing changed), or when Auth0 couldn't delete its user and the operator couldn't be told (everything else deleted; try again), both below; 404 `ACCOUNT_NOT_FOUND` |
 
 **What stops it**, before anything changes, each a blocker in the answer: `LAST_OWNER`, the only Owner of a workspace
 that has other members (they make someone else an Owner in its Members, or remove them); `PAYS_FOR_TEAM`, a paid
@@ -3525,8 +3525,16 @@ stops the close there with 409 `CHANGED`.
    keeps its Owner;
 7. a jam survey answer of theirs, which keeps their email when they said yes to being emailed about it;
 8. their queued emails, the token behind product news's unsubscribe link, their promo-code tries, every session (each
-   is listed per person when it starts), their user in Cognito, their sign-in identity, everything kept for them (what
-   they told us about their game, email settings, the star card's state) and, last, their profile.
+   is listed per person when it starts), their user at Auth0 (Cognito signs in through it, and it keeps the Google,
+   GitHub or password sign-in's email, name and account ID), then their user in Cognito, their sign-in identity,
+   everything kept for them (what they told us about their game, email settings, the star card's state) and, last,
+   their profile. The Auth0 user, named by the Cognito user found before step 1, goes through Auth0's Management API
+   (an application allowed to delete users and nothing else), within 8 seconds, token included. When Auth0 can't be
+   reached or refuses, the close still finishes, its answer says the sign-in record is being removed (`removing`), and
+   the operator is emailed the Auth0 user to delete by hand; one Auth0 already has no record of is fine. When the
+   operator can't be told either, the close stops just before the Cognito user, the only place the Auth0 user's ID is
+   kept, and answers 503 `SIGNIN_UNAVAILABLE` with everything else deleted: trying again tries Auth0 again. Deleting the
+   Auth0 user also ends that person's sign-in to any other application on the same Auth0 tenant (Glitchless's alone).
 
 A subscription whose workspace has gone that is still live (Checkout finished after the close, in a tab left open) is
 cancelled when its next event arrives, and the operator is emailed to see whether a refund is due; its events never
@@ -3537,10 +3545,11 @@ can't bring any of it back. Servers stop honouring what's deleted within their c
 client token).
 
 **What stays, and why.** The usage counts of the workspaces that go (play sessions by day and by game id, and what was
-reported to Stripe's meter): billing history with no name in it, which expires after 400 days. Stripe's Customer and its
+reported to Stripe's meter): billing history with no name in it, which expires after 400 days. While the server has no
+Management API credentials, Auth0's user for the sign-in (its email, name and Google, GitHub or password account ID),
+which support then deletes by hand. Stripe's Customer and its
 invoices, which tax law keeps. Glitchless's own count of what developers do, sent under a code made from the user id
-that names no one. Auth0's record of the Google or GitHub sign-in, which Cognito signs in through: support deletes it in
-Auth0. A jam's snapshot (§3j), kept a year: the games published to it, by their titles and the maker names given with
+that names no one. A jam's snapshot (§3j), kept a year: the games published to it, by their titles and the maker names given with
 them, though not who voted for which and no user ids. A jam room's entry for a game keeps the user ids of the people
 who published it until the room goes (a day after the jam, 7 days for an online room); rooms and survey templates
 belong to the organisers' workspaces, which are allow-listed (the Glitchless team's). In a workspace they leave, what they did there is the team's: games, keys and links they made, notes on findings,
