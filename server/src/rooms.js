@@ -154,6 +154,9 @@ const keepAfterEndOf = (r) => (r.online ? LIMITS.onlineKeepAfterEndMs : LIMITS.k
 export const isCode = (v) => CODE_RE.test(String(v ?? '').toUpperCase());
 export const normalCode = (v) => String(v ?? '').toUpperCase();
 const hash = (s) => crypto.createHash('sha256').update(String(s)).digest('base64url').slice(0, 22);
+// What a voter's vote and survey answer are kept under, never their own ID: a host that deletes a person finds their
+// answers by it.
+export const voterHash = (voter) => hash(voter);
 const clean = (v, max, what) => {
   if (v == null) return null;
   if (typeof v !== 'string') refuse(400, `${what} must be text`);

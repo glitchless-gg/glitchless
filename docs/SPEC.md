@@ -3483,7 +3483,78 @@ game). Backups: the control table's point-in-time recovery and the lake table's 
 versions of its files (7 days: a file deleted there is hidden behind a marker until then). A dashboard session that last showed the game remembers its
 id until it ends, and opens on another game.
 
-Deleting a whole workspace isn't offered yet.
+Deleting a whole workspace on its own isn't offered yet; one goes with its account when no one else is in it (§6c).
+
+## 6c. Closing an account (Glitchless Cloud)
+
+A person closes their own account in Settings → Account, after typing its email again. Support does the same for a
+request that comes by email, running the same code, with a dry run first. It can't be undone. The privacy policy
+promises it within 30 days of asking; done here, it's at once, and its games' data is gone within the hour.
+
+| Route | What |
+| --- | --- |
+| `GET /api/me/account` | what closing would do, changing nothing → `{email, name, createdAt, workspaces: [{id, name, role, fate, others, games: [{id, name, demo}], plan, paid, periodEnd, pays}], blocked: [{workspaceId, name, code, tab, message}], backupDays}`. `fate` is `delete` for a workspace no one else is in and `leave` for one with other members (`others`); `paid` when it has a live subscription, which the close cancels at once instead of at `periodEnd` when the workspace goes; `pays` (a paid workspace they'd leave) whether its Stripe Customer's email is theirs, null where the server has no Stripe; a blocker's `tab` is the workspace's Settings tab that fixes it (`members`, `billing`) |
+| `DELETE /api/me/account` | `{email}`, the account's email again (any case) → `{deleted: {workspaces: [{name, games}], left, keys, cancelled: [{workspace, plan}], signIn}, backupDays, authenticated: false, logoutUrl?}`, and the session asking ends with it (its cookie cleared; `logoutUrl` ends the sign-in provider's too). `keys` counts the ones that still worked. 400 `CONFIRM_EMAIL` when the email is missing or another; 409 with a blocker's code (below) and nothing changed; 409 `CHANGED` when a team changed since the survey (someone joined, left or changed roles) or a game was added at that moment (look again, then try again: it carries on); 503 `SIGNIN_UNAVAILABLE` with nothing changed (below); 404 `ACCOUNT_NOT_FOUND` |
+
+**What stops it**, before anything changes, each a blocker in the answer: `LAST_OWNER`, the only Owner of a workspace
+that has other members (they make someone else an Owner in its Members, or remove them); `PAYS_FOR_TEAM`, a paid
+workspace they'd leave whose Stripe Customer's email is theirs, so their card pays its plan and once they're gone no
+one could sign in as them to change it (another Owner changes its billing in Plan & billing first;
+`BILLING_UNAVAILABLE` when Stripe can't be asked); and `PAID_PLAN`, where the server can't cancel it, a paid plan on a
+workspace that would go (support's run has no Stripe keys, so support cancels the subscription in Stripe first, and
+checks itself who pays for a team the person leaves). Their user at the sign-in provider (Cognito) is looked up first
+too, so when it can't be reached the close answers 503 `SIGNIN_UNAVAILABLE` with nothing changed.
+
+**What goes**, in steps that can each run again, so a close that stops part way leaves the person signed in to try
+again (or support to finish it). The first two are taken under each team's lock, on the condition that the team is as
+the survey read it, and run before anything of the person's own goes: someone who joined, left or changed roles since
+stops the close there with 409 `CHANGED`.
+
+1. each workspace that goes is locked: its pending invitations' links stop, so no one can join it while it goes;
+2. each workspace they leave keeps everything but their membership (deleted, not marked removed: it holds their name
+   and email) and their name on a promo code they applied there;
+3. every workspace key of a workspace that goes, and the person's own in the workspaces they left, with their lookups
+   and when they were last used. An app's OAuth connection ends with its key, since every request checks the key;
+4. a live subscription of a workspace that goes is cancelled in Stripe at once, with Stripe's defaults: no credit for
+   the rest of the period (there'd be no invoice to take it from), no final invoice for overage not yet invoiced. One
+   that started since the survey (Checkout finished in another tab) is cancelled as its workspace goes;
+5. each game of a workspace that goes, through the game delete (§6b): it ends at once and its data goes within the hour;
+6. each workspace that goes: everything under it but its usage counts, with its invitations' and keys' lookups, its
+   Stripe customer's lookup and its place in the paid index; its profile and the person's membership last, together,
+   on the condition that no one joined meanwhile (an invitation made after the lock), so a team that gained a member
+   keeps its Owner;
+7. a jam survey answer of theirs, which keeps their email when they said yes to being emailed about it;
+8. their queued emails, the token behind product news's unsubscribe link, their promo-code tries, every session (each
+   is listed per person when it starts), their user in Cognito, their sign-in identity, everything kept for them (what
+   they told us about their game, email settings, the star card's state) and, last, their profile.
+
+A subscription whose workspace has gone that is still live (Checkout finished after the close, in a tab left open) is
+cancelled when its next event arrives, and the operator is emailed to see whether a refund is due; its events never
+bring a billing record back.
+
+A session whose account has gone is refused and deleted the next time it comes in, so a browser still signed in
+can't bring any of it back. Servers stop honouring what's deleted within their caches (seconds; a minute for a game's
+client token).
+
+**What stays, and why.** The usage counts of the workspaces that go (play sessions by day and by game id, and what was
+reported to Stripe's meter): billing history with no name in it, which expires after 400 days. Stripe's Customer and its
+invoices, which tax law keeps. Glitchless's own count of what developers do, sent under a code made from the user id
+that names no one. Auth0's record of the Google or GitHub sign-in, which Cognito signs in through: support deletes it in
+Auth0. A jam's snapshot (§3j), kept a year: the games published to it, by their titles and the maker names given with
+them, though not who voted for which and no user ids. A jam room's entry for a game keeps the user ids of the people
+who published it until the room goes (a day after the jam, 7 days for an online room); rooms and survey templates
+belong to the organisers' workspaces, which are allow-listed (the Glitchless team's). In a workspace they leave, what they did there is the team's: games, keys and links they made, notes on findings,
+an invitation the team sent them, with the name the team saw on them. What can't be found from the person and expires
+by itself: their apps' OAuth tokens and codes (dead at once, gone within 30 days), sessions from before sessions were
+listed per person (refused at once, gone within 30 days), the game delete's own tombstones and billing's per-session
+marks (§6b). Support's run reads the whole table and removes those it finds, and anything else naming them is listed
+for a person to decide on. Backups: the control table's point-in-time recovery, the lake's and its bucket's old file
+versions keep a copy up to 35 days (§6b).
+
+**Never an agent's.** No workspace key, OAuth connection or MCP tool reaches it, and the dashboard registers no WebMCP
+tool for it. Closing an account is a step for its person: an agent reads what players and strangers write (bug reports,
+store reviews), which could talk it into deleting, and an account holds every workspace and the sign-in itself. Deleting
+a game is an agent's only with its own `delete_games` scope (§3g); there is no such scope for an account.
 
 ## 7. Other stores
 
