@@ -201,3 +201,6 @@ goes to the room's arcade, where everyone plays everyone's game on their phones:
 Tell the user what you wired (with file:line), the gauges you chose and why, the events you track and count, the
 properties and groups you set, the netcode and server mode you wired for a multiplayer game, and the board you
 designed, the agent tools or measure commands you set up, and anything you weren't sure about.
+
+If a step here didn't work in this engine, or a Glitchless tool failed or misled you, report it to the Glitchless team
+with the `glitchless_feedback` MCP tool, then tell the user what you sent and its ID.

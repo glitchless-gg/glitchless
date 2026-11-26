@@ -68,6 +68,18 @@ try {
   assert.match(blocked.report, /answered 403/);
   step('a 403 stops the check on its first visit, and the report says why');
 
+  // Stopped part-way (an MCP client cancelling its task): the browser closes while the bots play, and nothing more is
+  // made: no report, and no dashboard for the game.
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const stopping = gameCheck({ url: `${gameUrl}/`, server: base, apiKey: '', seconds: 60, outDir: path.join(dir, 'stopped'), signal: stop.signal, log: (m) => /^desktop:/.test(m) && setTimeout(() => stop.abort(new Error('Stopped by the test.')), 3000) });
+  await assert.rejects(stopping, /Stopped by the test/);
+  assert.ok(Date.now() - t0 < 30_000, `it stopped at once, not after a minute of play (${Date.now() - t0} ms)`);
+  assert.ok(!fs.existsSync(path.join(dir, 'stopped', 'report.md')), 'no report');
+  const unsaved = await fetch(`${base}/v1/query/dashboard?service=square-siege`).then((res) => res.json());
+  assert.notEqual(unsaved.dashboard?.source, 'saved', 'no dashboard saved');
+  step('a check stopped part-way closes the browser and makes nothing');
+
   const log = [];
   const r = await gameCheck({ url: `${gameUrl}/`, server: base, apiKey: '', seconds: 30, outDir: path.join(dir, 'check'), log: (m) => log.push(m) });
   assert.equal(r.game.name, 'Square Siege', "the game's name is its page's title");

@@ -7,10 +7,11 @@ the stutter on level 2.
 
 This plugin adds Glitchless to [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH):
 
-- **25 tools** from the `glitchless-mcp` server, shown to the model as `mcp__glitchless__*`: ranked findings, frame
+- **26 tools** from the `glitchless-mcp` server, shown to the model as `mcp__glitchless__*`: ranked findings, frame
   times by level and device, errors, one session's timeline, your game's own events and funnels, bug reports players
   sent, store reviews and revenue, each game's dashboard, playtest bots, share links, and its alerts (which rules are
-  on, the weekly summary, findings you accept as known, and errors you resolve).
+  on, the weekly summary, findings you accept as known, and errors you resolve), and a way to tell the Glitchless
+  team what didn't work.
 - **3 skills**, also as slash commands:
 
 | Skill | What it does |
@@ -24,7 +25,7 @@ This plugin adds Glitchless to [DeepSeek Harness](https://github.com/deepseek-ai
 Before you add it:
 
 - Node.js 22 or newer has to be on the `PATH` that DSH runs with. DSH starts the Glitchless server with `npx`, and
-  without Node the 25 tools never appear and nothing says why, so it looks like a broken plugin. `node --version` in
+  without Node the 26 tools never appear and nothing says why, so it looks like a broken plugin. `node --version` in
   the shell you start DSH from should print v22 or later.
 - Glitchless Cloud is a third-party service, not part of DSH or DeepSeek. It has a
   [free plan](https://www.glitchless.gg), and you sign in by approving a code in your browser (see Sign in). You can
@@ -38,7 +39,8 @@ Restart DSH. Use `--profile tui` or `--profile headless` for those profiles.
 
 ## Sign in
 
-Ask DSH to "sign in to Glitchless". It calls `glitchless_sign_in`, which shows a link and a code; approve the code in
+Ask DSH to "sign in to Glitchless". It calls `glitchless_sign_in`, which shows a link and a code (or opens the approve page itself, in
+an agent that can); approve the code in
 the Glitchless dashboard and the agent reaches every game in your workspace. No key goes in a config file: the server
 keeps a workspace key in `~/.config/glitchless/credentials.json`, readable only by you, and `npx -y glitchless-mcp
 logout` deletes it. A new workspace has a demo game, so you can try it before your game sends anything.
@@ -59,7 +61,8 @@ The tools read your games' data and can create a game, save a game's dashboard a
 links. They act as you, with your role in the workspace. They delete data only if you turned that on for the key and asked
 for a whole game to be deleted, and never touch billing or people. Settings →
 Keys & access in the dashboard lists and revokes the key. `glitchless_playtest` runs bots against a build on your
-computer, and the setup skill edits your game's code when you ask it to.
+computer, and the setup skill edits your game's code when you ask it to. The agent can also send the Glitchless team a
+report of what didn't work (`glitchless_feedback`), and tells you what it sent.
 
 ## Self-hosted
 
@@ -75,7 +78,7 @@ other lines):
     serverName: glitchless
     transport: stdio
     command: npx
-    args: ['-y', 'glitchless-mcp']
+    args: ['-y', 'glitchless-mcp', '--no-skills']
     cwd: !!js process.cwd()
     toolCallTimeoutMs: 600000
     failOnStartupError: false

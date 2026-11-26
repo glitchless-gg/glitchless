@@ -7,8 +7,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { gitInfo } from './run.js';
+import { onStop, checkStop } from './stop.js';
 
 // How each engine takes flags, how long to wait before measuring, and how to give a game an autoplay mode.
 // Unreal and GameMaker games read single-dash flags; the Glitchless SDKs in them take either.
@@ -166,12 +167,53 @@ export function engineScenario(sc, engine, cfg) {
 const label = (sc) => sc.name || [...paramFlags(sc.params), ...(sc.args || [])].join(' ') || 'run';
 const tail = (text, n = 15) => String(text || '').trimEnd().split(/\r?\n/).slice(-n).join('\n');
 
-// Runs one build to the end, or kills it at the time cap.
-function runBuild(argv, { cwd, timeoutMs }) {
+// The processes a build started, and theirs (a launcher script, Unreal's .sh or its Win64 bootstrap, a .bat, npm run):
+// on macOS and Linux every descendant of pid, read from ps, deepest first. → [pid, …], without pid itself.
+function descendants(pid) {
+  try {
+    const kids = new Map();
+    for (const line of execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' }).split('\n')) {
+      const [p, pp] = line.trim().split(/\s+/).map(Number);
+      if (p && pp) kids.set(pp, [...(kids.get(pp) || []), p]);
+    }
+    const out = [];
+    const walk = (p) => (kids.get(p) || []).forEach((c) => (walk(c), out.push(c)));
+    walk(pid);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+// Ends a build and everything it started: on Windows with taskkill /T /F; elsewhere SIGTERM to the build and its
+// descendants, then SIGKILL to what's left 5 seconds later. A build doesn't get a process group of its own, so Ctrl-C
+// in the terminal running glitchless-playtest still reaches it.
+function killTree(child) {
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' }).on('error', () => child.kill());
+    return;
+  }
+  const signalAll = (sig, pids) => {
+    for (const p of pids) {
+      try {
+        process.kill(p, sig);
+      } catch {}
+    }
+  };
+  const tree = [...descendants(child.pid), child.pid];
+  signalAll('SIGTERM', tree);
+  setTimeout(() => signalAll('SIGKILL', [...new Set([...tree, ...descendants(child.pid)])]), 5000).unref();
+}
+
+// Runs one build to the end, or kills it (and what it started) at the time cap or once signal fires. Once killed, it
+// settles when the build has exited, even if something it started still holds its output open.
+function runBuild(argv, { cwd, timeoutMs, signal }) {
   return new Promise((resolve, reject) => {
     const t0 = Date.now();
     let output = '';
     let timedOut = false;
+    let killed = false;
+    let settled = false;
     const child = spawn(argv[0], argv.slice(1), { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     const keep = (d) => {
       output += d;
@@ -179,19 +221,38 @@ function runBuild(argv, { cwd, timeoutMs }) {
     };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
+    const kill = () => {
+      if (killed) return;
+      killed = true;
+      killTree(child);
+    };
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 5000).unref();
+      kill();
     }, timeoutMs);
-    child.on('error', (err) => {
+    const forget = onStop(signal, kill);
+    const finish = (code, killedBy) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      forget();
+      resolve({ code, signal: killedBy, output, timedOut, seconds: Math.round((Date.now() - t0) / 1000) });
+    };
+    child.on('error', (err) => {
+      settled = true;
+      clearTimeout(timer);
+      forget();
       reject(err.code === 'ENOENT' ? new Error(`Could not start ${argv[0]}: no such program. Set "command" in glitchless.playtest.json to the exported build, or to the engine's command line with the project path (for Godot: ["godot", "--path", "."]).`) : err);
     });
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      resolve({ code, signal, output, timedOut, seconds: Math.round((Date.now() - t0) / 1000) });
+    child.on('exit', (code, killedBy) => {
+      if (!killed) return;
+      setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        finish(code, killedBy);
+      }, 2000);
     });
+    child.on('close', finish);
   });
 }
 
@@ -205,7 +266,7 @@ function readIfNew(file, since) {
 }
 
 /** Plays every scenario with the build, one at a time. */
-export async function runEngineScenarios(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {} } = {}) {
+export async function runEngineScenarios(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {}, signal } = {}) {
   const root = cfg.root || process.cwd();
   const base = resolveCommand(command, root);
   const engine = cfg.engine || detectEngine(base);
@@ -216,12 +277,14 @@ export async function runEngineScenarios(cfg, { command = cfg.command, scenarios
   const results = [];
   try {
     for (const [i, raw] of scenarios.entries()) {
+      checkStop(signal);
       const sc = engineScenario(raw, engine, cfg);
       const out = path.join(tmp, `run-${i + 1}.json`);
       const argv = [...base, ...scenarioArgs(engine, base, sc, { out })];
       log(`run ${i + 1}/${scenarios.length}: ${label(sc)} …`);
       const t0 = Date.now();
-      const r = await runBuild(argv, { cwd: root, timeoutMs: sc.max_s * 1000 });
+      const r = await runBuild(argv, { cwd: root, timeoutMs: sc.max_s * 1000, signal });
+      checkStop(signal);
       const measure = parseMeasure(r.output) || readIfNew(out, t0) || (cfg.measure_file ? readIfNew(path.resolve(root, home(cfg.measure_file)), t0) : null);
       const shown = argv.filter((a) => !a.includes('glitchless-out='));
       const result = { scenario: sc.name || null, params: sc.params, args: sc.args, seconds: sc.seconds, warmup: sc.warmup, command: shown, session_id: measure?.session_id || null, elapsed_s: r.seconds, finished: !!measure && !measure.error, crashed: false, exit_code: r.code, measure: measure && !measure.error ? measure : null };
@@ -371,8 +434,8 @@ export function measureSummary(results) {
 }
 
 /** Plays every scenario with the build and returns a run record ready to save or compare. */
-export async function engineRun(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {} } = {}) {
-  const { engine, command: argv, results } = await runEngineScenarios(cfg, { command, scenarios, log });
+export async function engineRun(cfg, { command = cfg.command, scenarios = cfg.scenarios, log = () => {}, signal } = {}) {
+  const { engine, command: argv, results } = await runEngineScenarios(cfg, { command, scenarios, log, signal });
   const summary = measureSummary(results);
   const measured = results.filter((r) => r.measure);
   const noLevel = measured.every((r) => r.measure.level_start == null && r.measure.level_end == null);

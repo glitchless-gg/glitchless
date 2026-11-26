@@ -20,15 +20,17 @@ import './hosted-tools.js';
 export const MAX_BODY = 4 * 1024 * 1024;
 
 // → { fetch(Request, { authInfo }) → Response, handle(req, res, opts), close() }. opts: { connection (default: this
-// process's own), scopes (default: every tool), token, clientId }.
-export function createHttpHandler({ responseMode = 'auto', onerror } = {}) {
-  const mcp = createMcpHandler(({ authInfo }) => createServer({ remote: true, connection: authInfo?.extra?.connection ?? null, scopes: authInfo?.extra?.scopes ?? null }), { responseMode, onerror, maxRequestBodySize: MAX_BODY });
+// process's own), scopes (default: every tool), token, clientId }. skills: false serves no skills (served-skills.js),
+// and so does a request to /mcp?skills=off, for a client whose plugin carries the skills itself.
+export function createHttpHandler({ responseMode = 'auto', onerror, skills = true } = {}) {
+  const mcp = createMcpHandler(({ authInfo }) => createServer({ remote: true, connection: authInfo?.extra?.connection ?? null, scopes: authInfo?.extra?.scopes ?? null, skills: skills && authInfo?.extra?.skills !== false }), { responseMode, onerror, maxRequestBodySize: MAX_BODY });
   return {
     fetch: mcp.fetch,
     async handle(req, res, { connection = null, scopes = null, token = '', clientId = '' } = {}) {
       const request = await toRequest(req, res);
       if (!request) return;
-      await send(res, await mcp.fetch(request, { authInfo: { token, clientId, scopes: scopes ?? [], extra: { connection, scopes } } }));
+      const served = new URL(request.url).searchParams.get('skills') !== 'off';
+      await send(res, await mcp.fetch(request, { authInfo: { token, clientId, scopes: scopes ?? [], extra: { connection, scopes, skills: served } } }));
     },
     close: mcp.close,
   };
@@ -66,7 +68,7 @@ async function send(res, response) {
 // The hosted tools at http://<host>:<port>/mcp, reading with this machine's key or self-hosted server (as the stdio
 // server does: GLITCHLESS_URL, GLITCHLESS_API_KEY or a saved sign-in). On this computer only by default, where it
 // checks Host and Origin against DNS rebinding; to listen beyond it, set GLITCHLESS_MCP_TOKEN and clients send it as
-// Authorization: Bearer.
+// Authorization: Bearer. --no-skills serves no skills.
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const hostname = (value) => {
   try {
@@ -87,7 +89,7 @@ export async function serve(argv = []) {
   const token = process.env.GLITCHLESS_MCP_TOKEN || '';
   const local = LOOPBACK.has(host);
   if (!local && !token) throw new Error(`Listening on ${host} lets other computers in: set GLITCHLESS_MCP_TOKEN, and clients send it as Authorization: Bearer.`);
-  const mcp = createHttpHandler();
+  const mcp = createHttpHandler({ skills: !argv.includes('--no-skills') });
   const server = http.createServer(async (req, res) => {
     const deny = (status, error, extra = {}) => res.writeHead(status, { 'content-type': 'application/json', ...extra }).end(JSON.stringify({ error }));
     if (new URL(req.url, 'http://local').pathname !== '/mcp') return deny(404, 'Not found: the MCP endpoint is /mcp.');

@@ -8,12 +8,12 @@ and a gallery made from real captures. The owner submits; nothing here posts any
 | [LISTING.md](LISTING.md) | every field's text: name, tagline options, description, links, topics, pricing, the maker's first comment, timing |
 | `media/thumbnail.png` | the thumbnail, 240 × 240: the Glitchless app icon |
 | `media/thumbnail-glitchy.png` | the other choice, 240 × 240: Glitchy on navy |
-| `media/gallery-01-cover.png` | the tagline, the eight engines and Glitchy |
+| `media/gallery-01-cover.png` | the tagline, the nine engines and Glitchy |
 | `media/gallery-02-players.png` | Starlift's "Where players stop" board over 7 days (tutorial finished, skipped, what comes after a skip) |
 | `media/gallery-03-agent.png` | Starlift's build 17 commit, written with Claude Code from what Glitchless showed (real text, trimmed) |
 | `media/gallery-04-before-after.png` | Starlift 1.1.1 against 1.1.2 on players' phones, from `glitchless_compare_versions` |
 | `media/gallery-05-every-frame.png` | two frames of the Zoomies demo's before-and-after clip: 11 fps, then 60 fps |
-| `media/gallery-06-engines.png` | the eight engines and each one's install line |
+| `media/gallery-06-engines.png` | the nine engines and each one's install line |
 | `media/before-after.gif` | the Zoomies before and after as a GIF: 640 × 360, 6 seconds, 2.8 MB |
 
 The gallery is 1270 × 760, the size Product Hunt's guides give, and every file is under 3 MB.

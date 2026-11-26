@@ -89,7 +89,7 @@ fs.writeFileSync(
   path.join(TO, 'README.md'),
   `# Glitchless for Godot
 
-**Coding agents can build a game. They can't see anyone play it. Glitchless lets them.**
+**Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them.**
 
 Glitchless is game observability for coding agents. This addon times every frame on every player's device and names
 each hitch's likely cause, groups errors and crashes with what the player did just before, and shows where players

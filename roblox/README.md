@@ -2,7 +2,7 @@
 
 Game observability for coding agents, in a Roblox experience: every player's frame times, stutters, errors and
 connection, your game servers' frame rate and memory, and your game's own events (races, levels, deaths, coins), sent
-to [Glitchless](https://glitchless.gg) so your coding agent can see what players hit and fix it.
+to [Glitchless](https://glitchless.gg) so your coding agent learns what players hit and can fix it.
 
 It's one ModuleScript, written in Luau, with a server half and a client half:
 
@@ -227,7 +227,10 @@ choice isn't kept, and Glitchless says so once. `saveChoice = false` leaves keep
 With the Glitchless MCP server connected, ask in plain words: *what's wrong with my game this week*, *which phones
 stutter*, *is the desert map's server lagging*, *where do players die*, *did version 42 fix the respawn error*.
 `glitchless_triage`, `glitchless_performance`, `glitchless_servers`, `glitchless_match`, `glitchless_network` and
-`glitchless_player_funnel` read what this SDK sends.
+`glitchless_player_funnel` read what this SDK sends, and `glitchless_events` your game's own events (*do players
+who join with a friend finish more races*). With the game connected to Roblox in Glitchless Cloud,
+`glitchless_revenue` reads the Robux it earned and its D1, D7 and D30 retention, which an anonymous SDK can't count,
+and `glitchless_store` with `show: "vitals"` the crash rate and frame rate Roblox measured by place version.
 
 `glitchless_playtest` plays the place open in Studio before and after a change and compares the two, over Studio's MCP
 server: give the game an autoplay mode that starts when `workspace:GetAttribute("autoplay")` is set, plays the same

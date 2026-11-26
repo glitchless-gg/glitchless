@@ -7,10 +7,10 @@ Change a line here first, then everywhere it's used (grep for it).
 
 ## The line
 
-> Coding agents can build a game. They can't see anyone play it. Glitchless lets them.
+> Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them.
 
 It starts with what people already believe, makes the coding agent the hero, and leaves the listener to finish the
-thought: an agent that can see players can fix what they hit. Lead with "see how people play", "what players hit" and
+thought: an agent that knows how people play can fix what they hit. Lead with "how people play", "what players hit" and
 "the next build". Save "observability", "telemetry", "analytics" and percentiles for when someone asks what it is.
 
 ## The parts
@@ -19,8 +19,8 @@ thought: an agent that can see players can fix what they hit. Lead with "see how
 | --- | --- |
 | Name | Glitchless (glitchless.gg) |
 | What it is, if asked | Game observability for coding agents |
-| Best for | Games built with coding agents (Claude Code, Codex, Cursor), in Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot, Unreal or GameMaker |
-| Main advantage | Your coding agent adds it to the game, sees what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix |
+| Best for | Games built with coding agents (Claude Code, Codex, Cursor), in Unity, Godot, Unreal, Three.js, GameMaker, Roblox, Phaser, Babylon.js or PlayCanvas |
+| Main advantage | Your coding agent adds it to the game, learns what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix |
 | Price | Free plan (5,000 play sessions a month) · Indie $19 a month · Studio $99 a month · open source (MIT) to run yourself |
 | Proof | On Starlift, 1 in 4 players who skipped the tutorial quit without playing. The agent made a skip start a game, and all 26 who skipped since then played |
 | Overhead | The web SDK adds 33.7 KB gzipped and about 0.6 µs of work a frame, with no measurable change in frame time |
@@ -38,18 +38,18 @@ thought: an agent that can see players can fix what they hit. Lead with "see how
 Directories cap their fields, so each length is written out rather than cut.
 
 - **Tagline (60):** Game observability for coding agents.
-- **Short (140):** Coding agents can build a game. They can't see anyone play it. Glitchless lets them: real players'
+- **Short (140):** Coding agents build games but don't know how anyone plays them. Glitchless tells them: players'
   stutters, crashes and drop-offs, over MCP.
-- **Medium (300):** Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Your agent
-  adds it to a Three.js, Phaser, Unity, Godot, Unreal or GameMaker game, sees what real players hit (stutters, crashes,
-  where they quit) and fixes the next build. Free plan, open source (MIT).
+- **Medium (300):** Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them. Your
+  agent adds it to a Unity, Godot, Unreal, Three.js, GameMaker, Roblox or other game, learns what players hit
+  (stutters, crashes, where they quit) and fixes the next build. Free plan, open source (MIT).
 - **Long:** the medium text, then the loop, then the proof and the overhead lines, then the price line.
 
 ## Tags
 
 game analytics, game observability, crash reporting, performance monitoring, frame time, stutter, playtesting, MCP,
-MCP server, coding agents, Claude Code, Cursor, Codex, Three.js, Phaser, Babylon.js, PlayCanvas, Unity, Godot,
-Unreal Engine, GameMaker, open source
+MCP server, coding agents, Claude Code, Cursor, Codex, Unity, Godot, Unreal Engine, Three.js, GameMaker, Roblox,
+Phaser, Babylon.js, PlayCanvas, open source
 
 ## The alternatives AI names today
 

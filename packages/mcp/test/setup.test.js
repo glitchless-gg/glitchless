@@ -133,6 +133,8 @@ test("each engine gets its own steps, with the cloud's intake and the game's cli
     assert.ok(text.includes('name the game: game: "Skyward"'), `${id}: the game in later calls`);
     assert.match(text, /## 0\. Find the engine, and the settings[\s\S]*\*\*Privacy\.\*\*/, 'the settings');
     assert.match(text, /## Every engine: the game's own metrics, and its board[\s\S]*## Report/);
+    // The steps end by telling the agent to report what didn't work to the Glitchless team.
+    assert.match(text, /## Report\n[\s\S]*report it to the Glitchless team\nwith the `glitchless_feedback` MCP tool, then tell the user what you sent and its ID\.\s*$/, `${id}: the steps end with feedback`);
     assert.match(text, /follow the `dashboard` skill, call glitchless_dashboard with guide: true/);
     assert.ok(!/^\| `three` or/m.test(text), "the engine table is cut to this game's");
     assert.ok(text.includes(`This game: ${nameOf(id)} (${engineFrom(files).sign}).`), `${id}: what named it`);
@@ -285,7 +287,7 @@ test("glitchless_dashboard's guide is the dashboard skill with its references, b
 
 test("the server's copy of the skills is the skills, and every connection is told where the steps are", async () => {
   for (const [file, text] of Object.entries(TEXTS)) assert.equal(text, fs.readFileSync(path.join(ROOT, file), 'utf8'), `${file}: run node scripts/sync-agent-plugin.mjs`);
-  for (const client of [workspace, local]) assert.match(client.getInstructions(), /To add Glitchless to a game .*call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files/);
+  for (const client of [workspace, local]) assert.match(client.getInstructions(), /To add Glitchless to a game, call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files/);
   const game = (await workspace.listTools()).tools.find((t) => t.name === 'glitchless_create_game');
   assert.match(game.description, /^Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless/);
   assert.deepEqual(game.inputSchema.properties.engine.enum, ENGINES.map((e) => e.id));

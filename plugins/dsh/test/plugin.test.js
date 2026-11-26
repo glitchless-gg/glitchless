@@ -44,6 +44,6 @@ test('the package is a DSH bundle that mounts this plugin and the MCP client on 
   assert.match(patch, new RegExp(`name: ${pkg.name}\\n`), 'the patch mounts this package');
   assert.match(patch, /name: '@deepseek-ai\/dsh-mcp-client'/);
   assert.match(patch, /serverName: glitchless\n/);
-  assert.match(patch, /args: \['-y', 'glitchless-mcp'\]/);
+  assert.match(patch, /args: \['-y', 'glitchless-mcp', '--no-skills'\]/, 'the plugin registers the skills itself');
   assert.doesNotMatch(patch, /gl_(ws|sk|ct)_/, 'no key in the patch');
 });

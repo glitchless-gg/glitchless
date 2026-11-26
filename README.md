@@ -7,9 +7,9 @@
 
 # Glitchless
 
-**Coding agents can build a game. They can't see anyone play it. Glitchless lets them.**
+**Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them.**
 
-Glitchless is game observability for coding agents. Your agent adds it to the game, sees what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix. It works with Unity (6.0 LTS and later), Godot 4.5+, Unreal Engine 5.8 and GameMaker (2024.2+) games on phones and desktops, Three.js, Phaser, Babylon.js and PlayCanvas games in the browser, and Roblox experiences. Use it free on [Glitchless Cloud](https://www.glitchless.gg/pricing.html) (5,000 play sessions a month), or run it yourself: it's open source (MIT).
+Glitchless is game observability for coding agents. Your agent adds it to the game, learns what real players hit (stutters, crashes, where they quit) and fixes the next build, then checks the fix. It works with Unity (6.0 LTS and later), Godot 4.5+, Unreal Engine (5.8 and 5.9), Three.js, GameMaker (2024.2+), Roblox, Phaser, Babylon.js and PlayCanvas games, on phones, desktops and in the browser. Use it free on [Glitchless Cloud](https://www.glitchless.gg/pricing.html) (5,000 play sessions a month), or run it yourself: it's open source (MIT).
 
 On Starlift, a Godot game on iPhone and Android, Glitchless showed that 1 in 4 players who skipped the tutorial quit without playing. The agent made a skip start a game, and all 26 who skipped since then played ([the case study](https://www.glitchless.gg/starlift-case-study.html)). In a web game the SDK adds 33.7 KB gzipped and about 0.6 µs of work a frame, with no measurable change in frame time ([measured](https://www.glitchless.gg/glitchless-sdk-overhead.html)).
 
@@ -177,7 +177,9 @@ hit and check that the fix worked.
    anything you weren't sure about. If I use Glitchless Cloud, also tell me I can turn on alerts
    (Discord, Slack or email) in Settings → Alerts, and that you can make a read-only link to any
    board with glitchless_share_links, for a dev log or a "Live stats" button. On my own server,
-   alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK.
+   alerts go to a Discord or Slack webhook set in GLITCHLESS_ALERT_WEBHOOK. If a step of this setup
+   didn't work in my engine, or a Glitchless tool failed or misled you, tell the Glitchless team
+   with the glitchless_feedback tool, then tell me what you sent.
 
 8. Only if I'm at a Glitchless jam and give you a room code: also add the glitchless-jam MCP server
    (command `npx`, arguments `-y glitchless-jam`, the same GLITCHLESS_URL; it uses the same sign-in
@@ -296,7 +298,7 @@ git clone --depth 1 https://github.com/glitchless-gg/glitchless ~/.glitchless
 agy plugin install ~/.glitchless/plugins/glitchless
 # DeepSeek Harness (the agent signs in with a code; plugins/dsh)
 dsh plugin --profile web add glitchless-dsh
-# Claude Code, the hosted server alone
+# Claude Code, the hosted server alone (it serves the instrument, dashboard and triage skills too, from v2.1.331)
 claude mcp add --transport http glitchless https://api.glitchless.gg/mcp
 ```
 

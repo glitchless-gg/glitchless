@@ -9,13 +9,14 @@
 <style>
 /* X profile banner, 1500 x 500. Measured on an iPhone: it shows the middle ~1250 px, the Dynamic Island covers
    x 550–950 down to y 155, the back button sits at x 170–280 and the search and more buttons at x 1080–1330 (all at
-   y 205–315), and the profile picture covers x 160–470 below y 455. So the headline starts at y 165 and is narrow
-   enough (x 430–1070) to pass between the buttons, and the chart (x 420–1100, y 258–452) keeps its tall bars and
-   labels between them and stops above the profile picture. Labels are 30 px, about 9 pt on a phone. */
+   y 205–315), and the profile picture covers x 160–470 below y 455. So the headline starts at y 165 and goes on two
+   lines of 42 px, narrow enough (x 520–980) to pass between the buttons and ending above the chart (y 254), and the
+   chart (x 420–1100, y 258–452) keeps its tall bars and labels between them and stops above the profile picture.
+   Labels are 30 px, about 9 pt on a phone. */
 :root { --mint: #2EE6A6; --navy: #14213D; --coral: #FF6B57; --white: #FFFFFF; --slate: #52648F; --rule: #2A3A60 }
 * { box-sizing: border-box; margin: 0 }
 html, body { width: 1500px; height: 500px; overflow: hidden; background: var(--navy) }
-h1 { position: absolute; left: 0; right: 0; top: 165px; text-align: center; font: 800 54px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
+h1 { position: absolute; left: 0; right: 0; top: 165px; text-align: center; font: 800 42px/1 "Outfit", sans-serif; letter-spacing: -0.025em; color: var(--white) }
 h1 span { color: var(--mint) }
 .chart { position: absolute; left: 420px; width: 680px; top: 258px; height: 194px; display: grid; grid-template-columns: 1fr 1fr }
 .side { display: flex; align-items: flex-end; gap: 9px; padding: 0 22px }
@@ -31,7 +32,7 @@ h1 span { color: var(--mint) }
 </style>
 </head>
 <body>
-<h1>Vibe debugging <span>for games.</span></h1>
+<h1>Let your agent<br><span>understand your players.</span></h1>
 <div class="chart" id="chart">
   <div class="side before" id="before"></div>
   <div class="side after" id="after"></div>

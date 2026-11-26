@@ -60,6 +60,14 @@ OpenAI's own examples carry it), delete that line from the zip's `mcp.json` and 
 | `glitchless_bug_reports` | true: reads bug reports players sent | false: reads only the person's own game data | false: changes nothing |
 | `glitchless_store` | true: reads store reviews and vitals already synced into Glitchless | false: calls no store; reads what the workspace already holds | false: changes nothing |
 | `glitchless_revenue` | true: reads revenue already synced into Glitchless | false: calls no payment provider; reads what the workspace already holds | false: changes nothing |
+| `glitchless_match` | true: reads a multiplayer game's matches | false: reads only the person's own game data | false: changes nothing |
+| `glitchless_network` | true: reads ping, packet loss and disconnects | false: reads only the person's own game data | false: changes nothing |
+| `glitchless_servers` | true: reads the game's dedicated servers | false: reads only the person's own game data | false: changes nothing |
+| `glitchless_alerts` | true: reads the game's alert settings | false: reads only the person's own workspace | false: changes nothing |
 | `glitchless_set_dashboard` | false: saves the game's dashboard | false: the dashboard stays in the person's workspace | true: it replaces the saved pages, and `reset` deletes them |
-| `glitchless_create_game` | false: adds a game to the workspace, or renames one; with engine or files it also returns setup steps | false: the game stays in the person's workspace, and the steps are text the server carries | false: adds or renames a game and removes nothing |
+| `glitchless_create_game` | false: adds a game to the workspace, or renames one; with engine or files it also returns setup steps | false: the game stays in the person's workspace, and the steps are text the server carries | true: with `delete` (a connection with delete_games, the game's name repeated back, and the person's yes where the app can ask) it deletes a game and everything stored for it |
 | `glitchless_share_links` | false: creates, lists and revokes share links | true: anyone with a link can see that board, signed out | true: a revoked link stops working for everyone who has it, and can't be restored |
+| `glitchless_mark_known` | false: marks a finding known, or a player or session as the team's | false: stays in the person's workspace | true: it replaces or clears a note, and unmarks a tester |
+| `glitchless_resolve_error` | false: resolves an error issue | false: stays in the person's workspace | true: it hides an issue until it comes back, and unresolves one |
+| `glitchless_set_alerts` | false: changes the game's alert settings | true: a test alert posts to the person's Discord, Slack or email | true: it replaces settings and removes a webhook |
+| `glitchless_feedback` | false: sends a report to the Glitchless team | true: the report leaves the workspace, to the Glitchless team | false: each call adds a report and changes nothing in the workspace |

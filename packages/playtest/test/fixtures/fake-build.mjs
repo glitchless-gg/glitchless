@@ -15,6 +15,8 @@ const m = JSON.parse(line).glitchless_measure;
 m.seconds = seconds;
 m.headless = false;
 m.args = args; // so a test can see what the build was started with
+// --pidfile=PATH: where it writes its process ID, so a test can see it was stopped.
+if (flag('pidfile')) fs.writeFileSync(flag('pidfile'), String(process.pid));
 
 console.log('Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org');
 if (mode === 'menu') m.level_start = m.level_end = null;
@@ -28,7 +30,9 @@ if (mode === 'crash') {
 }
 if (mode === 'quit') process.exit(0);
 if (mode === 'hang') setInterval(() => {}, 1000);
-else {
+// --sleep=MS: plays that long before it prints its measurement.
+else setTimeout(finish, Number(flag('sleep') || 0));
+function finish() {
   const text = JSON.stringify({ glitchless_measure: mode === 'off' ? { error: 'Glitchless is off: the player turned it off in the game\'s settings (set_enabled(false)), so no frames were measured.' } : m });
   if (out) fs.writeFileSync(out, `${text}\n`);
   // A Unity player on macOS prints nothing to stdout: the measurement only reaches the --glitchless-out file.

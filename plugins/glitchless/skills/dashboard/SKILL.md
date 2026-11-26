@@ -11,7 +11,11 @@ platformer or shooter, where players die and whether frames hold up in a fight. 
 add the collectors this game needs, and design its dashboard from them: its own pages, in its own words. The
 developer then sees it in Glitchless, and you can read the same data back over MCP to debug.
 
-Before this skill, the game should already send data (the `instrument` skill). If it doesn't, do that first.
+Before this skill, the game should already send data (the `instrument` skill). If it doesn't, do that first. The
+Glitchless MCP server serves the `instrument`, `dashboard` and `triage` skills itself (each where the connection has
+its tools), to an agent whose client loads skills from MCP servers (in Claude Code, `/glitchless:instrument` for a
+server added as `glitchless`); without that, `glitchless_create_game` with the game's `engine` returns the instrument
+skill's steps for it.
 
 ## 1. Find out what they want to know
 

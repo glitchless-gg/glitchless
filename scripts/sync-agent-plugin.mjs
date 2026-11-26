@@ -3,19 +3,34 @@
 // plugin/glitchless keeps its own local server), and into plugins/dsh, the DeepSeek Harness plugin.
 // plugin/glitchless/skills is the source; the copies are committed because those tools install straight from this
 // repo (and plugins/dsh from its own repo, scripts/export-dsh-plugin.mjs). It also writes the MCP server's copy of the
-// instrument and dashboard skills (packages/mcp/src/skills.js), which glitchless_create_game's engine and
-// glitchless_dashboard's guide hand to an agent that has the MCP server and no skills.
+// skills (packages/mcp/src/skills.js): glitchless_create_game's engine and glitchless_dashboard's guide hand the
+// instrument and dashboard skills to an agent that has the MCP server and no skills, and the server serves the skills
+// over MCP's Skills extension (served-skills.js) to the connections that have their tools (SKILLS, below).
 //   node scripts/sync-agent-plugin.mjs           write the copies
 //   node scripts/sync-agent-plugin.mjs --check   fail if they differ from the source (npm test runs this)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SkillsExtension, memorySkillFiles } from '@modelcontextprotocol/server/ext/skills';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FROM = path.join(ROOT, 'plugin', 'glitchless', 'skills');
 const TARGETS = ['plugins/glitchless/skills', 'plugins/dsh/skills'];
-// The deck skill drives a Steam Deck on the local network: it stays in the Claude Code plugin and the skills repo.
-const SKILLS = ['instrument', 'dashboard', 'triage'];
+// Every skill in plugin/glitchless/skills, and where it goes: the one list, which skills.js carries to the MCP server.
+//   plugins  copied into plugins/glitchless and plugins/dsh. The deck skill drives a Steam Deck on the local network,
+//            so it stays in the Claude Code plugin and the skills repo.
+//   scope    the MCP connections that serve it (served-skills.js), by the scope of the tools it relies on: instrument
+//            starts with glitchless_create_game (manage), dashboard ends with glitchless_set_dashboard (dashboard),
+//            triage and deck read; null serves it nowhere.
+//   local    served only by glitchless-mcp on this computer, as deck is, next to its glitchless_deck tool.
+// A folder that isn't listed fails the sync, so a new skill is never left out without a word.
+const SKILLS = {
+  instrument: { plugins: true, scope: 'manage' },
+  dashboard: { plugins: true, scope: 'dashboard' },
+  triage: { plugins: true, scope: 'read' },
+  deck: { plugins: false, scope: 'read', local: true },
+};
+const PLUGIN_SKILLS = Object.keys(SKILLS).filter((s) => SKILLS[s].plugins);
 const check = process.argv.includes('--check');
 
 // Every file under a folder, as paths relative to it.
@@ -36,13 +51,27 @@ function checkFrontmatter(file, text) {
   }
 }
 
+const folders = fs.readdirSync(FROM, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+for (const f of folders) if (!SKILLS[f]) throw new Error(`plugin/glitchless/skills/${f} isn't in SKILLS (scripts/sync-agent-plugin.mjs): say where it goes`);
+for (const s of Object.keys(SKILLS)) if (!folders.includes(s)) throw new Error(`SKILLS lists ${s}, which plugin/glitchless/skills doesn't have`);
+
+// Every skill as the MCP SDK reads it (served-skills.js loads them the same way): strict, so a name that isn't its
+// folder's, a description over 1,024 characters or frontmatter outside the YAML it reads fails here, not in a server.
+for (const skill of Object.keys(SKILLS)) {
+  const dir = path.join(FROM, skill);
+  checkFrontmatter(`plugin/glitchless/skills/${skill}/SKILL.md`, fs.readFileSync(path.join(dir, 'SKILL.md'), 'utf8'));
+  const own = Object.fromEntries(files(dir).map((f) => [[skill, ...f.split(path.sep)].join('/'), fs.readFileSync(path.join(dir, f))]));
+  await SkillsExtension.load(memorySkillFiles(own), { strict: true }).catch((err) => {
+    throw new Error(`plugin/glitchless/skills/${skill}: the MCP SDK refuses it: ${err.problems?.map((p) => `${p.path}: ${p.message}`).join('; ') ?? err.message}`);
+  });
+}
+
 const stale = [];
 for (const target of TARGETS) {
   const TO = path.join(ROOT, target);
-  for (const skill of SKILLS) {
+  for (const skill of PLUGIN_SKILLS) {
     const src = path.join(FROM, skill);
     const dst = path.join(TO, skill);
-    checkFrontmatter(`plugin/glitchless/skills/${skill}/SKILL.md`, fs.readFileSync(path.join(src, 'SKILL.md'), 'utf8'));
     const want = files(src);
     const have = files(dst);
     for (const f of new Set([...want, ...have])) {
@@ -57,24 +86,26 @@ for (const target of TARGETS) {
       } else fs.rmSync(path.join(dst, f));
     }
   }
-  for (const extra of files(TO).filter((f) => !SKILLS.includes(f.split(path.sep)[0]))) {
+  for (const extra of files(TO).filter((f) => !PLUGIN_SKILLS.includes(f.split(path.sep)[0]))) {
     stale.push(path.join(target, extra));
     if (!check) fs.rmSync(path.join(TO, extra));
   }
 }
 
 // The MCP server's copy, as one module in the package's src/, so the npm package, the Claude Code plugin's bundle and
-// the hosted server all carry it and nothing is fetched: the two skills' Markdown, and the Godot addon's README, which
+// the hosted server all carry it and nothing is fetched: every skill's Markdown, and the Godot addon's README, which
 // the instrument skill sends Godot games to. Keyed by path in this repo, which is how setup-guide.js follows a link
 // from one file to another.
 const MCP_COPY = 'packages/mcp/src/skills.js';
 const texts = [
-  ...['instrument', 'dashboard'].flatMap((skill) => files(path.join(FROM, skill)).filter((f) => f.endsWith('.md')).sort().map((f) => ['plugin/glitchless/skills', skill, ...f.split(path.sep)].join('/'))),
+  ...Object.keys(SKILLS).flatMap((skill) => files(path.join(FROM, skill)).filter((f) => f.endsWith('.md')).sort().map((f) => ['plugin/glitchless/skills', skill, ...f.split(path.sep)].join('/'))),
   'godot/addons/glitchless/README.md',
 ];
 const copy = [
-  "// The instrument and dashboard skills (plugin/glitchless/skills) and the Godot addon's README, as text, for",
-  '// setup-guide.js. Written by scripts/sync-agent-plugin.mjs: edit the skills or the README, then run it.',
+  "// The skills (plugin/glitchless/skills), where each is served, and the Godot addon's README, as text, for",
+  '// setup-guide.js and served-skills.js. Written by scripts/sync-agent-plugin.mjs: edit the skills, the README or its',
+  '// SKILLS, then run it.',
+  `export const SKILLS = ${JSON.stringify(Object.fromEntries(Object.entries(SKILLS).map(([k, { scope, local = false }]) => [k, { scope, local }])))};`,
   'export const TEXTS = {',
   ...texts.map((p) => `  ${JSON.stringify(p)}: ${JSON.stringify(fs.readFileSync(path.join(ROOT, p), 'utf8'))},`),
   '};',

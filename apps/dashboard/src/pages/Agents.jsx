@@ -20,9 +20,20 @@ const MCP_GROUPS = [
     ['glitchless_session', 'one play session, event by event'],
     ['glitchless_compare_versions', 'versions side by side, to confirm a fix with real players'],
   ]],
+  ['Multiplayer', [
+    ['glitchless_network', 'ping, packet loss and disconnects by level, region, platform and version'],
+    ['glitchless_match', 'a match from every side: a whole lobby lagging or one player\'s connection'],
+    ['glitchless_servers', 'dedicated servers: tick time against its budget, crashes that ended matches, memory'],
+  ]],
   ['Stores and revenue', [
-    ['glitchless_store', 'what players wrote on Steam, Google Play or the App Store by build, and what the store measured of each version'],
-    ['glitchless_revenue', 'real revenue from RevenueCat or Stripe, per player and per version'],
+    ['glitchless_store', 'what players wrote on Steam, Google Play, the App Store, Roblox or itch.io by build, and what the store measured of each version'],
+    ['glitchless_revenue', 'real revenue from RevenueCat, Stripe, Roblox (Robux) or itch.io, by day and version'],
+  ], { hosted: true }],
+  ['The team\'s calls and alerts', [
+    ['glitchless_mark_known', 'mark a finding known, or a player or session as the team\'s own play'],
+    ['glitchless_resolve_error', 'resolve an error until it comes back in a newer version'],
+    ['glitchless_alerts', 'the game\'s alert settings and the alerts sent lately'],
+    ['glitchless_set_alerts', 'turn alerts and the weekly summary on or off, and send a test alert'],
   ], { hosted: true }],
   ['Dashboards, games and sharing', [
     ['glitchless_dashboard', 'the game\'s pages, and one board\'s panels with their numbers'],
@@ -30,10 +41,14 @@ const MCP_GROUPS = [
     ['glitchless_list_games', 'the games reporting, with their versions'],
     ['glitchless_create_game', 'a new game and its client token, with the steps that add Glitchless to its code', { hosted: true }],
     ['glitchless_share_links', 'a read-only link to a board, and listing and revoking them', { hosted: true }],
+    ['glitchless_sign_in', 'connect an agent on this computer to your Glitchless Cloud workspace (the npm server only)'],
   ]],
   ['Testing', [
     ['glitchless_playtest', 'bots play the game and compare with a saved baseline'],
     ['glitchless_deck', 'build the game, send it to a paired Steam Deck, and measure it there'],
+  ]],
+  ['Telling us', [
+    ['glitchless_feedback', 'tell the Glitchless team what didn\'t work or is missing'],
   ]],
 ];
 

@@ -1731,7 +1731,7 @@ the person who approved it, with their current role, and within its scopes:
 
 | Scope | What it allows |
 | --- | --- |
-| `read` | Every game's queries (always included) |
+| `read` | Every game's queries, and sending the Glitchless team feedback (`glitchless_feedback`, below) (always included) |
 | `dashboard` | Save a game's dashboard |
 | `manage` | Create and rename games and their public keys, make and revoke share links |
 | `sourcemaps` | Upload a web game's source maps |
@@ -1776,6 +1776,14 @@ Each server stamps a key at most once every ten minutes, so it's right to about 
 from inside a chat. The saved key goes only to the origin it was saved for: with `GLITCHLESS_URL` set to another
 server (a meetup's own box), the MCP server connects without a key, and if that server answers 401 the tool's error
 says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this server. `GLITCHLESS_API_KEY` always wins.
+From inside a chat, a client that can open a link for the person (URL elicitation, below) is asked to open
+`verification_url`, its message starting with the code to check on the page; once the person has opened it, the call
+waits up to 100 seconds for the approval and answers signed in, or still waiting (call again). A client that can't
+open links, or a person who doesn't open it, gets the link and the code to show them, as before. How long the code
+works is from `expires_in`. The MCP server (and `login`) shows or opens `verification_url` only when it's the
+server's own page: https on the API's host or its site (the API at api.glitchless.gg, the page at app.glitchless.gg),
+or plain http only between two addresses on this computer; anything else fails and nothing opens. Two sign-in calls
+at once share one code and one page.
 
 **With the key**, sent as `Authorization: Bearer gl_ws_…` or in `x-glitchless-api-key`:
 
@@ -1799,6 +1807,7 @@ says where the saved sign-in is for and to set `GLITCHLESS_API_KEY` for this ser
 | `GET /v1/agent/games/{game}/alerts` | Its alert settings, the last 20 sends and the defaults, as `GET /api/projects/{p}/alerts` answers them (§3e; `glitchless_alerts`) | read |
 | `POST /v1/agent/games/{game}/alerts` | Any of `{ rules: {rule: bool}, weekly, email, env, webhook: null }`, as the dashboard's `PATCH` takes them; `webhook: null` removes the webhook. A webhook URL is refused (`WEBHOOK_IN_SETTINGS`): the person pastes it in Settings → Alerts, so it never passes through a chat. Owner or Admin (`glitchless_set_alerts`) | manage |
 | `POST /v1/agent/games/{game}/alerts/test` | A test alert to every channel → `{ sent }`, 10 an hour (`glitchless_set_alerts` with `test: true`) | manage |
+| `POST /v1/agent/feedback` | `{ message, type, impact, tool?, task?, expected?, actual?, engine?, app?, mcp? }`, an agent's report to the Glitchless team (`glitchless_feedback`, below) → `{ id }`. 400 `INVALID_FEEDBACK` or `TOO_LONG`, 429 `TOO_MANY_REPORTS` past 20 a day from the workspace | read |
 
 **The demo game** is Zoomies (demo), a week of Zoomies' sample play (about 180 sessions, with the planted level-2
 hitch and velocity error, and Zoomies' dashboard), so someone who connects an app before they have a game can try every
@@ -1835,11 +1844,114 @@ the steps from the tools themselves; nothing is fetched.
     `gl_pub_dev` and how to start one, or how to sign in to Glitchless Cloud instead.
 - **`glitchless_dashboard` with `guide: true`** answers with the dashboard skill and its two references (example
   dashboards, panels for each kind of game), up to 45,000 characters, whether or not the game has sent data.
-- The text is `packages/mcp/src/skills.js`, a copy of `plugin/glitchless/skills/{instrument,dashboard}` and the Godot
-  addon's README that `node scripts/sync-agent-plugin.mjs` writes (`--check`, in `npm test`, fails when it's behind),
-  so the npm package, the Claude Code plugin's bundle and the hosted server all carry it.
+- The text is `packages/mcp/src/skills.js`, a copy of `plugin/glitchless/skills` (instrument, dashboard, triage and
+  deck) and the Godot addon's README that `node scripts/sync-agent-plugin.mjs` writes (`--check`, in `npm test`,
+  fails when it's behind), so the npm package, the Claude Code plugin's bundle and the hosted server all carry it.
 - The server's instructions tell an agent to call `glitchless_create_game` first when asked to add Glitchless to a
   game; a connection that shows only the read tools is told the setup prompt's address instead.
+
+**The server's instructions** are what an agent reads before any tool. Claude Code keeps 4,096 characters of them
+(2,048 before v2.1.296), and with tool search they and the tools' names are all it loads at the start, so they stay
+under 2,048 characters on every connection (`packages/mcp/test/instructions.test.js`). In order: what Glitchless is
+and which tasks its tools are for; `glitchless_create_game` first to set a game up (on a read-only connection, the
+setup prompt's address); the connection (the workspace, and to say first that a game hasn't sent data, with its
+`next_step`; on this computer, `glitchless_sign_in`); `glitchless_triage` first to read a game, then a few words per
+area naming its tool; `glitchless_playtest` before and after a change (on this computer); `glitchless_compare_versions`
+after shipping; and feedback, last. They name only tools the connection has. Everything else is in each tool's own
+description and in the skills: what to do about a game with no data is `glitchless_list_games`', bumping the version
+before comparing is `glitchless_compare_versions`', and the running game's own measures (WebMCP's live tools, a
+build's `--glitchless-measure`, the Unreal Toolset's Measure) are `glitchless_performance`'s. Claude Code also cuts each
+tool's description at 4,096 characters, so every one fits (the same test), stating what the tool does and every limit an
+agent can run into; what each mode or option gives in detail is in that parameter's description, which isn't cut
+(`glitchless_store`'s `show`, `glitchless_playtest`'s `check_url`), and how to design a dashboard is
+`glitchless_dashboard`'s `guide`.
+
+**Skills over MCP.** The MCP server serves the Glitchless skills through MCP's Skills extension
+(`io.modelcontextprotocol/skills`, SEP-2640; `packages/mcp/src/served-skills.js`, with the MCP SDK's
+`SkillsExtension`): it declares the extension, answers `skills/list` and `skills/get`, and serves each file at
+`skill://<skill>/<path>` through `resources/read` (and `resources/directory/read`), each listed with its size and
+SHA-256 digest, which a client checks. A client that loads skills from its MCP servers gets the plugin's skills
+without the plugin. One that doesn't still sees them as resources, if it reads resources: the `SKILL.md` files in
+`resources/list` and the `skill://{+path}` template; it gets the same text from `glitchless_create_game`'s `engine`
+and `glitchless_dashboard`'s `guide`.
+- **Which skills.** A connection is served the skills whose tools it has: `triage` on every connection,
+  `instrument` (which starts with `glitchless_create_game`) with `manage`, and `dashboard` (which ends with
+  `glitchless_set_dashboard`) with `dashboard`. `glitchless-mcp` on this computer adds `deck`, which sends builds
+  to a Steam Deck on its network, next to its `glitchless_deck` tool. A connection with no skills to serve declares
+  no extension and no resources. Each skill is the plugin's word for word, under the plugin's name, built from
+  `skills.js` when the server starts, so the hosted server reads nothing from disk. The one list of skills, where each
+  goes and the scope it needs, is `SKILLS` in `scripts/sync-agent-plugin.mjs`, which copies it into `skills.js`; a
+  folder in `plugin/glitchless/skills` that isn't in it fails the sync. The triage skill's playtest steps say they
+  need `glitchless_playtest`, which only the server on this computer has.
+- **In Claude Code** (v2.1.331 or later, a direct connection to Anthropic) a server's skills show as
+  `/<server>:<skill>`: `/glitchless:triage` for a server added as `glitchless`, `/claude_ai_Glitchless:triage` for the
+  claude.ai connector. Its limits are 100 skills a server, 100 KB a text file and 400 KB a skill, and it loads no
+  skill with WebP files or anything under `dist/`; `packages/mcp/test/skills.test.js` lists and reads every skill
+  through the SDK's `SkillsClient` and checks them. Its skill listing has a budget (a share of the context window):
+  past it, descriptions are kept for the skills the person uses most, and the rest show by name only.
+- **Duplicates.** A plugin that carries the skills runs its server without them: the Claude Code plugin and the
+  DeepSeek Harness plugin run `glitchless-mcp --no-skills` (`glitchless-mcp serve --no-skills` too), and the hosted
+  server serves none at `/mcp?skills=off` (the OAuth resource is still `/mcp`). The plugin for Codex, Cursor and
+  Antigravity (`plugins/glitchless`) still points at `/mcp`: none of those apps is known to load skills from MCP
+  servers yet, and a new URL could make existing installs connect again. Someone in Claude Code with both the plugin
+  and the claude.ai connector sees both `/glitchless:triage` and `/claude_ai_Glitchless:triage`, which is fine.
+- **No news.** The skills never change while a server runs: it says `resources: { listChanged: false }`, as it does
+  for tools, so a client opens no stream to wait for changes.
+- **Never in the way.** If the SDK refuses a skill (the sync script runs the same strict check first), or a later SDK
+  loads or attaches catalogs differently, the server serves no skills, says why on stderr, and its tools work as
+  before. `glitchless-mcp` takes `@modelcontextprotocol/server` `~2.4.0`, since attaching an extension is still
+  experimental in the SDK.
+
+**Feedback to the Glitchless team.** `glitchless_feedback` is how an agent tells the people who make Glitchless about
+a bug, a dead end, something missing or an idea while it works: not players' bug reports (§2), which go to a game's
+developer. It's the one tool that belongs to no game's area. Its description and the server's instructions tell an
+agent to send one when a Glitchless tool answered an error it couldn't get around, a setup step didn't work in the
+game's engine, the person asked for something Glitchless can't do, or an answer misled it; to leave out secrets, keys,
+player data and the person's code beyond a few lines; and, at the end of its turn, to tell the person what it sent and
+the report's ID, and that they can write to support@glitchless.gg if they want an answer. It may send without asking
+first (the MCP server's one switch, `FEEDBACK_ASKS_FIRST`, makes every place say to ask first), and never once the
+person has said not to. The instructions say it last, in one sentence; the tool's description says it all again.
+
+| Field | What |
+| --- | --- |
+| `message` | What happened, or the idea, in plain words (required) |
+| `type` | `bug` (Glitchless did something wrong), `friction` (it worked, the long way round), `missing` (something Glitchless can't do) or `idea` (required) |
+| `impact` | `blocked` (the agent couldn't finish), `worked_around` (it finished another way) or `minor` (required) |
+| `tool` | The Glitchless tool or setup step it was on, one line, 100 characters at most |
+| `task`, `expected`, `actual` | What the person wanted, what the agent expected, what happened instead (an error as it came) |
+| `engine` | The game's engine, one line, 40 characters at most |
+| `app`, `mcp` | Sent by the MCP server, not the agent: the app as it named itself (`{ name, version }`; over HTTP before the 2026-07-28 protocol, its connection's name) and `{ version, transport }`, glitchless-mcp's version and `stdio` or `http` |
+
+- **Limits.** A report is at most 4,000 characters in all (every text field together), and a workspace sends at most
+  20 a day (UTC days; a report refused or not written takes none of them). Free text keeps its lines; control
+  characters go.
+- **Keys removed.** The MCP server replaces secrets with `[key removed]` before it makes a GitHub link or sends a
+  report, and Glitchless Cloud does again, in the text and in the app's labels, before it keeps one: Glitchless's own
+  keys (every `gl_…_` key but a game's public `gl_pub_` client token, even run into a name), Stripe's and RevenueCat's
+  `sk_`/`rk_` keys and Stripe's `whsec_` webhook secrets, Anthropic's `sk-ant-`, OpenAI's `sk-` and npm's `npm_`
+  tokens, AWS access key IDs and secret access keys (named as such, or standing alone: 40 characters with both cases
+  and a digit, `/` or `+`), GitHub's and Slack's tokens, Discord and Slack webhook addresses, JWTs, bearer tokens and
+  private keys.
+- **Signed in to a workspace** (any workspace key, whatever its scopes: a Viewer's agent can send too), the MCP server
+  posts it to `POST /v1/agent/feedback` and answers with its ID (`fb_` and 10 characters). Glitchless Cloud keeps it a
+  year with ids only: the account, the workspace and the key that sent it, never a name, an email address or the key's
+  name (a key's default name is its computer's), and whether it came through the hosted MCP server (its own requests
+  are marked in process, which no outside request can be). It counts it in Glitchless's own analytics as
+  `feedback_sent`, with its type, impact and the app's name only, never what it says. Nothing of a game goes with it:
+  no game, data, players or keys. Nothing is emailed: support reads the reports (below), and anyone who wants an
+  answer writes to support@glitchless.gg.
+- **Anywhere else** (the open-source server, a key for one game, a Glitchless server without the route, or a
+  workspace past today's 20), nothing is sent: the tool answers with a link to a new GitHub issue on
+  glitchless-gg/glitchless filled in with the report (its title the type and first line, the rest in the body, cut to
+  fit a 6,000-character address), for the person to read and submit, and says the issue is public. A signed-in agent
+  whose server refused the report is told the server doesn't take feedback, not to sign in.
+- **Kept** as `FEEDBACK#<YYYY-MM-DD> <createdAt>#<id>`, by the day it came, with its person's index
+  `USER#<userId> FEEDBACK#<id>` (`{ day, at }`, which closing their account follows, §6c), both expiring a year on;
+  and the workspace's count of the day as `WS#<ws> FEEDBACK#<YYYY-MM-DD>` (two days).
+- **Read by support** with Glitchless Cloud's feedback script: the last `--days` days (7 unless told), newest first,
+  `--type` and `--impact` to pick, `--json` for one per line. It reads a day's partition at a time, never the whole
+  table, and prints what the agent wrote, its type, impact, tool, task, expected, actual and engine, the app, hosted or
+  local, the day and the ID: never an id or a name of a person, workspace or key.
 
 **Connecting an app by URL** (`#/connect?request=…`, oauth.js) is one page and one button: where connecting goes back
 to, and what the app can do, every scope it asked for on (the person can turn any off: "Change what it can do"). An app
@@ -1856,6 +1968,45 @@ one that names another game is refused (403, "this key is for the game "Starlift
 another game never lands on the key's. Without the header the key reads its game as always. `/v1/agent/` reads no
 cookies and sends no CORS headers: it's for programs, not web pages. In the browser, the dashboard registers the same abilities as WebMCP tools
 (`document.modelContext`), acting as the signed-in person.
+
+**Tasks and questions over MCP** (protocol 2026-07-28). Two things an MCP client may say it handles, each on the
+request itself, in `_meta["io.modelcontextprotocol/clientCapabilities"]`. A client that doesn't say so gets exactly the
+answers it got before.
+
+- **Tasks** (the `io.modelcontextprotocol/tasks` extension), on stdio only. `glitchless-mcp` lists the extension in
+  `server/discover`'s `capabilities.extensions` (not in `initialize`'s, as an older client can't take a task); the
+  hosted server and `glitchless-mcp serve` don't, since a server per request can't keep work going after it answers. `glitchless_playtest` (game checks too) is the one tool that
+  runs as a task. Called with the extension in the call's capabilities, a call still running after 1.5 seconds answers
+  with `{ resultType: "task", taskId, status: "working", statusMessage, createdAt, lastUpdatedAt, ttlMs, pollIntervalMs:
+  2000 }` (the SDK adds an empty `content`), and the work goes on; one that ends sooner (an error at once) answers as
+  before. One run at a time in a project (the folder the server runs in), task or not: a second call while one runs
+  is refused at once, since two would fight over the GPU and both write `latest.json`. `tasks/get { taskId }` → the task (`resultType: "complete"`), `statusMessage` the run's latest step, and once
+  it's `completed` the tool's result in `result` (a tool error too, with `isError`). `tasks/cancel` → `{}`: the task is
+  `cancelled` at once and the run stops (the browser closes, the build and what it started are killed, Studio's play
+  test stops with its attributes back) and saves nothing; cancelling a finished task changes nothing. That takes
+  glitchless-playtest 0.5.0 or later beside the MCP server: with an older one the task says it asked the run to stop,
+  and the run plays to the end in the background and saves as usual. `tasks/update` → `{}` (no Glitchless
+  task asks for input). `ttlMs` runs to an hour after the work ended: a finished task is kept that long, in the
+  server's memory, so it's gone when the agent's session ends. A request whose capabilities don't name the extension
+  gets -32021 with `data.requiredCapabilities`; an unknown task -32602. The task ID is a random UUID. Cancelling the
+  call in its first 1.5 seconds, before it answered, stops the run too; a call that isn't a task runs to the end when
+  its client gives up on it, as before (a baseline is still saved). Claude Code 2.1.332 takes tasks in an
+  interactive session (it shows the playtest as a background MCP task and can stop it), and not when run headless
+  (`claude -p`).
+- **Questions for the person** (elicitation), stdio and hosted. A tool asks by answering `resultType:
+  "input_required"` with an `elicitation/create` in `inputRequests` and a `requestState`; the client asks the person
+  and calls again with `inputResponses` and the same `requestState`, so nothing is held between the two requests. On
+  an older stdio connection (`initialize`) the SDK sends the `elicitation/create` itself and calls the tool again. A
+  tool asks only a client that said so: `elicitation.url` for a page to open, `elicitation.form` (or a bare
+  `elicitation: {}`) for a form; on 2026-07-28 from the request's own capabilities, on an older stdio connection from
+  what it said connecting. Over HTTP an older client is never asked: no server there could take its answer. A
+  `requestState` that decides anything is sealed (HMAC-SHA256: on stdio with a secret of the process, over HTTP with a
+  key derived from the connection's workspace key, which the hosted server holds and its OAuth clients never see),
+  expires after 10 minutes and names what it's for; an answer with a missing, made-up, tampered, expired or
+  mismatched state, or one already acted on, is asked again. Two tools
+  ask: `glitchless_sign_in` opens the approve page (URL, above), and `glitchless_create_game`'s `delete` asks
+  "Delete <game> for good?" (a form, §6b). Claude Code shows both; run headless (`claude -p`) it closes every question
+  at once (`cancel`).
 
 ### 3h. Revenue: RevenueCat (Glitchless Cloud)
 
@@ -2614,6 +2765,166 @@ without the Manager role (the stand-in answers 404 and 403), whether `acquisitio
 `purchasePriceUSDAmount`, whether an MSI or EXE game or a GDK game packaged for the PC has any rows, and whether a game
 sold on Xbox consoles gets console rows at all.
 
+### 3n. Search for agents (Glitchless Cloud)
+
+An agent can search Glitchless's docs instead of reading `llms-full.txt` (about 285,000 tokens) or crawling pages:
+`GET https://www.glitchless.gg/.well-known/search?q=<query>` answers with the passages that match, in Markdown, each
+with its source address. It retrieves; it never writes an answer. The request and the answer follow Cloudflare's
+"Search for Agents" (announced 25 November 2026, `developers.cloudflare.com/ai-search/how-to/search-for-agents/`), so
+an agent written for that works here; where theirs is silent or differs, this section says what Glitchless does. No
+sign-in, no cookies. www.glitchless.gg's CloudFront sends the path to Glitchless Cloud, which serves it on every host
+(`https://api.glitchless.gg/.well-known/search` answers the same).
+
+**Asking.**
+
+| method | the query | notes |
+| --- | --- | --- |
+| `GET`, `HEAD` | `?q=` (URL-encoded); `&limit=` optional | the form to use, and the one the edge caches |
+| `POST` | the body: `text/plain` is the query as it is; `application/json` is `{"q": "…", "limit"?: n}`; any other body is the query itself, except a JSON object sent with no content type or curl's default `application/x-www-form-urlencoded`, which is read as JSON | at most 8 KB |
+| `QUERY` (RFC 10008) | as `POST` | **not served**: CloudFront refuses methods it doesn't know before they reach Glitchless, so send the same body with `POST` |
+| `OPTIONS` | | a CORS preflight: `204` |
+
+A query is whitespace-collapsed (newlines and control characters become spaces), loses Unicode's other invisible
+characters (category C: zero-width characters, bidi overrides, C1 controls), and is at most **200 characters**. The
+answer's first line echoes it with its `"` and `\` escaped (`\"`, `\\`), so it can't seem to end early.
+`limit` is how many passages to return, **5** by default and **10** at most; a number below 1 is 1, above 10 is 10,
+and anything else is 5. Cloudflare's takes only `q`; `limit` is Glitchless's.
+
+**The answer**, `200`, `Content-Type: text/markdown; charset=utf-8` (indented here, so this page's own search never
+reads it as an answer):
+
+    # Search results for: "How do I set up Glitchless in Godot?"
+
+    ## https://www.glitchless.gg/godot.html (score: 1.000)
+
+    # Glitchless for Godot
+    Section: Set it up, Built for working with a coding agent
+
+    ### Set it up
+
+    Paste one prompt into your coding agent. …
+
+    ---
+
+    ## https://github.com/glitchless-gg/glitchless/blob/main/plugin/glitchless/skills/instrument/references/godot.md (score: 0.964)
+
+    # Godot
+
+    …
+
+    ---
+
+- Each passage is `## <address> (score: <three decimals>)`, then `# <page title>`, then `Section: <heading path>` (its
+  headings, joined with ` > `) when it sits below the page's title, then the passage, then `---`. A passage that holds
+  several short sections names them with commas (`Set it up, Built for working with a coding agent`, or `A, B and 3
+  more`). Headings inside a passage start at `###`, so outside code blocks `#` and `##` lines are always the answer's
+  own; code blocks are kept as they are, fenced.
+- The **address** of a passage from a site page is the page's HTML address (`https://www.glitchless.gg/pricing.html`,
+  `/` for the home page), with no `#fragment`, since most of the site's headings have no id; its Markdown is the same
+  address with `.md`, or the HTML address asked for with `Accept: text/markdown`. A passage from the public repo is its
+  file on GitHub with the anchor of the heading it starts under (GitHub's own: lower case, punctuation dropped, spaces
+  to hyphens, `-1` on a repeat), or the file alone for a file short enough to be one passage.
+- **Scores** are relative to the best passage, which is `1.000`, as Cloudflare's are. At most two passages come from
+  one page, so the five cover more than one place.
+- **No match** (no word of the query is in any passage, or every word is too common to count: "the", "how", "do"…) is
+  a `200` whose body is the first line and `No results. Try other words, or start from
+  https://www.glitchless.gg/llms.txt, which lists every page.` Cloudflare's always returns passages (its vector search
+  finds something for anything); Glitchless's finds words.
+- `Cache-Control: public, max-age=3600`: the site's CloudFront keeps each query's answer for an hour, keyed on `q` and
+  `limit`. `Access-Control-Allow-Origin: *` on every answer. `X-Robots-Tag: noindex`.
+
+**Errors** are `text/plain; charset=utf-8` with `Cache-Control: no-store` and CORS open. Cloudflare's wording where it
+has one:
+
+| status | when | body |
+| --- | --- | --- |
+| `400` | no `q`, an empty one, or only spaces | `Missing query parameter: ?q=` |
+| `400` | an empty `POST` body | `POST requests require a request body` |
+| `400` | a JSON body that isn't an object with a string `q` (or isn't JSON) | `JSON body must be an object with a string "q" field` |
+| `400` | a body whose `q` is only spaces | `The query is empty` |
+| `400` | over 200 characters | `Query is too long: at most 200 characters.` |
+| `405` | any other method, with `Allow: GET, HEAD, POST` | `Only GET, HEAD, and POST are supported.` |
+| `413` | a body over 8 KB | `Request body is too large: send the query alone, at most 200 characters.` |
+| `429` | over the rate limit, with `Retry-After` (seconds) | `Too many searches from this address: try again in <n> seconds.` |
+| `503` | this server's first index is still being built (3 seconds passed), with `Retry-After`: the seconds left of the build's deadline | `Search isn't ready: the docs are still loading. Try again in a few seconds.` |
+| `503` | this server has no index yet because the site didn't answer, with `Retry-After`: when it tries again | `Search isn't ready: the docs couldn't be loaded. Try again shortly.` |
+
+`429` and `503` also send `Access-Control-Expose-Headers: Retry-After`, so a page can read it.
+
+**Rate limit.** 50 searches a second per address and server instance, in bursts of up to 100, counting at most 10,000
+addresses an instance (the least recently seen go first). The address is `CloudFront-Viewer-Address`, the one
+CloudFront saw, or the socket's without it. Through www.glitchless.gg that is www's CloudFront edge, not the agent:
+every agent coming through one edge shares a bucket. So it protects an instance from one client flooding it with
+searches that miss the cache, and is set high enough that at today's traffic one edge's agents don't run each other
+out; it is not a per-agent quota, and a determined client spread over many edges isn't stopped by it (the function's
+own rate limit and instance cap are what bound that).
+
+**What it searches.** `https://www.glitchless.gg/llms-full.txt`, which the site's build writes as the site's guides
+and then the public repo's READMEs, skills and spec, each part after a `---` line and `Source: <address>`; and every
+`https://www.glitchless.gg/*.md` page `llms.txt` lists that `llms-full.txt` leaves out (the how-to guides,
+comparisons, integrations, the blog, the privacy policy, terms and support), at most 200 of them. A server fetches them
+on its first search (never at start), as `Glitchless-Search/1.0`, keeps the index in memory, and fetches them again
+about hourly.
+
+- **Waiting.** The first search waits up to 3 seconds for the first index, then answers `503` while it finishes; the
+  searches after it wait the same. The search that starts an hourly refresh waits up to 2.5 seconds for it, then
+  answers from the old index while it finishes.
+- **Bounds.** A build ends within 10 seconds (8 a file): `llms-full.txt` must arrive by then; a page still out keeps
+  its last copy, or is left out. Only `text/plain` and `text/markdown` answers are taken, redirects are followed only
+  within www.glitchless.gg (3 at most), and sizes are counted as the bytes arrive, the rest never read: 16 MB for
+  `llms-full.txt`, 1 MB a page and 16 MB for the pages together. Building the index lets other requests in every 10
+  ms.
+- **Failures.** A refresh that fails, or comes back with under half the passages of the index answering (a broken
+  build of the site, an error page), keeps the last good index and is tried again 5 minutes later; a page or
+  `llms.txt` that fails keeps its last copy. A first build that fails is tried again at most every 15 seconds, with
+  `503` meanwhile. A build cut off by a frozen instance fails at its deadline when it thaws, and the next search after
+  the wait starts another. A site whose docs really halve reaches each instance as it starts fresh, since a first
+  build has nothing to be compared with.
+- **Left out.** The site's `.md` front matter (its `agent:` block, a skill's `name` and `description`, of which the
+  description is kept), lines that are only HTML tags, `---` rules outside code, and a site guide's "Sources" list.
+
+**Passages.** Each part is cut at its headings (a `#` line in a code block isn't one): a heading whose whole section
+fits in about **1,000 tokens** (4,000 characters; Cloudflare's default is 1,024) is one passage; a longer one gives its
+own text (cut between paragraphs, and a long code block between lines, fenced again in each piece) and then its
+subsections, with neighbouring short ones packed together up to the same size, the section's own short text leading
+the first of them. There's no overlap between passages. Code blocks are kept as they are, so a line inside one may
+start with `#` or be `---`: read an answer's passages by its `## … (score: …)` lines outside code.
+
+**Ranking** is BM25 over words (k1 1.2, b 0.75), in two fields: the passage's text, and its titles (the page's title
+and the headings it sits under), which count 1.5 times as much. Words are lower-cased, common English words left out,
+plurals, `-ing`, `-ed` and a final `e` taken off ("crashes" and "crashed" are "crash", "deleting" is "delete"), and
+version numbers kept whole (`5.8`, `4.5`). "Set up", "setting up", "setup" and "install" are one word, and so are
+"cost" and "price". Then the 50 best passages where two of the query's words stand next to each other ("custom
+event", "play sessions") rise by how often they do. There are no vectors (Cloudflare's is hybrid, keyword and vector):
+on 25 questions an agent might ask (setting up in Godot, Roblox lag, pricing for a jam, the MCP server's address,
+deleting a game…), the first passage answered 23; for adding a custom event with `track()` and setting up GameMaker,
+the first that answers came second and third. Each search takes under a millisecond, from an index built in about a
+tenth of a second.
+
+**Privacy.** The search logs no query text: the server's request log keeps the route without `q`, and a failure to
+load the docs says what failed, never a query. The caller's address is used for the rate limit and not kept.
+www.glitchless.gg's CloudFront access logs record each request's query string, as they do for every page.
+
+**Telling agents** (www.glitchless.gg, as Cloudflare documents it): in each page's `<head>`,
+
+```html
+<meta name="agent:instructions" content="Search the Glitchless docs (the site's guides, the SDK and engine READMEs, the agent skills and the spec) with keywords or a question at the endpoint below instead of crawling pages. Results are the matching passages in Markdown, each with its source address." />
+<meta name="agent:endpoint" content="https://www.glitchless.gg/.well-known/search?q={query}" />
+<meta name="agent:method" content="GET" />
+<meta name="agent:documentation" content="https://github.com/glitchless-gg/glitchless/blob/main/docs/SPEC.md#3n-search-for-agents-glitchless-cloud" />
+```
+
+and the same four under `agent:` in the front matter of each page's Markdown answer (indented here, so its `---` lines
+never reach a passage of this page):
+
+    ---
+    agent:
+      instructions: "Search the Glitchless docs (the site's guides, the SDK and engine READMEs, the agent skills and the spec) with keywords or a question at the endpoint below instead of crawling pages. Results are the matching passages in Markdown, each with its source address."
+      endpoint: "https://www.glitchless.gg/.well-known/search?q={query}"
+      method: "GET"
+      documentation: "https://github.com/glitchless-gg/glitchless/blob/main/docs/SPEC.md#3n-search-for-agents-glitchless-cloud"
+    ---
+
 
 ## 4. Derived concepts
 
@@ -3149,6 +3460,12 @@ line is a crashed run, kept with its last 15 lines of output; a build that quits
 `error`, stops the playtest with what to change; so does a build that starts no level in any run with the default
 scenarios (no autoplay mode).
 
+A playtest or a game check stops part-way when its `signal` (an AbortSignal) fires: the browser closes, the build is
+killed with everything it started, a launcher's children too (SIGTERM, then SIGKILL after 5 s, to every
+descendant; `taskkill /T /F` on Windows), or Studio's play test stops and its attributes go back, nothing is saved (no
+run file; a game check makes no report, dashboard, banner or share link), and it ends with the signal's reason. The
+MCP tool's task (§3g) passes it, so cancelling the task stops the run.
+
 The run's summary has the shape `GET /v1/query/playtest` answers for a web run's sessions, made from the lines instead: per-frame numbers averaged
 over the runs by frames, `hitches_per_min` over the seconds measured, `errors_per_session`, `crashes`, `errors`
 matched across builds by kind, message with digits as `#` and location without line numbers, `memory_growth` (each
@@ -3436,6 +3753,18 @@ An Owner or Admin deletes a game in Settings → Game after typing its name agai
 is an Owner or Admin). It can't be undone. It's gone from Glitchless within the hour; backups, including old copies of
 its files, keep it up to 35 more days.
 
+An agent whose client can show a form (elicitation, §3g) asks the person too, before anything goes: "Delete <game> for
+good?", with what goes, and a box to tick, "Yes, delete <game> and all its data" (`{ delete: boolean }`, unticked). Only
+an accepted form with the box ticked deletes; a no, an unticked form or a closed question deletes nothing, and the
+tool says which. It's asked every time the client can show forms, unless the key is known not to have `delete_games`
+(Glitchless refuses that at once): a wrong name, or one two games share, is asked about and then refused by Glitchless.
+The game's name in it comes from a fresh read of the workspace's games. The question's `requestState` is sealed (§3g)
+for this game and the name as Glitchless compares it (any case, runs of spaces as one), and an answer counts once,
+within 10 minutes. It's a step on top of
+`delete_games`, never in its place. A client that answers every question with `cancel` (Claude Code run headless)
+can't delete a game this way: the answer says nothing was deleted and tells the agent to send the person to Settings →
+Game, linked (`<the game's dashboard>#/settings?tab=game`) on Glitchless Cloud, where they delete it themselves.
+
 | Route | What |
 | --- | --- |
 | `DELETE /api/projects/{p}` | `{name}`, the game's name again (any case, spaces as typed) → `{deleted: {id, name}, done, me}`: `done` when everything was gone before the answer, `me` as `/api/me` answers it, on another game. 400 `CONFIRM_NAME` when the name is missing or another game's (the answer never says the game's name), 403 `FORBIDDEN` for a Developer or Viewer, 404 for a game the person can't reach or that is being deleted, 409 `CHANGED` when it was claimed or changed at that moment |
@@ -3523,7 +3852,9 @@ stops the close there with 409 `CHANGED`.
    Stripe customer's lookup and its place in the paid index; its profile and the person's membership last, together,
    on the condition that no one joined meanwhile (an invitation made after the lock), so a team that gained a member
    keeps its Owner;
-7. a jam survey answer of theirs, which keeps their email when they said yes to being emailed about it;
+7. a jam survey answer of theirs, which keeps their email when they said yes to being emailed about it, and the
+   feedback their agents sent the Glitchless team (§3g): each report, found by its index under their user, then the
+   index, before their sign-in goes (a close that runs out of time here leaves them signed in to run it again);
 8. their queued emails, the token behind product news's unsubscribe link, their promo-code tries, every session (each
    is listed per person when it starts), their user at Auth0 (Cognito signs in through it, and it keeps the Google,
    GitHub or password sign-in's email, name and account ID), then their user in Cognito, their sign-in identity,
@@ -3557,7 +3888,8 @@ an invitation the team sent them, with the name the team saw on them. What can't
 by itself: their apps' OAuth tokens and codes (dead at once, gone within 30 days), sessions from before sessions were
 listed per person (refused at once, gone within 30 days), the game delete's own tombstones and billing's per-session
 marks (§6b). Support's run reads the whole table and removes those it finds, and anything else naming them is listed
-for a person to decide on. Backups: the control table's point-in-time recovery, the lake's and its bucket's old file
+for a person to decide on; a feedback report someone else's agent sent from a workspace that went is that person's, and
+neither. Backups: the control table's point-in-time recovery, the lake's and its bucket's old file
 versions keep a copy up to 35 days (§6b).
 
 **Never an agent's.** No workspace key, OAuth connection or MCP tool reaches it, and the dashboard registers no WebMCP

@@ -22,11 +22,39 @@ async function call(url, p, body) {
   return data;
 }
 
-// → { verification_url, user_code, wait() }: wait() resolves with the saved credentials, or rejects when the
-// person turns it down or the code expires.
+// Whether page, the approve page a server named, is that server's own: https on its host or its site (the API at
+// api.glitchless.gg, the page at app.glitchless.gg), or http on this computer for a server on this computer. Nothing
+// else is shown or opened, so a server can't send the person to a page of anyone else's.
+const LOOPBACK = (h) => h === 'localhost' || h.endsWith('.localhost') || h === '[::1]' || /^127\./.test(h);
+export function ownPage(api, page) {
+  let a;
+  let p;
+  try {
+    a = new URL(api);
+    p = new URL(page);
+  } catch {
+    return false;
+  }
+  if (p.username || p.password) return false;
+  if (p.protocol === 'http:') return LOOPBACK(p.hostname) && LOOPBACK(a.hostname);
+  if (p.protocol !== 'https:') return false;
+  const host = a.hostname;
+  const site = host.split('.').slice(1).join('.');
+  return p.hostname === host || p.hostname.endsWith(`.${host}`) || (site.includes('.') && (p.hostname === site || p.hostname.endsWith(`.${site}`)));
+}
+
+// How long a code lasts, in words: "10 minutes".
+export const lasts = (seconds) => {
+  const m = Math.round(seconds / 60);
+  return m >= 1 ? `${m} minute${m === 1 ? '' : 's'}` : `${Math.max(1, Math.round(seconds))} seconds`;
+};
+
+// → { verification_url, user_code, expires_in, wait() }: wait() resolves with the saved credentials, or rejects when
+// the person turns it down or the code expires. Throws when the server's approve page isn't its own (ownPage).
 export async function startSignIn({ url = CLOUD_URL, client = `glitchless-mcp on ${os.hostname()}` } = {}) {
   url = url.replace(/\/$/, '');
   const start = await call(url, '/connect', { client });
+  if (!ownPage(url, start.verification_url)) throw new Error(`${url} answered with an approve page on another site (${String(start.verification_url).slice(0, 120)}), so it wasn't shown or opened. Sign in only to a Glitchless server you trust, with its own address as url.`);
   const deadline = Date.now() + start.expires_in * 1000;
   let interval = (start.interval || 2) * 1000;
   async function wait() {
@@ -40,7 +68,7 @@ export async function startSignIn({ url = CLOUD_URL, client = `glitchless-mcp on
     }
     throw new Error('The sign-in code expired before it was approved. Start again.');
   }
-  return { verification_url: start.verification_url, user_code: start.user_code, wait };
+  return { verification_url: start.verification_url, user_code: start.user_code, expires_in: start.expires_in, wait };
 }
 
 export function saveCredentials(c) {

@@ -6,10 +6,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, CLIENT_CAPABILITIES_META_KEY } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { serveSkills } from './served-skills.js';
+import { TASKS, declaresTasks, runAsTask, serveTasks } from './tasks.js';
 
-export const VERSION = '0.22.0';
+export const VERSION = '0.23.0';
 
 // Where `glitchless-mcp login` keeps its workspace key: { url, token, workspace: { id, name }, scopes }.
 export const CREDENTIALS_FILE = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'glitchless', 'credentials.json');
@@ -92,6 +94,14 @@ export const workspaceIntake = () => conn().games?.intake ?? null;
 // for a connection without glitchless_create_game, which hands over the steps for the game's engine itself.
 export const SETUP_URL = 'https://raw.githubusercontent.com/glitchless-gg/glitchless/main/docs/agent-setup-prompt.md';
 
+// Whether an agent asks the person before it sends the Glitchless team feedback (glitchless_feedback). Off, as
+// Cloudflare's agent feedback is: the agent sends, tells the person what it sent at the end of its turn, and never
+// sends once they've said not to. The tool's description and the server's instructions both take the sentence from
+// here; the skills and the setup prompt only name the tool, so asking first is this one line.
+export const FEEDBACK_ASKS_FIRST = false;
+export const feedbackConsent = () =>
+  FEEDBACK_ASKS_FIRST ? 'Ask the person before sending each one, showing what you would send.' : 'You may send one without asking first, but never once the person has said not to.';
+
 // Whether this call's connection shows the tools that need the manage scope (over HTTP, by the scopes the person gave
 // it; on stdio every tool shows).
 export const canManage = () => {
@@ -133,11 +143,19 @@ export function forgetGame(id) {
   if (c.game === id) c.game = null;
 }
 
+// The app this call comes from, as it named itself connecting (MCP's clientInfo): { name, version }. A server over
+// HTTP is made anew for each request, so a client that said it only when it connected (before the 2026-07-28 protocol)
+// is named by its connection instead (the hosted server's: the OAuth client's name), with no version.
+export const clientApp = () => {
+  const info = calls.getStore()?.server?.server.getClientVersion?.();
+  return { name: info?.name || conn().client || null, version: info?.name ? info.version || null : null };
+};
+
 // A workspace key names the game in x-glitchless-project. A key for one game sends the game a call names (or
 // GLITCHLESS_GAME) as x-glitchless-game, so Glitchless Cloud refuses it when it isn't the key's game instead of
 // answering, or writing, for the key's own game.
 async function headers(extra = {}) {
-  const client = conn().client || calls.getStore()?.server?.server.getClientVersion?.()?.name || 'mcp';
+  const client = conn().client || clientApp().name || 'mcp';
   const named = !isWorkspace() && (calls.getStore()?.game || conn().game);
   return { 'x-glitchless-client': client, ...(apiKey() ? { 'x-glitchless-api-key': apiKey() } : {}), ...(isWorkspace() ? { 'x-glitchless-project': await projectFor(calls.getStore()?.game) } : {}), ...(named ? { 'x-glitchless-game': encodeURIComponent(named) } : {}), ...extra };
 }
@@ -211,8 +229,43 @@ export async function query(name, params = {}) {
 }
 
 // The tool call being answered: the game it names, the server answering it, the scopes its connection shows tools for
-// (over HTTP), and the meta of its last query, for windowNote().
+// (over HTTP), the meta of its last query, for windowNote(), and its task when it runs as one (tasks.js).
 const calls = new AsyncLocalStorage();
+
+// How a tool that takes a while says what it's doing, and hears that it should stop. log(message) is a progress
+// notification on the call when its client gave a progressToken, or the task's statusMessage when the call runs as a
+// task. signal, only when the call runs as a task, fires when the client cancels the task (or the call, before it
+// answered). A call that isn't a task keeps running when its client gives up on it, as it always has: a client whose
+// tool timeout cancels a long playtest still gets its baseline saved.
+//
+// cantStop() says the work ignores signal (an older glitchless-playtest), so a cancelled task says so instead of
+// claiming the run stopped.
+export function callProgress(ctx) {
+  const task = calls.getStore()?.task;
+  if (task) return { log: task.update, signal: task.signal, cantStop: task.cantStop };
+  const token = ctx?.mcpReq?._meta?.progressToken;
+  let step = 0;
+  const log = (message) => {
+    if (token != null) ctx.mcpReq.notify({ method: 'notifications/progress', params: { progressToken: token, progress: ++step, message } }).catch(() => {});
+  };
+  return { log, signal: undefined, cantStop: () => {} };
+}
+
+// Whether this call's client can ask the person something while the call runs (MCP elicitation): mode 'form', fields
+// to fill in, or 'url', a page to open. A tool asks by returning inputRequired(…): a client on the 2026-07-28 protocol
+// asks the person and calls again with the answer, and on an older connection the SDK sends the question itself and
+// calls the tool again. It's read where the SDK reads it: the request's own capabilities on 2026-07-28, else what the
+// client said when it connected. A server over HTTP never hears that (each request gets a server of its own, which
+// couldn't take the answer either), so an older client is never asked there. A bare elicitation: {} is form only.
+export function canElicit(ctx, mode = 'form') {
+  const call = calls.getStore();
+  const s = call?.server?.server;
+  const modern = String(s?.getNegotiatedProtocolVersion?.() ?? '') >= '2026-07-28';
+  const caps = modern ? ctx?.mcpReq?.envelope?.[CLIENT_CAPABILITIES_META_KEY] : call?.remote ? undefined : s?.getClientCapabilities?.();
+  const e = caps?.elicitation;
+  if (!e || typeof e !== 'object') return false;
+  return mode === 'url' ? e.url !== undefined : e.form !== undefined || e.url === undefined;
+}
 
 // How the window was answered, when an agent should know: by day past 31 days, what is estimated, what a
 // view covers, a range cut to the plan's retention.
@@ -310,16 +363,17 @@ export function filters({ version, steam_branch, env, session_type, props } = {}
 }
 
 // ── the tools ─────────────────────────────────────────────────────
-// Every tool as its file defined it: { name, config, handler, scope, local }. Over HTTP a tool shows only to a
+// Every tool as its file defined it: { name, config, handler, scope, local, task }. Over HTTP a tool shows only to a
 // connection whose scopes include its `scope` (read, dashboard or manage, as a workspace key's), and `local` tools
-// (signing in, playtests, the Steam Deck) are left out: they act on the computer the server runs on.
+// (signing in, playtests, the Steam Deck) are left out: they act on the computer the server runs on. A `task` tool
+// takes minutes, and runs as a task for a client that takes them (tasks.js): on stdio only.
 const tools = [];
 
 // The annotations a read gets: it changes nothing and reads only the person's own Glitchless data.
 const READS = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
-export function define(name, config, handler, { scope = 'read', local = false } = {}) {
-  tools.push({ name, config: { ...config, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...config.annotations } }, handler, scope, local });
+export function define(name, config, handler, { scope = 'read', local = false, task = false } = {}) {
+  tools.push({ name, config: { ...config, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false, ...config.annotations } }, handler, scope, local, task });
 }
 
 // A read-only tool.
@@ -339,7 +393,9 @@ const titleOf = (t) => t.config.title ?? `${t.name.replace(/^glitchless_/, '').r
 const gameField = z.string().optional().describe('The game, by name or id, when signed in to a workspace (glitchless_list_games lists them); later calls keep it. With a key for one game (gl_sk_…), a call that names another game is refused: sign in to the workspace to reach every game.');
 
 // A server with the tools. remote: the HTTP server's set (no local tools, and instructions to match); scopes: show
-// only the tools these scopes allow; connection: what every call runs with (default: this process's own).
+// only the tools these scopes allow; connection: what every call runs with (default: this process's own); skills:
+// serve the skills over MCP (served-skills.js), which the Claude Code plugin's own copy turns off, since the plugin
+// carries them itself.
 //
 // The tools are all there before the server connects and never change while it runs, so it says it sends no
 // tool-list changes (McpServer would say it does). A client that is promised them opens a subscriptions/listen
@@ -347,53 +403,75 @@ const gameField = z.string().optional().describe('The game, by name or id, when 
 // there are none, a client doesn't listen, and one that listens anyway is acknowledged with nothing and closed at
 // once. Every tools/list answer is marked stale straight away (ttlMs 0), so a client that asks again gets the
 // current list; one that stays connected through a release keeps the list it loaded until it reconnects.
-export function createServer({ remote = false, scopes = null, connection: c = null } = {}) {
+//
+// On stdio it also serves tasks (tasks.js), and says so in server/discover's capabilities: a `task` tool called by a
+// client that takes tasks answers with one, and tasks/get, tasks/cancel and tasks/update answer for it. Over HTTP there
+// are none.
+export function createServer({ remote = false, scopes = null, connection: c = null, skills = true } = {}) {
   const server = new McpServer(
     { name: 'glitchless', title: 'Glitchless', version: VERSION, websiteUrl: 'https://www.glitchless.gg', icons: [{ src: 'https://app.glitchless.gg/brand/glitchless-icon-512.png', mimeType: 'image/png', sizes: ['512x512'] }] },
-    { instructions: instructions(remote, !scopes || scopes.includes('manage')), capabilities: { tools: { listChanged: false } } },
+    { instructions: instructions(remote, scopes), capabilities: { tools: { listChanged: false }, ...(remote ? {} : { extensions: { [TASKS]: {} } }) } },
   );
+  if (skills) serveSkills(server, { remote, scopes });
   for (const t of tools) {
     if ((remote && t.local) || (scopes && !scopes.includes(t.scope))) continue;
     const { inputSchema = {}, ...config } = t.config;
     server.registerTool(t.name, { ...config, title: titleOf(t), inputSchema: z.object({ game: gameField, ...inputSchema }) }, (args = {}, ctx) => {
-      const run = () =>
-        calls.run({ game: args.game, server, remote, scopes, startedAt: Date.now() }, async () => {
+      const call = { game: args.game, server, remote, scopes, startedAt: Date.now() };
+      const handle = () =>
+        calls.run(call, async () => {
           try {
             return await t.handler(args, ctx);
           } catch (err) {
             return fail(err);
           }
         });
+      // A tool that takes minutes, for a client that said on this call it takes tasks: the task, at once.
+      const run = t.task && !remote && declaresTasks(ctx, server.server) ? () => runAsTask((task) => ((call.task = task), handle()), { signal: ctx.mcpReq.signal }) : handle;
       return c ? connections.run(c, run) : run();
     });
+  }
+  if (!remote) {
+    serveTasks(server.server);
+    // Only a 2026-07-28 connection can take a task, so initialize's answer (an older client) leaves the extension out;
+    // server/discover lists it. Other extensions stay as they are.
+    const capabilities = server.server.getCapabilities.bind(server.server);
+    server.server.getCapabilities = () => {
+      const caps = capabilities();
+      if (!caps.extensions?.[TASKS] || String(server.server.getNegotiatedProtocolVersion?.() ?? '') >= '2026-07-28') return caps;
+      const { extensions, ...rest } = caps;
+      const { [TASKS]: _tasks, ...others } = extensions;
+      return Object.keys(others).length ? { ...rest, extensions: others } : rest;
+    };
   }
   return server;
 }
 
-// manage: whether the connection shows glitchless_create_game, which hands over the steps that add Glitchless to a game.
-function instructions(remote, manage = true) {
+// The server's instructions, which an agent reads before any tool. Claude Code keeps 4,096 characters of them (2,048
+// before v2.1.296), and with tool search they and the tools' names are all it loads upfront: so they say what
+// Glitchless is, which tool starts each kind of task and when to reach for the tools, most important first, in under
+// 2,048 characters for every connection (test/instructions.test.js). The rest is in each tool's own description and in
+// the skills (served-skills.js). They name only tools the connection has: scopes as createServer's.
+function instructions(remote, scopes = null) {
+  const can = (scope) => !scopes || scopes.includes(scope);
   return [
-    'Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, Roblox, Phaser, Babylon.js, PlayCanvas or GameMaker.',
-    manage
-      ? "To add Glitchless to a game (the person asks you to set it up, or for performance monitoring, analytics or telemetry in their game), call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files: what you find in the game's folder. It makes the game, or finds the one already here by that name, and returns that engine's steps with where the game sends and its client token in them."
+    "Glitchless is observability for games made with Unity, Godot, Unreal, Three.js, GameMaker, Roblox, Phaser, Babylon.js or PlayCanvas: what players run into (stutters, crashes, errors, where they quit), the game's own metrics, multiplayer, store reviews and revenue. Use these tools when the person asks to set up Glitchless, analytics or telemetry in a game, or about its players, performance, crashes, metrics or dashboard.",
+    can('manage')
+      ? "To add Glitchless to a game, call glitchless_create_game first, before changing the game's code, with the game's name and its engine, or files: what you find in the game's folder. It returns that engine's steps."
       : `To add Glitchless to a game, follow the setup steps at ${SETUP_URL}: this connection may only read, so the person makes the game in Glitchless, and glitchless_list_games then has its client token.`,
     remote
-      ? "You're connected to the person's Glitchless workspace: glitchless_list_games lists every game (and says what to do when there is none, or a game has no data yet), glitchless_create_game makes one and hands back its client token (demo: true makes the demo game, Zoomies with a week of sample play, to try every tool on before a real game sends data), every tool takes game (by name), and glitchless_share_links makes a read-only link to a board. If a game hasn't sent data yet, say so first and give the person its next step (glitchless_list_games has it) before answering anything else."
-      : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace (they approve a code in the browser): then glitchless_list_games lists every game, glitchless_create_game makes one and hands back its client token, every tool takes game (by name), and glitchless_share_links makes a read-only link to a board.",
-    'Start with glitchless_triage for a game\'s headline numbers and ranked, evidence-backed findings, then drill in with glitchless_performance, glitchless_get_error, glitchless_player_funnel (levels, and with hotspots where players die on one) or glitchless_session.',
-    'When players or playtesters send bug reports from inside the game (an F8 form or a button), glitchless_bug_reports lists them with what they wrote, the level and where they stood, and opens one with its screenshot.',
-    'For metrics the game defines itself (what it sends with track() and count(): plays, purchases, paywall views, kills and gold, and so on) and funnels between them, use glitchless_events; it also lists the session properties the game sets (rank, class, region), which every read tool takes as props.',
-    'For a multiplayer game, glitchless_network gives ping, packet loss and disconnects by level, region, platform, kind of connection and version; glitchless_match lists matches or opens one from every side, telling a whole lobby lagging (the server) from one player lagging (their connection); and glitchless_servers reads the game\'s dedicated servers (tick time against its budget by players connected, crashes that ended matches, memory that climbs).',
-    'For a game connected to a store (Steam, Google Play, the App Store, Roblox, itch.io), glitchless_store reads what players wrote there by build, with the hardware and Steam Deck playtime reviewers show, next to what Glitchless measured on that build, with show "vitals" what the store itself measured (slow rendering, crashes, ANRs, hangs; on Roblox, crash rate and frame rate by place version and platform, and its retention) next to Glitchless, version by version, and with show "sales" what it counted by day (Steam\'s units, returns and wishlists; itch.io\'s page views, downloads and purchases, next to the browser plays Glitchless measured on itch.io).',
-    "For a game connected to RevenueCat or to its own Stripe account, glitchless_revenue reads its real revenue by day, version and country (RevenueCat: production purchases only, by store too, installs and active users; Stripe: refunds, fees, net, new paying customers and revenue by product), next to the sessions, players and new players Glitchless measured and what the game's own purchase events add up to. For a Roblox game connected to Roblox, it reads the Robux it earned (and what they'd be worth through DevEx), its daily active and new users and its D1, D7 and D30 retention, which the anonymous Roblox SDK can't count. For a game connected to its itch.io page with an API key, it reads its earnings there by day.",
-    "Each game has its own dashboard, a list of pages (boards of panels, and built-in views such as Errors, Sessions and Live Tail): read it with glitchless_dashboard, and after instrumenting a game, design one that fits it with glitchless_set_dashboard.",
-    ...(remote
-      ? ['After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.']
-      : [
-          'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run glitchless_playtest again to compare, and treat a FAIL as unfinished work. It plays a web game in Chrome, runs a Unity, Godot, Unreal or GameMaker build from its command (command, e.g. ["godot", "--path", "."]) with the game\'s autoplay flags, or plays a Roblox game (engine "roblox") in the open Roblox Studio, which needs Studio\'s MCP server on. With check_url it runs a game check: bots play any web game someone posted (an itch.io page, github.io, Vercel), with nothing installed in it, and make a report, a dashboard and a share link to send its maker. After shipping a fix (bump the version passed to Glitchless.init), use glitchless_compare_versions to confirm it with real players.',
-          'If the game is running in a browser with WebMCP connected, its live tools (glitchless_live_performance, glitchless_measure, glitchless_inspect_scene, and game tools such as zoomies_load_level) let you reproduce and measure issues directly. Unity, Godot, Unreal and GameMaker builds measure themselves when run with --glitchless-measure=SECONDS (-glitchless-measure in Unreal and GameMaker); in the Unreal editor, Unreal MCP with the Glitchless Toolset has a Measure tool.',
-        ]),
-  ].join(' ');
+      ? "You're connected to the person's workspace: glitchless_list_games lists its games, and every tool takes game (by name). If a game hasn't sent data yet, say so first and give the person its next_step before answering anything else."
+      : "On Glitchless Cloud, glitchless_sign_in connects you to the person's whole workspace.",
+    "To read a game, start with glitchless_triage (headline numbers and ranked findings), then drill in: glitchless_performance, glitchless_get_error, glitchless_player_funnel (levels), glitchless_session, glitchless_bug_reports (players' own reports) and glitchless_events (the game's own metrics).",
+    `Multiplayer: glitchless_network, glitchless_match and glitchless_servers. Store reviews, vitals and sales: glitchless_store. Revenue: glitchless_revenue. The game's dashboard: glitchless_dashboard${can('dashboard') ? ', and after instrumenting a game, design one that fits it with glitchless_set_dashboard' : ''}.${can('manage') ? ' A read-only link to a board: glitchless_share_links.' : ''}`,
+    remote ? '' : 'Before changing game code, run glitchless_playtest with save_as "baseline"; after the change, run it again and treat a FAIL as unfinished work.',
+    'After shipping a fix, glitchless_compare_versions confirms it with real players.',
+    // Last, as the one thing an agent does for the Glitchless team rather than the person: the tool's own description
+    // says it all again.
+    `When a Glitchless tool fails in a way you can't get around, a setup step doesn't work, or the person asks for something Glitchless can't do, tell the Glitchless team with glitchless_feedback. ${feedbackConsent()} At the end of your turn, tell the person what you sent and the ID it gave.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 // An issue in a list: with `resolved` or `came_back` when the game's owner resolved it (glitchless_resolve_error).

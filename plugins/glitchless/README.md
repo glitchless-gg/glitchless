@@ -6,7 +6,7 @@ in through the browser and pick what the agent may do), and adds three skills:
 
 | Skill | What it does |
 | --- | --- |
-| `instrument` | Adds Glitchless to a game in any of the eight engines: the SDK, levels, events, bots, privacy settings |
+| `instrument` | Adds Glitchless to a game in any of the nine engines: the SDK, levels, events, bots, privacy settings |
 | `dashboard` | Works out what you want to know about your game, adds what's needed to measure it, and designs its dashboard |
 | `triage` | Finds the problem that hits the most players, fixes it, and checks the fix with the next version |
 

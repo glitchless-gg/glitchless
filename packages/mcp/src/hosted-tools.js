@@ -8,3 +8,4 @@ import './tools/store-reviews.js';
 import './tools/revenue.js';
 import './tools/multiplayer.js';
 import './tools/workspace.js';
+import './tools/feedback.js';

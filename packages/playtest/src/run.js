@@ -7,6 +7,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { onStop, stopped, checkStop, pause } from './stop.js';
 
 // Real GPU (Metal via ANGLE on macOS) and no background throttling, same as scripts/bots.js.
 export const CHROME_ARGS = ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
@@ -29,7 +30,8 @@ export async function loadPlaywright(cwd = process.cwd()) {
   }
 }
 
-export async function runScenarios(cfg, { scenarios = cfg.scenarios, game = cfg.game, log = () => {} } = {}) {
+// signal stops it part-way: the browser closes, and the run ends with the signal's reason.
+export async function runScenarios(cfg, { scenarios = cfg.scenarios, game = cfg.game, log = () => {}, signal } = {}) {
   const { chromium } = await loadPlaywright();
   const channel = cfg.channel === 'chromium' ? undefined : cfg.channel;
   const browser = await chromium.launch({ headless: !cfg.headed, channel, args: CHROME_ARGS }).catch(async (err) => {
@@ -40,8 +42,10 @@ export async function runScenarios(cfg, { scenarios = cfg.scenarios, game = cfg.
   const started = Date.now();
   const results = [];
   let service = cfg.service;
+  const forget = onStop(signal, () => browser.close().catch(() => {}));
   try {
     for (const [i, sc] of scenarios.entries()) {
+      checkStop(signal);
       const qs = new URLSearchParams({ mute: '1', env: cfg.env, intake: cfg.server.replace(/\/$/, ''), ...Object.fromEntries(Object.entries(sc.params || {}).map(([k, v]) => [k, String(v)])) });
       const url = `${game}${game.includes('?') ? '&' : '?'}${qs}`;
       const ctx = await browser.newContext({ viewport: cfg.viewport });
@@ -77,21 +81,26 @@ export async function runScenarios(cfg, { scenarios = cfg.scenarios, game = cfg.
       results.push({ scenario: sc.name || null, params: sc.params, session_id: info.session, game_version: info.version, seconds, finished, events_failed: info.failed || 0 });
       log(`  → ${info.session} · ${seconds}s${finished ? '' : ' (hit the time cap)'}${info.failed ? ` · ${info.failed} events failed to send` : ''}`);
     }
+  } catch (err) {
+    throw stopped(signal, err);
   } finally {
+    forget();
     await browser.close();
   }
+  checkStop(signal);
   return { started, service, results };
 }
 
 // The SDK sends on a timer and on pagehide, so give the server a moment to have every session.
-export async function fetchSummary(cfg, service, sessionIds, started, { log = () => {}, timeoutMs = 20_000 } = {}) {
+export async function fetchSummary(cfg, service, sessionIds, started, { log = () => {}, timeoutMs = 20_000, signal } = {}) {
   const base = cfg.server.replace(/\/$/, '');
   const qs = new URLSearchParams({ service, sessions: sessionIds.join(','), from: String(started - 60_000), to: String(Date.now() + 60_000) });
   const headers = { 'x-glitchless-client': 'playtest', ...(cfg.api_key ? { 'x-glitchless-api-key': cfg.api_key } : {}) };
   const deadline = Date.now() + timeoutMs;
   let last;
   while (true) {
-    const res = await fetch(`${base}/v1/query/playtest?${qs}`, { headers });
+    checkStop(signal);
+    const res = await fetch(`${base}/v1/query/playtest?${qs}`, { headers, signal });
     if (!res.ok) throw new Error(`Glitchless server ${base} answered HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const body = await res.json();
     if (body.error) throw new Error(`Glitchless server: ${body.error}`);
@@ -102,7 +111,7 @@ export async function fetchSummary(cfg, service, sessionIds, started, { log = ()
       log(`  ${sessionIds.filter((id) => !seen.has(id)).length} session(s) never reported an end; using what arrived.`);
       return last;
     }
-    await new Promise((r) => setTimeout(r, 1500));
+    await pause(1500, signal);
   }
 }
 
@@ -122,12 +131,12 @@ export function machineInfo(summary, channel) {
 }
 
 // Play every scenario and return a run record ready to save or compare.
-export async function playtestRun(cfg, { game = cfg.game, scenarios = cfg.scenarios, log = () => {} } = {}) {
-  const { started, service, results } = await runScenarios(cfg, { game, scenarios, log });
+export async function playtestRun(cfg, { game = cfg.game, scenarios = cfg.scenarios, log = () => {}, signal } = {}) {
+  const { started, service, results } = await runScenarios(cfg, { game, scenarios, log, signal });
   if (!service) throw new Error('Could not tell which game this is. Pass --service or set "service" in glitchless.playtest.json.');
   const ids = results.map((r) => r.session_id).filter(Boolean);
   log(`collecting results for ${ids.length} session(s) from ${cfg.server} …`);
-  const summary = await fetchSummary(cfg, service, ids, started, { log });
+  const summary = await fetchSummary(cfg, service, ids, started, { log, signal });
   return {
     created: new Date().toISOString(),
     game,

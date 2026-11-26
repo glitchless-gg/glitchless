@@ -12,7 +12,7 @@ Game observability for Unreal Engine 5.8 and the 5.9 MegaJam Preview (and 5.7). 
 - **Anonymous by default.** No player ID, no device identifier, coarse device facts only. [PRIVACY.md](PRIVACY.md) lists every field in each of the three modes.
 - **The player's off switch.** One call for a "Share performance data" toggle in the game's settings: off sends nothing more, from that moment and in every later launch, until the player turns it back on.
 
-It sends the same events as the browser, Unity and Godot SDKs, so the dashboard, the findings and the MCP tools work with an Unreal game as they are.
+It sends the same events as the Unity, Godot and browser SDKs, so the dashboard, the findings and the MCP tools work with an Unreal game as they are.
 
 ## Install
 
@@ -197,7 +197,7 @@ new:
   plugin itself is unaffected.
 - **Web builds (WebAssembly and WebGPU) report too.** Unreal's HTTP is switched off on the web (`bUseNullHttp` in the
   engine's `BaseWasmEngine.ini`), so the plugin sends by the page's own `fetch`. A web player is their browser, as in
-  a Three.js, Unity or Godot web game (`Chrome` on `macOS`, its screen and GPU tier), and the page sends the session's
+  a Unity, Godot or Three.js web game (`Chrome` on `macOS`, its screen and GPU tier), and the page sends the session's
   end as the tab closes. Checked with a 5.9 source build's web package of the test game in Chromium on WebGPU
   (`unreal/test/web-game.mjs`). What to know:
   - Epic's launcher install of 5.9 for the Mac can't make a web build ("The Wasm platform is not supported from this

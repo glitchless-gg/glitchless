@@ -9,7 +9,7 @@ import { CsvButton, retentionCsv } from '../csv.jsx';
 export function RetentionOff() {
   return (
     <div className="why">
-      Nobody can be seen coming back: this game sends no player IDs, so every session counts as a new player. Turn on install mode to see D1, D7 and D30: <code>privacy: 'install'</code> in <code>Glitchless.init</code> (Godot <code>"privacy": "install"</code>, Unity <code>Privacy.Install</code>, Unreal Install). Each device then keeps a random ID, not tied to any account.
+      Nobody can be counted coming back: this game sends no player IDs, so every session counts as a new player. Turn on install mode to see D1, D7 and D30: <code>privacy: 'install'</code> in <code>Glitchless.init</code> (Godot <code>"privacy": "install"</code>, Unity <code>Privacy.Install</code>, Unreal Install). Each device then keeps a random ID, not tied to any account.
     </div>
   );
 }

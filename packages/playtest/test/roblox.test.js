@@ -112,3 +112,18 @@ test('a play test that never says it is done stops at max_s', async () => {
   assert.equal(r.candidate.scenarios[0].finished, false);
   assert.match(r.report, /1 autoplay run · fake-race/);
 });
+
+test('a play test stopped part-way still stops Studio playing and puts the attributes back', async () => {
+  const cwd = project({ scenarios: [{ name: 'endless', params: { autoplay: true, mode: 'endless' }, max_s: 30 }, ...scenarios('ok')] });
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const running = playtest({ cwd, signal: stop.signal });
+  while (!(fs.existsSync(path.join(cwd, 'studio.log')) && calls(cwd).some((c) => c.name === 'start_stop_play' && c.is_start))) await new Promise((r) => setTimeout(r, 50));
+  stop.abort(new Error('Stopped by the test.'));
+  await assert.rejects(running, /Stopped by the test/);
+  assert.ok(Date.now() - t0 < 15_000, 'it stops at once, not at max_s');
+  const log = calls(cwd);
+  assert.deepEqual(log.filter((c) => c.name === 'start_stop_play').map((c) => c.is_start), [true, false], 'play stopped, and the next scenario never started');
+  assert.deepEqual(log.filter((c) => c.attrs).map((c) => c.attrs).at(-1), { Theme: 'desert' }, "the place's attributes as they were");
+  assert.ok(!fs.existsSync(path.join(cwd, '.glitchless/playtest/latest.json')), 'a stopped run is not saved');
+});

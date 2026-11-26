@@ -177,6 +177,66 @@ test('a new error, a crash and a leak in an engine build', async () => {
   assert.equal(same.comparison.regressions.length + same.comparison.warnings.length, 0);
 });
 
+test('a playtest stops part-way when its signal fires: the build is killed and nothing is saved', async () => {
+  const cwd = project({});
+  const pidfile = path.join(cwd, 'build.pid');
+  fs.writeFileSync(path.join(cwd, 'glitchless.playtest.json'), JSON.stringify({ command: [process.execPath, path.join(FIXTURES, 'fake-build.mjs')], engine: 'godot', scenarios: [{ name: 'hangs', params: { autoplay: true, mode: 'hang', pidfile }, seconds: 3 }] }));
+  const stop = new AbortController();
+  const t0 = Date.now();
+  const running = run(cwd, { signal: stop.signal });
+  while (!fs.existsSync(pidfile)) await new Promise((r) => setTimeout(r, 50));
+  const pid = Number(fs.readFileSync(pidfile, 'utf8'));
+  stop.abort(new Error('Stopped by the test.'));
+  await assert.rejects(running, /Stopped by the test/);
+  assert.ok(Date.now() - t0 < 10_000, 'it stops at once, not at the time cap (3 + 1 + 120 s)');
+  const gone = () => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
+  for (let i = 0; i < 50 && !gone(); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(gone(), 'the build was killed');
+  assert.ok(!fs.existsSync(path.join(cwd, '.glitchless/playtest/latest.json')), 'a stopped run is not saved');
+  // A signal that has already fired stops it before anything starts.
+  await assert.rejects(run(cwd, { signal: AbortSignal.abort(new Error('Already stopped.')) }), /Already stopped/);
+});
+
+// A launcher that starts the build as a child of its own and waits for it (Unreal's .sh, a .bat, npm run).
+function launcher(cwd) {
+  const file = path.join(cwd, 'launch.sh');
+  fs.writeFileSync(file, `#!/bin/sh\n"${process.execPath}" "${path.join(FIXTURES, 'fake-build.mjs')}" "$@"\nexit $?\n`);
+  return ['sh', file];
+}
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test('a stopped or timed-out run kills what a launcher started too, and settles', { skip: process.platform === 'win32' && 'POSIX launcher' }, async () => {
+  for (const how of ['signal', 'time cap']) {
+    const cwd = project({});
+    const pidfile = path.join(cwd, 'game.pid');
+    fs.writeFileSync(path.join(cwd, 'glitchless.playtest.json'), JSON.stringify({ command: launcher(cwd), engine: 'godot', scenarios: [{ name: 'hangs', params: { autoplay: true, mode: 'hang', pidfile }, seconds: 3, ...(how === 'time cap' ? { max_s: 2 } : {}) }] }));
+    const stop = new AbortController();
+    const t0 = Date.now();
+    const running = run(cwd, { signal: stop.signal });
+    while (!fs.existsSync(pidfile)) await new Promise((r) => setTimeout(r, 50));
+    const game = Number(fs.readFileSync(pidfile, 'utf8'));
+    if (how === 'signal') stop.abort(new Error('Stopped by the test.'));
+    await assert.rejects(running, how === 'signal' ? /Stopped by the test/ : /froze or never quit within 2 s/);
+    assert.ok(Date.now() - t0 < 15_000, `${how}: it settles, though the game held the launcher's output open`);
+    for (let i = 0; i < 50 && alive(game); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(!alive(game), `${how}: the game the launcher started was killed`);
+  }
+});
+
 test('a quick engine run is compared with the same run of the baseline only', async () => {
   const cwd = project({ scenarios: scenarios('ok') });
   await run(cwd, { saveAs: 'baseline' });

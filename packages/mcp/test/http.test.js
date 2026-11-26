@@ -106,14 +106,15 @@ test("tools that act on the server's computer never show, and scopes decide whic
   const reads = await list();
   for (const local of ['glitchless_sign_in', 'glitchless_playtest', 'glitchless_deck']) assert.ok(!reads.includes(local), local);
   for (const write of ['glitchless_set_dashboard', 'glitchless_create_game', 'glitchless_share_links', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts']) assert.ok(!reads.includes(write), write);
-  assert.equal(reads.length, 16);
+  assert.equal(reads.length, 17);
   assert.ok(reads.includes('glitchless_alerts'), 'reading the alerts takes only read');
+  assert.ok(reads.includes('glitchless_feedback'), 'a connection that only reads can still tell the Glitchless team');
   scopes = ['read', 'dashboard'];
   assert.ok((await list()).includes('glitchless_set_dashboard'));
   scopes = ['read', 'dashboard', 'manage'];
   const all = await list();
   for (const write of ['glitchless_set_dashboard', 'glitchless_create_game', 'glitchless_share_links', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts']) assert.ok(all.includes(write), write);
-  assert.equal(all.length, 22);
+  assert.equal(all.length, 23);
   // Deleting games is a parameter of glitchless_create_game, so it shows no tool of its own.
   scopes = ['read', 'dashboard', 'manage', 'delete_games'];
   assert.deepEqual(await list(), all);
@@ -131,14 +132,15 @@ test('every tool has a title and all four annotation hints, true to what it does
   }
   const by = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
   const writes = tools.filter((t) => !t.annotations.readOnlyHint).map((t) => t.name).sort();
-  assert.deepEqual(writes, ['glitchless_create_game', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts', 'glitchless_set_dashboard', 'glitchless_share_links']);
+  assert.deepEqual(writes, ['glitchless_create_game', 'glitchless_feedback', 'glitchless_mark_known', 'glitchless_resolve_error', 'glitchless_set_alerts', 'glitchless_set_dashboard', 'glitchless_share_links']);
+  assert.equal(by.glitchless_feedback.openWorldHint, true, 'a report goes beyond the workspace, to the Glitchless team');
   assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the pages, and removes a background or a logo');
   assert.equal(by.glitchless_set_alerts.openWorldHint, true, 'a test alert posts to Discord, Slack or email');
   assert.equal(by.glitchless_share_links.destructiveHint, true, 'it revokes a link');
   assert.equal(by.glitchless_create_game.destructiveHint, true, 'it deletes a game');
   assert.equal(by.glitchless_set_dashboard.destructiveHint, true, 'it replaces the saved dashboard');
   assert.equal(by.glitchless_share_links.openWorldHint, true, 'a share link is public');
-  assert.deepEqual(tools.filter((t) => t.annotations.openWorldHint).map((t) => t.name).sort(), ['glitchless_set_alerts', 'glitchless_share_links']);
+  assert.deepEqual(tools.filter((t) => t.annotations.openWorldHint).map((t) => t.name).sort(), ['glitchless_feedback', 'glitchless_set_alerts', 'glitchless_share_links']);
   const { serverInfo, instructions } = { serverInfo: client.getServerVersion(), instructions: client.getInstructions() };
   assert.equal(serverInfo.name, 'glitchless');
   assert.ok(!/glitchless_sign_in|glitchless_playtest/.test(instructions), 'the remote instructions name no local tool');
@@ -180,6 +182,7 @@ test("a client that wants tool-list changes doesn't listen, one that listens any
     await client.connect(transport());
     const era = mode ? '2026-07-28' : 'initialize';
     assert.deepEqual(client.getServerCapabilities().tools, { listChanged: false }, `${era}: there are tools, and no news of the list changing`);
+    assert.deepEqual(client.getServerCapabilities().resources, { listChanged: false }, `${era}: the skills' files are resources, and they don't change either`);
     assert.equal(client.autoOpenedSubscription, undefined, `${era}: nothing to listen for`);
 
     if (mode) {
@@ -188,7 +191,7 @@ test("a client that wants tool-list changes doesn't listen, one that listens any
       assert.deepEqual(subscription.honoredFilter, {}, 'told it will be sent nothing');
       assert.equal(await subscription.closed, 'graceful', 'and that the server ended it on purpose');
     }
-    assert.equal((await client.listTools()).tools.length, 16);
+    assert.equal((await client.listTools()).tools.length, 17);
     const r = await client.callTool({ name: 'glitchless_triage', arguments: { game: 'Zoomies' } });
     assert.match(r.content[0].text, /Level 2 hitches on load/);
 
@@ -202,7 +205,7 @@ test("a client that wants tool-list changes doesn't listen, one that listens any
 test("with no list-change news, the tool list says it is stale at once, so a client that asks again gets a release's new tools", async () => {
   scopes = ['read'];
   const [{ result }] = await messages(await ask(endpoint, 'tools/list'));
-  assert.equal(result.tools.length, 16);
+  assert.equal(result.tools.length, 17);
   assert.deepEqual([result.ttlMs, result.cacheScope], [0, 'private'], 'stale at once, and never shared: the list depends on the scopes the person gave');
 });
 

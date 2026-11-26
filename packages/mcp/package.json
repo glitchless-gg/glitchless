@@ -1,8 +1,8 @@
 {
   "name": "glitchless-mcp",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "mcpName": "io.github.glitchless-gg/glitchless",
-  "description": "Coding agents can build a game. They can't see anyone play it. Glitchless lets them. The MCP server for Glitchless, game observability for coding agents: Claude Code, Codex, Cursor and others read real players' stutters, crashes, custom metrics and ranked findings in Unity, Godot, Unreal, Three.js, Roblox, Phaser and GameMaker games, build the game's own dashboard, and run playtest bots.",
+  "description": "Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them. The MCP server for Glitchless, game observability for coding agents: Claude Code, Codex, Cursor and others read real players' stutters, crashes, custom metrics and ranked findings in Unity, Godot, Unreal, Three.js, Roblox, Phaser and GameMaker games, build the game's own dashboard, and run playtest bots.",
   "keywords": [
     "mcp",
     "mcp-server",
@@ -65,9 +65,9 @@
     "bundle": "esbuild src/index.js --bundle --platform=node --format=esm --target=node20 --external:playwright --outfile=../../plugin/glitchless/mcp/glitchless-mcp.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\""
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "^2.4.0",
+    "@modelcontextprotocol/server": "~2.4.0",
     "zod": "^4.6.7",
-    "glitchless-playtest": "^0.4.0",
+    "glitchless-playtest": "^0.5.0",
     "glitchless-deck": "^0.1.0"
   },
   "devDependencies": {

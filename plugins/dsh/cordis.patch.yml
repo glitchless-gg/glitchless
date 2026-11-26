@@ -13,7 +13,8 @@
         serverName: glitchless
         transport: stdio
         command: npx
-        args: ['-y', 'glitchless-mcp']
+        # The plugin registers the skills itself: the server serves none (older versions ignore the flag).
+        args: ['-y', 'glitchless-mcp', '--no-skills']
         cwd: !!js process.cwd()
         # A playtest runs bots through the game for a few minutes.
         toolCallTimeoutMs: 600000

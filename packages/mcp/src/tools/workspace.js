@@ -3,24 +3,39 @@
 // and the team's own play as testers, resolve errors, and read and change a game's alerts. Listing games, reading any
 // of them and saving their dashboards are the other tools, with `game`.
 import { z } from 'zod';
-import { define, base, isWorkspace, agent, workspaceGames, workspaceIntake, projectFor, forgetGame, canDeleteGames, resolveService, reply, useCredentials, readCredentials } from '../context.js';
-import { startSignIn, CLOUD_URL } from '../login.js';
+import { inputRequired, inputResponse } from '@modelcontextprotocol/server';
+import { define, base, isWorkspace, agent, workspaceGames, workspaceIntake, projectFor, forgetGame, canDeleteGames, canElicit, isRemote, resolveService, reply, useCredentials, readCredentials } from '../context.js';
+import { startSignIn, lasts, CLOUD_URL } from '../login.js';
+import { sealState, openState, spend } from '../request-state.js';
 import { ENGINES, pickEngine, instrumentGuide, findEngine } from '../setup-guide.js';
 
 // A tool that needs the manage scope. opts: { title, annotations, scope, local }.
 const act = (name, description, inputSchema, handler, { title, annotations, ...opts } = {}) => define(name, { title, description, inputSchema, annotations }, handler, { scope: 'manage', ...opts });
 
+// The sign-in under way, for glitchless_sign_in's next call: { starting } while its code is asked for, then
+// { verification_url, user_code, expiresAt, settled, done?, error? }.
 let signingIn = null;
+
+// After the person opened the approve page, how long a call waits for them to approve before it says it's still
+// waiting (under the 2 minutes after which Claude Code moves a call into the background).
+export const SIGN_IN_WAIT = { ms: 100_000 };
 
 act(
   'glitchless_sign_in',
-  "Connect this agent to a Glitchless Cloud workspace, so it can create games, read any of them, design their dashboards and make share links. Returns a link and a code: show both to the person and ask them to approve it in the browser. Then call this tool again (or any other) — once it's approved, this server uses the workspace key right away, and keeps it for later sessions.",
+  "Connect this agent to a Glitchless Cloud workspace, so it can create games, read any of them, design their dashboards and make share links. Returns a link and a code: show both to the person and ask them to approve it in the browser. Then call this tool again (or any other) — once it's approved, this server uses the workspace key right away, and keeps it for later sessions. A client that can open a link for the person (MCP URL elicitation) opens the approve page itself, and the call waits up to 100 seconds for them to approve it: then it answers signed in, or that it's still waiting (call again).",
   { url: z.string().optional().describe(`The Glitchless API (default ${CLOUD_URL})`) },
-  async ({ url }) => {
+  async ({ url }, ctx) => {
+    // A sign-in another call is starting right now: wait for it, so two calls at once share one code and one page.
+    if (signingIn?.starting) await signingIn.starting.catch(() => {});
     if (isWorkspace()) {
+      // A sign-in approved while no call waited for it switched this server over already.
+      signingIn = null;
       const c = readCredentials();
       return reply(`Already signed in to ${c?.workspace?.name ?? 'a workspace'} on ${base()}.`, { games: (await workspaceGames(true)).map((g) => g.name) });
     }
+    // The person's answer to opening the page (the call again, with it), for this sign-in only.
+    const opened = canElicit(ctx, 'url') && signingIn?.user_code && ctx?.mcpReq?.requestState?.() === signingIn.user_code ? inputResponse(ctx.mcpReq.inputResponses, 'approve') : { kind: 'missing' };
+    if (opened.kind === 'elicit' && opened.action === 'accept' && !signingIn.done && !signingIn.error) await waitForApproval(ctx?.mcpReq?.signal);
     if (signingIn?.done) {
       const c = signingIn.done;
       signingIn = null;
@@ -32,24 +47,106 @@ act(
       signingIn = null;
       throw err;
     }
+    const left = () => lasts(Math.max(0, (signingIn.expiresAt - Date.now()) / 1000));
+    if (opened.kind === 'elicit' && opened.action !== 'accept') return reply(`The person didn't open the sign-in page. If they still want to connect, ask them to open ${signingIn.verification_url} and approve the code ${signingIn.user_code} (it works for another ${left()}), then call this tool again.`, {});
+    if (opened.kind === 'elicit') return reply(`Still waiting: the person has the sign-in page open but hasn't approved the code ${signingIn.user_code} yet. Call this tool again once they have (the code works for another ${left()}); if the page didn't open, the link is ${signingIn.verification_url}.`, {});
     if (signingIn) return reply(`Still waiting for approval. Ask the person to open ${signingIn.verification_url} and approve the code ${signingIn.user_code}.`, {});
-    const started = await startSignIn({ url: url || (base().includes('localhost') ? CLOUD_URL : base()) });
-    signingIn = { verification_url: started.verification_url, user_code: started.user_code };
-    started.wait().then(
+    const starting = startSignIn({ url: url || (base().includes('localhost') ? CLOUD_URL : base()) });
+    signingIn = { starting };
+    let started;
+    try {
+      started = await starting;
+    } catch (err) {
+      signingIn = null;
+      throw err;
+    }
+    const settled = started.wait().then(
       (c) => {
-        signingIn = { ...signingIn, done: c };
+        if (signingIn?.user_code === started.user_code) signingIn.done = c;
         useCredentials(c);
       },
-      (err) => (signingIn = { ...signingIn, error: err }),
+      (err) => {
+        if (signingIn?.user_code === started.user_code) signingIn.error = err;
+      },
     );
-    return reply(`Ask the person to open this link and approve the code ${started.user_code}:\n${started.verification_url}\nThe code works for 10 minutes. This server switches to the workspace as soon as it's approved.`, {});
+    Object.assign(signingIn, { verification_url: started.verification_url, user_code: started.user_code, expiresAt: Date.now() + started.expires_in * 1000, settled });
+    // A client that can open a page for the person: the approve page, with the code to check on it (first, as Claude
+    // Code shows one line of the message). The answer comes back as a call again (above), tied to this sign-in by its
+    // code.
+    if (canElicit(ctx, 'url')) {
+      return inputRequired({
+        inputRequests: { approve: inputRequired.elicitUrl({ message: `Code ${started.user_code}: approve it on the page that opens to connect this agent to your Glitchless workspace (check the page shows the same code; it works for ${lasts(started.expires_in)}).`, url: started.verification_url }) },
+        requestState: started.user_code,
+      });
+    }
+    return reply(`Ask the person to open this link and approve the code ${started.user_code}:\n${started.verification_url}\nThe code works for ${lasts(started.expires_in)}. This server switches to the workspace as soon as it's approved.`, {});
   },
   // Over HTTP the person signs in with OAuth before any tool runs, so this one is for stdio only.
   { title: 'Sign in', annotations: { openWorldHint: true }, scope: 'read', local: true },
 );
 
+// Waits for the sign-in under way to be approved or turned down, at most SIGN_IN_WAIT.ms, or until the call is
+// cancelled.
+async function waitForApproval(signal) {
+  let timer;
+  let onAbort;
+  await Promise.race([
+    signingIn.settled,
+    new Promise((resolve) => {
+      timer = setTimeout(resolve, SIGN_IN_WAIT.ms);
+      onAbort = resolve;
+      signal?.addEventListener('abort', onAbort, { once: true });
+    }),
+  ]);
+  clearTimeout(timer);
+  signal?.removeEventListener('abort', onAbort);
+}
+
 // The game a workspace already has under a name, however it's capitalised.
-const named = (list, name) => list.find((g) => g.name.trim().toLowerCase() === String(name).trim().toLowerCase());
+const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+const named = (list, name) => list.find((g) => same(g.name, name));
+
+// A game's name as Glitchless Cloud compares it when deleting: any case, spaces as typed, several counting as one.
+const nameKey = (name) => String(name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Deleting a game, for a client that can ask the person (a form, MCP elicitation): it asks "Delete <game> for good?"
+// first, and only deletes on their yes. → null to go ahead (they said yes, or the client can't ask), or the answer to
+// give instead: the question, or nothing deleted when they said no. It always asks a client that can, unless the key
+// is known not to delete games (Glitchless refuses that before anything goes); a wrong name or a name two games share
+// is still asked about, and Glitchless refuses it afterwards. The name in the question is from a fresh read of the
+// workspace's games, so a game renamed elsewhere shows as it is now. The question goes back with a sealed state
+// (request-state.js) for this game and this name, which expires in 10 minutes: an answer counts once, and only for the
+// call that asked.
+async function confirmDelete(ctx, { pid, confirm }) {
+  if (!canElicit(ctx, 'form')) return null;
+  if (!isRemote()) {
+    // Over HTTP the token's scopes said so already (canDeleteGames); on stdio the key's are Glitchless Cloud's to say.
+    const who = await agent('GET', '/whoami').catch(() => null);
+    if (who && !who.scopes?.includes('delete_games')) return null;
+  }
+  const target = (await workspaceGames(true)).find((g) => g.id === pid) ?? { name: confirm };
+  const state = openState('delete', ctx.mcpReq.requestState?.());
+  const answer = state && state.game === pid && state.name === nameKey(confirm) ? inputResponse(ctx.mcpReq.inputResponses, 'confirm_delete') : { kind: 'missing' };
+  if (answer.kind === 'elicit' && answer.action === 'accept' && answer.content?.delete === true && spend(state)) return null;
+  // A client with no one to ask (Claude Code run headless, claude -p) answers cancel at once, so asking again would loop:
+  // the way left is the person deleting it themselves, in Settings → Game (linked when Glitchless Cloud gave the game's
+  // dashboard).
+  if (answer.kind === 'elicit' && answer.action === 'cancel') {
+    const settings = target.dashboard ? ` (${target.dashboard}#/settings?tab=game)` : '';
+    throw new Error(`Nothing was deleted: the question asking the person to confirm deleting ${target.name} was closed without an answer (this app may not be able to show it, for example when it runs without a person). Tell the person they can delete it themselves in the Glitchless dashboard, Settings → Game${settings}, typing its name again. If they're here and say yes in the chat, you may call again: they're asked once more.`);
+  }
+  if (answer.kind === 'elicit' && answer.action !== 'accept') throw new Error(`The person said no when asked to confirm deleting ${target.name}, so nothing was deleted. Don't ask again unless they bring it up.`);
+  if (answer.kind === 'elicit' && answer.content?.delete !== true) throw new Error(`The person sent the question about deleting ${target.name} back without ticking the box, so nothing was deleted. Don't ask again unless they bring it up.`);
+  return inputRequired({
+    inputRequests: {
+      confirm_delete: inputRequired.elicit({
+        message: `Delete ${target.name} for good? Its data, dashboard, bug reports, keys, share links, alerts and store connections all go, and it can't be undone (backups keep it up to 35 more days). Its client token stops working at once.`,
+        requestedSchema: { type: 'object', properties: { delete: { type: 'boolean', title: `Yes, delete ${target.name} and all its data`, default: false } }, required: ['delete'] },
+      }),
+    },
+    requestState: sealState('delete', { game: pid, name: nameKey(confirm) }),
+  });
+}
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
 
 // glitchless_create_game with engine or files: the steps that add Glitchless to a game's code for its engine
@@ -103,7 +200,7 @@ async function setUp({ name, engine, files, game }) {
 
 act(
   'glitchless_create_game',
-  "Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game. With delete (the game's name, repeated back as the person confirmed it, and game naming which one), deletes the game and everything Glitchless keeps for it: its data, dashboard, bug reports, keys, share links, alerts and store connections. It can't be undone. It needs a connection the person gave \"Delete games and their data, for good\", which is off unless they ticked it (a new key in Settings → Keys & access, or connecting again), and whose person is an Owner or Admin. When two games in the workspace share the name, nothing is deleted and the answer lists them (id, when made, whether they have data): ask the person which one, then call again with game set to its id. The game is gone from the workspace at once and frees its place in the plan; its client token is refused from then on; it's gone from Glitchless within the hour, and backups, including old copies of its files, keep it up to 35 more days. Only delete when the person asked for it in so many words, after telling them all of this.",
+  "Create a game in the signed-in workspace, or set one up: call this first when asked to set up, add or install Glitchless (or performance monitoring, analytics or telemetry with it) in a game, before changing the game's code. Returns the game's client token (gl_pub_…, the public key game builds send with) and the intake URL to put in the game's Glitchless.init. With engine, or with files (what you find in the game's folder, when you don't know the engine), it also returns the steps that add Glitchless to the game's code for that engine, with the intake URL and client token in them: getting the SDK, privacy, levels and events, the game's own metrics, bug reports, the player's off switch, multiplayer, and checking that data arrives. They are the instrument skill of the Glitchless plugin, for an agent without it, up to 50,000 characters. Give name for a new game or game for one already in the workspace; with neither, the steps say how to get a client token, and when files name no engine nothing is made and the answer says what to look for. On a server with no workspace (the open-source server), the steps name that server. A name that's already in the workspace returns that game, not a second one. Later calls can name it with game. With demo: true it makes the demo game instead: Zoomies with a week of sample play (findings, levels, errors, sessions and a dashboard), for trying every tool before a real game sends data. A workspace has one demo game, and it takes no room from the plan's games. With rename (and game naming which one), renames a game instead, as players know it (a jam game renamed before release): the dashboard, share links and emails show the new name, and its client token, its service (what the game sends as service in Glitchless.init) and its data stay as they are, so the game's code needn't change. Later calls name it by its new name. Ask the person before renaming their game. With delete (the game's name, repeated back as the person confirmed it, and game naming which one), deletes the game and everything Glitchless keeps for it: its data, dashboard, bug reports, keys, share links, alerts and store connections. It can't be undone. It needs a connection the person gave \"Delete games and their data, for good\", which is off unless they ticked it (a new key in Settings → Keys & access, or connecting again), and whose person is an Owner or Admin. When two games in the workspace share the name, nothing is deleted and the answer lists them (id, when made, whether they have data): ask the person which one, then call again with game set to its id. The game is gone from the workspace at once and frees its place in the plan; its client token is refused from then on; it's gone from Glitchless within the hour, and backups, including old copies of its files, keep it up to 35 more days. Only delete when the person asked for it in so many words, after telling them all of this. A client that can show the person a form asks them to confirm in it first; when they say no or close it, nothing is deleted and the answer says what to do.",
   {
     name: z.string().optional().describe("The game's name, as players know it (not needed with demo). One already in the workspace is returned, not made again"),
     demo: z.boolean().optional().describe('Make the demo game, with a week of sample play'),
@@ -112,12 +209,16 @@ act(
     engine: z.enum(ENGINES.map((e) => e.id)).optional().describe("Also return the steps that add Glitchless to the game's code, for its engine: unity, godot, unreal, threejs (React Three Fiber too), roblox, phaser, babylon, playcanvas or gamemaker; reddit for a game in a Reddit post (with files: [\"devvit.json\"] and the engine of the game in it, Reddit's steps and that engine's come together)"),
     files: z.array(z.string()).max(500).optional().describe("Or, when you don't know the engine: what you find in the game's folder, which names it. File names at its root (project.godot, MyGame.uproject, Game.yyp, ProjectSettings/ProjectVersion.txt, default.project.json, devvit.json for a game in a Reddit post, package.json) and package.json dependencies (three, phaser, @babylonjs/core, playcanvas)"),
   },
-  async ({ name, demo, rename, delete: confirm, engine, files, game }) => {
+  async ({ name, demo, rename, delete: confirm, engine, files, game }, ctx) => {
     if (confirm != null) {
       if (name || demo || rename != null || engine || files) throw new Error('delete deletes the game that game names; leave out name, demo, rename, engine and files');
       if (!game) throw new Error("name the game to delete with game, and its name again with delete");
       if (!canDeleteGames()) throw new Error('This connection can\'t delete games: deleting is off unless its person turns it on. They can delete the game themselves in Settings → Game, or connect this app again and tick "Delete games and their data, for good".');
       const pid = await projectFor(game);
+      // A client that can ask the person asks them too, before anything goes (an extra step: the key still needs
+      // "Delete games and their data, for good").
+      const asked = await confirmDelete(ctx, { pid, confirm });
+      if (asked) return asked;
       // A game named by its id is the one the person chose, even when another game has its name.
       const gone = await agent('DELETE', `/games/${pid}`, pid === game ? { name: confirm, id: pid } : { name: confirm }).catch((err) => {
         if (err.code !== 'SAME_NAME') throw err;

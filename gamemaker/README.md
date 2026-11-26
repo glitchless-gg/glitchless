@@ -1,6 +1,6 @@
 # Glitchless for GameMaker
 
-A Glitchless SDK for GameMaker 2024.2 and later, written in GML and built for LTS 2026 (runtime 2026.0.0.23). It sends the same events as the browser SDK (`packages/sdk`), so a GameMaker game shows up in the same Glitchless server, dashboard, findings and MCP tools as the browser, Godot, Unity and Unreal games.
+A Glitchless SDK for GameMaker 2024.2 and later, written in GML and built for LTS 2026 (runtime 2026.0.0.23). It sends the same events as the browser SDK (`packages/sdk`), so a GameMaker game shows up in the same Glitchless server, dashboard, findings and MCP tools as Unity, Godot, Unreal and browser games.
 
 It reports:
 
@@ -14,7 +14,7 @@ It reports:
 - **Ping and disconnects** in a multiplayer game, from the game's own ping around GameMaker's `network_*` functions.
 - **Bug reports from players**, when the game turns them on: F8 (or the game's own button) opens a short form, and the report carries what the player typed, a screenshot, where they were and what had just happened.
 
-It also has an agent flag, `-glitchless-measure=SECONDS`, which prints frame stats as JSON and quits, like the Godot, Unity and Unreal SDKs.
+It also has an agent flag, `-glitchless-measure=SECONDS`, which prints frame stats as JSON and quits, like the Unity, Godot and Unreal SDKs.
 
 Anonymous mode, the default, sends nothing that can be tied to a person. [PRIVACY.md](PRIVACY.md) lists every field each mode sends.
 

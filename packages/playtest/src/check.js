@@ -23,6 +23,7 @@ import { checkInitScript } from './check-page.js';
 import { resolveGame, robotsCheck, refusal, CHECK_UA_SUFFIX } from './check-site.js';
 import { PROFILES, explore, aiPlayer, profileWords, AI_MODEL } from './check-bot.js';
 import { checkReport, checkDm, checkDashboard, CHECK_PAGE } from './check-report.js';
+import { onStop, stopped, checkStop, pause } from './stop.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // Seconds of play per profile by default; the phone plays two thirds as long. A check never plays past MAX_PLAY_S.
@@ -52,8 +53,10 @@ export function slugify(s) {
  * @param {string[]} [o.profiles]    'desktop', 'phone' or both (default both)
  * @param {boolean} [o.ai]           let a Claude model pick the inputs (needs ANTHROPIC_API_KEY and @anthropic-ai/sdk)
  * @param {string} [o.outDir]        where the report and screenshots go (default .glitchless/checks/<game>-<time>)
+ * @param {AbortSignal} [o.signal]   stops the check part-way: the browser closes, nothing more is made in Glitchless
+ *                                   (no dashboard, banner or share link), and it ends with the signal's reason
  */
-export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'http://localhost:7777', apiKey = process.env.GLITCHLESS_API_KEY || '', name, seconds = CHECK_SECONDS, profiles = ['desktop', 'phone'], ai = false, aiModel, headed = false, channel = 'chrome', adapters = true, outDir, cwd = process.cwd(), share = true, log = () => {} } = {}) {
+export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'http://localhost:7777', apiKey = process.env.GLITCHLESS_API_KEY || '', name, seconds = CHECK_SECONDS, profiles = ['desktop', 'phone'], ai = false, aiModel, headed = false, channel = 'chrome', adapters = true, outDir, cwd = process.cwd(), share = true, log = () => {}, signal } = {}) {
   if (!url) throw new Error('A game check needs the game\'s address (url).');
   const base = String(server).replace(/\/$/, '');
   const want = profiles.filter((p) => PROFILES[p]);
@@ -69,6 +72,7 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
     log(`Could not launch ${channel} (${err.message.split('\n')[0]}); using Playwright's Chromium.`);
     return launch(undefined);
   });
+  const forget = onStop(signal, () => browser.close().catch(() => {}));
   try {
     // The browser's own User-Agent, with the check named at its end, so a site can tell this visit apart.
     const probe = await browser.newPage();
@@ -83,6 +87,7 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
     const gameName = String(name || target.title || new URL(target.page_url).hostname).trim().slice(0, 80);
     log(`Game check: ${gameName} (${target.play_url})`);
 
+    checkStop(signal);
     const dest = await checkDestination({ base, apiKey, name: gameName, log });
     const sdk = await sdkScript(base, cwd);
     const version = `check-${new Date().toISOString().slice(0, 10)}`;
@@ -94,6 +99,7 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
     const runs = [];
     let landscape = target.size ? target.size.width > target.size.height * 1.1 : null;
     for (const p of want) {
+      checkStop(signal);
       const profile = { ...PROFILES[p] };
       if (p === 'desktop' && target.size) profile.viewport = { width: target.size.width, height: target.size.height };
       if (p === 'phone' && landscape) profile.viewport = { width: profile.viewport.height, height: profile.viewport.width };
@@ -107,13 +113,15 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
       if (landscape == null && run.page?.canvas) landscape = run.page.canvas.width > run.page.canvas.height * 1.1;
     }
 
+    checkStop(signal);
     const ids = runs.map((r) => r.session_id).filter(Boolean);
     const read = readerFor(base, apiKey, dest);
     let summary = null;
     let findings = [];
     if (ids.length) {
       log(`reading what Glitchless made of ${ids.length} run(s) …`);
-      summary = await waitForSummary(read, dest.service, ids, started, { log, timeoutMs: dest.cloud ? 180_000 : 30_000 }).catch((err) => {
+      summary = await waitForSummary(read, dest.service, ids, started, { log, timeoutMs: dest.cloud ? 180_000 : 30_000, signal }).catch((err) => {
+        checkStop(signal);
         notes.push(`Glitchless's summary of the runs couldn't be read: ${err.message}`);
         return null;
       });
@@ -141,18 +149,22 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
 
     // The game's dashboard, a picture of it as the board's banner, and an unlisted link to the check's page: only when
     // what the bots measured reached Glitchless, or the board and its link would show nothing.
+    checkStop(signal);
     if (ids.length && !summary?.runs?.length) notes.push(`No dashboard or share link: ${summary ? 'nothing the bots measured reached Glitchless' : "Glitchless's summary of the runs couldn't be read"}, so they would show nothing.`);
     if (summary?.runs?.length) {
       const pages = checkDashboard(result);
+      checkStop(signal);
       await write(base, apiKey, dest, 'PUT', `/v1/dashboard?service=${encodeURIComponent(dest.service)}`, { pages })
         .then(() => (result.dashboard = { pages: pages.map((p) => p.title) }))
         .catch((err) => notes.push(`The dashboard wasn't saved: ${err.message}`));
       const picture = runs.find((r) => r.profile === 'desktop')?.shots?.find((s) => /playing/.test(s)) || runs.flatMap((r) => r.shots || []).find((s) => /playing|end/.test(s));
       if (picture && fs.statSync(picture).size <= 300_000) {
+        checkStop(signal);
         await upload(base, apiKey, dest, `/v1/brand/banner?service=${encodeURIComponent(dest.service)}`, fs.readFileSync(picture), 'image/jpeg').catch((err) => notes.push(`The board's banner wasn't set: ${err.message}`));
       }
       result.dashboard_url = dest.dashboard ? `${dest.dashboard}#/${CHECK_PAGE}` : `${base}/?service=${encodeURIComponent(dest.service)}#/${CHECK_PAGE}`;
       if (share && dest.cloud) {
+        checkStop(signal);
         result.share = await shareLink(base, apiKey, dest, { from: started - 60_000, to: Date.now() + 120_000 }).catch((err) => {
           notes.push(`No share link: ${err.message}`);
           return null;
@@ -160,6 +172,7 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
       } else if (share) notes.push('No share link: share links are a Glitchless Cloud feature (sign in with a workspace key, gl_ws_…). The dashboard is on this server.');
     }
 
+    checkStop(signal);
     result.report = checkReport(result);
     result.dm = checkDm(result);
     const files = { report: path.join(dir, 'report.md'), dm: path.join(dir, 'message.txt'), json: path.join(dir, 'check.json') };
@@ -168,7 +181,10 @@ export async function gameCheck({ url, server = process.env.GLITCHLESS_URL || 'h
     fs.writeFileSync(files.json, `${JSON.stringify({ ...result, report: undefined, dm: undefined }, null, 2)}\n`);
     result.files = { ...files, shots: runs.flatMap((r) => r.shots || []) };
     return result;
+  } catch (err) {
+    throw stopped(signal, err);
   } finally {
+    forget();
     await browser.close();
   }
 }
@@ -480,10 +496,11 @@ async function upload(base, apiKey, dest, p, bytes, type) {
 }
 
 // The summary of the check's sessions, once each has ended (Glitchless Cloud's lake can take a minute or two).
-async function waitForSummary(read, service, ids, started, { log, timeoutMs }) {
+async function waitForSummary(read, service, ids, started, { log, timeoutMs, signal }) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (true) {
+    checkStop(signal);
     const body = await read('playtest', { service, sessions: ids.join(','), from: started - 60_000, to: Date.now() + 60_000 });
     last = body.summary;
     const ended = new Set((last?.runs || []).filter((r) => r.ended).map((r) => r.session_id));
@@ -492,7 +509,7 @@ async function waitForSummary(read, service, ids, started, { log, timeoutMs }) {
       log(`  ${ids.filter((id) => !ended.has(id)).length} run(s) not complete in Glitchless yet; using what arrived`);
       return last;
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    await pause(3000, signal);
   }
 }
 

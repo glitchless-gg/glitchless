@@ -12,7 +12,10 @@
 //
 // Or serve it over Streamable HTTP, for clients that connect to a URL (http.js):
 //
-//   npx -y glitchless-mcp serve [--port 3001] [--host 127.0.0.1]
+//   npx -y glitchless-mcp serve [--port 3001] [--host 127.0.0.1] [--no-skills]
+//
+// Both serve the Glitchless skills over MCP too (served-skills.js); --no-skills leaves them out, for a client that
+// already has them, such as the Claude Code plugin's own copy of this server or the DeepSeek Harness plugin.
 //
 // The connection and the list of tools are in context.js; each area's tools are in tools/<area>.js, and a new area
 // is one more file imported in hosted-tools.js (or here, for a tool that acts on this computer).
@@ -34,5 +37,6 @@ if (process.argv[2] === 'serve') {
   await import('./hosted-tools.js');
   await import('./tools/playtest.js');
   await import('./tools/deck.js');
-  serveStdio(() => createServer());
+  const skills = !process.argv.includes('--no-skills');
+  serveStdio(() => createServer({ skills }));
 }

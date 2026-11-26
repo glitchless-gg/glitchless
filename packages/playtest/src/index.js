@@ -15,6 +15,7 @@ import { robloxRun, matchingRobloxBaseline } from './roblox.js';
 import { compareRuns } from './compare.js';
 import { comparisonReport, runReport } from './report.js';
 import { saveRun, loadRun, listRuns } from './runs.js';
+import { checkStop } from './stop.js';
 
 export { loadConfig, DEFAULT_SCENARIOS, DEFAULT_THRESHOLDS } from './config.js';
 export { compareRuns, judge } from './compare.js';
@@ -23,6 +24,9 @@ export { saveRun, loadRun, listRuns } from './runs.js';
 export { playtestRun, loadPlaywright } from './run.js';
 export { engineRun, measureSummary, parseMeasure, detectEngine, splitCommand, ENGINES } from './engine.js';
 export { robloxRun } from './roblox.js';
+// Stopping a run part-way with an AbortSignal (0.5.0 on): glitchless-mcp checks for these to tell whether a cancel stops
+// the run.
+export { onStop, checkStop, stopped } from './stop.js';
 // A game check: any web game, nothing installed in it (check.js).
 export { gameCheck, CHECK_SECONDS } from './check.js';
 export { checkReport, checkDm, checkDashboard, headlines, engineWords } from './check-report.js';
@@ -38,25 +42,27 @@ export { itchFrame, robotsAllow, refusal, siteOf } from './check-site.js';
  * @param {number} [o.maxSeconds]   cap each run (an engine build: the seconds it measures)
  * @param {object} [o.config]       overrides for glitchless.playtest.json / defaults (game, command, engine, server, service, channel, headed, api_key)
  * @param {(msg: string) => void} [o.log]
+ * @param {AbortSignal} [o.signal]  stops it part-way: the browser closes, the build is killed or Studio's play test stops,
+ *                                  nothing is saved, and it ends with the signal's reason
  */
-export async function playtest({ saveAs, compareTo, baselineUrl, baselineCommand, quick = false, maxSeconds, config = {}, cwd = process.cwd(), log = () => {} } = {}) {
+export async function playtest({ saveAs, compareTo, baselineUrl, baselineCommand, quick = false, maxSeconds, config = {}, cwd = process.cwd(), log = () => {}, signal } = {}) {
   const cfg = loadConfig(cwd, config);
   const roblox = cfg.engine === 'roblox';
   const engine = !roblox && !!cfg.command;
   if (roblox && (baselineUrl || baselineCommand)) throw new Error('A Roblox game plays in the open Roblox Studio: save a baseline with --save baseline before the change instead of playing another build.');
   if (engine && baselineUrl) throw new Error('This project runs an engine build ("command"), not a web game: give the baseline build with --baseline-command instead of --baseline-url.');
   if (!engine && baselineCommand) throw new Error('--baseline-command runs an engine build: set "command" in glitchless.playtest.json (or pass --command) to the build being tested too.');
-  const play = (opts) => (roblox ? robloxRun(cfg, opts) : engine ? engineRun(cfg, opts) : playtestRun(cfg, opts));
+  const play = (opts) => (roblox ? robloxRun(cfg, { ...opts, signal }) : engine ? engineRun(cfg, { ...opts, signal }) : playtestRun(cfg, { ...opts, signal }));
   let scenarios = quick ? cfg.scenarios.slice(0, 1) : cfg.scenarios;
   if (maxSeconds) scenarios = scenarios.map((s) => (engine ? { ...s, seconds: Math.min(s.seconds ?? cfg.seconds ?? maxSeconds, maxSeconds) } : { ...s, max_s: maxSeconds }));
 
   let baseline = null;
   if (baselineUrl) {
     log(`Baseline: playing ${baselineUrl}`);
-    baseline = { ...(await playtestRun(cfg, { game: baselineUrl, scenarios, log })), name: 'baseline-url' };
+    baseline = { ...(await playtestRun(cfg, { game: baselineUrl, scenarios, log, signal })), name: 'baseline-url' };
   } else if (baselineCommand) {
     log(`Baseline: running ${[].concat(baselineCommand).join(' ')}`);
-    baseline = { ...(await engineRun(cfg, { command: baselineCommand, scenarios, log })), name: 'baseline-command' };
+    baseline = { ...(await engineRun(cfg, { command: baselineCommand, scenarios, log, signal })), name: 'baseline-command' };
   } else {
     const target = compareTo ?? (saveAs === 'baseline' ? null : 'baseline');
     if (target) {
@@ -70,6 +76,7 @@ export async function playtest({ saveAs, compareTo, baselineUrl, baselineCommand
 
   log(`Candidate: ${roblox ? 'playing in Roblox Studio' : engine ? `running ${[].concat(cfg.command).join(' ')}` : `playing ${cfg.game}`}`);
   const candidate = await play({ scenarios, log });
+  checkStop(signal);
   const files = { latest: saveRun(cfg.runs_dir, 'latest', candidate) };
   if (saveAs) files[saveAs] = saveRun(cfg.runs_dir, saveAs, candidate);
   candidate.name = saveAs || 'latest';

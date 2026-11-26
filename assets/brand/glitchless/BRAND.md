@@ -76,7 +76,7 @@ Glitchy is a small playtest robot shaped like a handheld console. It plays your 
 
 ## Email
 
-The welcome and product emails open with `email/email-hero.png`: navy, the dark lockup and one line on the left, the frame-time strip along the bottom (a coral stutter, the fix, short mint bars) and Glitchy waving on the right. Plainer notes (the setup reminder, notices) use a slim navy band with the dark lockup instead. The site serves both images from `/img/`, where emails load them.
+The welcome and product emails open with `email/email-hero.png`: navy, the dark lockup, the headline "Let your agent understand your players." and one line on the left, a players strip along the bottom (mint bars for the players still playing at each level, coral where most stop) and Glitchy waving on the right. Plainer notes (the setup reminder, notices) use a slim navy band with the dark lockup instead. The site serves both images from `/img/`, where emails load them.
 
 ## Rebuilding the assets
 

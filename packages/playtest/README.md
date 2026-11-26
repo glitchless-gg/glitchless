@@ -217,8 +217,19 @@ const result = await playtest({ saveAs: 'baseline' }); // later: playtest({ comp
 const check = await gameCheck({ url: 'https://someone.itch.io/their-game', server, apiKey }); // → { report, dm, share, files }
 ```
 
+Both take a `signal` (an AbortSignal, from 0.5.0) to stop part-way: the browser closes, the build and anything it
+started (a launcher's children too) are killed, or Studio's play test stops; nothing is saved, and the promise rejects
+with the signal's reason.
+
+```js
+const stop = new AbortController();
+const running = playtest({ signal: stop.signal });
+stop.abort(); // the run stops at once
+```
+
 The [glitchless-mcp](https://www.npmjs.com/package/glitchless-mcp) server exposes the same thing to
-coding agents as the `glitchless_playtest` tool, and a game check as its `check_url`.
+coding agents as the `glitchless_playtest` tool, and a game check as its `check_url`. From glitchless-mcp
+0.23.0, a client that takes MCP tasks runs it as one, and cancelling the task stops the run.
 
 ## License
 

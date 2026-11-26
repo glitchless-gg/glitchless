@@ -14,6 +14,10 @@ then work with every game in it.
 For coding agents that start a local process instead, [glitchless-mcp](../packages/mcp/README.md) over stdio does the
 same and also runs playtests and sends builds to a Steam Deck.
 
+To look something up in Glitchless's docs, no sign-in needed, an agent can search them:
+`https://www.glitchless.gg/.well-known/search?q=<query>` answers with the passages that match, in Markdown, each with
+its source address ([SPEC §3n](SPEC.md#3n-search-for-agents-glitchless-cloud)).
+
 ## Connect
 
 **claude.ai, Claude Desktop and the mobile apps**: Customize → Connectors → Add → Add custom connector. Name it
@@ -41,7 +45,7 @@ you tick it:
 
 | Scope | What the app may do |
 | --- | --- |
-| `read` | Read every game's data: findings, frame times, errors, players, events, dashboards, store reviews, revenue |
+| `read` | Read every game's data: findings, frame times, errors, players, events, dashboards, store reviews, revenue; and send the Glitchless team feedback (`glitchless_feedback`) |
 | `dashboard` | Design and save game dashboards |
 | `manage` | Create games, and make and revoke read-only share links |
 | `delete_games` | Delete games and their data, for good, when you ask it to (it repeats the game's name first). Only an Owner or Admin can tick it |
@@ -59,10 +63,11 @@ Adding Glitchless to your game takes a coding agent in the game's folder. One th
 else: say "Set up Glitchless for my game in this folder", and `glitchless_create_game` hands it the steps for the
 game's engine, with the game's client token in them (it finds the game you named here, or makes it). Claude Code
 signed in to the same Claude account has the connection already. An agent without it follows the
-[setup steps](https://github.com/glitchless-gg/glitchless/blob/main/docs/agent-setup-prompt.md), as does one whose
-connection may only read.
+[setup steps](https://github.com/glitchless-gg/glitchless/blob/main/docs/agent-setup-prompt.md), as does one that
+can't create games (a read-only one).
 
-It acts as you, with your role in the workspace (a Viewer's connection can only read, and a Viewer can have 5 at once),
+It acts as you, with your role in the workspace (a Viewer's connection can only read and send the Glitchless team
+feedback, and a Viewer can have 5 at once),
 and it never changes billing or people. It deletes data only with `delete_games`, which you tick yourself, and then
 only a whole game you asked it to delete, with the game's name repeated back. A connection made before that scope
 existed doesn't have it: connect the app again to give it. The connection shows under the app's name in Agents & MCP
@@ -86,6 +91,9 @@ app again replaces its old connection.
 | `glitchless_bug_reports` | Bug reports | read | yes | no | yes | no |
 | `glitchless_store` | Store | read | yes | no | yes | no |
 | `glitchless_revenue` | Revenue | read | yes | no | yes | no |
+| `glitchless_match` | Match | read | yes | no | yes | no |
+| `glitchless_network` | Network | read | yes | no | yes | no |
+| `glitchless_servers` | Servers | read | yes | no | yes | no |
 | `glitchless_set_dashboard` | Save dashboard | dashboard | no | yes: it replaces the saved pages, and removes a background, logo or banner | yes | no |
 | `glitchless_create_game` | Create, set up, rename or delete game | manage | no | yes: `delete` deletes a game and everything stored for it (a connection with `delete_games`, an Owner's or Admin's, with the game's name again) | no | no |
 | `glitchless_share_links` | Share links | manage | no | yes: it revokes a link | no | yes: a share link is public |
@@ -93,10 +101,22 @@ app again replaces its old connection.
 | `glitchless_resolve_error` | Resolve error | manage | no | yes: it hides an issue, and unresolves one | no: resolving again starts it over | no |
 | `glitchless_alerts` | Alerts | read | yes | no | yes | no |
 | `glitchless_set_alerts` | Change alerts | manage | no | yes: it replaces settings and removes a webhook | no | yes: a test alert posts to Discord, Slack or email |
+| `glitchless_feedback` | Send feedback | read | no | no | no: each call is a report | yes: the report goes to the Glitchless team |
 
 An app sees only the tools its scopes allow. Every tool takes `game` (a name or id). Not served by URL, because they
 act on the computer the server runs on: `glitchless_sign_in` (OAuth replaces it), `glitchless_playtest` (plays the game
 in Chrome, or runs its build, on that computer) and `glitchless_deck` (a Steam Deck on that network).
+
+An app on protocol 2026-07-28 that can show a form (MCP elicitation, as Claude can) is asked to confirm before
+`glitchless_create_game` deletes a game: "Delete <game> for good?", with a box to tick. The game goes only when the
+person ticks it and accepts, and still only with `delete_games`. The question and the answer are two requests, with
+nothing held between them. An older app, or one that can't show forms, deletes as before.
+
+`glitchless_feedback` is the agent telling the Glitchless team about a bug, a dead end, something missing or an idea
+while it works, at most 4,000 characters a report and 20 a day from a workspace. It's kept a year, or until the person
+closes their account, with the ids of their account and workspace: never a name, an email address or a game's data,
+and keys pasted in by mistake are removed. The agent tells the person what it sent and the report's ID, and that they
+can write to support@glitchless.gg for an answer.
 
 **Pictures by upload link.** The server can't read files on the agent's computer, and an app connected over OAuth
 holds no key to upload with. So `glitchless_set_dashboard` answers a `logo`, `banner` or heatmap `background` given as
@@ -114,13 +134,30 @@ link again until it expires. Making one needs the dashboard scope, a game makes 
 only each link's hash. `upload: true` asks for a link without a file named; base64 (`image`) still works for a small
 picture. The routes are in [SPEC §3b Upload links](SPEC.md#3b-dashboards-and-boards).
 
+## Skills
+
+The server also serves the Glitchless skills, the same ones the Claude Code plugin carries, over MCP's
+[Skills extension](https://modelcontextprotocol.io/extensions/skills/overview):
+
+| Skill | What it does | Needs |
+| --- | --- | --- |
+| `instrument` | Adds Glitchless to a game, in its engine | manage |
+| `dashboard` | Works out what the game's developer wants to know, and designs the game's dashboard | dashboard |
+| `triage` | Finds the most important problem in a game, fixes it and checks the fix | read |
+
+An app gets the skills its scopes have the tools for. In Claude Code (v2.1.331 or later) they show under the server's name: `/glitchless:triage` for a server added as
+`glitchless` (the command above), `/claude_ai_Glitchless:triage` when it comes from a claude.ai connector named
+Glitchless. Apps without skills over MCP get the same text from the tools: `glitchless_create_game` with `engine`
+returns the instrument skill for that engine, and `glitchless_dashboard` with `guide: true` the dashboard skill.
+
 ## For MCP client developers
 
 | | |
 | --- | --- |
 | Transport | Streamable HTTP, stateless: POST only (GET answers 405). 2026-07-28 requests get a JSON body; older clients get the answer as a one-event SSE stream |
 | Protocol versions | 2026-07-28, and 2025-11-25 and earlier through `initialize` |
-| Change notifications | None: the server never sends `notifications/tools/list_changed`, and says so (`tools.listChanged` is `false`), so there is no stream to hold open. A `subscriptions/listen` is acknowledged with an empty filter and ended at once with its result: a clean end, not a dropped connection to open again. `tools/list` answers carry `ttlMs: 0`: read the list again when you need it, or on reconnecting, and you get the tools of the latest release |
+| Skills | The Skills extension (`io.modelcontextprotocol/skills`): `skills/list`, `skills/get`, each file at `skill://<skill>/<path>` through `resources/read` (and `resources/directory/read`), with its size and SHA-256 digest in the listing; the `SKILL.md` files are in `resources/list` too. `/mcp?skills=off` serves none (no extension, no resources), for a client whose plugin carries the skills; the OAuth resource is still `/mcp` |
+| Change notifications | None: the server never sends `notifications/tools/list_changed` or `notifications/resources/list_changed`, and says so (`tools.listChanged` and `resources.listChanged` are `false`), so there is no stream to hold open. A `subscriptions/listen` is acknowledged with an empty filter and ended at once with its result: a clean end, not a dropped connection to open again. `tools/list` answers carry `ttlMs: 0`: read the list again when you need it, or on reconnecting, and you get the tools of the latest release |
 | Protected resource metadata (RFC 9728) | `https://api.glitchless.gg/.well-known/oauth-protected-resource/mcp` (not at the root path, which would describe the origin); `resource` is `https://api.glitchless.gg/mcp`. A request without a token gets `401` with `WWW-Authenticate: Bearer resource_metadata="…", scope="read dashboard manage delete_games"` |
 | Authorization server metadata (RFC 8414) | `https://api.glitchless.gg/.well-known/oauth-authorization-server`, issuer `https://api.glitchless.gg` |
 | Client identification | Client ID Metadata Documents, preferred: an HTTPS `client_id` with a path and no query, on a host other than Glitchless's; fetched with no redirects, 5 KB at most, cached five minutes. Or Dynamic Client Registration at `/oauth/register` (RFC 7591): a name of 60 characters at most, 1 to 5 redirect URIs of 512 at most; a client that gets no token within a day is dropped, one in use lasts 90 days past its last token |

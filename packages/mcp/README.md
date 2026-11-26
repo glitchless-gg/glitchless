@@ -1,9 +1,11 @@
 # glitchless-mcp
 
-The [Glitchless](https://github.com/glitchless-gg/glitchless) MCP server. It lets any coding agent
-(Claude Code, Codex, Cursor or another MCP client) read how your game runs for real players, from a
-Glitchless server: ranked findings, frame-time breakdowns, errors, level funnels, death hotspots and
-version comparisons. It can also run playtest bots before and after a change, to check a fix.
+The [Glitchless](https://github.com/glitchless-gg/glitchless) MCP server. Coding agents can build a game. They
+don't know how anyone plays it. Glitchless tells them. Any coding agent (Claude Code, Codex, Cursor or another MCP
+client) reads how players play your game, from a Glitchless server: where they stop and where they die, the game's
+own events (modes, purchases), ranked findings on stutter, errors and crashes, multiplayer lag and version
+comparisons, and on Glitchless Cloud what store reviews say and what the game earns. It can also run playtest bots
+before and after a change, to check a fix.
 
 It's a stdio server. Run it with `npx`, no install needed:
 
@@ -29,7 +31,8 @@ billing or people. It deletes data only if you ticked "Delete games and their da
 then only a whole game, with its name repeated back. `npx -y glitchless-mcp whoami` shows where you're signed in, `logout` deletes the saved
 key, and Settings → Keys & access in the dashboard lists and revokes keys. An agent can also sign in from inside a
 chat with the `glitchless_sign_in` tool: it shows the link and code, and the running server switches over once you
-approve. The saved key is only ever sent to the server it was saved for: point `GLITCHLESS_URL` at another one (a
+approve. In an agent that can open links for you (Claude Code does), it opens the approve page itself and waits for
+you to approve it. The saved key is only ever sent to the server it was saved for: point `GLITCHLESS_URL` at another one (a
 meetup's own box) and the MCP server connects without it, so set `GLITCHLESS_API_KEY` if that server has a key.
 
 ## Serve it over HTTP yourself
@@ -113,6 +116,7 @@ above go in its environment.
 | `glitchless_match` | A multiplayer game's matches (the worst by lag or disconnects on request), or one match from every side, 30 seconds at a time: each player's ping, frame time and outcome, the server's ticks, and whether the whole lobby lagged at once (the server) or one player did (their connection) |
 | `glitchless_network` | Ping, lag (play over 150 ms), packet loss and disconnects by level, version, platform, kind of connection and region, with the worst matches and the network findings |
 | `glitchless_servers` | A game's dedicated servers in server mode: servers running now and their players, tick time against its budget by players connected, map and version, crashes with the matches they ended, and memory that climbs. Every other tool reads them with service `<game>.server` |
+| `glitchless_feedback` | Tell the Glitchless team about a bug, a dead end, something missing or an idea while the agent works: a `message`, its `type` (bug, friction, missing, idea) and `impact` (blocked, worked_around, minor), and the `tool`, `task`, `expected`, `actual` and `engine` if it has them. Signed in to a Glitchless Cloud workspace it's sent at once and answers with the report's ID, which the agent tells the person; anywhere else nothing is sent, and it answers with a GitHub issue filled in with the report. 4,000 characters a report, 20 a day from a workspace |
 | `glitchless_playtest` | The game's autoplay bot plays it and the run is compared with a saved baseline ([glitchless-playtest](https://www.npmjs.com/package/glitchless-playtest)): a Unity, Godot, Unreal or GameMaker build from its `command`, a Roblox game in the open Roblox Studio (`engine: "roblox"`, over Studio's MCP server), or a web game in Chrome (needs Playwright in the game project). With `check_url`, a game check: bots play any web game someone posted (an itch.io page, github.io, Vercel), with nothing installed in it, on a desktop and a throttled phone, and make a report, a dashboard for that game and, on Glitchless Cloud, an unlisted share link to send its maker |
 | `glitchless_deck` | Build the game, send it to the paired Steam Deck, add it to the Deck's library and optionally start it ([glitchless-deck](https://www.npmjs.com/package/glitchless-deck); pair once with `npx glitchless-deck pair`); with `measure: true`, measure a Unity, Godot or Unreal build there and compare it with a saved run |
 
@@ -120,6 +124,41 @@ The reads take `hours`, `version`, `env` (e.g. `prod`), `session_type` (`user` f
 
 To let the agent drive the running game as well (measure frame times, inspect the scene, load a
 level), add the WebMCP server beside this one: `npx -y @jason.today/webmcp@latest --mcp`.
+
+## Skills
+
+The server serves the Glitchless skills too, over MCP's
+[Skills extension](https://modelcontextprotocol.io/extensions/skills/overview), so an agent whose client loads skills
+from MCP servers gets them without installing a plugin:
+
+| Skill | What it does |
+| --- | --- |
+| `instrument` | Adds Glitchless to a game, in its engine |
+| `dashboard` | Works out what the game's developer wants to know, and designs the game's dashboard |
+| `triage` | Finds the most important problem in a game, fixes it and checks the fix |
+| `deck` | Sends a build to a Steam Deck on your network and measures it there (only from this server on your computer, not the hosted one) |
+
+In Claude Code (v2.1.331 or later) they show under the server's name: `/glitchless:triage` for a server added as
+`glitchless`. A client without skills over MCP gets the instrument and dashboard skills from the tools instead
+(`glitchless_create_game` with `engine`, `glitchless_dashboard` with `guide: true`). `--no-skills` serves none, for a
+client that has the skills already: the Glitchless plugin for Claude Code runs its copy of this server that way.
+
+## Background tasks and questions
+
+Two MCP features this server uses when the agent's client says it supports them, on the call itself (protocol
+2026-07-28). Any other client gets the same answers as before.
+
+- **Tasks.** A playtest or a game check takes minutes. A client that takes MCP tasks (Claude Code in an interactive
+  session) gets a task straight away and the agent keeps working while the bots play; it reads the result when
+  the task completes. Stopping the task stops the run: the browser closes, the build (and anything it started) is
+  killed or Studio's play test stops, and nothing is saved; that needs glitchless-playtest 0.5.0 or later. A call that
+  isn't a task runs to the end, as before. One run at a time in a project: a second call while one runs is refused. Tasks are served on stdio only (`npx glitchless-mcp`), and kept
+  for an hour after they finish, in the server's memory.
+- **Questions (elicitation).** `glitchless_sign_in` opens the approve page for you, as above. Before
+  `glitchless_create_game` deletes a game, it asks you in a form, "Delete <game> for good?", every time, and deletes
+  only when you tick the box and accept. That's on top of the key's "Delete games and their data, for good", not instead of it. A
+  client that closes every question unanswered (Claude Code run headless, `claude -p`) can't delete a game this way:
+  the agent is told to send you to Settings → Game (with a link) to delete it yourself. The hosted server asks too, for clients on protocol 2026-07-28.
 
 ## License
 

@@ -36,13 +36,13 @@ name when it's shared with another app, and "Glitchless" is also a speedrun term
 
 - **Name:** `Glitchless (game observability)`
 - **Website:** `https://www.glitchless.gg`
-- **Short description:** Coding agents can build a game. They can't see anyone play it. Glitchless lets them: real
+- **Short description:** Coding agents build games but don't know how anyone plays them. Glitchless tells them:
   players' stutters, crashes and drop-offs, over MCP.
 - **Description:**
 
-  > Coding agents can build a game. They can't see anyone play it. Glitchless lets them. Your agent adds it to a
-  > Three.js, Phaser, Unity, Godot, Unreal or GameMaker game, sees what real players hit (stutters, crashes, where
-  > they quit) and fixes the next build. Free plan, open source (MIT).
+  > Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them. Your agent adds it
+  > to a Unity, Godot, Unreal, Three.js, GameMaker, Roblox or other game, learns what players hit (stutters, crashes,
+  > where they quit) and fixes the next build. Free plan, open source (MIT).
   >
   > Every frame is timed on every player's device, and each hitch comes with its likely cause. Crashes come grouped
   > with what the player did just before. Level funnels, death heatmaps and rage quits show where players give up.
@@ -53,7 +53,7 @@ name when it's shared with another app, and "Glitchless" is also a speedrun term
 
 - **License:** Open source, MIT. **Pricing:** Freemium.
 - **Platforms:** Online, Self-Hosted.
-- **Tags:** game-analytics, game-development, crash-reporting, performance-monitoring, mcp, ai-agents, godot, unity,
+- **Tags:** game-analytics, game-development, crash-reporting, performance-monitoring, mcp, ai-agents, unity, godot,
   unreal-engine, threejs
 - **Alternative to (after approval, on each app's page):** GameAnalytics, PostHog, Sentry, and Bugnet if it's listed.
 - **Icon:** `assets/brand/glitchless/logo/png/glitchless-icon-256.png`
@@ -71,8 +71,8 @@ Submit at https://toolradar.com/company/submit (free, reviewed within 48 hours).
 - **Category:** Game analytics (also Developer tools / Monitoring if it asks for a second).
 - **Pricing:** Free plan (5,000 play sessions a month) · Indie $19 a month · Studio $99 a month · open source (MIT) to
   run yourself.
-- **Best for:** Games built with coding agents (Claude Code, Codex, Cursor), in Three.js, Phaser, Babylon.js,
-  PlayCanvas, Unity, Godot, Unreal or GameMaker.
+- **Best for:** Games built with coding agents (Claude Code, Codex, Cursor), in Unity, Godot, Unreal, Three.js,
+  GameMaker, Roblox, Phaser, Babylon.js or PlayCanvas.
 
 ## Godot Asset Library
 
@@ -98,7 +98,7 @@ Submit it signed in at https://godotengine.org/asset-library/asset/submit:
 - **License:** MIT.
 - **Description:**
 
-  > Coding agents can build a game. They can't see anyone play it. Glitchless lets them.
+  > Coding agents can build a game. They don't know how anyone plays it. Glitchless tells them.
   >
   > Glitchless times every frame on every player's device and names each hitch's likely cause (a shader compile, a
   > scene change, slow `_process` code), groups errors and crashes with what the player did just before, and shows where

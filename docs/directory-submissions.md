@@ -6,7 +6,7 @@ because they change often. Claude: submitted 25 October 2026 and approved the sa
 (automated review). ChatGPT and Codex (one directory): not submitted yet. Cursor, Antigravity and the rest:
 [below](#cursor-marketplace).
 
-The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 22 tools. How it
+The server being listed is `https://api.glitchless.gg/mcp`: Streamable HTTP, OAuth 2.1 sign-in, 23 tools. How it
 works and how people connect is in [remote-mcp.md](remote-mcp.md).
 
 ## Before submitting
@@ -36,14 +36,11 @@ These are the owner's to do, in this order.
    at most 7 days back) with errors, deaths, two versions and a saved dashboard, which the test cases below describe.
    Seed it a day or two before submitting. Its credentials go into each portal's private reviewer field, never into
    this file or a manifest.
-3. **Update the privacy policy** (https://www.glitchless.gg/privacy.html). It covers coding agents with a key, not
-   apps connected by OAuth. Claude's policy asks what is collected, used and kept; ChatGPT rejects listings whose tools
-   return data the policy doesn't name. Suggested change to the paragraph on where data goes: "If you connect an AI
-   app such as Claude or ChatGPT, or a coding agent, it reads your games' data through the Glitchless MCP server: the
-   findings, frame times, errors, sessions (with their device, level, positions and event timeline), bug reports and
-   their screenshots, store reviews and revenue you ask about. The app's provider receives what it reads, under that
-   provider's terms. Revoke a connection in Settings → Keys & access." Also list the sign-in records OAuth adds (the
-   app's name and redirect address, and token hashes kept up to 30 days).
+3. **Check the privacy policy** (https://www.glitchless.gg/privacy.html). Claude's policy asks what is collected, used
+   and kept; ChatGPT rejects listings whose tools return data the policy doesn't name. It names what a connected app
+   reads (under "Who else handles it"), the sign-in records OAuth adds (under "How long we keep it"), and what a
+   `glitchless_feedback` report holds and how long it's kept (the paragraph after "We measure how Glitchless is used").
+   Before submitting, check it still names everything the tools return.
 4. **ChatGPT's domain check.** When the plugin portal shows its verification token, deploy with
    `--openai-challenge <token>` (the cloud deploy script keeps it for later deploys) so it's served as plain text at
    `https://api.glitchless.gg/.well-known/openai-apps-challenge`.
@@ -73,7 +70,7 @@ These are the owner's to do, in this order.
 | Icon | 512 × 512 PNG: https://app.glitchless.gg/brand/glitchless-icon-512.png. Square SVG: `assets/brand/glitchless/logo/glitchless-icon.svg`. Both pass ChatGPT's rule (square, 48 to 4,096 px). Claude's size isn't published; use the PNG |
 | Server URL | `https://api.glitchless.gg/mcp` (Streamable HTTP) |
 | Authentication | OAuth 2.1, always required. Clients identify by Client ID Metadata Document (preferred) or Dynamic Client Registration; no client secret to hand over |
-| Reads or writes | Both: 16 read-only tools; 4 that write (save a dashboard, create a game, make or revoke a share link) |
+| Reads or writes | Both: 16 read-only tools; 7 that write (save a dashboard; create, rename or delete a game; make or revoke a share link; mark a finding known; resolve an error; change alerts; send the Glitchless team feedback) |
 | Data source | Glitchless's own API (first party), no partner data, no health data, no sponsored content, no payments |
 
 ### Description
@@ -102,8 +99,9 @@ Use this for Claude (2,000 characters at most) and ChatGPT (4,000).
 >
 > You sign in with your Glitchless account and choose the workspace and what the assistant may do. It acts as you,
 > deletes data only if you turned that on and asked it to delete a whole game (it repeats the name first), never
-> touches billing or people, and you can disconnect it any time in Settings → Keys & access. It's free to start, and
-> a new workspace can try it on a demo game.
+> touches billing or people, and you can disconnect it any time in Settings → Keys & access. It can also tell the
+> Glitchless team when something in Glitchless didn't work, and tells you what it sent. It's free to start, and a new
+> workspace can try it on a demo game.
 
 ### Example prompts
 
@@ -139,12 +137,17 @@ tool.
 | `glitchless_match` | Match | yes | no | yes | no | Reads a multiplayer game's matches |
 | `glitchless_network` | Network | yes | no | yes | no | Reads ping, packet loss and disconnects |
 | `glitchless_servers` | Servers | yes | no | yes | no | Reads the game's dedicated servers |
+| `glitchless_alerts` | Alerts | yes | no | yes | no | Reads a game's alert settings and its last alerts |
 | `glitchless_set_dashboard` | Save dashboard | no | yes | yes | no | Replaces the saved dashboard (reset: true deletes it); saving the same pages twice changes nothing |
 | `glitchless_create_game` | Create, set up, rename or delete game | no | yes | no | no | Adds a game inside the workspace (a new name adds another; a name already there returns that game), renames one, or with engine or files also returns the steps that add Glitchless to its code (text the server carries); with delete and the game's name repeated back, deletes that game and everything stored for it (only with the delete_games scope, which an Owner or Admin ticks when connecting), which can't be undone |
 | `glitchless_share_links` | Share links | no | yes | no | yes | Publishes a board to anyone who has the link, signed out; lists them; revoking one ends it for everyone who has it |
+| `glitchless_mark_known` | Mark known | no | yes | yes | no | Marks a finding known, or a player or session as the team's; replaces or clears a note |
+| `glitchless_resolve_error` | Resolve error | no | yes | no | no | Hides an error issue until it comes back in a newer version; unresolves one |
+| `glitchless_set_alerts` | Change alerts | no | yes | no | yes | Turns rules, the weekly summary and email on or off, removes the webhook, and can post a test alert to Discord, Slack or email |
+| `glitchless_feedback` | Send feedback | no | no | no | yes | Sends the agent's report of a bug, a dead end, something missing or an idea to the Glitchless team, kept a year with the ids of the workspace and account, never a name, an email address or a game's data; each call is a new report. Without a Glitchless Cloud sign-in it sends nothing and returns a GitHub issue link |
 
-The four that write need the `dashboard` or `manage` scope, and so does listing share links; a person who grants only
-`read` gives the app the other 18 reads. Deleting a game also needs `delete_games`, which is off unless the person
+The tools that write to a game need the `dashboard` or `manage` scope, and so does listing share links; a person who
+grants only `read` gives the app the reads, the alerts' settings and `glitchless_feedback` (17 tools). Deleting a game also needs `delete_games`, which is off unless the person
 ticks it.
 Tools that act on the computer the server runs on (`glitchless_sign_in`, `glitchless_playtest`,
 `glitchless_deck`) exist only in the stdio server and are never listed here.
@@ -210,7 +213,7 @@ they hold. `extensions["com.openai"].interface` in `plugin.json`:
 | `longDescription` (4,000) | The description above |
 | `developerName` (80) | From `submission.json`; the portal replaces it with the verified identity |
 | `category` | Developer Tools |
-| `capabilities` (20 × 120) | Add Glitchless to a game in a coding agent, in any of the eight engines · Rank what's wrong in a game by how many players it hits · Frame times by level, GPU tier, browser and version · Errors with stacks and the gameplay before them · Where players die on each level · One play session's timeline · The game's own events and funnels · Bug reports players sent, with screenshots · Store reviews and vitals next to each build's numbers · Revenue next to the players who made it · Read and design the game's dashboard · Create games and read-only share links |
+| `capabilities` (20 × 120) | Add Glitchless to a game in a coding agent, in any of the nine engines · Rank what's wrong in a game by how many players it hits · Frame times by level, GPU tier, browser and version · Errors with stacks and the gameplay before them · Where players die on each level · One play session's timeline · The game's own events and funnels · Bug reports players sent, with screenshots · Store reviews and vitals next to each build's numbers · Revenue next to the players who made it · Read and design the game's dashboard · Create games and read-only share links · Tell the Glitchless team what didn't work |
 | `websiteURL` | https://www.glitchless.gg |
 | `supportURL` | https://www.glitchless.gg/support.html |
 | `privacyPolicyURL` | https://www.glitchless.gg/privacy.html |
@@ -325,8 +328,8 @@ Paste into both portals' test instructions (the credentials go in the private fi
 
 1. Add the connector or plugin with the URL `https://api.glitchless.gg/mcp`. It asks you to sign in.
 2. Sign in to Glitchless with the reviewer account. The page shows the app's name and where it will send you back.
-   Keep the workspace "Glitchless Review", tick "Design and save dashboards" and "Create games and share links" (they
-   are off by default), and press Connect.
+   Keep the workspace "Glitchless Review", keep "Design and save dashboards" and "Create games and share links" ticked,
+   and press Connect.
 3. Ask: "What's wrong with Zoomies this week?" The answer lists ranked findings with evidence.
 4. Ask: "Show me Zoomies' dashboard", then "Where do players die most on level 2?"
 5. To try a write: "Make a share link to Zoomies' Overview board", then "Revoke that share link".

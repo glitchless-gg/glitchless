@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fetchSummary, gitInfo, machineInfo } from './run.js';
+import { checkStop, pause } from './stop.js';
 
 export const DEFAULT_ROBLOX_SCENARIOS = [
   { name: 'autoplay, seed 7', params: { autoplay: true, seed: 7 }, max_s: 90 },
@@ -167,8 +168,8 @@ function checkParams(sc) {
 
 const label = (sc) => sc.name || JSON.stringify(sc.params || {});
 
-// One play test: attributes on, play until done or the cap, stop, attributes back as they were.
-async function playOnce(mcp, studio, sc, cfg, log) {
+// One play test: attributes on, play until done, the cap or signal, stop, attributes back as they were.
+async function playOnce(mcp, studio, sc, cfg, log, signal) {
   const params = sc.params || {};
   const before = unmark(await luau(mcp, studio.id, attributes(params, ['GlitchlessPlaytestDone']))) || {};
   const restore = () => luau(mcp, studio.id, attributes(before, [...Object.keys(params), 'GlitchlessPlaytestDone'].filter((k) => !(k in before)))).catch(() => {});
@@ -179,8 +180,9 @@ async function playOnce(mcp, studio, sc, cfg, log) {
     await mcp.tool('start_stop_play', { studio_id: studio.id, is_start: true });
     const maxMs = (sc.max_s || 90) * 1000;
     const done = `-- glitchless-playtest: done_when\nreturn if (${sc.done_when || cfg.done_when || ROBLOX_DONE_WHEN}) then ${MARK('true')} else ${MARK('false')}`;
-    while (Date.now() - started < maxMs) {
+    while (Date.now() - started < maxMs && !signal?.aborted) {
       await sleep(1000);
+      if (signal?.aborted) break;
       finished = (await luau(mcp, studio.id, done, 'Server').then(unmark).catch(() => false)) === true;
       if (finished) break;
     }
@@ -223,8 +225,8 @@ function assign(results, sessions, key) {
 
 // One summary for the players' sessions, with the server's errors and crashes added: a script error on the server is
 // the game's error too.
-async function robloxSummary(cfg, service, players, servers, since, log) {
-  const summary = await fetchSummary(cfg, service, players, since, { log });
+async function robloxSummary(cfg, service, players, servers, since, log, signal) {
+  const summary = await fetchSummary(cfg, service, players, since, { log, signal });
   if (!servers.length || !summary) return summary;
   const server = await fetchSummary(cfg, `${service}.server`, servers, since, { log, timeoutMs: 10_000 }).catch(() => null);
   if (!server) return summary;
@@ -234,7 +236,7 @@ async function robloxSummary(cfg, service, players, servers, since, log) {
 }
 
 /** Plays every scenario in Roblox Studio and returns a run record ready to save or compare. */
-export async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {} } = {}) {
+export async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {}, signal } = {}) {
   for (const sc of scenarios) checkParams(sc);
   const mcp = connectStudio(studioMcpCommand(cfg));
   let studio;
@@ -252,12 +254,14 @@ export async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {}
     service ||= place.service;
     if (!service) throw new Error('Could not tell which game this is from its Glitchless.init: set "service" in glitchless.playtest.json (or pass --service) to the service name it sends as.');
     for (const [i, sc] of scenarios.entries()) {
+      checkStop(signal);
       log(`run ${i + 1}/${scenarios.length}: ${label(sc)} …`);
-      results.push(await playOnce(mcp, studio, sc, cfg, log));
+      results.push(await playOnce(mcp, studio, sc, cfg, log, signal));
     }
   } finally {
     mcp.close();
   }
+  checkStop(signal);
 
   // BindToClose sends the last batches as the play test's server closes: give them a moment to land.
   log(`collecting the play tests' sessions from ${cfg.server} …`);
@@ -266,7 +270,7 @@ export async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {}
   for (let i = 0; i < (cfg.sessions_wait_s ?? 30); i++) {
     assign(results, await sessionsOf(cfg, service, from, to), 'session_ids');
     if (results.every((r) => r.session_ids.length)) break;
-    await sleep(1000);
+    await pause(1000, signal);
   }
   assign(results, await sessionsOf(cfg, `${service}.server`, from, to), 'server_session_ids');
   for (const r of results) r.session_id = r.session_ids[0] || null;
@@ -277,7 +281,7 @@ export async function robloxRun(cfg, { scenarios = cfg.scenarios, log = () => {}
   }
   const servers = results.flatMap((r) => r.server_session_ids);
   const started = Math.min(...results.map((r) => r.started));
-  const summary = await robloxSummary(cfg, service, players, servers, started, log);
+  const summary = await robloxSummary(cfg, service, players, servers, started, log, signal);
   const notes = [];
   const noLevel = !Object.keys(summary?.levels || {}).length && !summary?.level_attempts;
   if (noLevel && cfg.default_scenarios) throw new Error(`The play tests ran with the default scenarios (Workspace attributes autoplay = true, seed = 7) but no player started a level, so the game probably has no autoplay mode. ${ROBLOX_AUTOPLAY} Then list the runs in glitchless.playtest.json under "scenarios".`);
